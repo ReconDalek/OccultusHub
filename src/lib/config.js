@@ -1,0 +1,52 @@
+export const OCCULTUS_CONFIG = {
+  allowedFactionIds: [33097, 9171, 9728],
+
+  companyIds: [112941, 120244, 121745, 122254, 120502, 124650],
+
+  leadershipRoles: [
+    'Leader',
+    'Co-leader',
+    'Archon',
+    'High Council',
+    'Council',
+  ],
+
+  quotes: [
+    'Only those who embrace the darkness may command it.',
+    'Three factions. One family.',
+    'Strength through unity. Loyalty through blood.',
+    'The veil reveals only the worthy.',
+    'Power belongs to the devoted.',
+    'From shadow we rise. Through war we endure.',
+    'The weak seek safety. The worthy seek power.',
+    'Our silence hides the empire beneath it.',
+    'Loyalty is earned in blood and battle.',
+    'The order watches even when unseen.',
+    'Every war forges another legend.',
+    'The inner sanctum remembers all debts.',
+    'One banner. Three circles. Endless reach.',
+    'Fear all those that move as one.',
+    'The veil does not protect the faithless.',
+    'Power without loyalty is already lost.',
+    'In darkness, unity becomes strength.',
+    'The collective does not forgive betrayal.',
+    'Some build factions. We build dynasties.',
+    'Not all shadows hide weakness.',
+    'The devoted inherit the underworld.',
+    'War reveals who truly belongs.',
+    'The circle remains unbroken.',
+    'Behind every victory stands the collective.',
+    'Occultus thrives where others collapse.',
+    'The faithful never stand alone.',
+    'Unity sharpens every blade.',
+    'Enemies fade. The order remains.',
+    'Strength is temporary. Loyalty is eternal.',
+    'The shadows answer to us.',
+  ],
+
+  factionNames: {
+    33097: 'Occultus',
+    9728:  'Occul2us',
+    9171:  'Occul3us',
+  },
+}

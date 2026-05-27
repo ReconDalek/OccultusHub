@@ -1,0 +1,224 @@
+import { useState, useEffect } from 'react'
+import QuoteBox from '../components/QuoteBox'
+
+function Stars({ rating }) {
+  return (
+    <div className="my-4 text-xl">
+      {Array.from({ length: 10 }, (_, i) => (
+        <span key={i} style={{ color: i < rating ? '#ffd166' : 'rgba(255,255,255,0.2)' }}>
+          ★
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function CompanyCard({ company }) {
+  const [expanded, setExpanded] = useState(false)
+  const profile   = company.profile   || {}
+  const employees = company.employees || []
+
+  return (
+    <div
+      className={`relative rounded-3xl cursor-pointer transition-all duration-300 hover:-translate-y-1.5 company-card ${expanded ? 'expanded' : ''}`}
+      style={{
+        background: 'rgba(22,22,32,0.82)',
+        border: '1px solid rgba(255,255,255,0.05)',
+        padding: '40px',
+        backdropFilter: 'blur(12px)',
+      }}
+      onClick={() => setExpanded((v) => !v)}
+    >
+      <h3 className="font-cinzel" style={{ fontSize: '24px', marginBottom: '8px' }}>
+        {profile.name}
+      </h3>
+
+      <p style={{ color: '#a1a1aa', marginBottom: '4px' }}>
+        {profile.type?.name}
+      </p>
+
+      <Stars rating={profile.rating || 0} />
+
+      <div className="mt-2.5 text-sm" style={{ color: '#9f67ff' }}>
+        Director:{' '}
+        <a
+          href={`https://www.torn.com/profiles.php?XID=${profile.director?.id}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: '#9f67ff', textDecoration: 'none' }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseEnter={(e) => (e.target.style.color = '#fff')}
+          onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
+        >
+          {profile.director?.name}
+        </a>
+      </div>
+
+      <div className="mt-2.5 text-sm" style={{ color: '#9f67ff' }}>
+        Company ID:{' '}
+        <a
+          href={`https://www.torn.com/joblist.php?step=search#!p=corpinfo&ID=${profile.id}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: '#9f67ff', textDecoration: 'none' }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseEnter={(e) => (e.target.style.color = '#fff')}
+          onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
+        >
+          {profile.id}
+        </a>
+      </div>
+
+      <div className="mt-2.5 text-sm" style={{ color: '#9f67ff' }}>
+        Employees: {profile.employees?.hired} / {profile.employees?.capacity}
+      </div>
+
+      {/* Expandable section */}
+      <div className="company-expand">
+        <div
+          className="grid gap-6 company-detail-grid"
+          style={{ gridTemplateColumns: '1fr 1fr 1fr' }}
+        >
+          {[
+            ['Daily Income',   `$${profile.income?.daily?.toLocaleString()}`],
+            ['Weekly Income',  `$${profile.income?.weekly?.toLocaleString()}`],
+            ['Monthly Income', `$${(profile.income?.weekly * 4)?.toLocaleString()}`],
+          ].map(([label, val]) => (
+            <div key={label}>
+              <strong>{label}</strong>
+              <br />
+              {val}
+            </div>
+          ))}
+        </div>
+
+        <h4 className="mt-4 mb-3" style={{ fontSize: '18px' }}>
+          Employees
+        </h4>
+
+        <div>
+          {employees.map((emp) => (
+            <div
+              key={emp.id}
+              className="grid gap-3 py-3 employee-row"
+              style={{
+                gridTemplateColumns: '1.5fr 1fr 1fr',
+                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                fontSize: '14px',
+              }}
+            >
+              <a
+                href={`https://www.torn.com/profiles.php?XID=${emp.id}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#9f67ff', textDecoration: 'none' }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseEnter={(e) => (e.target.style.color = '#fff')}
+                onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
+              >
+                {emp.name}
+              </a>
+              <span>{emp.position?.name}</span>
+              <span>{emp.last_action?.relative}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Companies() {
+  const [companies, setCompanies]       = useState([])
+  const [lastUpdated, setLastUpdated]   = useState(null)
+  const [cacheStatus, setCacheStatus]   = useState('Loading company cache…')
+
+  useEffect(() => {
+    // Fire a background refresh
+    fetch('/api/company-refresh').catch(() => {})
+
+    ;(async () => {
+      try {
+        const res  = await fetch('/api/company-cache')
+        const data = await res.json()
+
+        if (!data.companies?.length) {
+          setCacheStatus('No company data cached yet.')
+          return
+        }
+
+        setCompanies(
+          [...data.companies].sort(
+            (a, b) => (b.profile?.rating || 0) - (a.profile?.rating || 0)
+          )
+        )
+        setLastUpdated(data.lastUpdated)
+
+        if (data.lastUpdated) {
+          const d = new Date(data.lastUpdated)
+          setCacheStatus(`Last Updated: ${d.toLocaleString()} TCT — Company data refreshes automatically.`)
+        }
+      } catch (err) {
+        console.error('Failed loading companies:', err)
+        setCacheStatus('Failed to load company data.')
+      }
+    })()
+  }, [])
+
+  return (
+    <>
+      {/* HERO */}
+      <section
+        className="flex items-center justify-center text-center"
+        style={{ minHeight: '40vh', padding: '80px 24px' }}
+      >
+        <div>
+          <h1
+            className="font-cinzel animate-fade-up"
+            style={{ fontSize: 'clamp(42px, 8vw, 68px)', lineHeight: 1.1, marginBottom: '28px' }}
+          >
+            Occultus Companies
+          </h1>
+          <p
+            className="animate-fade-up-slow"
+            style={{ color: '#a1a1aa', fontSize: '20px', lineHeight: 1.8 }}
+          >
+            Industry powers the collective.<br />
+            Every enterprise strengthens the order.
+          </p>
+        </div>
+      </section>
+
+      {/* GRID */}
+      <section style={{ padding: '60px 48px' }}>
+        {companies.length > 0 ? (
+          <div
+            className="grid gap-8 faction-grid-responsive"
+            style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
+          >
+            {companies.map((c) => (
+              <CompanyCard key={c.profile?.id} company={c} />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="max-w-3xl mx-auto p-10 rounded-3xl text-center text-xl italic"
+            style={{ background: 'rgba(255,255,255,0.03)', color: '#d4d4d8' }}
+          >
+            No company data cached yet.
+          </div>
+        )}
+
+        {/* Cache status */}
+        <div
+          className="max-w-3xl mx-auto mt-8 p-5 rounded-3xl text-center"
+          style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa', fontSize: '14px' }}
+        >
+          {cacheStatus}
+        </div>
+      </section>
+
+      <QuoteBox />
+    </>
+  )
+}
