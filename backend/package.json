@@ -1,0 +1,23 @@
+{
+  "name": "occultushub-worker",
+  "version": "1.0.0",
+  "description": "occultusHub admin backend - Cloudflare Workers",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute occultushub --file=src/db/schema.sql",
+    "db:query": "wrangler d1 execute occultushub --interactive"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "jose": "^5.10.0",
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.41.0"
+  }
+}

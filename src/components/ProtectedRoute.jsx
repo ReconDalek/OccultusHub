@@ -3,7 +3,7 @@ import { useSession } from '../hooks/useSession'
 
 /**
  * Wraps a route and redirects to / if the required access level isn't met.
- * requiredLevel: 'member' | 'leadership'
+ * requiredLevel: 'member' | 'leadership' | 'admin'
  */
 export default function ProtectedRoute({ children, requiredLevel }) {
   const { user, loading } = useSession()
@@ -21,6 +21,10 @@ export default function ProtectedRoute({ children, requiredLevel }) {
   }
 
   if (requiredLevel === 'leadership' && !user?.isLeader) {
+    return <Navigate to="/" replace />
+  }
+
+  if (requiredLevel === 'admin' && !user?.isAdmin) {
     return <Navigate to="/" replace />
   }
 

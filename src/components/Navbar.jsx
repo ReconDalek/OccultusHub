@@ -160,7 +160,17 @@ export default function Navbar() {
                     </div>
                   </div>
 
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-col gap-2">
+                    {user.isAdmin && (
+                      <Link
+                        to="/admin"
+                        className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80 block text-center no-underline"
+                        style={{ background: 'rgba(179,18,63,0.2)' }}
+                        onClick={() => setDropdown(false)}
+                      >
+                        Admin Panel
+                      </Link>
+                    )}
                     <button
                       onClick={async () => { await logout(); setDropdown(false) }}
                       className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"

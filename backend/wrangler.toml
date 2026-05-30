@@ -1,0 +1,21 @@
+name = "occultushub-worker"
+main = "src/index.js"
+compatibility_date = "2024-12-16"
+
+# Development environment
+[env.development]
+vars = { CORS_ORIGIN = "http://localhost:5173", JWT_SECRET = "dev-secret-key-change-in-production" }
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "occultusdb"
+database_id = "48ac7e16-8aab-4772-b624-8a7d1c230207"
+
+# Production environment
+[env.production]
+vars = { CORS_ORIGIN = "your-production-domain.com", JWT_SECRET = "your-secret-key-here" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "occultusdb"
+database_id = "48ac7e16-8aab-4772-b624-8a7d1c230207"

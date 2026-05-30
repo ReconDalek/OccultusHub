@@ -4,6 +4,12 @@ const SESSION_KEY = 'occultusSession'
 const USER_KEY    = 'occultusUser'
 const DEV_AUTH_ENABLED = true
 
+// API Base URL - automatically routes to dev or production
+const API_BASE_URL =
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8787'
+    : 'https://occultushub-worker-production.rkilpatrick4221.workers.dev'
+
 /* ── Storage helpers ─────────────────────── */
 
 export function getSessionToken() {
@@ -41,7 +47,7 @@ export function enrichUserAccess(user) {
     isFactionMember &&
     OCCULTUS_CONFIG.leadershipRoles.includes(user.factionPosition)
 
-  return { ...user, isFactionMember, isLeader }
+  return { ...user, isFactionMember, isLeader, isAdmin: user.isAdmin || false }
 }
 
 /* ── Session validation (returns enriched user or null) ─── */
@@ -55,7 +61,7 @@ export async function checkSession() {
 
   if (token) {
     try {
-      const res  = await fetch('/api/auth/session', {
+      const res  = await fetch(`${API_BASE_URL}/api/auth/session`, {
         headers: { Authorization: token },
       })
       const data = await res.json()
@@ -98,6 +104,7 @@ export async function authenticateUser(apiKey, rememberMe, stayLoggedIn) {
       factionPosition: 'Leader',
       isFactionMember: true,
       isLeader: true,
+      isAdmin: true,
       image: null,
     }
     localStorage.setItem('occultusSession', 'dev-token')
@@ -105,7 +112,7 @@ export async function authenticateUser(apiKey, rememberMe, stayLoggedIn) {
     return { success: true, user: devUser }
   }
 
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ apiKey, rememberMe, stayLoggedIn }),
@@ -138,7 +145,7 @@ export async function authenticateUser(apiKey, rememberMe, stayLoggedIn) {
 export async function logout() {
   const token = getSessionToken()
   try {
-    await fetch('/api/auth/logout', {
+    await fetch(`${API_BASE_URL}/api/auth/logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),

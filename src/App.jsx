@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { SessionProvider } from './hooks/useSession'
+import { useState, useEffect } from 'react'
+import { API_BASE_URL } from './config/api'
 
 import BackgroundOverlay from './components/BackgroundOverlay'
 import Navbar            from './components/Navbar'
@@ -11,6 +13,7 @@ import Factions   from './pages/Factions'
 import Companies  from './pages/Companies'
 import Leadership from './pages/Leadership'
 import Respect    from './pages/Respect'
+import Admin      from './pages/Admin'
 import NotFound   from './pages/NotFound'
 
 function Layout({ children }) {
@@ -65,6 +68,49 @@ function RespectLayout() {
 }
 
 export default function App() {
+  const [pageVisibility, setPageVisibility] = useState({
+    factions: true,
+    companies: true,
+    leadership: true,
+    respect: true,
+  })
+  const [visibilityLoaded, setVisibilityLoaded] = useState(false)
+
+  useEffect(() => {
+    const fetchPageVisibility = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/pages/visibility`)
+        const data = await res.json()
+        setPageVisibility(data)
+      } catch (err) {
+        console.error('Failed to fetch page visibility:', err)
+      } finally {
+        setVisibilityLoaded(true)
+      }
+    }
+
+    fetchPageVisibility()
+  }, [])
+
+  if (!visibilityLoaded) {
+    return (
+      <BrowserRouter>
+        <SessionProvider>
+          <div
+            className="flex items-center justify-center"
+            style={{
+              minHeight: '100vh',
+              background: '#07070a',
+              color: '#a1a1aa',
+            }}
+          >
+            Loading...
+          </div>
+        </SessionProvider>
+      </BrowserRouter>
+    )
+  }
+
   return (
     <BrowserRouter>
       <SessionProvider>
@@ -72,40 +118,59 @@ export default function App() {
           <Route path="/" element={<Layout><Home /></Layout>} />
           <Route path="/about" element={<Layout><About /></Layout>} />
 
+          {pageVisibility.factions && (
+            <Route
+              path="/factions"
+              element={
+                <Layout>
+                  <ProtectedRoute requiredLevel="member">
+                    <Factions />
+                  </ProtectedRoute>
+                </Layout>
+              }
+            />
+          )}
+
+          {pageVisibility.companies && (
+            <Route
+              path="/companies"
+              element={
+                <Layout>
+                  <ProtectedRoute requiredLevel="member">
+                    <Companies />
+                  </ProtectedRoute>
+                </Layout>
+              }
+            />
+          )}
+
+          {pageVisibility.leadership && (
+            <Route
+              path="/leadership"
+              element={
+                <Layout>
+                  <ProtectedRoute requiredLevel="leadership">
+                    <Leadership />
+                  </ProtectedRoute>
+                </Layout>
+              }
+            />
+          )}
+
+          {pageVisibility.respect && (
+            <Route path="/respect" element={<RespectLayout />} />
+          )}
+
           <Route
-            path="/factions"
+            path="/admin"
             element={
               <Layout>
-                <ProtectedRoute requiredLevel="member">
-                  <Factions />
+                <ProtectedRoute requiredLevel="admin">
+                  <Admin />
                 </ProtectedRoute>
               </Layout>
             }
           />
-
-          <Route
-            path="/companies"
-            element={
-              <Layout>
-                <ProtectedRoute requiredLevel="member">
-                  <Companies />
-                </ProtectedRoute>
-              </Layout>
-            }
-          />
-
-          <Route
-            path="/leadership"
-            element={
-              <Layout>
-                <ProtectedRoute requiredLevel="leadership">
-                  <Leadership />
-                </ProtectedRoute>
-              </Layout>
-            }
-          />
-
-          <Route path="/respect" element={<RespectLayout />} />
 
           <Route path="*" element={<Layout><NotFound /></Layout>} />
         </Routes>
