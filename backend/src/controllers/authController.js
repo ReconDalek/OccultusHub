@@ -50,7 +50,7 @@ export async function login(request, env) {
         torn_user_id: tornUser.player_id ?? null,
         username: tornUser.name ?? null,
         faction_id: tornUser.faction?.faction_id ?? null,
-        faction_position: tornUser.job?.position ?? null,
+        faction_position: tornUser.faction?.position ?? null,
         image_url: tornUser.profile_image ?? null,
       });
 
@@ -63,7 +63,7 @@ export async function login(request, env) {
           tornUser.player_id ?? null,
           tornUser.name ?? null,
           tornUser.faction?.faction_id ?? null,
-          tornUser.job?.position ?? null,
+          tornUser.faction?.position ?? null,
           tornUser.profile_image ?? null
         )
         .first();
