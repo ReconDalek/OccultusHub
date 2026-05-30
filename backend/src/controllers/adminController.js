@@ -177,7 +177,7 @@ export async function getPages(request, env, user) {
 
 export async function togglePage(request, env, user) {
   try {
-    const pageName = new URL(request.url).pathname.split('/')[5];
+    const pageName = new URL(request.url).pathname.split('/')[4];
 
     const validPages = ['factions', 'companies', 'leadership', 'respect'];
     if (!validPages.includes(pageName)) {
@@ -291,9 +291,11 @@ export async function getSettings(request, env, user) {
 
 export async function updateSetting(request, env, user) {
   try {
-    const { key } = new URL(request.url).pathname.match(
+    const match = new URL(request.url).pathname.match(
       /\/api\/admin\/settings\/([^/]+)/
     );
+    const key = match?.[1];
+
     const { value } = await request.json();
 
     if (!key || value === undefined) {
@@ -318,4 +320,5 @@ export async function updateSetting(request, env, user) {
     console.error('updateSetting error:', error);
     return errorResponse('Failed to update setting', 500);
   }
+}
 }
