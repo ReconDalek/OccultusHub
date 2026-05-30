@@ -13,7 +13,7 @@ database_id = "48ac7e16-8aab-4772-b624-8a7d1c230207"
 
 # Production environment
 [env.production]
-vars = { CORS_ORIGIN = "your-production-domain.com", JWT_SECRET = "your-secret-key-here" }
+vars = { CORS_ORIGIN = "https://occul2us.pages.dev", JWT_SECRET = "sk_prod_7Kj9mNp2qRx8vBcDeFgHiJkLmNoPqRsTuVwXyZ0aB1cD2eF" }
 
 [[env.production.d1_databases]]
 binding = "DB"
