@@ -49,11 +49,11 @@ export async function login(request, env) {
          RETURNING *`
       )
         .bind(
-          tornUser.user_id,
-          tornUser.name,
-          tornUser.faction ? tornUser.faction.faction_id : null,
-          tornUser.job ? tornUser.job.position : null,
-          tornUser.image || null
+          tornUser.user_id ?? null,
+          tornUser.name ?? null,
+          tornUser.faction?.faction_id ?? null,
+          tornUser.job?.position ?? null,
+          tornUser.image ?? null
         )
         .first();
 
