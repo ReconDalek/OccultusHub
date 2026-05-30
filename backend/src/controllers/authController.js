@@ -21,15 +21,18 @@ export async function login(request, env) {
         return errorResponse('Invalid API key', 401);
       }
       tornUser = await response.json();
-    } catch {
+    } catch (err) {
+      console.error('Torn API error:', err);
       return errorResponse('Invalid API key', 401);
     }
+
+    console.log('Torn user data:', JSON.stringify(tornUser));
 
     // Check if user exists in database
     const existingUser = await env.DB.prepare(
       'SELECT * FROM users WHERE torn_user_id = ?'
     )
-      .bind(tornUser.user_id)
+      .bind(tornUser.user_id ?? null)
       .first();
 
     let user;
@@ -43,6 +46,14 @@ export async function login(request, env) {
         .run();
     } else {
       // Create new user
+      console.log('Creating new user with:', {
+        torn_user_id: tornUser.user_id ?? null,
+        username: tornUser.name ?? null,
+        faction_id: tornUser.faction?.faction_id ?? null,
+        faction_position: tornUser.job?.position ?? null,
+        image_url: tornUser.image ?? null,
+      });
+
       const result = await env.DB.prepare(
         `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url)
          VALUES (?, ?, ?, ?, ?)
@@ -57,19 +68,30 @@ export async function login(request, env) {
         )
         .first();
 
+      console.log('Insert result:', JSON.stringify(result));
+
       if (!result) {
         return errorResponse('Failed to create user', 500);
       }
       user = result;
     }
 
+    console.log('User object before login history:', JSON.stringify(user));
+
     // Log login
-    const ipAddress = request.headers.get('cf-connecting-ip') || '';
-    const userAgent = request.headers.get('user-agent') || '';
+    const ipAddress = request.headers.get('cf-connecting-ip') ?? '';
+    const userAgent = request.headers.get('user-agent') ?? '';
+
+    console.log('Logging login with:', {
+      user_id: user.id,
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+
     await env.DB.prepare(
       'INSERT INTO login_history (user_id, ip_address, user_agent) VALUES (?, ?, ?)'
     )
-      .bind(user.id, ipAddress, userAgent)
+      .bind(user.id ?? null, ipAddress, userAgent)
       .run();
 
     // Generate JWT token
