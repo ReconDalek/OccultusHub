@@ -32,7 +32,7 @@ export async function login(request, env) {
     const existingUser = await env.DB.prepare(
       'SELECT * FROM users WHERE torn_user_id = ?'
     )
-      .bind(tornUser.user_id ?? null)
+      .bind(tornUser.player_id ?? null)
       .first();
 
     let user;
@@ -47,11 +47,11 @@ export async function login(request, env) {
     } else {
       // Create new user
       console.log('Creating new user with:', {
-        torn_user_id: tornUser.user_id ?? null,
+        torn_user_id: tornUser.player_id ?? null,
         username: tornUser.name ?? null,
         faction_id: tornUser.faction?.faction_id ?? null,
         faction_position: tornUser.job?.position ?? null,
-        image_url: tornUser.image ?? null,
+        image_url: tornUser.profile_image ?? null,
       });
 
       const result = await env.DB.prepare(
@@ -60,11 +60,11 @@ export async function login(request, env) {
          RETURNING *`
       )
         .bind(
-          tornUser.user_id ?? null,
+          tornUser.player_id ?? null,
           tornUser.name ?? null,
           tornUser.faction?.faction_id ?? null,
           tornUser.job?.position ?? null,
-          tornUser.image ?? null
+          tornUser.profile_image ?? null
         )
         .first();
 
