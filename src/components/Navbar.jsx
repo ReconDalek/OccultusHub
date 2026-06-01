@@ -39,7 +39,7 @@ function buildNavLinks(user) {
 
 export default function Navbar() {
   const { user, logout } = useSession()
-  const { cipherActive, cipherLabel, toggleCipher } = useCipher()
+  const { cipherActive, toggleCipher } = useCipher()
   const location         = useLocation()
   const [modalOpen, setModalOpen]     = useState(false)
   const [dropdownOpen, setDropdown]   = useState(false)
@@ -200,7 +200,7 @@ export default function Navbar() {
                           lineHeight: 1.2,
                         }}
                       >
-                        {cipherActive ? `◈ ${cipherLabel}` : '◇ OFF'}
+                        {cipherActive ? '◈ ON' : '◇ OFF'}
                       </span>
                     </button>
                     <button

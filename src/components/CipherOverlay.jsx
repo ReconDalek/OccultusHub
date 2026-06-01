@@ -14,24 +14,24 @@ function rand(min, max) { return min + Math.random() * (max - min) }
 
 function createGlyph(W, H) {
   return {
-    x:       rand(0, W),
-    y:       rand(0, H),
-    vy:      rand(-0.18, -0.06),           // drift upward slowly
-    vx:      rand(-0.04, 0.04),
-    alpha:   0,
-    maxAlpha: rand(0.04, 0.09),            // stays very subtle (4–9%)
-    phase:   rand(0, Math.PI * 2),         // sine phase offset for flickering
-    speed:   rand(0.004, 0.010),           // flicker speed
-    size:    rand(11, 22),
-    char:    GLYPH_ARR[Math.floor(Math.random() * GLYPH_ARR.length)],
-    ttl:     rand(180, 420),               // frames before respawn
-    age:     0,
-    fadeIn:  rand(40, 80),
-    fadeOut: rand(40, 80),
+    x:        rand(0, W),
+    y:        rand(0, H),
+    vy:       rand(-0.22, -0.07),
+    vx:       rand(-0.06, 0.06),
+    alpha:    0,
+    maxAlpha: rand(0.14, 0.28),            // clearly visible but not distracting
+    phase:    rand(0, Math.PI * 2),
+    speed:    rand(0.005, 0.013),
+    size:     rand(14, 28),
+    char:     GLYPH_ARR[Math.floor(Math.random() * GLYPH_ARR.length)],
+    ttl:      rand(160, 380),
+    age:      0,
+    fadeIn:   rand(35, 70),
+    fadeOut:  rand(35, 70),
   }
 }
 
-const GLYPH_COUNT = 55
+const GLYPH_COUNT = 70
 
 export default function CipherOverlay() {
   const { cipherActive } = useCipher()
@@ -96,7 +96,7 @@ export default function CipherOverlay() {
         ctx.save()
         ctx.globalAlpha = Math.max(0, Math.min(1, g.alpha))
         ctx.font = `${g.size}px 'Cinzel', serif`
-        ctx.fillStyle = '#c084fc'           // soft purple matches the site palette
+        ctx.fillStyle = '#d8b4fe'           // light purple — visible on dark backgrounds
         ctx.fillText(g.char, g.x, g.y)
         ctx.restore()
       }
