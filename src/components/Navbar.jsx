@@ -39,7 +39,7 @@ function buildNavLinks(user) {
 
 export default function Navbar() {
   const { user, logout } = useSession()
-  const { cipherActive, toggleCipher } = useCipher()
+  const { cipherActive, cipherLabel, toggleCipher } = useCipher()
   const location         = useLocation()
   const [modalOpen, setModalOpen]     = useState(false)
   const [dropdownOpen, setDropdown]   = useState(false)
@@ -195,9 +195,12 @@ export default function Navbar() {
                           letterSpacing: '1px',
                           color: cipherActive ? '#c084fc' : '#7c3aed',
                           fontFamily: 'monospace',
+                          maxWidth: '90px',
+                          textAlign: 'right',
+                          lineHeight: 1.2,
                         }}
                       >
-                        {cipherActive ? '◈ ON' : '◇ OFF'}
+                        {cipherActive ? `◈ ${cipherLabel}` : '◇ OFF'}
                       </span>
                     </button>
                     <button

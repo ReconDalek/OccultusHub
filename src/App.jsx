@@ -7,6 +7,7 @@ import { API_BASE_URL } from './config/api'
 import BackgroundOverlay from './components/BackgroundOverlay'
 import Navbar            from './components/Navbar'
 import ProtectedRoute    from './components/ProtectedRoute'
+import CipherOverlay     from './components/CipherOverlay'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -21,6 +22,7 @@ function Layout({ children }) {
   return (
     <>
       <BackgroundOverlay />
+      <CipherOverlay />
       <Navbar />
       <div style={{ position: 'relative', zIndex: 1 }}>
         {children}
@@ -34,6 +36,7 @@ function RespectLayout() {
   return (
     <>
       <BackgroundOverlay />
+      <CipherOverlay />
       {/* Minimal navbar for Respect page */}
       <nav
         className="sticky top-0 w-full z-[1000] flex items-center justify-between"
