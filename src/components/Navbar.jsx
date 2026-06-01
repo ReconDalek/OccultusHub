@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
+import { useCipher } from '../contexts/CipherContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
 import LoginModal from './LoginModal'
 
@@ -38,6 +39,7 @@ function buildNavLinks(user) {
 
 export default function Navbar() {
   const { user, logout } = useSession()
+  const { cipherActive, toggleCipher } = useCipher()
   const location         = useLocation()
   const [modalOpen, setModalOpen]     = useState(false)
   const [dropdownOpen, setDropdown]   = useState(false)
@@ -171,6 +173,33 @@ export default function Navbar() {
                         Admin Panel
                       </Link>
                     )}
+                    <button
+                      onClick={toggleCipher}
+                      className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80 flex items-center justify-between gap-2"
+                      style={{
+                        background: cipherActive
+                          ? 'linear-gradient(135deg, rgba(109,40,217,0.35), rgba(179,18,63,0.35))'
+                          : 'rgba(109,40,217,0.12)',
+                        border: cipherActive
+                          ? '1px solid rgba(109,40,217,0.5)'
+                          : '1px solid rgba(109,40,217,0.2)',
+                        boxShadow: cipherActive ? '0 0 12px rgba(109,40,217,0.3)' : 'none',
+                      }}
+                    >
+                      <span style={{ letterSpacing: '0.5px', fontSize: '13px' }}>
+                        The Silent Shadows
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          letterSpacing: '1px',
+                          color: cipherActive ? '#c084fc' : '#7c3aed',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {cipherActive ? '◈ ON' : '◇ OFF'}
+                      </span>
+                    </button>
                     <button
                       onClick={async () => { await logout(); setDropdown(false) }}
                       className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"

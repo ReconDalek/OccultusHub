@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { SessionProvider } from './hooks/useSession'
+import { CipherProvider } from './contexts/CipherContext'
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from './config/api'
 
@@ -95,6 +96,7 @@ export default function App() {
   if (!visibilityLoaded) {
     return (
       <BrowserRouter>
+        <CipherProvider>
         <SessionProvider>
           <div
             className="flex items-center justify-center"
@@ -107,12 +109,14 @@ export default function App() {
             Loading...
           </div>
         </SessionProvider>
+        </CipherProvider>
       </BrowserRouter>
     )
   }
 
   return (
     <BrowserRouter>
+      <CipherProvider>
       <SessionProvider>
         <Routes>
           <Route path="/" element={<Layout><Home /></Layout>} />
@@ -175,6 +179,7 @@ export default function App() {
           <Route path="*" element={<Layout><NotFound /></Layout>} />
         </Routes>
       </SessionProvider>
+      </CipherProvider>
     </BrowserRouter>
   )
 }
