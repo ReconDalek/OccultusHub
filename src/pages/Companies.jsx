@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_BASE_URL } from '../config/api'
 import QuoteBox from '../components/QuoteBox'
 
 function Stars({ rating }) {
@@ -134,12 +135,9 @@ export default function Companies() {
   const [cacheStatus, setCacheStatus]   = useState('Loading company cache…')
 
   useEffect(() => {
-    // Fire a background refresh
-    fetch('/api/company-refresh').catch(() => {})
-
     ;(async () => {
       try {
-        const res  = await fetch('/api/company-cache')
+        const res  = await fetch(`${API_BASE_URL}/api/company-cache`)
         const data = await res.json()
 
         if (!data.companies?.length) {

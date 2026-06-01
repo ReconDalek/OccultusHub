@@ -6,6 +6,7 @@ export default function CacheTab() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [analytics, setAnalytics] = useState(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     fetchCacheStatus()
@@ -44,17 +45,25 @@ export default function CacheTab() {
   const refreshCache = async () => {
     try {
       setRefreshing(true)
+      setError(null)
       const token = localStorage.getItem('occultusSession')
       const res = await fetch(`${API_BASE_URL}/api/admin/cache/refresh`, {
         method: 'POST',
         headers: { Authorization: token },
       })
+
+      const data = await res.json()
+
       if (res.ok) {
         fetchCacheStatus()
         setTimeout(() => setRefreshing(false), 1000)
+      } else {
+        setError(data.error || `Error: ${res.status}`)
+        setRefreshing(false)
       }
     } catch (err) {
       console.error('Failed to refresh cache:', err)
+      setError(err.message)
       setRefreshing(false)
     }
   }

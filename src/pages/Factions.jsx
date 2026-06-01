@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSession } from '../hooks/useSession'
+import { API_BASE_URL } from '../config/api'
 import QuoteBox from '../components/QuoteBox'
 
 const STATIC_FACTIONS = [
@@ -145,7 +146,7 @@ export default function Factions() {
   useEffect(() => {
     ;(async () => {
       try {
-        const res  = await fetch('/api/faction-cache')
+        const res  = await fetch(`${API_BASE_URL}/api/faction-cache`)
         const json = await res.json()
 
         if (json.data?.length) {
