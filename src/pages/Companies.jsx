@@ -48,25 +48,25 @@ function CompanyCard({ company, membershipTier }) {
         {profile.name}
       </h3>
 
-      <p style={{ color: '#a1a1aa', marginBottom: '4px' }}>
-        {profile.type?.name}
-      </p>
-
       <Stars rating={profile.rating || 0} />
 
       <div className="mt-2.5 text-sm" style={{ color: '#9f67ff' }}>
         Director:{' '}
-        <a
-          href={`https://www.torn.com/profiles.php?XID=${profile.director?.id}`}
-          target="_blank"
-          rel="noreferrer"
-          style={{ color: '#9f67ff', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseEnter={(e) => (e.target.style.color = '#fff')}
-          onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
-        >
-          {profile.director?.name}
-        </a>
+        {profile.director?.id ? (
+          <a
+            href={`https://www.torn.com/profiles.php?XID=${profile.director.id}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: '#9f67ff', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={(e) => (e.target.style.color = '#fff')}
+            onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
+          >
+            {profile.director.name || `#${profile.director.id}`}
+          </a>
+        ) : (
+          <span style={{ color: '#a1a1aa' }}>Unknown</span>
+        )}
       </div>
 
       <div className="mt-2.5 text-sm" style={{ color: '#9f67ff' }}>
@@ -95,9 +95,9 @@ function CompanyCard({ company, membershipTier }) {
           style={{ gridTemplateColumns: '1fr 1fr 1fr' }}
         >
           {[
-            ['Daily Income',   `$${profile.income?.daily?.toLocaleString()}`],
-            ['Weekly Income',  `$${profile.income?.weekly?.toLocaleString()}`],
-            ['Monthly Income', `$${(profile.income?.weekly * 4)?.toLocaleString()}`],
+            ['Daily Income',        `$${profile.income?.daily?.toLocaleString()}`],
+            ['Weekly Income (est.)', `$${(profile.income?.daily * 7)?.toLocaleString()}`],
+            ['Monthly Income (est.)', `$${(profile.income?.daily * 30)?.toLocaleString()}`],
           ].map(([label, val]) => (
             <div key={label}>
               <strong>{label}</strong>

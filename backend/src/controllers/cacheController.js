@@ -26,25 +26,34 @@ export async function getFactionCache(request, env) {
 }
 
 function normalizeCompany(raw) {
-  // Already normalized (new format written by tornApiService)
+  // v2 API format (new): { profile: {...}, employees: [...] }
   if (raw.profile) return raw;
 
-  // Legacy raw Torn API format: { company: {...}, company_employees: {...} }
+  // v1 API format (legacy cache): { company: {...}, company_employees: {...} }
+  // - director is a plain integer ID, name lives in company.employees[directorId]
+  // - company_type is a plain integer (no name available)
+  // - income fields are daily_income / weekly_income
+  // - employee position is a plain string
   const c = raw.company || {};
+  const directorId   = c.director;
+  const directorName = directorId && c.employees
+    ? (c.employees[String(directorId)]?.name || null)
+    : null;
+
   return {
     profile: {
-      id: c.ID,
-      name: c.name,
-      type: { name: c.company_type },
-      rating: c.rating,
-      director: { id: c.director_id, name: c.director_name },
+      id:       c.ID,
+      name:     c.name,
+      type:     { name: c.company_type_name || null },
+      rating:   c.rating,
+      director: { id: directorId, name: directorName },
       employees: { hired: c.employees_hired, capacity: c.employees_capacity },
-      income: { daily: c.daily_income, weekly: c.weekly_revenue },
+      income:    { daily: c.daily_income, weekly: c.weekly_income },
     },
     employees: Object.entries(raw.company_employees || {}).map(([id, emp]) => ({
-      id: parseInt(id),
-      name: emp.name,
-      position: { name: emp.position },
+      id:          parseInt(id),
+      name:        emp.name,
+      position:    { name: emp.position },
       last_action: emp.last_action,
     })),
   };
