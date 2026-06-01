@@ -83,7 +83,7 @@ export default function LoginModal({ open, onClose }) {
           value={apiKey}
           onChange={(e) => setKey(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
-          placeholder="Enter Torn API Key"
+          placeholder="Enter Limited Access API Key"
           className="w-full px-4 py-4 rounded-xl border-none text-white mb-5 outline-none"
           style={{ background: 'rgba(255,255,255,0.05)' }}
         />

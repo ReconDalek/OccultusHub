@@ -25,6 +25,31 @@ export async function getFactionCache(request, env) {
   }
 }
 
+function normalizeCompany(raw) {
+  // Already normalized (new format written by tornApiService)
+  if (raw.profile) return raw;
+
+  // Legacy raw Torn API format: { company: {...}, company_employees: {...} }
+  const c = raw.company || {};
+  return {
+    profile: {
+      id: c.ID,
+      name: c.name,
+      type: { name: c.company_type },
+      rating: c.rating,
+      director: { id: c.director_id, name: c.director_name },
+      employees: { hired: c.employees_hired, capacity: c.employees_capacity },
+      income: { daily: c.daily_income, weekly: c.weekly_revenue },
+    },
+    employees: Object.entries(raw.company_employees || {}).map(([id, emp]) => ({
+      id: parseInt(id),
+      name: emp.name,
+      position: { name: emp.position },
+      last_action: emp.last_action,
+    })),
+  };
+}
+
 export async function getCompanyCache(request, env) {
   try {
     const companies = await env.DB.prepare(
@@ -37,7 +62,7 @@ export async function getCompanyCache(request, env) {
 
     const data = companies.results.map((row) => {
       try {
-        return JSON.parse(row.data);
+        return normalizeCompany(JSON.parse(row.data));
       } catch {
         return null;
       }

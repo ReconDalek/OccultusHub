@@ -5,7 +5,7 @@ export default function NotFound() {
     <div className="flex flex-col items-center justify-center text-center" style={{ minHeight: '70vh', gap: '24px' }}>
       <h1 className="font-cinzel" style={{ fontSize: '64px' }}>404</h1>
       <p style={{ color: '#a1a1aa', fontSize: '20px' }}>
-        The veil hides this page from you.
+        The shadows hide this page from you.
       </p>
       <Link
         to="/"
