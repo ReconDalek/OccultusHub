@@ -112,7 +112,7 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKey) {
 
   for (const companyId of companyIds) {
     try {
-      const url = `${TORN_API_URL}/company/?id=${companyId}&selections=profile,employees&key=${apiKey}`;
+      const url = `${TORN_API_URL}/v2/company?selections=profile,employees&id=${companyId}&key=${apiKey}`;
       const data = await fetchWithRetry(url);
 
       // v2 API returns { profile: {...}, employees: [...] } — store as-is
