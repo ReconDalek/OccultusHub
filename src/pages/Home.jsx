@@ -150,33 +150,6 @@ export default function Home() {
 
       <QuoteBox />
 
-      {/* FOOTER */}
-      <nav
-        className="flex items-center justify-between flex-wrap gap-4"
-        style={{
-          padding: '20px 48px',
-          background: 'rgba(5,5,10,0.82)',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
-        <div className="flex gap-3" style={{ color: '#a1a1aa' }}>
-          <Link to="/tos" style={{ color: '#a1a1aa', textDecoration: 'none' }}>
-            Terms of Service
-          </Link>
-          <span>|</span>
-          <Link to="/privacy" style={{ color: '#a1a1aa', textDecoration: 'none' }}>
-            Privacy Policy
-          </Link>
-        </div>
-        <div>
-          <a
-            href="#"
-            style={{ color: '#a1a1aa', textDecoration: 'none' }}
-          >
-            Occultus Discord
-          </a>
-        </div>
-      </nav>
     </>
   )
 }

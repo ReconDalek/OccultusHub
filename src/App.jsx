@@ -8,6 +8,7 @@ import BackgroundOverlay from './components/BackgroundOverlay'
 import Navbar            from './components/Navbar'
 import ProtectedRoute    from './components/ProtectedRoute'
 import CipherOverlay     from './components/CipherOverlay'
+import Footer           from './components/Footer'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -15,8 +16,10 @@ import Factions   from './pages/Factions'
 import Companies  from './pages/Companies'
 import Leadership from './pages/Leadership'
 import Respect    from './pages/Respect'
-import Admin      from './pages/Admin'
-import NotFound   from './pages/NotFound'
+import Admin          from './pages/Admin'
+import TermsOfService from './pages/TermsOfService'
+import PrivacyPolicy  from './pages/PrivacyPolicy'
+import NotFound       from './pages/NotFound'
 
 function Layout({ children }) {
   return (
@@ -27,6 +30,7 @@ function Layout({ children }) {
       <div style={{ position: 'relative', zIndex: 1 }}>
         {children}
       </div>
+      <Footer />
     </>
   )
 }
@@ -67,6 +71,7 @@ function RespectLayout() {
         </a>
       </nav>
       <Respect />
+      <Footer />
     </>
   )
 }
@@ -178,6 +183,9 @@ export default function App() {
               </Layout>
             }
           />
+
+          <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
+          <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
 
           <Route path="*" element={<Layout><NotFound /></Layout>} />
         </Routes>
