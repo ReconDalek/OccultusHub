@@ -246,13 +246,25 @@ export async function getCacheStatus(request, env, user) {
 
 export async function refreshCache(request, env, user) {
   try {
-    await env.DB.prepare(
-      `UPDATE system_settings
-       SET updated_at = CURRENT_TIMESTAMP
-       WHERE key = 'last_cache_refresh'`
-    ).run();
+    const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('../services/tornApiService.js');
 
-    return jsonResponse({ message: 'Cache refresh triggered' });
+    const apiKey = await getRandomUserApiKey(env);
+    if (!apiKey) {
+      return errorResponse('No user API keys available for cache refresh', 400);
+    }
+
+    const factionIds = [33097, 9171, 9728];
+    const companyIds = [112941, 120244, 121745, 122254, 120502, 124650];
+
+    const factionResult = await fetchAndCacheFactions(env, factionIds, apiKey);
+    const companyResult = await fetchAndCacheCompanies(env, companyIds, apiKey);
+
+    return jsonResponse({
+      message: 'Cache refresh completed',
+      factions: factionResult,
+      companies: companyResult,
+      refreshedAt: new Date().toISOString()
+    });
   } catch (error) {
     console.error('refreshCache error:', error);
     return errorResponse('Failed to refresh cache', 500);

@@ -28,6 +28,9 @@ export async function login(request, env) {
 
     console.log('Torn user data:', JSON.stringify(tornUser));
 
+    // Encrypt API key (base64 encoding)
+    const encryptedApiKey = btoa(apiKey);
+
     // Check if user exists in database
     const existingUser = await env.DB.prepare(
       'SELECT * FROM users WHERE torn_user_id = ?'
@@ -38,13 +41,14 @@ export async function login(request, env) {
     let user;
     if (existingUser) {
       user = existingUser;
-      // Update user details if they've changed, plus update last_login
+      // Update user details if they've changed, plus update last_login and api_key
       await env.DB.prepare(
         `UPDATE users
          SET username = ?,
              faction_id = ?,
              faction_position = ?,
              image_url = ?,
+             api_key = ?,
              last_login = CURRENT_TIMESTAMP
          WHERE id = ?`
       )
@@ -53,6 +57,7 @@ export async function login(request, env) {
           tornUser.faction?.faction_id ?? user.faction_id,
           tornUser.faction?.position ?? user.faction_position,
           tornUser.profile_image ?? user.image_url,
+          encryptedApiKey,
           user.id
         )
         .run();
@@ -71,8 +76,8 @@ export async function login(request, env) {
       });
 
       const result = await env.DB.prepare(
-        `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url, api_key)
+         VALUES (?, ?, ?, ?, ?, ?)
          RETURNING *`
       )
         .bind(
@@ -80,7 +85,8 @@ export async function login(request, env) {
           tornUser.name ?? null,
           tornUser.faction?.faction_id ?? null,
           tornUser.faction?.position ?? null,
-          tornUser.profile_image ?? null
+          tornUser.profile_image ?? null,
+          encryptedApiKey
         )
         .first();
 

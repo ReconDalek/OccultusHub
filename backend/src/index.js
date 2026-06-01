@@ -27,4 +27,34 @@ export default {
       return errorHandler(error);
     }
   },
+
+  async scheduled(event, env, ctx) {
+    try {
+      const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');
+
+      const apiKey = await getRandomUserApiKey(env);
+      if (!apiKey) {
+        console.warn('No user API keys available for scheduled cache refresh');
+        return;
+      }
+
+      const factionIds = [33097, 9171, 9728];
+      const companyIds = [112941, 120244, 121745, 122254, 120502, 124650];
+
+      console.log('Starting scheduled cache refresh...');
+
+      ctx.waitUntil(
+        Promise.all([
+          fetchAndCacheFactions(env, factionIds, apiKey),
+          fetchAndCacheCompanies(env, companyIds, apiKey)
+        ]).then(([factionResult, companyResult]) => {
+          console.log(`Scheduled refresh complete: ${factionResult.fetched} factions, ${companyResult.fetched} companies`);
+        }).catch(error => {
+          console.error('Scheduled cache refresh failed:', error);
+        })
+      );
+    } catch (error) {
+      console.error('Scheduled event handler error:', error);
+    }
+  }
 };

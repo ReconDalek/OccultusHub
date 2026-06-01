@@ -2,6 +2,7 @@ import { verifyToken, requireAdmin } from './middleware/auth.js';
 import { errorResponse, jsonResponse } from './middleware/errorHandler.js';
 import * as authController from './controllers/authController.js';
 import * as adminController from './controllers/adminController.js';
+import * as cacheController from './controllers/cacheController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -20,6 +21,14 @@ export async function handleRequest(request, env) {
 
   if (pathname === '/api/pages/visibility' && method === 'GET') {
     return adminController.getPages(request, env, null);
+  }
+
+  if (pathname === '/api/faction-cache' && method === 'GET') {
+    return cacheController.getFactionCache(request, env);
+  }
+
+  if (pathname === '/api/company-cache' && method === 'GET') {
+    return cacheController.getCompanyCache(request, env);
   }
 
   // Protected endpoints (auth required)
