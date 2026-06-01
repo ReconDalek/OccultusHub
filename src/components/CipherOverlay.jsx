@@ -4,6 +4,8 @@ import { useCipher } from '../contexts/CipherContext'
 // Pool of glyphs: Elder Futhark, alchemical symbols, occult marks, Latin letters
 const GLYPHS =
   'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ' +
+  'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ' +
+  '☽☿♄♃♂♀☊☋⊕⊗◈◇△▽⬡⬟✦✧⁕⁂' +
   '☽☿♄♃♂♀☊☋⊕⊗◈◇△▽⬡⬟✦✧⁕⁂' +
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
   '0123456789'

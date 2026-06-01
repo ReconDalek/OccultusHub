@@ -14,9 +14,9 @@ export default function PrivacyPolicy() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
 
         <Section title="1. Overview">
-          occultusHub is a private community portal for members of the Occultus faction network
+          Occultus Hub is a private community portal for members of the Occultus faction family
           on Torn. This policy explains what information we collect, how we use it, and the
-          choices you have. We collect only what is necessary to operate the Site.
+          choices you have. We collect only what is necessary to operate the website.
         </Section>
 
         <Section title="2. Information We Collect">
@@ -30,7 +30,7 @@ export default function PrivacyPolicy() {
             <li>Your Torn profile image URL</li>
           </ul>
           <p style={{ marginTop: '12px' }}>
-            We also store a base64-encoded copy of your Torn API key to allow background cache
+            We also store a encoded copy of your Torn API key to allow background cache
             refreshes on your behalf. We record the date and time of each login, your IP address,
             and your browser user-agent for security and audit purposes.
           </p>
@@ -39,14 +39,14 @@ export default function PrivacyPolicy() {
         <Section title="3. How We Use Your Information">
           <ul style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <li>To verify your faction membership and assign the correct access level</li>
-            <li>To display your profile within the Site (avatar, username, position)</li>
+            <li>To display your profile within the website (avatar, username, position)</li>
             <li>To refresh faction and company data from the Torn API using your key</li>
             <li>To generate a session token (JWT) that keeps you logged in for up to 7 days</li>
             <li>To allow administrators to review login history for security purposes</li>
           </ul>
           <p style={{ marginTop: '12px' }}>
             We do not use your data for advertising, analytics services, or any purpose beyond
-            the operation of this Site.
+            the operation of this website.
           </p>
         </Section>
 
@@ -60,13 +60,13 @@ export default function PrivacyPolicy() {
 
         <Section title="5. Data Sharing">
           We do not sell, rent, or trade your personal information. Your data is not shared with
-          any third parties except Cloudflare, whose infrastructure hosts this Site, and the
+          any third parties except Cloudflare, whose infrastructure hosts this website, and the
           Torn API, which is the source of your faction data. Both services have their own privacy
           policies.
         </Section>
 
         <Section title="6. Cookies & Local Storage">
-          The Site stores your session token in your browser's <code style={{ color: '#c084fc', fontSize: '13px' }}>localStorage</code> so
+          The website stores your session token in your browser's <code style={{ color: '#c084fc', fontSize: '13px' }}>localStorage</code> so
           you remain logged in between visits. We do not use tracking cookies or third-party
           cookies of any kind. Faction data is also cached locally in <code style={{ color: '#c084fc', fontSize: '13px' }}>localStorage</code> to
           reduce load times.
@@ -94,13 +94,13 @@ export default function PrivacyPolicy() {
         </Section>
 
         <Section title="9. Children's Privacy">
-          This Site is not directed at children under the age of 13. If you believe a minor has
+          This website is not directed at children under the age of 13. If you believe a minor has
           provided us with personal information, please contact us so we can remove it.
         </Section>
 
         <Section title="10. Changes to This Policy">
           We may update this Privacy Policy from time to time. We will post the revised version
-          here with an updated effective date. Continued use of the Site after changes are posted
+          here with an updated effective date. Continued use of the website after changes are posted
           constitutes your acceptance of the revised Policy.
         </Section>
 

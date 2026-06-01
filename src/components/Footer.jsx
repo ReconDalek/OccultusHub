@@ -18,14 +18,18 @@ function DiscordIcon() {
 export default function Footer() {
   return (
     <footer
-      className="flex items-center justify-between flex-wrap gap-4"
+      className="flex items-center justify-between"
       style={{
-        padding: '20px 48px',
+        padding: '16px clamp(16px, 4vw, 48px)',
         background: 'rgba(5,5,10,0.82)',
         borderTop: '1px solid rgba(255,255,255,0.08)',
+        gap: 'clamp(12px, 3vw, 24px)',
       }}
     >
-      <div className="flex gap-3 items-center" style={{ color: '#a1a1aa', fontSize: '14px' }}>
+      <div
+        className="flex items-center"
+        style={{ gap: 'clamp(8px, 2vw, 12px)', color: '#a1a1aa', fontSize: 'clamp(11px, 2vw, 14px)', whiteSpace: 'nowrap' }}
+      >
         <Link to="/tos" style={{ color: '#a1a1aa', textDecoration: 'none' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = '#f4f4f5')}
           onMouseLeave={(e) => (e.currentTarget.style.color = '#a1a1aa')}
@@ -45,13 +49,13 @@ export default function Footer() {
         href="https://discord.gg/3QMhcxfEWq"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-2 transition-colors duration-200"
-        style={{ color: '#a1a1aa', textDecoration: 'none', fontSize: '14px' }}
+        className="flex items-center transition-colors duration-200"
+        style={{ color: '#a1a1aa', textDecoration: 'none', fontSize: 'clamp(11px, 2vw, 14px)', gap: 'clamp(4px, 1vw, 8px)', whiteSpace: 'nowrap' }}
         onMouseEnter={(e) => (e.currentTarget.style.color = '#7289da')}
         onMouseLeave={(e) => (e.currentTarget.style.color = '#a1a1aa')}
       >
         <DiscordIcon />
-        Occultus Discord
+        Discord
       </a>
     </footer>
   )
