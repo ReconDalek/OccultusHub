@@ -79,7 +79,80 @@ img, iframe, video {
   display: none;
 }
 
-/* ── Active faction glow ──────────────────── */
+/* ── Membership tier highlights ───────────── */
+
+/* Regular member — static red/purple glow */
+.faction-member {
+  border: 1px solid rgba(255,47,109,0.7) !important;
+  box-shadow:
+    0 0 22px rgba(255,47,109,0.35),
+    inset 0 0 25px rgba(109,40,217,0.18);
+  transform: scale(1.02);
+}
+
+/* Leadership — pulsing red/purple */
+@keyframes leadershipPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 20px rgba(255,47,109,0.35),
+      0 0 45px rgba(109,40,217,0.25),
+      inset 0 0 25px rgba(109,40,217,0.2);
+    border-color: rgba(179,18,63,0.8) !important;
+  }
+  50% {
+    box-shadow:
+      0 0 40px rgba(255,47,109,0.6),
+      0 0 80px rgba(109,40,217,0.45),
+      inset 0 0 45px rgba(109,40,217,0.35);
+    border-color: rgba(255,47,109,1) !important;
+  }
+}
+
+.faction-leadership {
+  border: 1px solid rgba(179,18,63,0.8) !important;
+  transform: scale(1.02);
+  animation: leadershipPulse 2.5s ease-in-out infinite;
+}
+
+/* Director — animated gold/crimson sweep */
+@keyframes directorSweep {
+  0% {
+    box-shadow:
+      0 0 30px rgba(255,200,50,0.55),
+      0 0 60px rgba(255,47,109,0.35),
+      inset 0 0 40px rgba(109,40,217,0.25);
+    border-color: rgba(255,200,50,0.8) !important;
+  }
+  33% {
+    box-shadow:
+      0 0 55px rgba(255,200,50,0.8),
+      0 0 100px rgba(255,47,109,0.5),
+      inset 0 0 60px rgba(109,40,217,0.4);
+    border-color: rgba(255,220,80,1) !important;
+  }
+  66% {
+    box-shadow:
+      0 0 40px rgba(255,120,0,0.6),
+      0 0 80px rgba(255,47,109,0.45),
+      inset 0 0 50px rgba(109,40,217,0.35);
+    border-color: rgba(255,150,30,0.9) !important;
+  }
+  100% {
+    box-shadow:
+      0 0 30px rgba(255,200,50,0.55),
+      0 0 60px rgba(255,47,109,0.35),
+      inset 0 0 40px rgba(109,40,217,0.25);
+    border-color: rgba(255,200,50,0.8) !important;
+  }
+}
+
+.faction-director {
+  border: 1px solid rgba(255,200,50,0.8) !important;
+  transform: scale(1.03);
+  animation: directorSweep 2s ease-in-out infinite;
+}
+
+/* Legacy — kept for any existing usages */
 .active-faction {
   border: 1px solid rgba(255,47,109,0.8) !important;
   box-shadow:

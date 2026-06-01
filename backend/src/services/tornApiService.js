@@ -115,6 +115,33 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKey) {
       const url = `${TORN_API_URL}/company/?id=${companyId}&selections=profile,employees&key=${apiKey}`;
       const data = await fetchWithRetry(url);
 
+      const normalized = {
+        profile: {
+          id: data.company?.ID,
+          name: data.company?.name,
+          type: { name: data.company?.company_type },
+          rating: data.company?.rating,
+          director: {
+            id: data.company?.director_id,
+            name: data.company?.director_name,
+          },
+          employees: {
+            hired: data.company?.employees_hired,
+            capacity: data.company?.employees_capacity,
+          },
+          income: {
+            daily: data.company?.daily_income,
+            weekly: data.company?.weekly_revenue,
+          },
+        },
+        employees: Object.entries(data.company_employees || {}).map(([id, emp]) => ({
+          id: parseInt(id),
+          name: emp.name,
+          position: { name: emp.position },
+          last_action: emp.last_action,
+        })),
+      };
+
       await env.DB.prepare(
         `INSERT INTO company_cache (company_id, data, fetched_at, error)
          VALUES (?, ?, CURRENT_TIMESTAMP, NULL)
@@ -122,7 +149,7 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKey) {
            data = excluded.data,
            fetched_at = CURRENT_TIMESTAMP,
            error = NULL`
-      ).bind(companyId, JSON.stringify(data)).run();
+      ).bind(companyId, JSON.stringify(normalized)).run();
 
       fetched++;
       console.log(`✓ Cached company ${companyId}`);

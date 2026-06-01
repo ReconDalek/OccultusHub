@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from '../hooks/useSession'
 import { API_BASE_URL } from '../config/api'
+import { OCCULTUS_CONFIG } from '../lib/config'
 import QuoteBox from '../components/QuoteBox'
 
 const STATIC_FACTIONS = [
@@ -37,18 +38,35 @@ function setFactionCache(data) {
   )
 }
 
-function FactionCard({ faction, isActive, isLive }) {
+const DIRECTOR_POSITIONS = ['Leader', 'Co-leader']
+
+function getMembershipTier(user, factionId) {
+  if (!user || Number(user.factionId) !== Number(factionId)) return null
+  const pos = user.factionPosition
+  if (DIRECTOR_POSITIONS.includes(pos)) return 'director'
+  if (OCCULTUS_CONFIG.leadershipRoles.includes(pos)) return 'leadership'
+  return 'member'
+}
+
+function tierClass(tier) {
+  if (tier === 'director')  return 'faction-director'
+  if (tier === 'leadership') return 'faction-leadership'
+  if (tier === 'member')    return 'faction-member'
+  return ''
+}
+
+function FactionCard({ faction, membershipTier, isLive }) {
   const [expanded, setExpanded] = useState(false)
+  const highlight = tierClass(membershipTier)
 
   if (!isLive) {
-    // Static card (not logged in or no live data)
     return (
       <div
         data-faction={faction.id}
-        className={`relative rounded-3xl transition-all duration-300 hover:-translate-y-1.5 ${isActive ? 'active-faction' : ''}`}
+        className={`relative rounded-3xl transition-all duration-300 hover:-translate-y-1.5 ${highlight}`}
         style={{
           background: 'rgba(22,22,32,0.82)',
-          border: isActive ? undefined : '1px solid rgba(255,255,255,0.05)',
+          border: highlight ? undefined : '1px solid rgba(255,255,255,0.05)',
           padding: '40px',
           backdropFilter: 'blur(12px)',
         }}
@@ -71,10 +89,10 @@ function FactionCard({ faction, isActive, isLive }) {
   return (
     <div
       data-faction={basic.id}
-      className={`relative rounded-3xl transition-all duration-300 cursor-pointer ${isActive ? 'active-faction' : 'hover:-translate-y-1.5'} ${expanded ? 'expanded' : ''}`}
+      className={`relative rounded-3xl transition-all duration-300 cursor-pointer ${highlight || 'hover:-translate-y-1.5'} ${expanded ? 'expanded' : ''}`}
       style={{
         background: 'rgba(22,22,32,0.82)',
-        border: isActive
+        border: highlight
           ? undefined
           : expanded
             ? '1px solid rgba(255,255,255,0.2)'
@@ -172,7 +190,7 @@ export default function Factions() {
     })()
   }, [])
 
-  const displayFactions = live ? factions : STATIC_FACTIONS
+  const displayFactions = (live ? factions : STATIC_FACTIONS).slice().reverse()
 
   return (
     <>
@@ -206,13 +224,13 @@ export default function Factions() {
           style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
         >
           {displayFactions.map((f) => {
-            const factionId = live ? f.basic?.id : f.id
-            const isActive  = Number(user?.factionId) === Number(factionId)
+            const factionId      = live ? f.basic?.id : f.id
+            const membershipTier = getMembershipTier(user, factionId)
             return (
               <FactionCard
                 key={factionId}
                 faction={f}
-                isActive={isActive}
+                membershipTier={membershipTier}
                 isLive={live}
               />
             )

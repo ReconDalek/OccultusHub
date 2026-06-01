@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../config/api'
+import { useSession } from '../hooks/useSession'
 import QuoteBox from '../components/QuoteBox'
 
 function Stars({ rating }) {
@@ -14,17 +15,30 @@ function Stars({ rating }) {
   )
 }
 
-function CompanyCard({ company }) {
+function getCompanyMembershipTier(user, company) {
+  if (!user) return null
+  const profile   = company.profile   || {}
+  const employees = company.employees || []
+  if (Number(user.tornUserId) === Number(profile.director?.id)) return 'director'
+  if (employees.some((emp) => Number(emp.id) === Number(user.tornUserId))) return 'member'
+  return null
+}
+
+function CompanyCard({ company, membershipTier }) {
   const [expanded, setExpanded] = useState(false)
   const profile   = company.profile   || {}
   const employees = company.employees || []
 
+  const highlight =
+    membershipTier === 'director'  ? 'faction-director'  :
+    membershipTier === 'member'    ? 'faction-member'     : ''
+
   return (
     <div
-      className={`relative rounded-3xl cursor-pointer transition-all duration-300 hover:-translate-y-1.5 company-card ${expanded ? 'expanded' : ''}`}
+      className={`relative rounded-3xl cursor-pointer transition-all duration-300 company-card ${highlight || 'hover:-translate-y-1.5'} ${expanded ? 'expanded' : ''}`}
       style={{
         background: 'rgba(22,22,32,0.82)',
-        border: '1px solid rgba(255,255,255,0.05)',
+        border: highlight ? undefined : '1px solid rgba(255,255,255,0.05)',
         padding: '40px',
         backdropFilter: 'blur(12px)',
       }}
@@ -130,6 +144,7 @@ function CompanyCard({ company }) {
 }
 
 export default function Companies() {
+  const { user }                        = useSession()
   const [companies, setCompanies]       = useState([])
   const [lastUpdated, setLastUpdated]   = useState(null)
   const [cacheStatus, setCacheStatus]   = useState('Loading company cache…')
@@ -195,7 +210,11 @@ export default function Companies() {
             style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
           >
             {companies.map((c) => (
-              <CompanyCard key={c.profile?.id} company={c} />
+              <CompanyCard
+                key={c.profile?.id}
+                company={c}
+                membershipTier={getCompanyMembershipTier(user, c)}
+              />
             ))}
           </div>
         ) : (
