@@ -14,6 +14,7 @@ export async function getAllUsers(request, env, user) {
         u.faction_position,
         u.image_url,
         u.is_admin,
+        u.is_owner,
         u.created_at,
         u.last_login,
         COUNT(lh.id) as login_count
@@ -80,6 +81,11 @@ export async function getUserHistory(request, env, user) {
 
 export async function grantAdmin(request, env, user) {
   try {
+    // Only owner can grant admin access
+    if (!user.isOwner) {
+      return errorResponse('Only owner can grant admin access', 403);
+    }
+
     const { tornUserId } = new URL(request.url).pathname.match(
       /\/api\/admin\/users\/(\d+)\/grant/
     );
@@ -119,6 +125,11 @@ export async function grantAdmin(request, env, user) {
 
 export async function revokeAdmin(request, env, user) {
   try {
+    // Only owner can revoke admin access
+    if (!user.isOwner) {
+      return errorResponse('Only owner can revoke admin access', 403);
+    }
+
     const { tornUserId } = new URL(request.url).pathname.match(
       /\/api\/admin\/users\/(\d+)\/revoke/
     );
@@ -135,6 +146,11 @@ export async function revokeAdmin(request, env, user) {
     }
 
     const userId = userResult.id;
+
+    // Prevent owner from revoking themselves
+    if (userId === user.userId) {
+      return errorResponse('Cannot revoke your own admin access', 400);
+    }
 
     // Update is_admin flag
     await env.DB.prepare('UPDATE users SET is_admin = 0 WHERE id = ?')
@@ -320,5 +336,4 @@ export async function updateSetting(request, env, user) {
     console.error('updateSetting error:', error);
     return errorResponse('Failed to update setting', 500);
   }
-}
 }

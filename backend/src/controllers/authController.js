@@ -38,12 +38,28 @@ export async function login(request, env) {
     let user;
     if (existingUser) {
       user = existingUser;
-      // Update last login
+      // Update user details if they've changed, plus update last_login
       await env.DB.prepare(
-        'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?'
+        `UPDATE users
+         SET username = ?,
+             faction_id = ?,
+             faction_position = ?,
+             image_url = ?,
+             last_login = CURRENT_TIMESTAMP
+         WHERE id = ?`
       )
-        .bind(user.id)
+        .bind(
+          tornUser.name ?? user.username,
+          tornUser.faction?.faction_id ?? user.faction_id,
+          tornUser.faction?.position ?? user.faction_position,
+          tornUser.profile_image ?? user.image_url,
+          user.id
+        )
         .run();
+      // Fetch updated user
+      user = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
+        .bind(user.id)
+        .first();
     } else {
       // Create new user
       console.log('Creating new user with:', {
@@ -107,6 +123,7 @@ export async function login(request, env) {
         factionPosition: user.faction_position,
         image: user.image_url,
         isAdmin: user.is_admin === 1,
+        isOwner: user.is_owner === 1,
       },
     });
   } catch (error) {
@@ -139,6 +156,7 @@ export async function session(request, env, user) {
         factionPosition: userData.faction_position,
         image: userData.image_url,
         isAdmin: userData.is_admin === 1,
+        isOwner: userData.is_owner === 1,
       },
     });
   } catch (error) {

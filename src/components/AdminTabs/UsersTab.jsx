@@ -193,12 +193,12 @@ export default function UsersTab() {
                       style={{
                         padding: '4px 8px',
                         borderRadius: '4px',
-                        background: u.is_admin ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.08)',
-                        color: u.is_admin ? '#ff2f6d' : '#a1a1aa',
+                        background: u.is_owner ? 'rgba(218,165,32,0.3)' : u.is_admin ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.08)',
+                        color: u.is_owner ? '#daa520' : u.is_admin ? '#ff2f6d' : '#a1a1aa',
                         fontSize: '12px',
                       }}
                     >
-                      {u.is_admin ? 'Admin' : 'User'}
+                      {u.is_owner ? 'Owner' : u.is_admin ? 'Admin' : 'User'}
                     </span>
                   </td>
                   <td style={{ padding: '8px' }}>
@@ -212,28 +212,32 @@ export default function UsersTab() {
                     >
                       History
                     </button>
-                    {u.is_admin ? (
-                      <button
-                        onClick={() => revokeAdmin(u.torn_user_id)}
-                        className="px-3 py-1 rounded border-none cursor-pointer text-sm transition-all hover:opacity-80"
-                        style={{
-                          background: 'rgba(255,0,0,0.2)',
-                          color: '#ff6b6b',
-                        }}
-                      >
-                        Revoke Admin
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => grantAdmin(u.torn_user_id)}
-                        className="px-3 py-1 rounded border-none cursor-pointer text-sm transition-all hover:opacity-80"
-                        style={{
-                          background: 'rgba(179,18,63,0.3)',
-                          color: '#ff2f6d',
-                        }}
-                      >
-                        Grant Admin
-                      </button>
+                    {currentUser?.isOwner && (
+                      <>
+                        {u.is_admin && u.torn_user_id !== currentUser?.tornUserId ? (
+                          <button
+                            onClick={() => revokeAdmin(u.torn_user_id)}
+                            className="px-3 py-1 rounded border-none cursor-pointer text-sm transition-all hover:opacity-80"
+                            style={{
+                              background: 'rgba(255,0,0,0.2)',
+                              color: '#ff6b6b',
+                            }}
+                          >
+                            Revoke Admin
+                          </button>
+                        ) : !u.is_admin && !u.is_owner ? (
+                          <button
+                            onClick={() => grantAdmin(u.torn_user_id)}
+                            className="px-3 py-1 rounded border-none cursor-pointer text-sm transition-all hover:opacity-80"
+                            style={{
+                              background: 'rgba(179,18,63,0.3)',
+                              color: '#ff2f6d',
+                            }}
+                          >
+                            Grant Admin
+                          </button>
+                        ) : null}
+                      </>
                     )}
                   </td>
                 </tr>

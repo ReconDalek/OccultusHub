@@ -17,7 +17,8 @@ CREATE TABLE users (
   image_url TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_login DATETIME,
-  is_admin INTEGER DEFAULT 0
+  is_admin INTEGER DEFAULT 0,
+  is_owner INTEGER DEFAULT 0
 );
 
 -- Create admin_users table (audit trail)

@@ -31,6 +31,7 @@ export async function generateToken(user, env) {
     tornUserId: user.torn_user_id,
     username: user.username,
     isAdmin: user.is_admin === 1 ? true : false,
+    isOwner: user.is_owner === 1 ? true : false,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setExpirationTime('7d')
