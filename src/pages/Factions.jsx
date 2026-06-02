@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useSession } from '../hooks/useSession'
 import { API_BASE_URL } from '../config/api'
 import { OCCULTUS_CONFIG } from '../lib/config'
-import QuoteBox from '../components/QuoteBox'
 
 const STATIC_FACTIONS = [
   {
@@ -246,8 +245,6 @@ export default function Factions() {
           </div>
         )}
       </section>
-
-      <QuoteBox />
     </>
   )
 }

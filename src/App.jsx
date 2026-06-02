@@ -8,7 +8,9 @@ import BackgroundOverlay from './components/BackgroundOverlay'
 import Navbar            from './components/Navbar'
 import ProtectedRoute    from './components/ProtectedRoute'
 import CipherOverlay     from './components/CipherOverlay'
-import Footer           from './components/Footer'
+import Footer            from './components/Footer'
+import QuoteBox          from './components/QuoteBox'
+import DiscordWidget     from './components/DiscordWidget/DiscordWidget'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -30,7 +32,9 @@ function Layout({ children }) {
       <div style={{ position: 'relative', zIndex: 1 }}>
         {children}
       </div>
+      <QuoteBox />
       <Footer />
+      <DiscordWidget />
     </>
   )
 }
@@ -71,6 +75,7 @@ function RespectLayout() {
         </a>
       </nav>
       <Respect />
+      <QuoteBox />
       <Footer />
     </>
   )

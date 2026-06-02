@@ -4,6 +4,7 @@ import * as authController from './controllers/authController.js';
 import * as adminController from './controllers/adminController.js';
 import * as cacheController from './controllers/cacheController.js';
 import * as eventsController from './controllers/eventsController.js';
+import * as discordController from './controllers/discordController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -127,6 +128,34 @@ export async function handleRequest(request, env) {
     }
     if (pathname.match(/^\/api\/leadership\/faction-schedules\/\d+$/) && method === 'DELETE') {
       return eventsController.deleteFactionSchedule(request, env, user);
+    }
+  }
+
+  // Discord endpoints
+  if (pathname === '/api/discord/callback' && method === 'GET') {
+    return discordController.handleCallback(request, env);
+  }
+
+  if (pathname.startsWith('/api/discord/')) {
+    if (!user) return errorResponse('Authentication required', 401);
+
+    if (pathname === '/api/discord/auth' && method === 'GET') {
+      return discordController.getAuthUrl(request, env, user);
+    }
+    if (pathname === '/api/discord/status' && method === 'GET') {
+      return discordController.getStatus(request, env, user);
+    }
+    if (pathname === '/api/discord/unlink' && method === 'DELETE') {
+      return discordController.unlinkDiscord(request, env, user);
+    }
+    if (pathname === '/api/discord/channels' && method === 'GET') {
+      return discordController.getChannels(request, env);
+    }
+    if (pathname === '/api/discord/messages' && method === 'GET') {
+      return discordController.getMessages(request, env);
+    }
+    if (pathname === '/api/discord/messages' && method === 'POST') {
+      return discordController.sendMessage(request, env, user);
     }
   }
 

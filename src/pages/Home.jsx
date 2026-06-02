@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
-import QuoteBox from '../components/QuoteBox'
 import EventCalendar from '../components/EventCalendar'
 import FactionEventCards from '../components/FactionEventCards'
+import { API_BASE_URL } from '../config/api'
 
 const FACTIONS = [
   {
@@ -26,6 +27,18 @@ const FACTIONS = [
 ]
 
 function MemberHome({ user }) {
+  const [events, setEvents] = useState([])
+
+  useEffect(() => {
+    const token = localStorage.getItem('occultusSession')
+    fetch(`${API_BASE_URL}/api/events`, {
+      headers: token ? { Authorization: token } : {},
+    })
+      .then((r) => r.json())
+      .then((data) => setEvents(data.events || []))
+      .catch(() => {})
+  }, [])
+
   return (
     <div className="min-h-screen" style={{ background: '#07070a', color: '#f4f4f5' }}>
       <div className="max-w-7xl mx-auto px-6 py-12">
@@ -60,7 +73,7 @@ function MemberHome({ user }) {
             <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
               UPCOMING EVENTS
             </h2>
-            <EventCalendar />
+            <EventCalendar events={events} />
           </div>
 
           {/* Faction event cards */}
@@ -193,8 +206,6 @@ function PublicHome() {
           ))}
         </div>
       </section>
-
-      <QuoteBox />
     </>
   )
 }

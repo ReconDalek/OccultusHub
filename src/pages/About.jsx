@@ -1,4 +1,3 @@
-import QuoteBox from '../components/QuoteBox'
 
 export default function About() {
   return (
@@ -52,8 +51,6 @@ export default function About() {
           </p>
         </div>
       </main>
-
-      <QuoteBox />
     </>
   )
 }

@@ -1,28 +1,28 @@
 import { useState } from 'react'
 import { useSession } from '../hooks/useSession'
-import RespectTab from '../components/LeadershipTabs/RespectTab'
-import EventsTab from '../components/LeadershipTabs/EventsTab'
-import SchedulesTab from '../components/LeadershipTabs/SchedulesTab'
+import EventsSchedulesTab from '../components/LeadershipTabs/EventsSchedulesTab'
+import LeaderToolsTab from '../components/LeadershipTabs/LeaderToolsTab'
 
 const tabs = [
-  { id: 'respect', label: 'Respect Tracker' },
-  { id: 'events', label: 'Events Calendar' },
-  { id: 'schedules', label: 'Faction Schedules' },
-  { id: 'activity', label: 'Member Activity' },
   { id: 'notices', label: 'Internal Notices' },
+  { id: 'events', label: 'Events & Schedules' },
+  { id: 'tools', label: 'Leader Tools' },
 ]
 
 function PlaceholderTab({ label }) {
   return (
-    <div style={{ color: '#a1a1aa', fontSize: '14px' }}>
-      {label} — coming soon.
+    <div>
+      <h2 className="font-cinzel mb-2" style={{ fontSize: '22px', color: '#f4f4f5' }}>
+        {label}
+      </h2>
+      <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Coming soon.</p>
     </div>
   )
 }
 
 export default function Leadership() {
   const { user, loading } = useSession()
-  const [activeTab, setActiveTab] = useState('respect')
+  const [activeTab, setActiveTab] = useState('notices')
 
   if (loading) {
     return (
@@ -72,12 +72,8 @@ export default function Leadership() {
                     color: activeTab === tab.id ? '#f4f4f5' : '#a1a1aa',
                     borderBottom: activeTab === tab.id ? '2px solid #b3123f' : 'none',
                   }}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) e.target.style.color = '#f4f4f5'
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) e.target.style.color = '#a1a1aa'
-                  }}
+                  onMouseEnter={(e) => { if (activeTab !== tab.id) e.target.style.color = '#f4f4f5' }}
+                  onMouseLeave={(e) => { if (activeTab !== tab.id) e.target.style.color = '#a1a1aa' }}
                 >
                   {tab.label}
                 </button>
@@ -92,11 +88,9 @@ export default function Leadership() {
                 border: '1px solid rgba(255,255,255,0.08)',
               }}
             >
-              {activeTab === 'respect' && <RespectTab />}
-              {activeTab === 'events' && <EventsTab />}
-              {activeTab === 'schedules' && <SchedulesTab />}
-              {activeTab === 'activity' && <PlaceholderTab label="Member Activity" />}
               {activeTab === 'notices' && <PlaceholderTab label="Internal Notices" />}
+              {activeTab === 'events' && <EventsSchedulesTab />}
+              {activeTab === 'tools' && <LeaderToolsTab />}
             </div>
           </>
         )}

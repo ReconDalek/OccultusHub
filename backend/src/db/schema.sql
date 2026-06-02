@@ -94,7 +94,10 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   description TEXT DEFAULT '',
-  event_date TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT,
+  start_time TEXT,
+  end_time TEXT,
   created_by INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
@@ -105,10 +108,26 @@ CREATE TABLE IF NOT EXISTS faction_schedules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   faction_id INTEGER NOT NULL,
   type TEXT NOT NULL CHECK(type IN ('chain', 'war')),
-  scheduled_at TEXT NOT NULL,
+  stage TEXT DEFAULT 'active',
+  scheduled_at TEXT,
+  opponent_faction_id INTEGER,
+  chain_target TEXT,
   created_by INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Discord account links
+CREATE TABLE IF NOT EXISTS discord_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE,
+  discord_id TEXT NOT NULL,
+  discord_username TEXT NOT NULL,
+  discord_avatar TEXT,
+  access_token TEXT,
+  refresh_token TEXT,
+  linked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Seed default page settings

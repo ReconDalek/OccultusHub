@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../config/api'
 import { useSession } from '../hooks/useSession'
-import QuoteBox from '../components/QuoteBox'
 
 function Stars({ rating }) {
   return (
@@ -234,8 +233,6 @@ export default function Companies() {
           {cacheStatus}
         </div>
       </section>
-
-      <QuoteBox />
     </>
   )
 }
