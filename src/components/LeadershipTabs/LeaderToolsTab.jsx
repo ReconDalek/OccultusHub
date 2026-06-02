@@ -33,6 +33,8 @@ const tools = [
 
 export default function LeaderToolsTab() {
   const [openEmbed, setOpenEmbed] = useState(null)
+
+  return (
     <div>
       {!openEmbed ? (
         <>
