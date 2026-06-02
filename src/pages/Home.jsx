@@ -52,7 +52,7 @@ function MemberHome({ user }) {
             WELCOME BACK, {user.username?.toUpperCase()}
           </h1>
           <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })} — TCT
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}
           </p>
         </div>
 
