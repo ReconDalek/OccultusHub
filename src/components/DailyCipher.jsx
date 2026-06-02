@@ -91,7 +91,7 @@ export default function DailyCipher({ guest = false }) {
             {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}
           </p>
         </div>
-        {cipher && diff && (
+        {!guest && cipher && diff && (
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <span style={{
               background: 'rgba(255,255,255,0.05)',

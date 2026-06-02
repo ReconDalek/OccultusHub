@@ -47,6 +47,91 @@ const PHRASES = [
   'ALLIES IN THE DARK',
   'THE FACTION ENDURES',
   'SILENCE GUARDS OUR SECRETS',
+  'BREAK THE SEAL',
+  'RISE FROM DARKNESS',
+  'TRUTH IN THE SHADOWS',
+  'BEYOND THE VEIL',
+  'SACRED AND HIDDEN',
+  'ETERNAL VIGILANCE',
+  'WHISPERS OF POWER',
+  'THE SILENT CROWN',
+  'BLOOD BINDS US',
+  'RISE AND CONQUER',
+  'IN DARKNESS WE THRIVE',
+  'THE SECRET KEEPERS',
+  'UNITED BY OATH',
+  'SHADOW AND FLAME',
+  'DESTINY AWAITS US',
+  'CLAIM YOUR POWER',
+  'THE CIRCLE STANDS',
+  'WALK THE HIDDEN PATH',
+  'STRENGTH THROUGH SHADOWS',
+  'ETERNAL AND UNSEEN',
+  'SEEK THE TRUTH',
+  'BOUND BY BLOOD',
+  'STRENGTH ETERNAL',
+  'HIDDEN WISDOM',
+  'SHADOWS GUIDE US',
+  'THE PATH AWAITS',
+  'DARKNESS PREVAILS',
+  'WE ARE UNITED',
+  'POWER ETERNAL',
+  'SACRED OATH',
+  'SILENT STRENGTH',
+  'VEIL OF SECRETS',
+  'ETERNAL SHADOW',
+  'RISE WITH PRIDE',
+  'DESTINY CALLS',
+  'LOYALTY FOREVER',
+  'HIDDEN STRENGTH',
+  'ORDER ABOVE ALL',
+  'DARKNESS REIGNS',
+  'UNITY IN SHADOW',
+  'POWER OF OATH',
+  'ETERNAL DARKNESS',
+  'SACRED SHADOW',
+  'HIDDEN LEGACY',
+  'THE SHADOW CALLS',
+  'FOREVER HIDDEN',
+  'SHADOW ETERNAL',
+  'BOUND IN DARKNESS',
+  'STRENGTH OF ORDER',
+  'WISDOM IN SHADOWS',
+  'ETERNAL BOND',
+  'THE DARKNESS HOLDS',
+  'SHADOW STRENGTH',
+  'FOREVER LOYAL',
+  'HIDDEN KNOWLEDGE',
+  'ETERNAL SECRECY',
+  'SHADOW BROTHERS',
+  'THE ORDER PREVAILS',
+  'DARKNESS UNITES',
+  'SACRED CIRCLE',
+  'ETERNAL MYSTERY',
+  'HIDDEN CIRCLE',
+  'SHADOW EMPIRE',
+  'FOREVER UNSEEN',
+  'DARKNESS ETERNAL',
+  'HIDDEN POWER',
+  'OATH ETERNAL',
+  'SHADOW COUNCIL',
+  'THE VEIL HOLDS',
+  'ETERNAL VIGIL',
+  'HIDDEN SHADOWS',
+  'STRENGTH IN OATH',
+  'UNITED IN DARKNESS',
+  'FOREVER BOUND',
+  'SILENT EMPIRE',
+  'THE DARKNESS PREVAILS',
+  'ETERNAL ORDER',
+  'HIDDEN DESTINY',
+  'SHADOW LEGACY',
+  'THE CIRCLE ETERNAL',
+  'DARKNESS PROTECTS',
+  'FOREVER HIDDEN',
+  'OATH OF DARKNESS',
+  'ETERNAL SHADOW OATH',
+  'HIDDEN STRENGTH ETERNAL',
 ];
 
 // ── Cipher definitions ────────────────────────────────────────────────────────
@@ -56,43 +141,91 @@ const CIPHER_TYPES = [
     type: 'caesar',
     name: 'Caesar Cipher',
     difficulty: 'Easy',
-    hint: 'Each letter has been shifted a fixed number of positions through the alphabet. Try working backwards.',
+    hint: 'Every letter follows the same pattern of transformation.',
   },
   {
     type: 'atbash',
     name: 'Atbash Cipher',
     difficulty: 'Easy',
-    hint: 'The alphabet has been reversed — A becomes Z, B becomes Y, and so on.',
+    hint: 'The structure of the message remains intact but letters are mapped differently.',
   },
   {
     type: 'rot13',
     name: 'ROT-13',
     difficulty: 'Easy',
-    hint: 'Each letter has been rotated exactly 13 positions. Applying the same process twice reveals the answer.',
+    hint: 'Look for repetition — certain transformations are self-reversing.',
   },
   {
     type: 'reverse',
     name: 'Reversed Text',
     difficulty: 'Easy',
-    hint: 'The message has been written backwards. Try reading each word in reverse.',
+    hint: 'The shape and spacing of the message offer clues.',
   },
   {
     type: 'nums',
     name: 'Number Substitution',
     difficulty: 'Medium',
-    hint: 'Each number represents a letter\'s position in the alphabet. A=1, B=2, C=3 ... Z=26.',
+    hint: 'Numbers and letters can represent the same concepts.',
   },
   {
     type: 'rail',
     name: 'Rail Fence Cipher',
     difficulty: 'Medium',
-    hint: 'Letters were written in a zigzag pattern across rows, then read row by row.',
+    hint: 'The order of characters has been rearranged systematically.',
   },
   {
     type: 'vigenere',
     name: 'Vigenère Cipher',
     difficulty: 'Hard',
-    hint: 'A hidden keyword shifts each letter by a different amount. Look for repeating patterns.',
+    hint: 'Identical letters may encode to different characters.',
+  },
+  {
+    type: 'bacon',
+    name: 'Bacon Cipher',
+    difficulty: 'Medium',
+    hint: 'Only two distinct symbols are used throughout.',
+  },
+  {
+    type: 'pigpen',
+    name: 'Pigpen Cipher',
+    difficulty: 'Hard',
+    hint: 'Geometric shapes hold the key to decryption.',
+  },
+  {
+    type: 'simple_sub',
+    name: 'Simple Substitution',
+    difficulty: 'Hard',
+    hint: 'Each letter maps to exactly one other letter consistently.',
+  },
+  {
+    type: 'keyword',
+    name: 'Keyword Cipher',
+    difficulty: 'Hard',
+    hint: 'A secret word drives the letter mapping throughout.',
+  },
+  {
+    type: 'polybius',
+    name: 'Polybius Square',
+    difficulty: 'Medium',
+    hint: 'Positions in a grid correspond to the encoded message.',
+  },
+  {
+    type: 'columnar',
+    name: 'Columnar Transposition',
+    difficulty: 'Medium',
+    hint: 'Letters are rearranged in a grid-based pattern.',
+  },
+  {
+    type: 'affine',
+    name: 'Affine Cipher',
+    difficulty: 'Hard',
+    hint: 'Mathematical operations transform each letter.',
+  },
+  {
+    type: 'morse',
+    name: 'Morse-Like Code',
+    difficulty: 'Medium',
+    hint: 'Dots and dashes stand in for letters.',
   },
 ];
 
@@ -150,6 +283,135 @@ function encodeVigenere(text, key) {
   });
 }
 
+function encodeBacon(text) {
+  // A=00000, B=00001, C=00010, etc (0=A, 1=B)
+  const baconAlpha = [
+    '00000', '00001', '00010', '00011', '00100', '00101', '00110', '00111',
+    '01000', '01001', '01010', '01011', '01100', '01101', '01110', '01111',
+    '10000', '10001', '10010', '10011', '10100', '10101', '10110', '10111',
+    '11000', '11001'
+  ];
+  return text.split('').map(c => {
+    if (c === ' ') return '  ';
+    const idx = c.charCodeAt(0) - 65;
+    return baconAlpha[idx] || c;
+  }).join(' ');
+}
+
+function encodePigpen(text) {
+  // Pigpen uses tic-tac-toe grid + X grid symbols
+  // Map A-I to grid, J-R to X grid, S-Z to dotted versions
+  const pigpen = {
+    A: '[1]', B: '[2]', C: '[3]', D: '[4]', E: '[5]', F: '[6]',
+    G: '[7]', H: '[8]', I: '[9]', J: '(1)', K: '(2)', L: '(3)',
+    M: '(4)', N: '(5)', O: '(6)', P: '(7)', Q: '(8)', R: '(9)',
+    S: '{1}', T: '{2}', U: '{3}', V: '{4}', W: '{5}', X: '{6}',
+    Y: '{7}', Z: '{8}'
+  };
+  return text.split('').map(c => pigpen[c] || c).join('');
+}
+
+function encodeSimpleSub(text, seed) {
+  const rng = seededRandom(seed);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const shuffled = [...alphabet].sort(() => rng() - 0.5);
+  const map = {};
+  alphabet.forEach((letter, i) => {
+    map[letter] = shuffled[i];
+  });
+  return text.split('').map(c => map[c] || c).join('');
+}
+
+function encodeKeyword(text, keyword) {
+  // Remove duplicates and append rest of alphabet
+  const seen = new Set();
+  let key = '';
+  for (const c of keyword) {
+    if (!seen.has(c)) {
+      seen.add(c);
+      key += c;
+    }
+  }
+  const remaining = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(c => !seen.has(c));
+  const cipher = key + remaining.join('');
+
+  const map = {};
+  for (let i = 0; i < 26; i++) {
+    map[String.fromCharCode(65 + i)] = cipher[i];
+  }
+  return text.split('').map(c => map[c] || c).join('');
+}
+
+function encodePolybius(text) {
+  // 5x5 grid with letters (I/J combined), read as row+col
+  const grid = 'ABCDEFGHIKLMNOPQRSTUVWXYZ'.split('');
+  const map = {};
+  let idx = 0;
+  for (let r = 1; r <= 5; r++) {
+    for (let c = 1; c <= 5; c++) {
+      map[grid[idx]] = `${r}${c}`;
+      idx++;
+    }
+  }
+  return text.split('').map(c => {
+    if (c === 'J') c = 'I';
+    return map[c] || c;
+  }).join(' ');
+}
+
+function encodeColumnar(text, seed) {
+  const rng = seededRandom(seed);
+  const cols = Math.floor(rng() * 3) + 3; // 3-5 columns
+  const rows = Math.ceil(text.replace(/ /g, '').length / cols);
+
+  // Fill grid row by row
+  const grid = [];
+  let idx = 0;
+  for (let r = 0; r < rows; r++) {
+    grid[r] = [];
+    for (let c = 0; c < cols; c++) {
+      const char = text[idx] || 'X';
+      grid[r][c] = char;
+      idx++;
+    }
+  }
+
+  // Read column by column
+  let result = '';
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      result += grid[r][c];
+    }
+    result += ' ';
+  }
+  return result.trim();
+}
+
+function encodeAffine(text, seed) {
+  const rng = seededRandom(seed);
+  const a = [5, 7, 9, 11, 15, 17, 19, 21, 23, 25][Math.floor(rng() * 10)]; // coprime to 26
+  const b = Math.floor(rng() * 26);
+
+  return text.split('').map(c => {
+    const x = c.charCodeAt(0) - 65;
+    const y = (a * x + b) % 26;
+    return String.fromCharCode(65 + y);
+  }).join('');
+}
+
+function encodeMorse(text) {
+  const morse = {
+    A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.',
+    G: '--.', H: '....', I: '..', J: '.---', K: '-.-', L: '.-..',
+    M: '--', N: '-.', O: '---', P: '.--.', Q: '--.-', R: '.-.',
+    S: '...', T: '-', U: '..-', V: '...-', W: '.--', X: '-..-',
+    Y: '-.--', Z: '--..'
+  };
+  return text.split(' ').map(word =>
+    word.split('').map(c => morse[c] || c).join('/')
+  ).join(' / ');
+}
+
 // ── Daily cipher generator ────────────────────────────────────────────────────
 
 export function generateCipherForDate(dateStr) {
@@ -193,6 +455,34 @@ export function generateCipherForDate(dateStr) {
       extra = `Key length: ${key.length}`;
       break;
     }
+    case 'bacon':
+      ciphertext = encodeBacon(plaintext);
+      break;
+    case 'pigpen':
+      ciphertext = encodePigpen(plaintext);
+      break;
+    case 'simple_sub':
+      ciphertext = encodeSimpleSub(plaintext, dateToSeed(dateStr));
+      break;
+    case 'keyword': {
+      const keys = ['SHADOW', 'OCCULT', 'ORDER', 'VEIL', 'CIPHER', 'DARK', 'NIGHT', 'HIDDEN', 'POWER', 'SACRED'];
+      const keyword = keys[extraParam % keys.length];
+      ciphertext = encodeKeyword(plaintext, keyword);
+      extra = `Keyword: ${keyword.length} letters`;
+      break;
+    }
+    case 'polybius':
+      ciphertext = encodePolybius(plaintext);
+      break;
+    case 'columnar':
+      ciphertext = encodeColumnar(plaintext, dateToSeed(dateStr));
+      break;
+    case 'affine':
+      ciphertext = encodeAffine(plaintext, dateToSeed(dateStr));
+      break;
+    case 'morse':
+      ciphertext = encodeMorse(plaintext);
+      break;
     default:
       ciphertext = plaintext;
   }
