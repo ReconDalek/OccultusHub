@@ -3,6 +3,21 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
+const ALLOWED_FACTION_IDS = [33097, 9728, 9171];
+const MEMBER_CHANNELS = ['905593589755678780', '856861435950268470'];
+const LEADER_CHANNELS = ['1003296296838385784'];
+
+function allowedChannelsFor(user) {
+  return user.isLeader || user.isAdmin
+    ? [...MEMBER_CHANNELS, ...LEADER_CHANNELS]
+    : MEMBER_CHANNELS;
+}
+
+async function requireFactionMember(userId, env) {
+  const row = await env.DB.prepare('SELECT faction_id FROM users WHERE id = ?').bind(userId).first();
+  return ALLOWED_FACTION_IDS.includes(row?.faction_id);
+}
+
 function getRedirectUri(request, env) {
   if (env.DISCORD_REDIRECT_URI) return env.DISCORD_REDIRECT_URI;
   const url = new URL(request.url);
@@ -110,6 +125,9 @@ export async function handleCallback(request, env) {
 
 // GET /api/discord/status (authenticated)
 export async function getStatus(request, env, user) {
+  const isMember = await requireFactionMember(user.userId, env);
+  if (!isMember) return errorResponse('Faction members only', 403);
+
   const link = await env.DB.prepare(
     'SELECT discord_id, discord_username, discord_avatar FROM discord_links WHERE user_id = ?'
   ).bind(user.userId).first();
@@ -135,7 +153,12 @@ export async function unlinkDiscord(request, env, user) {
 }
 
 // GET /api/discord/channels (authenticated)
-export async function getChannels(request, env) {
+export async function getChannels(request, env, user) {
+  const isMember = await requireFactionMember(user.userId, env);
+  if (!isMember) return errorResponse('Faction members only', 403);
+
+  const allowed = allowedChannelsFor(user);
+
   const res = await fetch(`${DISCORD_API}/guilds/${env.DISCORD_GUILD_ID}/channels`, {
     headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
   });
@@ -149,7 +172,7 @@ export async function getChannels(request, env) {
     .reduce((acc, c) => ({ ...acc, [c.id]: c.name }), {});
 
   const channels = all
-    .filter(c => c.type === 0)
+    .filter(c => c.type === 0 && allowed.includes(c.id))
     .sort((a, b) => a.position - b.position)
     .map(c => ({ id: c.id, name: c.name, categoryId: c.parent_id }));
 
@@ -157,13 +180,20 @@ export async function getChannels(request, env) {
 }
 
 // GET /api/discord/messages?channelId=X&after=Y (authenticated)
-export async function getMessages(request, env) {
+export async function getMessages(request, env, user) {
+  const isMember = await requireFactionMember(user.userId, env);
+  if (!isMember) return errorResponse('Faction members only', 403);
+
   const url = new URL(request.url);
   const channelId = url.searchParams.get('channelId');
   const before = url.searchParams.get('before');
   const after = url.searchParams.get('after');
 
   if (!channelId) return errorResponse('channelId required', 400);
+
+  if (!allowedChannelsFor(user).includes(channelId)) {
+    return errorResponse('Channel not permitted', 403);
+  }
 
   let endpoint = `${DISCORD_API}/channels/${channelId}/messages?limit=50`;
   if (before) endpoint += `&before=${before}`;
@@ -179,24 +209,76 @@ export async function getMessages(request, env) {
   return jsonResponse({ messages });
 }
 
+async function getOrCreateWebhook(channelId, env) {
+  // Check DB for existing webhook
+  const existing = await env.DB.prepare(
+    'SELECT webhook_id, webhook_token FROM discord_webhooks WHERE channel_id = ?'
+  ).bind(channelId).first();
+
+  if (existing) return existing;
+
+  // Create a new webhook via bot
+  const res = await fetch(`${DISCORD_API}/channels/${channelId}/webhooks`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: 'occultusHub Chat' }),
+  });
+
+  if (!res.ok) return null;
+
+  const webhook = await res.json();
+
+  await env.DB.prepare(
+    'INSERT OR REPLACE INTO discord_webhooks (channel_id, webhook_id, webhook_token) VALUES (?, ?, ?)'
+  ).bind(channelId, webhook.id, webhook.token).run();
+
+  return { webhook_id: webhook.id, webhook_token: webhook.token };
+}
+
 // POST /api/discord/messages (authenticated)
 export async function sendMessage(request, env, user) {
+  const isMember = await requireFactionMember(user.userId, env);
+  if (!isMember) return errorResponse('Faction members only', 403);
+
   const body = await request.json();
   const { channelId, content } = body;
 
   if (!channelId || !content?.trim()) return errorResponse('channelId and content required', 400);
   if (content.length > 1800) return errorResponse('Message too long', 400);
 
-  const attributed = `**[${user.username}]**: ${content.trim()}`;
+  if (!allowedChannelsFor(user).includes(channelId)) {
+    return errorResponse('Channel not permitted', 403);
+  }
 
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ content: attributed }),
-  });
+  // Get Discord identity for this user
+  const link = await env.DB.prepare(
+    'SELECT discord_id, discord_username, discord_avatar FROM discord_links WHERE user_id = ?'
+  ).bind(user.userId).first();
+
+  const webhook = await getOrCreateWebhook(channelId, env);
+  if (!webhook) return errorResponse('Could not create webhook for channel', 502);
+
+  const avatarUrl = link?.discord_avatar
+    ? `https://cdn.discordapp.com/avatars/${link.discord_id}/${link.discord_avatar}.png`
+    : undefined;
+
+  const displayName = link?.discord_username || user.username;
+
+  const res = await fetch(
+    `${DISCORD_API}/webhooks/${webhook.webhook_id}/${webhook.webhook_token}?wait=true`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: content.trim(),
+        username: displayName,
+        ...(avatarUrl && { avatar_url: avatarUrl }),
+      }),
+    }
+  );
 
   if (!res.ok) return errorResponse('Failed to send message', 502);
 

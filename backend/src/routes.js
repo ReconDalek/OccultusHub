@@ -149,10 +149,10 @@ export async function handleRequest(request, env) {
       return discordController.unlinkDiscord(request, env, user);
     }
     if (pathname === '/api/discord/channels' && method === 'GET') {
-      return discordController.getChannels(request, env);
+      return discordController.getChannels(request, env, user);
     }
     if (pathname === '/api/discord/messages' && method === 'GET') {
-      return discordController.getMessages(request, env);
+      return discordController.getMessages(request, env, user);
     }
     if (pathname === '/api/discord/messages' && method === 'POST') {
       return discordController.sendMessage(request, env, user);

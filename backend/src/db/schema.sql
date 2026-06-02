@@ -117,6 +117,14 @@ CREATE TABLE IF NOT EXISTS faction_schedules (
   FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- Discord webhooks per channel (used for sending as user)
+CREATE TABLE IF NOT EXISTS discord_webhooks (
+  channel_id TEXT PRIMARY KEY,
+  webhook_id TEXT NOT NULL,
+  webhook_token TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Discord account links
 CREATE TABLE IF NOT EXISTS discord_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

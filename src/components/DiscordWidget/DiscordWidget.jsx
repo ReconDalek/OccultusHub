@@ -39,17 +39,8 @@ function getAvatarUrl(author) {
 }
 
 function MessageItem({ msg, isGrouped }) {
-  const isBotAttribution = msg.author.bot && msg.content.startsWith('**[')
-  let displayName = msg.author.username
-  let displayContent = msg.content
-
-  if (isBotAttribution) {
-    const match = msg.content.match(/^\*\*\[(.+?)\]\*\*: (.*)$/s)
-    if (match) {
-      displayName = match[1]
-      displayContent = match[2]
-    }
-  }
+  const displayName = msg.author.username
+  const displayContent = msg.content
 
   return (
     <div style={{
@@ -74,7 +65,7 @@ function MessageItem({ msg, isGrouped }) {
       <div style={{ minWidth: 0, flex: 1 }}>
         {!isGrouped && (
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: isBotAttribution ? '#c084fc' : '#e0e0e0' }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: '#e0e0e0' }}>
               {displayName}
             </span>
             <span style={{ fontSize: 10, color: '#6b7280' }}>{formatTime(msg.timestamp)}</span>
@@ -130,7 +121,7 @@ export default function DiscordWidget() {
 
   // Fetch discord status when user changes
   useEffect(() => {
-    if (!user) { setDiscordStatus(null); return }
+    if (!user?.isFactionMember) { setDiscordStatus(null); return }
     fetchDiscordStatus()
   }, [user])
 
@@ -285,6 +276,8 @@ export default function DiscordWidget() {
       return { msg, isGrouped: sameAuthor && closeInTime }
     })
   }
+
+  if (!user?.isFactionMember) return null
 
   return (
     <>
