@@ -168,7 +168,7 @@ export default function Companies() {
 
         if (data.lastUpdated) {
           const d = new Date(data.lastUpdated)
-          setCacheStatus(`Last Updated: ${d.toLocaleString()} TCT — Company data refreshes automatically.`)
+          setCacheStatus(`Last Updated: ${d.toLocaleString()}`)
         }
       } catch (err) {
         console.error('Failed loading companies:', err)

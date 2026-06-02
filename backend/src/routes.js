@@ -5,6 +5,8 @@ import * as adminController from './controllers/adminController.js';
 import * as cacheController from './controllers/cacheController.js';
 import * as eventsController from './controllers/eventsController.js';
 import * as discordController from './controllers/discordController.js';
+import * as noticesController from './controllers/noticesController.js';
+import * as cipherController from './controllers/cipherController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -31,6 +33,10 @@ export async function handleRequest(request, env) {
 
   if (pathname === '/api/company-cache' && method === 'GET') {
     return cacheController.getCompanyCache(request, env);
+  }
+
+  if (pathname === '/api/cipher/today' && method === 'GET') {
+    return cipherController.getTodayCipher(request, env);
   }
 
   if (pathname === '/api/events' && method === 'GET') {
@@ -111,11 +117,29 @@ export async function handleRequest(request, env) {
     }
   }
 
+  // Cipher submit — open to all (authenticated or guest)
+  if (pathname === '/api/cipher/submit' && method === 'POST') {
+    return cipherController.submitAnswer(request, env, user);
+  }
+
   // Leadership-gated endpoints
   if (pathname.startsWith('/api/leadership/')) {
     if (!user) return errorResponse('Authentication required', 401);
     const isLeader = await requireLeadership(user);
     if (!isLeader) return errorResponse('Leadership access required', 403);
+
+    if (pathname === '/api/leadership/notices' && method === 'GET') {
+      return noticesController.getNotices(request, env);
+    }
+    if (pathname === '/api/leadership/notices' && method === 'POST') {
+      return noticesController.createNotice(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/notices\/\d+$/) && method === 'DELETE') {
+      return noticesController.deleteNotice(request, env);
+    }
+    if (pathname === '/api/leadership/cipher-submissions' && method === 'GET') {
+      return cipherController.getCipherSubmissions(request, env);
+    }
 
     if (pathname === '/api/leadership/events' && method === 'POST') {
       return eventsController.createEvent(request, env, user);

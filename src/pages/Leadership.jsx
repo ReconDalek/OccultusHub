@@ -1,24 +1,16 @@
 import { useState } from 'react'
 import { useSession } from '../hooks/useSession'
+import InternalNoticesTab from '../components/LeadershipTabs/InternalNoticesTab'
 import EventsSchedulesTab from '../components/LeadershipTabs/EventsSchedulesTab'
 import LeaderToolsTab from '../components/LeadershipTabs/LeaderToolsTab'
+import CipherReviewTab from '../components/LeadershipTabs/CipherReviewTab'
 
 const tabs = [
   { id: 'notices', label: 'Internal Notices' },
   { id: 'events', label: 'Events & Schedules' },
   { id: 'tools', label: 'Leader Tools' },
+  { id: 'cipher', label: 'Cipher Review' },
 ]
-
-function PlaceholderTab({ label }) {
-  return (
-    <div>
-      <h2 className="font-cinzel mb-2" style={{ fontSize: '22px', color: '#f4f4f5' }}>
-        {label}
-      </h2>
-      <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Coming soon.</p>
-    </div>
-  )
-}
 
 export default function Leadership() {
   const { user, loading } = useSession()
@@ -88,9 +80,10 @@ export default function Leadership() {
                 border: '1px solid rgba(255,255,255,0.08)',
               }}
             >
-              {activeTab === 'notices' && <PlaceholderTab label="Internal Notices" />}
+              {activeTab === 'notices' && <InternalNoticesTab />}
               {activeTab === 'events' && <EventsSchedulesTab />}
               {activeTab === 'tools' && <LeaderToolsTab />}
+              {activeTab === 'cipher' && <CipherReviewTab />}
             </div>
           </>
         )}

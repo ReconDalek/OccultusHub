@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
 import EventCalendar from '../components/EventCalendar'
 import FactionEventCards from '../components/FactionEventCards'
+import DailyCipher from '../components/DailyCipher'
 import { API_BASE_URL } from '../config/api'
 
 const FACTIONS = [
@@ -86,6 +87,11 @@ function MemberHome({ user }) {
             </h2>
             <FactionEventCards />
           </div>
+        </div>
+
+        {/* Daily Cipher */}
+        <div style={{ marginTop: 24 }}>
+          <DailyCipher />
         </div>
       </div>
     </div>
@@ -205,6 +211,11 @@ function PublicHome() {
             </a>
           ))}
         </div>
+      </section>
+
+      {/* Daily Cipher — visible to guests */}
+      <section style={{ padding: '0 48px 80px', maxWidth: 900, margin: '0 auto' }}>
+        <DailyCipher guest={true} />
       </section>
     </>
   )

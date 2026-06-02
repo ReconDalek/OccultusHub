@@ -38,8 +38,7 @@ function getAvatarUrl(author) {
   return `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(author.id) % 5n)}.png`
 }
 
-function MessageItem({ msg, isGrouped }) {
-  const displayName = msg.author.username
+function MessageItem({ msg, isGrouped, name }) {
   const displayContent = msg.content
 
   return (
@@ -66,7 +65,7 @@ function MessageItem({ msg, isGrouped }) {
         {!isGrouped && (
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
             <span style={{ fontWeight: 600, fontSize: 13, color: '#e0e0e0' }}>
-              {displayName}
+              {name}
             </span>
             <span style={{ fontSize: 10, color: '#6b7280' }}>{formatTime(msg.timestamp)}</span>
           </div>
@@ -103,6 +102,8 @@ export default function DiscordWidget() {
   const pollRef = useRef(null)
   const latestIdRef = useRef(null)
   const inputRef = useRef(null)
+  const nickCacheRef = useRef({})
+  const pollingRef = useRef(false)
 
   // Detect ?discord=linked/error on load
   useEffect(() => {
@@ -172,6 +173,15 @@ export default function DiscordWidget() {
     } catch {}
   }
 
+  function mergeNicks(incoming) {
+    nickCacheRef.current = { ...nickCacheRef.current, ...incoming }
+  }
+
+  function displayName(msg) {
+    if (msg.webhook_id) return msg.author.username
+    return nickCacheRef.current[msg.author.id] || msg.author.username
+  }
+
   async function loadMessages(channelId) {
     setLoadingMsg(true)
     setMessages([])
@@ -182,6 +192,7 @@ export default function DiscordWidget() {
       })
       const data = await res.json()
       const msgs = Array.isArray(data.messages) ? [...data.messages].reverse() : []
+      if (data.nicks) mergeNicks(data.nicks)
       setMessages(msgs)
       if (msgs.length) latestIdRef.current = msgs[msgs.length - 1].id
     } catch {} finally {
@@ -190,26 +201,27 @@ export default function DiscordWidget() {
   }
 
   async function pollNewMessages(channelId) {
-    if (!latestIdRef.current) return
+    if (!latestIdRef.current || pollingRef.current) return
+    pollingRef.current = true
     try {
       const res = await fetch(
         `${API_BASE_URL}/api/discord/messages?channelId=${channelId}&after=${latestIdRef.current}`,
         { headers: authHeader() }
       )
       const data = await res.json()
-      // Discord returns ascending when using after=
       const newMsgs = Array.isArray(data.messages) ? data.messages : []
+      if (data.nicks) mergeNicks(data.nicks)
       if (!newMsgs.length) return
       setMessages(prev => [...prev, ...newMsgs])
       latestIdRef.current = newMsgs[newMsgs.length - 1].id
-    } catch {}
+    } catch {} finally {
+      pollingRef.current = false
+    }
   }
 
   async function handleChannelChange(channelId) {
     setSelectedChannel(channelId)
-    clearInterval(pollRef.current)
     await loadMessages(channelId)
-    pollRef.current = setInterval(() => pollNewMessages(channelId), 5000)
   }
 
   async function linkDiscord() {
@@ -510,7 +522,7 @@ export default function DiscordWidget() {
                     </div>
                   )}
                   {groupMessages(messages).map(({ msg, isGrouped }) => (
-                    <MessageItem key={msg.id} msg={msg} isGrouped={isGrouped} />
+                    <MessageItem key={msg.id} msg={msg} isGrouped={isGrouped} name={displayName(msg)} />
                   ))}
                   <div ref={messagesEndRef} />
                 </div>

@@ -206,7 +206,26 @@ export async function getMessages(request, env, user) {
   if (!res.ok) return errorResponse('Failed to fetch messages', 502);
 
   const messages = await res.json();
-  return jsonResponse({ messages });
+
+  // Resolve server nicknames for all unique human authors
+  const authorIds = [...new Set(
+    messages
+      .filter(m => !m.webhook_id)
+      .map(m => m.author.id)
+  )];
+
+  const nicks = {};
+  await Promise.all(authorIds.map(async (id) => {
+    const r = await fetch(`${DISCORD_API}/guilds/${env.DISCORD_GUILD_ID}/members/${id}`, {
+      headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
+    });
+    if (r.ok) {
+      const member = await r.json();
+      nicks[id] = member.nick || null;
+    }
+  }));
+
+  return jsonResponse({ messages, nicks });
 }
 
 async function getOrCreateWebhook(channelId, env) {
@@ -265,7 +284,18 @@ export async function sendMessage(request, env, user) {
     ? `https://cdn.discordapp.com/avatars/${link.discord_id}/${link.discord_avatar}.png`
     : undefined;
 
-  const displayName = link?.discord_username || user.username;
+  // Try to get server nickname, fall back to discord username then torn username
+  let displayName = link?.discord_username || user.username;
+  if (link?.discord_id) {
+    const memberRes = await fetch(
+      `${DISCORD_API}/guilds/${env.DISCORD_GUILD_ID}/members/${link.discord_id}`,
+      { headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` } }
+    );
+    if (memberRes.ok) {
+      const member = await memberRes.json();
+      if (member.nick) displayName = member.nick;
+    }
+  }
 
   const res = await fetch(
     `${DISCORD_API}/webhooks/${webhook.webhook_id}/${webhook.webhook_token}?wait=true`,

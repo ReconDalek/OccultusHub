@@ -117,6 +117,28 @@ CREATE TABLE IF NOT EXISTS faction_schedules (
   FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- Leadership noticeboard
+CREATE TABLE IF NOT EXISTS notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,
+  created_by INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Daily cipher submissions (user_id nullable for guest submissions)
+CREATE TABLE IF NOT EXISTS cipher_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  guest_name TEXT,
+  cipher_date TEXT NOT NULL,
+  submitted_answer TEXT NOT NULL,
+  is_correct INTEGER NOT NULL DEFAULT 0,
+  submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(user_id, cipher_date)
+);
+
 -- Discord webhooks per channel (used for sending as user)
 CREATE TABLE IF NOT EXISTS discord_webhooks (
   channel_id TEXT PRIMARY KEY,

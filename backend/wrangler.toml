@@ -13,7 +13,7 @@ database_id = "48ac7e16-8aab-4772-b624-8a7d1c230207"
 
 # Production environment
 [env.production]
-vars = { CORS_ORIGIN = "https://occul2us.pages.dev", JWT_SECRET = "sk_prod_7Kj9mNp2qRx8vBcDeFgHiJkLmNoPqRsTuVwXyZ0aB1cD2eF", TORN_API_KEY = "" }
+vars = { CORS_ORIGIN = "https://occul2us.pages.dev", JWT_SECRET = "sk_prod_7Kj9mNp2qRx8vBcDeFgHiJkLmNoPqRsTuVwXyZ0aB1cD2eF", TORN_API_KEY = "", DISCORD_CLIENT_ID = "1137242446082879548", DISCORD_GUILD_ID = "856861435950268467", DISCORD_REDIRECT_URI = "https://occultushub-worker-production.rkilpatrick4221.workers.dev/api/discord/callback" }
 triggers = { crons = ["0 */12 * * *"] }
 
 [[env.production.d1_databases]]
