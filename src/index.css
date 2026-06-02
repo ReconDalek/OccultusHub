@@ -175,6 +175,7 @@ img, iframe, video {
 @media (max-width: 1100px) {
   .faction-grid-responsive { grid-template-columns: 1fr !important; }
   .company-detail-grid     { grid-template-columns: 1fr 1fr !important; }
+  .member-home-grid        { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 900px) {
   .company-detail-grid { grid-template-columns: 1fr !important; }

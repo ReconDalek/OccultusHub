@@ -1,8 +1,9 @@
-import { verifyToken, requireAdmin } from './middleware/auth.js';
+import { verifyToken, requireAdmin, requireLeadership } from './middleware/auth.js';
 import { errorResponse, jsonResponse } from './middleware/errorHandler.js';
 import * as authController from './controllers/authController.js';
 import * as adminController from './controllers/adminController.js';
 import * as cacheController from './controllers/cacheController.js';
+import * as eventsController from './controllers/eventsController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -29,6 +30,14 @@ export async function handleRequest(request, env) {
 
   if (pathname === '/api/company-cache' && method === 'GET') {
     return cacheController.getCompanyCache(request, env);
+  }
+
+  if (pathname === '/api/events' && method === 'GET') {
+    return eventsController.getEvents(request, env);
+  }
+
+  if (pathname === '/api/faction-schedules' && method === 'GET') {
+    return eventsController.getFactionSchedules(request, env);
   }
 
   // Protected endpoints (auth required)
@@ -98,6 +107,26 @@ export async function handleRequest(request, env) {
 
     if (pathname.match(/^\/api\/admin\/settings\/[^/]+$/) && method === 'POST') {
       return adminController.updateSetting(request, env, user);
+    }
+  }
+
+  // Leadership-gated endpoints
+  if (pathname.startsWith('/api/leadership/')) {
+    if (!user) return errorResponse('Authentication required', 401);
+    const isLeader = await requireLeadership(user);
+    if (!isLeader) return errorResponse('Leadership access required', 403);
+
+    if (pathname === '/api/leadership/events' && method === 'POST') {
+      return eventsController.createEvent(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/events\/\d+$/) && method === 'DELETE') {
+      return eventsController.deleteEvent(request, env, user);
+    }
+    if (pathname === '/api/leadership/faction-schedules' && method === 'POST') {
+      return eventsController.createFactionSchedule(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/faction-schedules\/\d+$/) && method === 'DELETE') {
+      return eventsController.deleteFactionSchedule(request, env, user);
     }
   }
 

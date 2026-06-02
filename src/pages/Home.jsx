@@ -1,5 +1,8 @@
 import { Link } from 'react-router-dom'
+import { useSession } from '../hooks/useSession'
 import QuoteBox from '../components/QuoteBox'
+import EventCalendar from '../components/EventCalendar'
+import FactionEventCards from '../components/FactionEventCards'
 
 const FACTIONS = [
   {
@@ -22,7 +25,61 @@ const FACTIONS = [
   },
 ]
 
-export default function Home() {
+function MemberHome({ user }) {
+  return (
+    <div className="min-h-screen" style={{ background: '#07070a', color: '#f4f4f5' }}>
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Welcome header */}
+        <div className="mb-12">
+          <h1
+            className="font-cinzel text-white mb-2"
+            style={{ fontSize: 'clamp(28px, 5vw, 40px)', letterSpacing: '2px' }}
+          >
+            WELCOME BACK, {user.username?.toUpperCase()}
+          </h1>
+          <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })} — TCT
+          </p>
+        </div>
+
+        {/* Two-column layout: calendar left, faction cards right */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
+            gap: '24px',
+            alignItems: 'start',
+          }}
+          className="member-home-grid"
+        >
+          {/* Calendar */}
+          <div
+            className="rounded-2xl p-8"
+            style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
+              UPCOMING EVENTS
+            </h2>
+            <EventCalendar />
+          </div>
+
+          {/* Faction event cards */}
+          <div
+            className="rounded-2xl p-8"
+            style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
+              FACTION OPERATIONS
+            </h2>
+            <FactionEventCards />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PublicHome() {
   return (
     <>
       {/* HERO */}
@@ -66,9 +123,7 @@ export default function Home() {
             Strength through unity, and loyalty through blood.
           </p>
 
-          <div
-            className="flex gap-5 justify-center flex-wrap animate-fade-up-slower hero-buttons-responsive"
-          >
+          <div className="flex gap-5 justify-center flex-wrap animate-fade-up-slower hero-buttons-responsive">
             <Link
               to="/about"
               className="px-5 py-3 rounded-xl text-white no-underline transition-all hover:-translate-y-0.5"
@@ -123,25 +178,16 @@ export default function Home() {
                   padding: '40px',
                   backdropFilter: 'blur(12px)',
                 }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)')
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)')
-                }
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)')}
               >
-                <h3
-                  className="font-cinzel"
-                  style={{ fontSize: '30px', marginBottom: '20px' }}
-                >
+                <h3 className="font-cinzel" style={{ fontSize: '30px', marginBottom: '20px' }}>
                   {f.name}
                 </h3>
                 <p style={{ color: '#a1a1aa', lineHeight: 1.7, marginBottom: '24px' }}>
                   {f.description}
                 </p>
-                <span style={{ color: '#9f67ff', fontSize: '14px' }}>
-                  Faction ID: {f.id}
-                </span>
+                <span style={{ color: '#9f67ff', fontSize: '14px' }}>Faction ID: {f.id}</span>
               </div>
             </a>
           ))}
@@ -149,7 +195,18 @@ export default function Home() {
       </section>
 
       <QuoteBox />
-
     </>
   )
+}
+
+export default function Home() {
+  const { user, loading } = useSession()
+
+  if (loading) return null
+
+  if (user?.isFactionMember) {
+    return <MemberHome user={user} />
+  }
+
+  return <PublicHome />
 }

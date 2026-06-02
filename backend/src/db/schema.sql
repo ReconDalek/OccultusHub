@@ -89,6 +89,28 @@ CREATE TABLE IF NOT EXISTS company_cache (
   fetched_by_user INTEGER
 );
 
+-- Events (leadership-configurable calendar entries)
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  event_date TEXT NOT NULL,
+  created_by INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Faction schedules (chain / war countdowns per faction)
+CREATE TABLE IF NOT EXISTS faction_schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  faction_id INTEGER NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('chain', 'war')),
+  scheduled_at TEXT NOT NULL,
+  created_by INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- Seed default page settings
 INSERT OR IGNORE INTO page_settings (page_name, is_visible) VALUES ('factions', 1);
 INSERT OR IGNORE INTO page_settings (page_name, is_visible) VALUES ('companies', 1);

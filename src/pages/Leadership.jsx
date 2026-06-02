@@ -1,9 +1,28 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
 import { useSession } from '../hooks/useSession'
-import QuoteBox from '../components/QuoteBox'
+import RespectTab from '../components/LeadershipTabs/RespectTab'
+import EventsTab from '../components/LeadershipTabs/EventsTab'
+import SchedulesTab from '../components/LeadershipTabs/SchedulesTab'
+
+const tabs = [
+  { id: 'respect', label: 'Respect Tracker' },
+  { id: 'events', label: 'Events Calendar' },
+  { id: 'schedules', label: 'Faction Schedules' },
+  { id: 'activity', label: 'Member Activity' },
+  { id: 'notices', label: 'Internal Notices' },
+]
+
+function PlaceholderTab({ label }) {
+  return (
+    <div style={{ color: '#a1a1aa', fontSize: '14px' }}>
+      {label} — coming soon.
+    </div>
+  )
+}
 
 export default function Leadership() {
   const { user, loading } = useSession()
+  const [activeTab, setActiveTab] = useState('respect')
 
   if (loading) {
     return (
@@ -14,72 +33,74 @@ export default function Leadership() {
   }
 
   return (
-    <>
-      <main className="max-w-5xl mx-auto px-6 py-16">
-        <h1
-          className="font-cinzel text-center"
-          style={{ fontSize: 'clamp(36px, 5vw, 48px)', marginBottom: '60px' }}
-        >
-          Leadership Dashboard
-        </h1>
+    <div className="min-h-screen" style={{ background: '#07070a', color: '#f4f4f5' }}>
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Header */}
+        <div className="mb-12">
+          <h1
+            className="font-cinzel text-white mb-2"
+            style={{ fontSize: '40px', letterSpacing: '2px' }}
+          >
+            LEADERSHIP DASHBOARD
+          </h1>
+          <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
+            Command controls and leadership tools
+          </p>
+        </div>
 
         {!user?.isLeader ? (
           <div
-            className="max-w-3xl mx-auto p-10 rounded-3xl text-center"
+            className="max-w-3xl p-10 rounded-3xl text-center"
             style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa' }}
           >
             Access Restricted — Leadership Clearance Required
           </div>
         ) : (
-          <div
-            className="rounded-3xl mt-8 p-10"
-            style={{
-              background: 'rgba(22,22,32,0.82)',
-              border: '1px solid rgba(255,255,255,0.05)',
-              backdropFilter: 'blur(12px)',
-            }}
-          >
-            <h3 className="font-cinzel mb-6" style={{ fontSize: '24px' }}>
-              Command Controls
-            </h3>
-
-            <div className="flex flex-wrap gap-4">
-              <Link
-                to="/respect"
-                className="px-5 py-3 rounded-xl text-white no-underline transition-all hover:-translate-y-0.5"
-                style={{
-                  background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
-                  boxShadow: '0 0 20px rgba(179,18,63,0.35)',
-                }}
-              >
-                Respect Tracker
-              </Link>
-
-              <button
-                className="px-5 py-3 rounded-xl text-white border-none cursor-pointer"
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                Member Activity
-              </button>
-
-              <button
-                className="px-5 py-3 rounded-xl text-white border-none cursor-pointer"
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                Internal Notices
-              </button>
+          <>
+            {/* Tab navigation */}
+            <div
+              className="flex gap-0 mb-8 border-b"
+              style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className="px-6 py-3 font-medium border-none cursor-pointer transition-all"
+                  style={{
+                    background: 'transparent',
+                    color: activeTab === tab.id ? '#f4f4f5' : '#a1a1aa',
+                    borderBottom: activeTab === tab.id ? '2px solid #b3123f' : 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeTab !== tab.id) e.target.style.color = '#f4f4f5'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeTab !== tab.id) e.target.style.color = '#a1a1aa'
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-          </div>
-        )}
-      </main>
 
-      <QuoteBox />
-    </>
+            {/* Tab content */}
+            <div
+              className="rounded-2xl p-8"
+              style={{
+                background: 'rgba(22, 22, 32, 0.82)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              {activeTab === 'respect' && <RespectTab />}
+              {activeTab === 'events' && <EventsTab />}
+              {activeTab === 'schedules' && <SchedulesTab />}
+              {activeTab === 'activity' && <PlaceholderTab label="Member Activity" />}
+              {activeTab === 'notices' && <PlaceholderTab label="Internal Notices" />}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
