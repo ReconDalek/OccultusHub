@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import Respect from '../../pages/Respect'
 
 const tools = [
   {
@@ -9,15 +10,15 @@ const tools = [
     badge: 'Active',
     badgeColor: 'rgba(109,40,217,0.3)',
     badgeText: '#9f67ff',
-    action: { type: 'link', to: '/respect', label: 'Open Tracker' },
+    action: { type: 'embed', id: 'respect', label: 'Open Tracker' },
   },
   {
     id: 'recruitment',
     label: 'Faction Recruitment',
-    description: 'Faction recon and recruitment management dashboard.',
+    description: 'Faction recruitment dashboard.',
     badge: 'Active',
-    badgeColor: 'rgba(16,185,129,0.3)',
-    badgeText: '#10b981',
+    badgeColor: 'rgba(109,40,217,0.3)',
+    badgeText: '#9f67ff',
     action: { type: 'embed', id: 'recruitment', label: 'Open Panel' },
   },
   {
@@ -80,23 +81,6 @@ export default function LeaderToolsTab() {
                   </p>
                 </div>
 
-                {tool.action?.type === 'link' && (
-                  <Link
-                    to={tool.action.to}
-                    className="no-underline"
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
-                      color: '#f4f4f5',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {tool.action.label}
-                  </Link>
-                )}
                 {tool.action?.type === 'embed' && (
                   <button
                     onClick={() => setOpenEmbed(tool.action.id)}
@@ -141,17 +125,29 @@ export default function LeaderToolsTab() {
               {tools.find(t => t.action?.id === openEmbed)?.label}
             </h2>
           </div>
-          <iframe
-            src="https://faction-recon.pages.dev/"
-            style={{
-              width: '100%',
-              height: '800px',
+          {openEmbed === 'respect' ? (
+            <div style={{
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: 14,
-              background: '#07070a',
-            }}
-            title="Faction Recruitment"
-          />
+              background: 'rgba(22,22,32,0.82)',
+              overflow: 'auto',
+              maxHeight: '800px'
+            }}>
+              <Respect />
+            </div>
+          ) : (
+            <iframe
+              src="https://faction-recon.pages.dev/"
+              style={{
+                width: '100%',
+                height: '800px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 14,
+                background: '#07070a',
+              }}
+              title="Faction Recruitment"
+            />
+          )}
         </>
       )}
     </div>
