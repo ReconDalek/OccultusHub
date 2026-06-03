@@ -5,6 +5,7 @@ import { useCipher } from '../contexts/CipherContext'
 import { useSite } from '../contexts/SiteContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
 import LoginModal from './LoginModal'
+import Grimoire   from './Grimoire'
 
 const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
 
@@ -41,9 +42,11 @@ export default function Navbar() {
   const { cipherActive, toggleCipher } = useCipher()
   const { pages } = useSite()
   const location = useLocation()
-  const [modalOpen, setModalOpen]   = useState(false)
-  const [dropdownOpen, setDropdown] = useState(false)
-  const dropdownRef = useRef(null)
+  const [modalOpen, setModalOpen]       = useState(false)
+  const [dropdownOpen, setDropdown]     = useState(false)
+  const [grimoireOpen, setGrimoire]     = useState(false)
+  const dropdownRef  = useRef(null)
+  const logoClickRef = useRef({ count: 0, timer: null })
 
   useEffect(() => {
     function handler(e) {
@@ -54,6 +57,19 @@ export default function Navbar() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  function handleLogoClick(e) {
+    const lc = logoClickRef.current
+    lc.count += 1
+    clearTimeout(lc.timer)
+    if (lc.count >= 3) {
+      lc.count = 0
+      e.preventDefault()
+      setGrimoire(true)
+      return
+    }
+    lc.timer = setTimeout(() => { lc.count = 0 }, 800)
+  }
 
   const factionLabel = OCCULTUS_CONFIG.factionNames[Number(user?.factionId)] || 'Visitor'
   const navLinks = buildNavLinks(user, pages)
@@ -94,7 +110,7 @@ export default function Navbar() {
         >
           {/* LEFT – Logo */}
           <div className="flex items-center z-20 shrink-0">
-            <Link to="/" style={{ textDecoration: 'none' }}>
+            <Link to="/" style={{ textDecoration: 'none' }} onClick={handleLogoClick}>
               <h1
                 className="font-cinzel text-white"
                 style={{ fontSize: 'clamp(18px, 3.5vw, 28px)', letterSpacing: '6px', margin: 0 }}
@@ -163,11 +179,21 @@ export default function Navbar() {
                         {user.fishingPoints != null && (
                           <button
                             onClick={() => { window.dispatchEvent(new CustomEvent('openFishingLeaderboard')); setDropdown(false) }}
-                            className="text-sm border-none bg-transparent p-0 cursor-pointer text-left"
-                            style={{ color: '#fbbf24', fontSize: '12px', marginTop: '2px' }}
-                            title="View fishing leaderboard"
+                            className="border-none bg-transparent p-0 cursor-pointer text-left block"
+                            style={{ color: '#a78bfa', fontSize: '12px', marginTop: '3px', letterSpacing: '0.03em' }}
+                            title="View void seers leaderboard"
                           >
-                            {user.fishingPoints.toLocaleString()} pts
+                            ◈ {user.fishingPoints.toLocaleString()} void essence
+                          </button>
+                        )}
+                        {user.runePoints != null && (
+                          <button
+                            onClick={() => { window.dispatchEvent(new CustomEvent('openRuneLeaderboard')); setDropdown(false) }}
+                            className="border-none bg-transparent p-0 cursor-pointer text-left block"
+                            style={{ color: '#a78bfa', fontSize: '12px', marginTop: '1px', letterSpacing: '0.03em' }}
+                            title="View rune seers leaderboard"
+                          >
+                            ᚠ {user.runePoints.toLocaleString()} rune essence
                           </button>
                         )}
                       </div>
@@ -265,6 +291,7 @@ export default function Navbar() {
       </nav>
 
       <LoginModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <Grimoire open={grimoireOpen} onClose={() => setGrimoire(false)} />
     </>
   )
 }

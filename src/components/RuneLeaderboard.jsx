@@ -5,14 +5,14 @@ import { OCCULTUS_CONFIG } from '../lib/config'
 
 const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
 
-function getRankStyle(rank) {
-  if (rank === 1) return { color: '#fbbf24', icon: '⊕' }
-  if (rank === 2) return { color: '#e2e8f0', icon: '⊗' }
-  if (rank === 3) return { color: '#cd7f32', icon: '◈' }
-  return { color: '#6d28d9', icon: `${rank}` }
+function getRankIcon(rank) {
+  if (rank === 1) return { icon: 'ᛊ', color: '#fbbf24' }
+  if (rank === 2) return { icon: 'ᛏ', color: '#e2e8f0' }
+  if (rank === 3) return { icon: 'ᛚ', color: '#cd7f32' }
+  return { icon: String(rank), color: '#6d28d9' }
 }
 
-export default function FishingLeaderboard({ open, onClose }) {
+export default function RuneLeaderboard({ open, onClose }) {
   const { user } = useSession()
   const [leaderboard, setLeaderboard] = useState([])
   const [loading, setLoading] = useState(false)
@@ -20,7 +20,7 @@ export default function FishingLeaderboard({ open, onClose }) {
   useEffect(() => {
     if (!open) return
     setLoading(true)
-    fetch(`${API_BASE_URL}/api/fishing/leaderboard`)
+    fetch(`${API_BASE_URL}/api/runes/leaderboard`)
       .then(r => r.json())
       .then(d => setLeaderboard(d.leaderboard || []))
       .catch(() => {})
@@ -44,22 +44,21 @@ export default function FishingLeaderboard({ open, onClose }) {
         background: 'rgba(6,3,18,0.98)',
         border: '1px solid rgba(109,40,217,0.25)',
         borderRadius: '20px', overflow: 'hidden',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 40px rgba(109,40,217,0.08)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.7)',
         maxHeight: '85vh', display: 'flex', flexDirection: 'column',
       }}>
-        {/* Header */}
         <div style={{
           padding: '20px 24px',
-          background: 'linear-gradient(135deg, rgba(109,40,217,0.25), rgba(179,18,63,0.2))',
+          background: 'linear-gradient(135deg, rgba(109,40,217,0.22), rgba(179,18,63,0.15))',
           borderBottom: '1px solid rgba(109,40,217,0.2)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '3px', color: '#e9d5ff' }}>
-              ✦ THE VOID SEERS
+              ᚠ THE RUNE SEERS
             </h2>
             <p style={{ margin: '4px 0 0', color: '#7c3aed', fontSize: '12px', letterSpacing: '0.1em' }}>
-              Those who have peered deepest into the abyss
+              Masters of the ancient casting
             </p>
           </div>
           <button onClick={onClose} style={{
@@ -69,28 +68,19 @@ export default function FishingLeaderboard({ open, onClose }) {
           }}>✕</button>
         </div>
 
-        {/* Rarity legend */}
-        <div style={{ padding: '10px 24px', display: 'flex', gap: '16px', flexWrap: 'wrap', borderBottom: '1px solid rgba(109,40,217,0.1)' }}>
-          {[['Common','#94a3b8'],['Uncommon','#22c55e'],['Rare','#8b5cf6'],['Legendary','#fbbf24']].map(([r,c]) => (
-            <span key={r} style={{ fontSize: '11px', color: c, letterSpacing: '0.05em' }}>◈ {r}</span>
-          ))}
-        </div>
-
-        {/* Body */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#7c3aed', letterSpacing: '0.1em', fontSize: '13px' }}>Consulting the void...</div>
+            <div style={{ padding: '40px', textAlign: 'center', color: '#7c3aed', fontSize: '13px', letterSpacing: '0.1em' }}>Reading the runes...</div>
           ) : leaderboard.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#a1a1aa' }}>
-              <div style={{ fontSize: '40px', marginBottom: '12px', fontFamily: 'monospace', color: '#6d28d9' }}>⊕</div>
-              <p style={{ fontFamily: 'Cinzel, serif', letterSpacing: '1px', fontSize: '13px' }}>The abyss remains unscried.</p>
-              <p style={{ color: '#6d28d9', fontSize: '12px' }}>Be the first to peer into the void.</p>
+              <div style={{ fontSize: '40px', marginBottom: '12px', fontFamily: 'monospace', color: '#6d28d9' }}>ᚠ</div>
+              <p style={{ fontFamily: 'Cinzel, serif', fontSize: '13px', letterSpacing: '1px' }}>No runes have been cast yet.</p>
             </div>
           ) : (
             <div style={{ padding: '8px 0' }}>
               {leaderboard.map((entry, i) => {
                 const rank = i + 1
-                const rs = getRankStyle(rank)
+                const rs = getRankIcon(rank)
                 const isMe = user && entry.torn_user_id === user.tornUserId
                 const factionName = OCCULTUS_CONFIG.factionNames[Number(entry.faction_id)] || ''
                 return (
@@ -100,7 +90,7 @@ export default function FishingLeaderboard({ open, onClose }) {
                     background: isMe ? 'rgba(109,40,217,0.12)' : 'transparent',
                     borderLeft: isMe ? '3px solid #7c3aed' : '3px solid transparent',
                   }}>
-                    <div style={{ minWidth: '32px', textAlign: 'center', fontSize: rank <= 3 ? '18px' : '13px', color: rs.color, fontWeight: 700, fontFamily: 'monospace' }}>
+                    <div style={{ minWidth: '32px', textAlign: 'center', fontSize: rank <= 3 ? '16px' : '13px', color: rs.color, fontFamily: 'monospace', fontWeight: 700 }}>
                       {rs.icon}
                     </div>
                     <img src={entry.image_url || DEFAULT_AVATAR} alt="" onError={e => (e.currentTarget.src = DEFAULT_AVATAR)}
@@ -110,13 +100,13 @@ export default function FishingLeaderboard({ open, onClose }) {
                         {entry.username}
                         {isMe && <span style={{ fontSize: '10px', background: 'rgba(109,40,217,0.3)', color: '#a78bfa', padding: '1px 6px', borderRadius: '4px' }}>YOU</span>}
                       </div>
-                      <div style={{ color: '#6d28d9', fontSize: '11px', letterSpacing: '0.05em' }}>
-                        {factionName}{entry.total_catches > 0 && ` · ${entry.total_catches} bound`}
+                      <div style={{ color: '#6d28d9', fontSize: '11px' }}>
+                        {factionName}{entry.total_casts > 0 && ` · ${entry.total_casts} cast${entry.total_casts !== 1 ? 's' : ''}`}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: '15px', color: '#fbbf24', fontFamily: 'Cinzel, serif' }}>
-                        {entry.fishing_points.toLocaleString()}
+                        {entry.rune_points.toLocaleString()}
                       </div>
                       <div style={{ color: '#6d28d9', fontSize: '11px' }}>essence</div>
                     </div>

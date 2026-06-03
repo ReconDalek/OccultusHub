@@ -8,6 +8,7 @@ import * as discordController from './controllers/discordController.js';
 import * as noticesController from './controllers/noticesController.js';
 import * as cipherController from './controllers/cipherController.js';
 import * as fishingController from './controllers/fishingController.js';
+import * as runeController from './controllers/runeController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -124,6 +125,10 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/admin/fishing/reset' && method === 'POST') {
       return fishingController.resetLeaderboard(request, env, user);
     }
+
+    if (pathname === '/api/admin/runes/reset' && method === 'POST') {
+      return runeController.resetLeaderboard(request, env, user);
+    }
   }
 
   // Fishing endpoints
@@ -144,6 +149,20 @@ export async function handleRequest(request, env) {
   if (pathname === '/api/fishing/stats' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     return fishingController.getUserStats(request, env, user);
+  }
+
+  if (pathname === '/api/runes/cast' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return runeController.startCast(request, env, user);
+  }
+
+  if (pathname === '/api/runes/record' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return runeController.recordCast(request, env, user);
+  }
+
+  if (pathname === '/api/runes/leaderboard' && method === 'GET') {
+    return runeController.getLeaderboard(request, env);
   }
 
   // Cipher submit — open to all (authenticated or guest)

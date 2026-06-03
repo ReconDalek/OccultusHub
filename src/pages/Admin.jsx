@@ -4,6 +4,7 @@ import PagesTab from '../components/AdminTabs/PagesTab'
 import CacheTab from '../components/AdminTabs/CacheTab'
 import SettingsTab from '../components/AdminTabs/SettingsTab'
 import FishingTab  from '../components/AdminTabs/FishingTab'
+import RuneTab     from '../components/AdminTabs/RuneTab'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
@@ -13,7 +14,8 @@ export default function Admin() {
     { id: 'pages', label: 'Pages' },
     { id: 'cache', label: 'Cache' },
     { id: 'settings', label: 'Settings' },
-    { id: 'fishing',  label: '🎣 Fishing' },
+    { id: 'fishing',  label: '◈ Void Scrying' },
+    { id: 'runes',    label: 'ᚠ Rune Casting' },
   ]
 
   return (
@@ -73,6 +75,7 @@ export default function Admin() {
           {activeTab === 'cache' && <CacheTab />}
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'fishing'  && <FishingTab />}
+          {activeTab === 'runes'    && <RuneTab />}
         </div>
       </div>
     </div>

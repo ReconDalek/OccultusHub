@@ -13,6 +13,9 @@ import Footer            from './components/Footer'
 import QuoteBox          from './components/QuoteBox'
 import DiscordWidget     from './components/DiscordWidget/DiscordWidget'
 import FishingEasterEgg from './components/FishingEasterEgg'
+import RuneEasterEgg    from './components/RuneEasterEgg'
+import WatchingEye      from './components/WatchingEye'
+import BloodMoon        from './components/BloodMoon'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -38,6 +41,9 @@ function Layout({ children }) {
       <Footer />
       <DiscordWidget />
       <FishingEasterEgg />
+      <RuneEasterEgg />
+      <WatchingEye />
+      <BloodMoon />
     </>
   )
 }

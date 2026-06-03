@@ -2,157 +2,183 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import FishingGame from './FishingGame'
 import FishingLeaderboard from './FishingLeaderboard'
 
-// Several distinct fish SVG shapes to vary the look
-const FISH_VARIANTS = [
-  // Classic fish (body + tail)
+// Void entity shapes — wisps, wraiths, spectres, phantom eyes. Deliberately NOT fish-shaped.
+const ENTITY_SHAPES = [
+  // Wisp — glowing orb with three comet-like energy trails
   (color) => (
-    <svg viewBox="0 0 80 36" width="100%" height="100%">
-      <path d="M12,18 C24,5 52,5 66,18 C52,31 24,31 12,18 Z" fill={color} opacity="0.85" />
-      <path d="M66,18 L80,8 L76,18 L80,28 Z" fill={color} opacity="0.75" />
-      <circle cx="22" cy="14" r="3" fill="rgba(255,255,255,0.5)" />
-      <circle cx="21" cy="14" r="1.5" fill="rgba(0,0,0,0.6)" />
+    <svg viewBox="0 0 76 40" width="100%" height="100%">
+      {/* Energy trails radiating behind (right side = trailing direction) */}
+      <path d="M22,20 C36,14 54,11 72,9"  stroke={color} strokeWidth="2.5" fill="none" opacity="0.5" strokeLinecap="round"/>
+      <path d="M22,20 C38,20 58,20 76,20"  stroke={color} strokeWidth="3.5" fill="none" opacity="0.45" strokeLinecap="round"/>
+      <path d="M22,20 C36,26 54,29 72,31"  stroke={color} strokeWidth="2"   fill="none" opacity="0.45" strokeLinecap="round"/>
+      {/* Particle specks along trail */}
+      <circle cx="44" cy="15" r="1.8" fill={color} opacity="0.4"/>
+      <circle cx="56" cy="12" r="1.2" fill={color} opacity="0.3"/>
+      <circle cx="38" cy="27" r="1.5" fill={color} opacity="0.35"/>
+      {/* Main orb */}
+      <circle cx="16" cy="20" r="14" fill={color} opacity="0.82"/>
+      <circle cx="16" cy="20" r="8"  fill={color} opacity="0.35"/>
+      <circle cx="16" cy="20" r="4"  fill="rgba(240,210,255,0.3)"/>
+      {/* Glowing red eyes */}
+      <circle cx="11" cy="17" r="3"  fill="rgba(230,40,60,0.9)"/>
+      <circle cx="21" cy="17" r="3"  fill="rgba(230,40,60,0.9)"/>
+      <circle cx="11" cy="17" r="1.2" fill="rgba(0,0,0,0.9)"/>
+      <circle cx="21" cy="17" r="1.2" fill="rgba(0,0,0,0.9)"/>
     </svg>
   ),
-  // Rounder fish
+
+  // Wraith — classic floating ghost silhouette, horizontal with ragged trailing hem
   (color) => (
-    <svg viewBox="0 0 80 40" width="100%" height="100%">
-      <ellipse cx="36" cy="20" rx="26" ry="14" fill={color} opacity="0.85" />
-      <path d="M62,20 L80,10 L74,20 L80,30 Z" fill={color} opacity="0.7" />
-      <path d="M18,20 C22,26 50,26 62,20" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" fill="none" />
-      <circle cx="24" cy="15" r="3.5" fill="rgba(255,255,255,0.45)" />
-      <circle cx="23" cy="15" r="1.8" fill="rgba(0,0,0,0.5)" />
+    <svg viewBox="0 0 80 52" width="100%" height="100%">
+      {/* Trailing mist body */}
+      <path d="M28,26 C42,18 58,16 72,17 C76,18 78,22 76,26 C74,30 70,30 68,26 C64,22 58,24 54,30 C50,36 46,40 42,36 C38,40 34,36 30,40 C26,36 24,32 28,26Z" fill={color} opacity="0.55"/>
+      {/* Rounded head/body at leading edge */}
+      <ellipse cx="16" cy="22" rx="14" ry="18" fill={color} opacity="0.88"/>
+      {/* Large hollow eyes */}
+      <ellipse cx="11" cy="18" rx="4"   ry="5"   fill="rgba(0,0,0,0.9)"/>
+      <ellipse cx="22" cy="18" rx="4"   ry="5"   fill="rgba(0,0,0,0.9)"/>
+      <ellipse cx="11" cy="19" rx="2"   ry="2.5" fill="rgba(200,30,50,0.8)"/>
+      <ellipse cx="22" cy="19" rx="2"   ry="2.5" fill="rgba(200,30,50,0.8)"/>
+      {/* Mouth slit */}
+      <path d="M10,28 Q16,32 22,28" stroke="rgba(0,0,0,0.7)" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
     </svg>
   ),
-  // Thin sleek fish
+
+  // Shadow tendril entity — dense core with five writhing tentacles trailing behind
   (color) => (
-    <svg viewBox="0 0 88 28" width="100%" height="100%">
-      <path d="M8,14 C22,6 54,6 72,14 C54,22 22,22 8,14 Z" fill={color} opacity="0.9" />
-      <path d="M72,14 L88,4 L83,14 L88,24 Z" fill={color} opacity="0.65" />
-      <path d="M30,10 Q50,8 68,10" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" fill="none" />
-      <circle cx="18" cy="11" r="2.5" fill="rgba(255,255,255,0.5)" />
-      <circle cx="17" cy="11" r="1.2" fill="rgba(0,0,0,0.7)" />
+    <svg viewBox="0 0 88 50" width="100%" height="100%">
+      {/* Tentacles trailing to the right */}
+      <path d="M28,25 C44,16 60,11 78,8"  stroke={color} strokeWidth="3"   fill="none" opacity="0.55" strokeLinecap="round"/>
+      <path d="M28,25 C44,19 62,18 82,20"  stroke={color} strokeWidth="2.5" fill="none" opacity="0.5"  strokeLinecap="round"/>
+      <path d="M28,25 C46,25 66,25 88,26"  stroke={color} strokeWidth="2"   fill="none" opacity="0.4"  strokeLinecap="round"/>
+      <path d="M28,25 C44,31 62,32 82,30"  stroke={color} strokeWidth="2.5" fill="none" opacity="0.5"  strokeLinecap="round"/>
+      <path d="M28,25 C44,34 60,39 78,42"  stroke={color} strokeWidth="3"   fill="none" opacity="0.55" strokeLinecap="round"/>
+      {/* Core blob — circular, NOT lens-shaped */}
+      <circle cx="18" cy="25" rx="18" fill={color} opacity="0.9" r="18"/>
+      <circle cx="18" cy="25" r="10" fill={color} opacity="0.3"/>
+      {/* Two vertical slit eyes */}
+      <ellipse cx="13" cy="21" rx="3" ry="5" fill="rgba(230,30,50,0.9)"/>
+      <ellipse cx="24" cy="21" rx="3" ry="5" fill="rgba(230,30,50,0.9)"/>
+      <ellipse cx="13" cy="21" rx="1.2" ry="2.5" fill="rgba(0,0,0,0.95)"/>
+      <ellipse cx="24" cy="21" rx="1.2" ry="2.5" fill="rgba(0,0,0,0.95)"/>
     </svg>
   ),
-  // Chubby fish with fins
+
+  // Phantom Eye — a single enormous drifting eye, iris and all
   (color) => (
-    <svg viewBox="0 0 76 42" width="100%" height="100%">
-      <path d="M10,21 C20,6 50,6 64,21 C50,36 20,36 10,21 Z" fill={color} opacity="0.88" />
-      <path d="M64,21 L76,12 L71,21 L76,30 Z" fill={color} opacity="0.7" />
-      <path d="M28,8 L32,2 L36,8 Z" fill={color} opacity="0.6" />
-      <path d="M30,33 L34,40 L38,33 Z" fill={color} opacity="0.55" />
-      <circle cx="20" cy="16" r="4" fill="rgba(255,255,255,0.45)" />
-      <circle cx="19" cy="16" r="2" fill="rgba(0,0,0,0.6)" />
+    <svg viewBox="0 0 72 42" width="100%" height="100%">
+      {/* Eyelid outline — almond shape */}
+      <path d="M4,21 Q18,4 36,4 Q54,4 68,21 Q54,38 36,38 Q18,38 4,21Z" fill={color} opacity="0.78"/>
+      {/* Iris ring */}
+      <circle cx="36" cy="21" r="13" fill={color} opacity="0.55"/>
+      <circle cx="36" cy="21" r="8"  fill="rgba(110,20,40,0.95)"/>
+      {/* Pupil */}
+      <ellipse cx="36" cy="21" rx="4" ry="5.5" fill="rgba(0,0,0,1)"/>
+      {/* Corneal highlight */}
+      <circle cx="32" cy="16" r="2.2" fill="rgba(255,200,220,0.35)"/>
+      {/* Energy wisps trailing from the back of the eye */}
+      <path d="M68,18 Q74,15 72,12" stroke={color} strokeWidth="2"   fill="none" opacity="0.4" strokeLinecap="round"/>
+      <path d="M68,21 Q76,21 74,21" stroke={color} strokeWidth="2.5" fill="none" opacity="0.35" strokeLinecap="round"/>
+      <path d="M68,24 Q74,27 72,30" stroke={color} strokeWidth="2"   fill="none" opacity="0.4" strokeLinecap="round"/>
     </svg>
   ),
 ]
 
-const FISH_COLORS = [
-  'rgba(80,140,210,0.9)',    // blue
-  'rgba(90,180,130,0.85)',   // teal
-  'rgba(170,100,200,0.85)',  // purple
-  'rgba(200,140,60,0.88)',   // orange
-  'rgba(200,80,90,0.8)',     // red
-  'rgba(60,160,180,0.85)',   // cyan
+const ENTITY_COLORS = [
+  'rgba(109,40,217,0.85)',
+  'rgba(139,92,246,0.8)',
+  'rgba(179,18,63,0.75)',
+  'rgba(80,20,120,0.88)',
+  'rgba(60,10,90,0.9)',
+  'rgba(150,30,100,0.82)',
 ]
 
-function getRandomBetween(min, max) {
-  return min + Math.random() * (max - min)
-}
+function getRandom(min, max) { return min + Math.random() * (max - min) }
 
 export default function FishingEasterEgg() {
   const [visible, setVisible] = useState(false)
-  const [fishProps, setFishProps] = useState(null)
+  const [entityProps, setEntityProps] = useState(null)
   const [gameOpen, setGameOpen] = useState(false)
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
   const scheduleRef = useRef(null)
 
-  const spawnFish = useCallback(() => {
+  const spawnEntity = useCallback(() => {
     const goRight = Math.random() > 0.5
-    const variantIdx = Math.floor(Math.random() * FISH_VARIANTS.length)
-    const colorIdx = Math.floor(Math.random() * FISH_COLORS.length)
-    const sizeW = Math.floor(getRandomBetween(40, 72)) // width in px
-    const sizeH = Math.floor(sizeW * 0.5)
-    const topPct = getRandomBetween(18, 78)
-    const duration = getRandomBetween(12, 22)
-
-    setFishProps({ goRight, variantIdx, colorIdx, sizeW, sizeH, topPct, duration, key: Date.now() })
+    const variantIdx = Math.floor(Math.random() * ENTITY_SHAPES.length)
+    const colorIdx   = Math.floor(Math.random() * ENTITY_COLORS.length)
+    const sizeW      = Math.floor(getRandom(52, 84))
+    const sizeH      = Math.floor(sizeW * 0.52)
+    const topPct     = getRandom(18, 80)
+    const duration   = getRandom(14, 24)
+    setEntityProps({ goRight, variantIdx, colorIdx, sizeW, sizeH, topPct, duration, key: Date.now() })
     setVisible(true)
   }, [])
 
   const scheduleNext = useCallback(() => {
-    const delay = getRandomBetween(30000, 90000)
-    scheduleRef.current = setTimeout(() => spawnFish(), delay)
-  }, [spawnFish])
+    scheduleRef.current = setTimeout(spawnEntity, getRandom(30000, 90000))
+  }, [spawnEntity])
 
   useEffect(() => {
-    // First fish appears after 8-20s to let the page load
-    const initial = setTimeout(() => spawnFish(), getRandomBetween(8000, 20000))
-    return () => { clearTimeout(initial); clearTimeout(scheduleRef.current) }
-  }, [spawnFish])
+    const init = setTimeout(spawnEntity, getRandom(8000, 20000))
+    return () => { clearTimeout(init); clearTimeout(scheduleRef.current) }
+  }, [spawnEntity])
 
-  function onAnimationEnd() {
-    setVisible(false)
-    scheduleNext()
-  }
+  function onAnimationEnd() { setVisible(false); scheduleNext() }
 
-  function handleFishClick(e) {
+  function handleClick(e) {
     e.stopPropagation()
     setVisible(false)
     clearTimeout(scheduleRef.current)
     setGameOpen(true)
   }
 
-  // Listen for external leaderboard open requests (from Navbar)
   useEffect(() => {
     function handler() { setLeaderboardOpen(true) }
     window.addEventListener('openFishingLeaderboard', handler)
     return () => window.removeEventListener('openFishingLeaderboard', handler)
   }, [])
 
-  if (!fishProps) return null
+  if (!entityProps) return null
 
-  const { goRight, variantIdx, colorIdx, sizeW, sizeH, topPct, duration, key } = fishProps
-  const FishShape = FISH_VARIANTS[variantIdx]
-  const color = FISH_COLORS[colorIdx]
-
-  const animName = goRight ? `eggFishR_${key}` : `eggFishL_${key}`
+  const { goRight, variantIdx, colorIdx, sizeW, sizeH, topPct, duration, key } = entityProps
+  const EntityShape = ENTITY_SHAPES[variantIdx]
+  const color = ENTITY_COLORS[colorIdx]
+  const animName = goRight ? `voidDriftR_${key}` : `voidDriftL_${key}`
 
   return (
     <>
       <style>{`
         @keyframes ${animName} {
           0%   { transform: ${goRight ? 'scaleX(-1) translateX(0)' : 'translateX(0)'}; opacity: 0; }
-          5%   { opacity: 1; }
-          92%  { opacity: 1; }
-          100% { transform: ${goRight ? 'scaleX(-1) translateX(calc(-100vw - 120px))' : 'translateX(calc(-100vw - 120px))'}; opacity: 0; }
+          6%   { opacity: 1; }
+          90%  { opacity: 1; }
+          100% { transform: ${goRight ? 'scaleX(-1) translateX(calc(-100vw - 140px))' : 'translateX(calc(-100vw - 140px))'}; opacity: 0; }
         }
       `}</style>
       {visible && (
         <div
           style={{
-            position: 'fixed',
-            top: `${topPct}%`,
+            position: 'fixed', top: `${topPct}%`,
             left: goRight ? '-8%' : '108%',
-            zIndex: 9000,
-            pointerEvents: 'none',
+            zIndex: 9000, pointerEvents: 'none',
             animation: `${animName} ${duration}s linear forwards`,
+            filter: 'blur(0.5px)',
           }}
           onAnimationEnd={onAnimationEnd}
         >
           <div
-            onClick={handleFishClick}
-            title="🎣 A wild fish! Click to fish!"
+            onClick={handleClick}
+            title="Something drifts through the veil..."
             style={{
               width: sizeW, height: sizeH,
-              cursor: 'pointer',
-              pointerEvents: 'auto',
-              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))',
-              transition: 'filter 0.15s',
+              cursor: 'pointer', pointerEvents: 'auto',
+              filter: 'drop-shadow(0 0 8px rgba(109,40,217,0.5))',
+              transition: 'filter 0.2s',
             }}
-            onMouseEnter={e => (e.currentTarget.style.filter = 'drop-shadow(0 0 12px rgba(255,255,200,0.8)) drop-shadow(0 2px 6px rgba(0,0,0,0.4))')}
-            onMouseLeave={e => (e.currentTarget.style.filter = 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))')}
+            onMouseEnter={e => (e.currentTarget.style.filter = 'drop-shadow(0 0 16px rgba(179,18,63,0.9)) drop-shadow(0 0 8px rgba(109,40,217,0.6))')}
+            onMouseLeave={e => (e.currentTarget.style.filter = 'drop-shadow(0 0 8px rgba(109,40,217,0.5))')}
           >
-            <FishShape color={color} />
+            <EntityShape color={color} />
           </div>
         </div>
       )}

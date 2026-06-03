@@ -131,6 +131,7 @@ export async function login(request, env) {
         isAdmin: user.is_admin === 1,
         isOwner: user.is_owner === 1,
         fishingPoints: user.fishing_points || 0,
+        runePoints: user.rune_points || 0,
       },
     });
   } catch (error) {
@@ -166,6 +167,8 @@ export async function session(request, env, user) {
         isOwner: userData.is_owner === 1,
         fishingPoints: userData.fishing_points || 0,
         lastFishedAt: userData.last_fished_at || null,
+        runePoints: userData.rune_points || 0,
+        lastRuneCastAt: userData.last_rune_cast_at || null,
       },
     });
   } catch (error) {
