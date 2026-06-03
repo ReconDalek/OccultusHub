@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../config/api'
 import { useSession } from '../hooks/useSession'
+import { formatUTC } from '../lib/dates'
 
 function Stars({ rating }) {
   return (
@@ -146,7 +147,8 @@ export default function Companies() {
   const { user }                        = useSession()
   const [companies, setCompanies]       = useState([])
   const [lastUpdated, setLastUpdated]   = useState(null)
-  const [cacheStatus, setCacheStatus]   = useState('Loading company cache…')
+  const [loading, setLoading]           = useState(true)
+  const [cacheStatus, setCacheStatus]   = useState(null)
 
   useEffect(() => {
     ;(async () => {
@@ -154,25 +156,21 @@ export default function Companies() {
         const res  = await fetch(`${API_BASE_URL}/api/company-cache`)
         const data = await res.json()
 
-        if (!data.companies?.length) {
-          setCacheStatus('No company data cached yet.')
-          return
-        }
-
-        setCompanies(
-          [...data.companies].sort(
-            (a, b) => (b.profile?.rating || 0) - (a.profile?.rating || 0)
+        if (data.companies?.length) {
+          setCompanies(
+            [...data.companies].sort(
+              (a, b) => (b.profile?.rating || 0) - (a.profile?.rating || 0)
+            )
           )
-        )
-        setLastUpdated(data.lastUpdated)
-
-        if (data.lastUpdated) {
-          const d = new Date(data.lastUpdated)
-          setCacheStatus(`Last Updated: ${d.toLocaleString()}`)
+          setLastUpdated(data.lastUpdated)
+          if (data.lastUpdated) {
+            setCacheStatus(`Last Updated: ${formatUTC(data.lastUpdated)}`)
+          }
         }
       } catch (err) {
         console.error('Failed loading companies:', err)
-        setCacheStatus('Failed to load company data.')
+      } finally {
+        setLoading(false)
       }
     })()
   }, [])
@@ -203,7 +201,15 @@ export default function Companies() {
 
       {/* GRID */}
       <section style={{ padding: '60px 48px' }}>
-        {companies.length > 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>Loading company data…</p>
+          </div>
+        ) : companies.length === 0 ? (
+          <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>No company data available.</p>
+          </div>
+        ) : (
           <div
             className="grid gap-8 faction-grid-responsive"
             style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
@@ -216,22 +222,17 @@ export default function Companies() {
               />
             ))}
           </div>
-        ) : (
-          <div
-            className="max-w-3xl mx-auto p-10 rounded-3xl text-center text-xl italic"
-            style={{ background: 'rgba(255,255,255,0.03)', color: '#d4d4d8' }}
-          >
-            No company data cached yet.
-          </div>
         )}
 
         {/* Cache status */}
-        <div
-          className="max-w-3xl mx-auto mt-8 p-5 rounded-3xl text-center"
-          style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa', fontSize: '14px' }}
-        >
-          {cacheStatus}
-        </div>
+        {cacheStatus && (
+          <div
+            className="max-w-3xl mx-auto mt-8 p-5 rounded-3xl text-center"
+            style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa', fontSize: '14px' }}
+          >
+            {cacheStatus}
+          </div>
+        )}
       </section>
     </>
   )

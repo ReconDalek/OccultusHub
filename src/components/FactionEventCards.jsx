@@ -138,7 +138,7 @@ function FactionCard({ faction, schedules }) {
                 onMouseEnter={(e) => (e.target.style.textDecoration = 'underline')}
                 onMouseLeave={(e) => (e.target.style.textDecoration = 'none')}
               >
-                Faction #{next.opponent_faction_id}
+                {next.opponent_faction_name ? `${next.opponent_faction_name} #${next.opponent_faction_id}` : `Faction #${next.opponent_faction_id}`}
               </a>
             </div>
           )}

@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { SessionProvider } from './hooks/useSession'
 import { CipherProvider } from './contexts/CipherContext'
-import { useState, useEffect } from 'react'
+import { SiteProvider, useSite } from './contexts/SiteContext'
+import { useEffect } from 'react'
 import { API_BASE_URL } from './config/api'
 
 import BackgroundOverlay from './components/BackgroundOverlay'
@@ -11,6 +12,7 @@ import CipherOverlay     from './components/CipherOverlay'
 import Footer            from './components/Footer'
 import QuoteBox          from './components/QuoteBox'
 import DiscordWidget     from './components/DiscordWidget/DiscordWidget'
+import FishingEasterEgg from './components/FishingEasterEgg'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -35,17 +37,16 @@ function Layout({ children }) {
       <QuoteBox />
       <Footer />
       <DiscordWidget />
+      <FishingEasterEgg />
     </>
   )
 }
 
-// Respect page has its own full-height layout (no standard navbar needed)
 function RespectLayout() {
   return (
     <>
       <BackgroundOverlay />
       <CipherOverlay />
-      {/* Minimal navbar for Respect page */}
       <nav
         className="sticky top-0 w-full z-[1000] flex items-center justify-between"
         style={{
@@ -81,120 +82,100 @@ function RespectLayout() {
   )
 }
 
-export default function App() {
-  const [pageVisibility, setPageVisibility] = useState({
-    factions: true,
-    companies: true,
-    leadership: true,
-    respect: true,
-  })
-  const [visibilityLoaded, setVisibilityLoaded] = useState(false)
+function AppRoutes() {
+  const { pages, siteTitle, loaded } = useSite()
 
   useEffect(() => {
-    const fetchPageVisibility = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/pages/visibility`)
-        const data = await res.json()
-        setPageVisibility(data)
-      } catch (err) {
-        console.error('Failed to fetch page visibility:', err)
-      } finally {
-        setVisibilityLoaded(true)
-      }
-    }
+    if (siteTitle) document.title = siteTitle
+  }, [siteTitle])
 
-    fetchPageVisibility()
-  }, [])
-
-  if (!visibilityLoaded) {
+  if (!loaded) {
     return (
-      <BrowserRouter>
-        <CipherProvider>
-        <SessionProvider>
-          <div
-            className="flex items-center justify-center"
-            style={{
-              minHeight: '100vh',
-              background: '#07070a',
-              color: '#a1a1aa',
-            }}
-          >
-            Loading...
-          </div>
-        </SessionProvider>
-        </CipherProvider>
-      </BrowserRouter>
+      <div
+        className="flex items-center justify-center"
+        style={{ minHeight: '100vh', background: '#07070a', color: '#a1a1aa' }}
+      >
+        Loading...
+      </div>
     )
   }
 
   return (
+    <Routes>
+      <Route path="/" element={<Layout><Home /></Layout>} />
+      <Route path="/about" element={<Layout><About /></Layout>} />
+
+      {pages.factions && (
+        <Route
+          path="/factions"
+          element={
+            <Layout>
+              <ProtectedRoute requiredLevel="member">
+                <Factions />
+              </ProtectedRoute>
+            </Layout>
+          }
+        />
+      )}
+
+      {pages.companies && (
+        <Route
+          path="/companies"
+          element={
+            <Layout>
+              <ProtectedRoute requiredLevel="member">
+                <Companies />
+              </ProtectedRoute>
+            </Layout>
+          }
+        />
+      )}
+
+      {pages.leadership && (
+        <Route
+          path="/leadership"
+          element={
+            <Layout>
+              <ProtectedRoute requiredLevel="leadership">
+                <Leadership />
+              </ProtectedRoute>
+            </Layout>
+          }
+        />
+      )}
+
+      {pages.respect && (
+        <Route path="/respect" element={<RespectLayout />} />
+      )}
+
+      <Route
+        path="/admin"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="admin">
+              <Admin />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
+
+      <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
+      <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
+
+      <Route path="*" element={<Layout><NotFound /></Layout>} />
+    </Routes>
+  )
+}
+
+export default function App() {
+  return (
     <BrowserRouter>
       <CipherProvider>
-      <SessionProvider>
-        <Routes>
-          <Route path="/" element={<Layout><Home /></Layout>} />
-          <Route path="/about" element={<Layout><About /></Layout>} />
-
-          {pageVisibility.factions && (
-            <Route
-              path="/factions"
-              element={
-                <Layout>
-                  <ProtectedRoute requiredLevel="member">
-                    <Factions />
-                  </ProtectedRoute>
-                </Layout>
-              }
-            />
-          )}
-
-          {pageVisibility.companies && (
-            <Route
-              path="/companies"
-              element={
-                <Layout>
-                  <ProtectedRoute requiredLevel="member">
-                    <Companies />
-                  </ProtectedRoute>
-                </Layout>
-              }
-            />
-          )}
-
-          {pageVisibility.leadership && (
-            <Route
-              path="/leadership"
-              element={
-                <Layout>
-                  <ProtectedRoute requiredLevel="leadership">
-                    <Leadership />
-                  </ProtectedRoute>
-                </Layout>
-              }
-            />
-          )}
-
-          {pageVisibility.respect && (
-            <Route path="/respect" element={<RespectLayout />} />
-          )}
-
-          <Route
-            path="/admin"
-            element={
-              <Layout>
-                <ProtectedRoute requiredLevel="admin">
-                  <Admin />
-                </ProtectedRoute>
-              </Layout>
-            }
-          />
-
-          <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
-          <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
-
-          <Route path="*" element={<Layout><NotFound /></Layout>} />
-        </Routes>
-      </SessionProvider>
+        <SessionProvider>
+          <SiteProvider>
+            <AppRoutes />
+          </SiteProvider>
+        </SessionProvider>
       </CipherProvider>
     </BrowserRouter>
   )

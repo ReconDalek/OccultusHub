@@ -257,6 +257,10 @@ function SchedulesSection({ token }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [advancing, setAdvancing] = useState(null) // schedule id being advanced
+  const [advanceForm, setAdvanceForm] = useState({ scheduled_at: '', opponent_faction_id: '' })
+  const [advanceSaving, setAdvanceSaving] = useState(false)
+  const [advanceError, setAdvanceError] = useState('')
 
   const isWar = form.type === 'war'
   const isActive = form.stage === 'active'
@@ -277,9 +281,9 @@ function SchedulesSection({ token }) {
     setSaving(true)
     setError('')
     try {
-      // Enlisting wars use midnight UTC of the enlistment date
+      // Enlisting wars use 12:00 UTC (noon) of the enlistment date
       const utcDate = isWar && !isActive
-        ? new Date(form.enlist_date + 'T00:00:00Z').toISOString()
+        ? new Date(form.enlist_date + 'T12:00:00Z').toISOString()
         : new Date(form.scheduled_at + 'Z').toISOString()
       const body = {
         faction_id: Number(form.faction_id),
@@ -311,6 +315,36 @@ function SchedulesSection({ token }) {
       headers: { Authorization: token },
     })
     fetchSchedules()
+  }
+
+  const openAdvance = (id) => {
+    setAdvancing(id)
+    setAdvanceForm({ scheduled_at: '', opponent_faction_id: '' })
+    setAdvanceError('')
+  }
+
+  const handleAdvance = async (id) => {
+    if (!advanceForm.scheduled_at) { setAdvanceError('Start date and time are required.'); return }
+    setAdvanceSaving(true)
+    setAdvanceError('')
+    try {
+      const utcDate = new Date(advanceForm.scheduled_at + 'Z').toISOString()
+      const res = await fetch(`${API_BASE_URL}/api/leadership/faction-schedules/${id}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({
+          scheduled_at: utcDate,
+          opponent_faction_id: advanceForm.opponent_faction_id ? Number(advanceForm.opponent_faction_id) : null,
+        }),
+      })
+      if (!res.ok) { const d = await res.json(); setAdvanceError(d.error || 'Failed'); return }
+      setAdvancing(null)
+      fetchSchedules()
+    } catch {
+      setAdvanceError('Failed to advance schedule.')
+    } finally {
+      setAdvanceSaving(false)
+    }
   }
 
   const factionName = (id) => FACTIONS.find((f) => f.id === Number(id))?.name ?? `#${id}`
@@ -382,7 +416,7 @@ function SchedulesSection({ token }) {
         {/* Enlisting war: date only (time fixed at 00:00 UTC) */}
         {isWar && !isActive && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Enlistment date (TCT)</span>
+            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Enlistment date — starts 12:00 TCT (noon)</span>
             <input type="date" value={form.enlist_date} onChange={(e) => setForm({ ...form, enlist_date: e.target.value })} style={inputStyle} />
           </div>
         )}
@@ -412,41 +446,122 @@ function SchedulesSection({ token }) {
             const isChain = s.type === 'chain'
             const isEnlisting = s.stage === 'enlisting'
             const tct = s.scheduled_at
-              ? new Date(s.scheduled_at).toLocaleString('en-GB', {
-                  timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-                }) + ' TCT'
+              ? new Date(s.scheduled_at.endsWith('Z') ? s.scheduled_at : s.scheduled_at.replace(' ', 'T') + 'Z')
+                  .toLocaleString('en-GB', {
+                    timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                  }) + ' TCT'
               : null
+            const isBeingAdvanced = advancing === s.id
             return (
-              <div key={s.id} style={listRow}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{factionName(s.faction_id)}</span>
-                    <span style={{
-                      fontSize: '11px', padding: '2px 10px', borderRadius: '20px',
-                      background: isChain ? 'rgba(109,40,217,0.3)' : isEnlisting ? 'rgba(80,80,80,0.4)' : 'rgba(179,18,63,0.3)',
-                      color: isChain ? '#9f67ff' : isEnlisting ? '#aaa' : '#e05577',
-                      fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-                    }}>
-                      {isChain ? 'Chain' : isEnlisting ? 'Enlisting' : 'War'}
-                    </span>
-                    {s.chain_target && (
-                      <span style={{ fontSize: '12px', color: '#a1a1aa' }}>— {s.chain_target}</span>
-                    )}
-                    {s.opponent_faction_id && (
-                      <a
-                        href={`https://www.torn.com/factions.php?step=profile&ID=${s.opponent_faction_id}`}
-                        target="_blank" rel="noreferrer"
-                        style={{ fontSize: '12px', color: '#e05577', textDecoration: 'none' }}
-                      >
-                        vs #{s.opponent_faction_id}
-                      </a>
-                    )}
+              <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                <div style={listRow}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, fontSize: '14px' }}>{factionName(s.faction_id)}</span>
+                      <span style={{
+                        fontSize: '11px', padding: '2px 10px', borderRadius: '20px',
+                        background: isChain ? 'rgba(109,40,217,0.3)' : isEnlisting ? 'rgba(80,80,80,0.4)' : 'rgba(179,18,63,0.3)',
+                        color: isChain ? '#9f67ff' : isEnlisting ? '#aaa' : '#e05577',
+                        fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      }}>
+                        {isChain ? 'Chain' : isEnlisting ? 'Enlisting' : 'War'}
+                      </span>
+                      {s.chain_target && (
+                        <span style={{ fontSize: '12px', color: '#a1a1aa' }}>— {s.chain_target}</span>
+                      )}
+                      {s.opponent_faction_id && (
+                        <a
+                          href={`https://www.torn.com/factions.php?step=profile&ID=${s.opponent_faction_id}`}
+                          target="_blank" rel="noreferrer"
+                          style={{ fontSize: '12px', color: '#e05577', textDecoration: 'none' }}
+                        >
+                          vs {s.opponent_faction_name ? `${s.opponent_faction_name} #${s.opponent_faction_id}` : `#${s.opponent_faction_id}`}
+                        </a>
+                      )}
+                    </div>
+                    <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '4px' }}>
+                      {tct ?? 'Awaiting start time'}
+                    </div>
                   </div>
-                  <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '4px' }}>
-                    {tct ?? 'Awaiting start time'}
+                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    {!isChain && isEnlisting && (
+                      <button
+                        onClick={() => isBeingAdvanced ? setAdvancing(null) : openAdvance(s.id)}
+                        style={{
+                          background: isBeingAdvanced ? 'rgba(109,40,217,0.25)' : 'rgba(179,18,63,0.15)',
+                          border: isBeingAdvanced ? '1px solid rgba(109,40,217,0.4)' : '1px solid rgba(179,18,63,0.3)',
+                          color: isBeingAdvanced ? '#9f67ff' : '#e05577',
+                          borderRadius: '8px',
+                          padding: '6px 14px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {isBeingAdvanced ? 'Cancel' : '⚔ Go Active'}
+                      </button>
+                    )}
+                    <button onClick={() => handleDelete(s.id)} style={deleteBtn}>Delete</button>
                   </div>
                 </div>
-                <button onClick={() => handleDelete(s.id)} style={deleteBtn}>Delete</button>
+
+                {/* Inline advance form */}
+                {isBeingAdvanced && (
+                  <div style={{
+                    padding: '14px 16px',
+                    background: 'rgba(109,40,217,0.08)',
+                    border: '1px solid rgba(109,40,217,0.25)',
+                    borderTop: 'none',
+                    borderRadius: '0 0 10px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#9f67ff', fontWeight: 600 }}>
+                      Advance to Active — set war start time
+                    </p>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>War start (TCT / UTC)</span>
+                        <input
+                          type="datetime-local"
+                          value={advanceForm.scheduled_at}
+                          onChange={(e) => setAdvanceForm(f => ({ ...f, scheduled_at: e.target.value }))}
+                          style={{ ...inputStyle, width: 'auto' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Opponent faction ID (optional)</span>
+                        <input
+                          type="number"
+                          placeholder="e.g. 12345"
+                          value={advanceForm.opponent_faction_id}
+                          onChange={(e) => setAdvanceForm(f => ({ ...f, opponent_faction_id: e.target.value }))}
+                          style={{ ...inputStyle, width: '160px' }}
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleAdvance(s.id)}
+                        disabled={advanceSaving}
+                        style={{
+                          padding: '10px 20px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
+                          color: '#f4f4f5',
+                          fontWeight: 600,
+                          fontSize: '13px',
+                          cursor: advanceSaving ? 'not-allowed' : 'pointer',
+                          opacity: advanceSaving ? 0.6 : 1,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {advanceSaving ? 'Saving…' : 'Confirm Active'}
+                      </button>
+                    </div>
+                    {advanceError && <p style={{ margin: 0, fontSize: '12px', color: '#b3123f' }}>{advanceError}</p>}
+                  </div>
+                )}
               </div>
             )
           })}

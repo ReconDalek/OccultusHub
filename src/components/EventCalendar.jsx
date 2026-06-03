@@ -110,7 +110,7 @@ export default function EventCalendar({ events = [] }) {
   const year  = currentDate.getFullYear()
   const month = currentDate.getMonth()
   const weeks = buildWeeks(year, month)
-  const monthLabel = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+  const monthLabel = currentDate.toLocaleString('en-GB', { month: 'long', year: 'numeric' })
   const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
 
   // Separate monthly banner events from grid events

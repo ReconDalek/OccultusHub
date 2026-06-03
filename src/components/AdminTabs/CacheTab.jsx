@@ -1,150 +1,145 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
+import { timeAgo, formatUTC } from '../../lib/dates'
 
 export default function CacheTab() {
-  const [cacheStatus, setCacheStatus] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [cacheStatus, setCacheStatus] = useState(null)
   const [analytics, setAnalytics] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(null) // 'all' | 'factions' | 'companies'
+  const [lastResult, setLastResult] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetchCacheStatus()
-    fetchAnalytics()
+    fetchAll()
   }, [])
 
-  const fetchCacheStatus = async () => {
-    try {
-      setLoading(true)
-      const token = localStorage.getItem('occultusSession')
-      const res = await fetch(`${API_BASE_URL}/api/admin/cache/status`, {
-        headers: { Authorization: token },
-      })
-      const data = await res.json()
-      setCacheStatus(data)
-    } catch (err) {
-      console.error('Failed to fetch cache status:', err)
-    } finally {
-      setLoading(false)
-    }
+  const fetchAll = async () => {
+    setLoading(true)
+    const token = localStorage.getItem('occultusSession')
+    await Promise.all([
+      fetch(`${API_BASE_URL}/api/admin/cache/status`, { headers: { Authorization: token } })
+        .then((r) => r.json())
+        .then(setCacheStatus)
+        .catch(console.error),
+      fetch(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: token } })
+        .then((r) => r.json())
+        .then(setAnalytics)
+        .catch(console.error),
+    ])
+    setLoading(false)
   }
 
-  const fetchAnalytics = async () => {
+  const refreshCache = async (scope) => {
     try {
-      const token = localStorage.getItem('occultusSession')
-      const res = await fetch(`${API_BASE_URL}/api/admin/analytics`, {
-        headers: { Authorization: token },
-      })
-      const data = await res.json()
-      setAnalytics(data)
-    } catch (err) {
-      console.error('Failed to fetch analytics:', err)
-    }
-  }
-
-  const refreshCache = async () => {
-    try {
-      setRefreshing(true)
+      setRefreshing(scope)
       setError(null)
+      setLastResult(null)
       const token = localStorage.getItem('occultusSession')
-      const res = await fetch(`${API_BASE_URL}/api/admin/cache/refresh`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cache/refresh?scope=${scope}`, {
         method: 'POST',
         headers: { Authorization: token },
       })
-
       const data = await res.json()
-
       if (res.ok) {
-        fetchCacheStatus()
-        setTimeout(() => setRefreshing(false), 1000)
+        setLastResult(data)
+        // Re-fetch cache status to update counts
+        fetch(`${API_BASE_URL}/api/admin/cache/status`, { headers: { Authorization: token } })
+          .then((r) => r.json())
+          .then(setCacheStatus)
+          .catch(console.error)
       } else {
-        setError(data.error || `Error: ${res.status}`)
-        setRefreshing(false)
+        setError(data.error || `Error ${res.status}`)
       }
     } catch (err) {
-      console.error('Failed to refresh cache:', err)
       setError(err.message)
-      setRefreshing(false)
+    } finally {
+      setRefreshing(null)
     }
   }
 
-  if (loading) {
-    return <p style={{ color: '#a1a1aa' }}>Loading cache status...</p>
-  }
+  if (loading) return <p style={{ color: '#a1a1aa' }}>Loading cache status...</p>
 
   return (
-    <div>
-      <div className="mb-8">
+    <div className="space-y-8">
+      {/* Analytics */}
+      <div>
         <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Analytics</h3>
         {analytics ? (
-          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                background: 'rgba(179,18,63,0.1)',
-                border: '1px solid rgba(179,18,63,0.3)',
-              }}
-            >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>
-                Total Users
-              </p>
-              <p style={{ color: '#ff2f6d', fontSize: '28px', fontWeight: 'bold' }}>
-                {analytics.totalUsers}
-              </p>
-            </div>
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                background: 'rgba(109,40,217,0.1)',
-                border: '1px solid rgba(109,40,217,0.3)',
-              }}
-            >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>
-                Admins
-              </p>
-              <p style={{ color: '#9f67ff', fontSize: '28px', fontWeight: 'bold' }}>
-                {analytics.totalAdmins}
-              </p>
-            </div>
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>
-                Total Logins
-              </p>
-              <p style={{ color: '#f4f4f5', fontSize: '28px', fontWeight: 'bold' }}>
-                {analytics.totalLogins}
-              </p>
-            </div>
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>
-                Last 7 Days
-              </p>
-              <p style={{ color: '#f4f4f5', fontSize: '28px', fontWeight: 'bold' }}>
-                {analytics.loginsLastWeek}
-              </p>
-            </div>
+          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+            {[
+              { label: 'Total Users',  value: analytics.totalUsers,    color: '#ff2f6d', bg: 'rgba(179,18,63,0.1)',    border: 'rgba(179,18,63,0.3)' },
+              { label: 'Admins',       value: analytics.totalAdmins,   color: '#9f67ff', bg: 'rgba(109,40,217,0.1)',   border: 'rgba(109,40,217,0.3)' },
+              { label: 'Total Logins', value: analytics.totalLogins,   color: '#f4f4f5', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' },
+              { label: 'Last 7 Days',  value: analytics.loginsLastWeek,color: '#f4f4f5', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' },
+            ].map(({ label, value, color, bg, border }) => (
+              <div key={label} className="p-4 rounded-lg" style={{ background: bg, border: `1px solid ${border}` }}>
+                <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+                <p style={{ color, fontSize: '28px', fontWeight: 'bold' }}>{value}</p>
+              </div>
+            ))}
           </div>
         ) : (
           <p style={{ color: '#a1a1aa' }}>Failed to load analytics</p>
         )}
       </div>
 
+      {/* Cache status */}
       <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Cache Management</h3>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Cache Status</h3>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          {[
+            { key: 'factions',  label: 'Factions',  icon: '⚔️' },
+            { key: 'companies', label: 'Companies', icon: '🏢' },
+          ].map(({ key, label, icon }) => {
+            const info = cacheStatus?.[key]
+            return (
+              <div
+                key={key}
+                className="p-5 rounded-lg"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <span style={{ fontSize: '20px' }}>{icon}</span>
+                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{label}</span>
+                </div>
+                <div className="flex justify-between mb-1">
+                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Cached entries</span>
+                  <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.count ?? '—'}</span>
+                </div>
+                <div className="flex justify-between mb-4">
+                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Last updated</span>
+                  <span
+                    style={{ color: '#a1a1aa', fontSize: '13px' }}
+                    title={info?.lastUpdated ?? ''}
+                  >
+                    {timeAgo(info?.lastUpdated)}
+                  </span>
+                </div>
+                <button
+                  onClick={() => refreshCache(key)}
+                  disabled={!!refreshing}
+                  className="w-full py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+                  style={{
+                    background: 'rgba(179,18,63,0.2)',
+                    color: '#ff2f6d',
+                    opacity: refreshing ? 0.5 : 1,
+                  }}
+                >
+                  {refreshing === key ? 'Refreshing...' : `Refresh ${label}`}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Refresh all */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '12px' }}>Refresh All</h3>
         <button
-          onClick={refreshCache}
-          disabled={refreshing}
+          onClick={() => refreshCache('all')}
+          disabled={!!refreshing}
           className="px-6 py-3 rounded border-none cursor-pointer transition-all hover:opacity-80 font-medium"
           style={{
             background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
@@ -152,12 +147,37 @@ export default function CacheTab() {
             opacity: refreshing ? 0.5 : 1,
           }}
         >
-          {refreshing ? 'Refreshing...' : 'Refresh Cache'}
+          {refreshing === 'all' ? 'Refreshing...' : 'Refresh All Caches'}
         </button>
-        <p style={{ color: '#a1a1aa', marginTop: '12px', fontSize: '14px' }}>
-          Force refresh faction and company data from external sources.
+        <p style={{ color: '#a1a1aa', marginTop: '8px', fontSize: '13px' }}>
+          Force refresh all faction and company data from the Torn API.
         </p>
       </div>
+
+      {/* Last result */}
+      {lastResult && (
+        <div
+          className="p-4 rounded-lg"
+          style={{ background: 'rgba(109,40,217,0.1)', border: '1px solid rgba(109,40,217,0.3)' }}
+        >
+          <p style={{ color: '#9f67ff', fontSize: '13px', marginBottom: '4px', fontWeight: 'bold' }}>
+            {lastResult.message}
+          </p>
+          <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
+            {formatUTC(lastResult.refreshedAt)}
+          </p>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div
+          className="p-4 rounded-lg"
+          style={{ background: 'rgba(255,0,0,0.1)', border: '1px solid rgba(255,0,0,0.3)' }}
+        >
+          <p style={{ color: '#ff6b6b', fontSize: '13px' }}>{error}</p>
+        </div>
+      )}
     </div>
   )
 }

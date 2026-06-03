@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
 import { useCipher } from '../contexts/CipherContext'
+import { useSite } from '../contexts/SiteContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
 import LoginModal from './LoginModal'
 
@@ -20,18 +21,16 @@ function SafeAvatar({ src, alt, className }) {
   )
 }
 
-function buildNavLinks(user) {
+function buildNavLinks(user, pages) {
   const links = [
     { label: 'Home',  to: '/'      },
     { label: 'About', to: '/about' },
   ]
   if (user?.isFactionMember) {
-    links.push(
-      { label: 'Factions',  to: '/factions'  },
-      { label: 'Companies', to: '/companies' },
-    )
+    if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
+    if (pages.companies) links.push({ label: 'Companies', to: '/companies' })
   }
-  if (user?.isLeader) {
+  if (user?.isLeader && pages.leadership) {
     links.push({ label: 'Leadership', to: '/leadership' })
   }
   return links
@@ -40,6 +39,7 @@ function buildNavLinks(user) {
 export default function Navbar() {
   const { user, logout } = useSession()
   const { cipherActive, toggleCipher } = useCipher()
+  const { pages } = useSite()
   const location = useLocation()
   const [modalOpen, setModalOpen]   = useState(false)
   const [dropdownOpen, setDropdown] = useState(false)
@@ -56,7 +56,7 @@ export default function Navbar() {
   }, [])
 
   const factionLabel = OCCULTUS_CONFIG.factionNames[Number(user?.factionId)] || 'Visitor'
-  const navLinks = buildNavLinks(user)
+  const navLinks = buildNavLinks(user, pages)
 
   const linkStyle = (to) => ({
     color: location.pathname === to ? '#f4f4f5' : '#a1a1aa',
@@ -160,6 +160,16 @@ export default function Navbar() {
                         <div className="text-sm" style={{ color: '#a1a1aa' }}>
                           {factionLabel}
                         </div>
+                        {user.fishingPoints != null && (
+                          <button
+                            onClick={() => { window.dispatchEvent(new CustomEvent('openFishingLeaderboard')); setDropdown(false) }}
+                            className="text-sm border-none bg-transparent p-0 cursor-pointer text-left"
+                            style={{ color: '#fbbf24', fontSize: '12px', marginTop: '2px' }}
+                            title="View fishing leaderboard"
+                          >
+                            {user.fishingPoints.toLocaleString()} pts
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -187,7 +197,7 @@ export default function Navbar() {
                           boxShadow: cipherActive ? '0 0 12px rgba(109,40,217,0.3)' : 'none',
                         }}
                       >
-                        <span style={{ letterSpacing: '0.5px', fontSize: '13px' }}>
+                        <span style={{ letterSpacing: '0.5px', fontSize: '14.8px' }}>
                           The Silent Shadows
                         </span>
                         <span

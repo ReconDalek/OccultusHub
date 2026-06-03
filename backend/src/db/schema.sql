@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_login DATETIME,
   is_admin INTEGER DEFAULT 0,
-  is_owner INTEGER DEFAULT 0
+  is_owner INTEGER DEFAULT 0,
+  fishing_points INTEGER DEFAULT 0
 );
 
 -- Admin users audit trail
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS faction_schedules (
   stage TEXT DEFAULT 'active',
   scheduled_at TEXT,
   opponent_faction_id INTEGER,
+  opponent_faction_name TEXT,
   chain_target TEXT,
   created_by INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -137,6 +139,17 @@ CREATE TABLE IF NOT EXISTS cipher_submissions (
   submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE(user_id, cipher_date)
+);
+
+-- Fishing game catches log
+CREATE TABLE IF NOT EXISTS fishing_catches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  fish_name TEXT NOT NULL,
+  fish_rarity TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  caught_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Discord webhooks per channel (used for sending as user)

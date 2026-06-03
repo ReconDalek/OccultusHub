@@ -7,7 +7,7 @@ export async function getFactionCache(request, env) {
     ).all();
 
     if (!factions.results || factions.results.length === 0) {
-      return jsonResponse({ data: [] });
+      return jsonResponse({ data: [], lastUpdated: null });
     }
 
     const data = factions.results.map((row) => {
@@ -18,7 +18,11 @@ export async function getFactionCache(request, env) {
       }
     }).filter(Boolean);
 
-    return jsonResponse({ data });
+    const latestFetch = factions.results.reduce((latest, row) => {
+      return row.fetched_at && (!latest || row.fetched_at > latest) ? row.fetched_at : latest;
+    }, null);
+
+    return jsonResponse({ data, lastUpdated: latestFetch || null });
   } catch (error) {
     console.error('Error fetching faction cache:', error);
     return errorResponse('Failed to fetch faction cache', 500);

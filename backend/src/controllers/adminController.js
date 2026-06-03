@@ -46,8 +46,8 @@ export async function getAllUsers(request, env, user) {
 export async function getUserHistory(request, env, user) {
   try {
     const { tornUserId } = new URL(request.url).pathname.match(
-      /\/api\/admin\/users\/(\d+)\/history/
-    );
+      /\/api\/admin\/users\/(?<tornUserId>\d+)\/history/
+    )?.groups ?? {};
 
     const userResult = await env.DB.prepare(
       'SELECT id FROM users WHERE torn_user_id = ?'
@@ -87,8 +87,8 @@ export async function grantAdmin(request, env, user) {
     }
 
     const { tornUserId } = new URL(request.url).pathname.match(
-      /\/api\/admin\/users\/(\d+)\/grant/
-    );
+      /\/api\/admin\/users\/(?<tornUserId>\d+)\/grant/
+    )?.groups ?? {};
     const { reason } = await request.json();
 
     const userResult = await env.DB.prepare(
@@ -131,8 +131,8 @@ export async function revokeAdmin(request, env, user) {
     }
 
     const { tornUserId } = new URL(request.url).pathname.match(
-      /\/api\/admin\/users\/(\d+)\/revoke/
-    );
+      /\/api\/admin\/users\/(?<tornUserId>\d+)\/revoke/
+    )?.groups ?? {};
     const { reason } = await request.json();
 
     const userResult = await env.DB.prepare(
@@ -195,11 +195,6 @@ export async function togglePage(request, env, user) {
   try {
     const pageName = new URL(request.url).pathname.split('/')[4];
 
-    const validPages = ['factions', 'companies', 'leadership', 'respect'];
-    if (!validPages.includes(pageName)) {
-      return errorResponse('Invalid page name', 400);
-    }
-
     const result = await env.DB.prepare(
       `UPDATE page_settings
        SET is_visible = 1 - is_visible, updated_by = ?, updated_at = CURRENT_TIMESTAMP
@@ -225,19 +220,25 @@ export async function togglePage(request, env, user) {
 
 export async function getCacheStatus(request, env, user) {
   try {
-    const result = await env.DB.prepare(
-      'SELECT key, value, updated_at FROM system_settings'
-    ).all();
+    const [factionsResult, companiesResult] = await Promise.all([
+      env.DB.prepare(
+        `SELECT COUNT(*) as count, MAX(fetched_at) as last_updated FROM faction_cache`
+      ).first(),
+      env.DB.prepare(
+        `SELECT COUNT(*) as count, MAX(fetched_at) as last_updated FROM company_cache`
+      ).first(),
+    ]);
 
-    const settings = {};
-    result.results?.forEach((row) => {
-      settings[row.key] = {
-        value: row.value,
-        updatedAt: row.updated_at,
-      };
+    return jsonResponse({
+      factions: {
+        count: factionsResult?.count ?? 0,
+        lastUpdated: factionsResult?.last_updated ?? null,
+      },
+      companies: {
+        count: companiesResult?.count ?? 0,
+        lastUpdated: companiesResult?.last_updated ?? null,
+      },
     });
-
-    return jsonResponse(settings);
   } catch (error) {
     console.error('getCacheStatus error:', error);
     return errorResponse('Failed to fetch cache status', 500);
@@ -247,6 +248,7 @@ export async function getCacheStatus(request, env, user) {
 export async function refreshCache(request, env, user) {
   try {
     const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('../services/tornApiService.js');
+    const scope = new URL(request.url).searchParams.get('scope') ?? 'all';
 
     const apiKey = await getRandomUserApiKey(env);
     if (!apiKey) {
@@ -256,14 +258,21 @@ export async function refreshCache(request, env, user) {
     const factionIds = [33097, 9171, 9728];
     const companyIds = [112941, 120244, 121745, 122254, 120502, 124650];
 
-    const factionResult = await fetchAndCacheFactions(env, factionIds, apiKey);
-    const companyResult = await fetchAndCacheCompanies(env, companyIds, apiKey);
+    let factionResult = null;
+    let companyResult = null;
+
+    if (scope === 'all' || scope === 'factions') {
+      factionResult = await fetchAndCacheFactions(env, factionIds, apiKey);
+    }
+    if (scope === 'all' || scope === 'companies') {
+      companyResult = await fetchAndCacheCompanies(env, companyIds, apiKey);
+    }
 
     return jsonResponse({
-      message: 'Cache refresh completed',
+      message: `Cache refresh completed (${scope})`,
       factions: factionResult,
       companies: companyResult,
-      refreshedAt: new Date().toISOString()
+      refreshedAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error('refreshCache error:', error);
@@ -314,6 +323,25 @@ export async function getSettings(request, env, user) {
   } catch (error) {
     console.error('getSettings error:', error);
     return errorResponse('Failed to fetch settings', 500);
+  }
+}
+
+export async function getPublicSettings(request, env) {
+  try {
+    const PUBLIC_KEYS = ['site_title'];
+    const result = await env.DB.prepare(
+      `SELECT key, value FROM system_settings WHERE key IN (${PUBLIC_KEYS.map(() => '?').join(',')})`
+    ).bind(...PUBLIC_KEYS).all();
+
+    const settings = {};
+    result.results?.forEach((row) => {
+      settings[row.key] = row.value;
+    });
+
+    return jsonResponse(settings);
+  } catch (error) {
+    console.error('getPublicSettings error:', error);
+    return errorResponse('Failed to fetch public settings', 500);
   }
 }
 

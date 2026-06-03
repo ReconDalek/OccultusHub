@@ -2,27 +2,8 @@ import { useState, useEffect } from 'react'
 import { useSession } from '../hooks/useSession'
 import { API_BASE_URL } from '../config/api'
 import { OCCULTUS_CONFIG } from '../lib/config'
+import { formatUTC } from '../lib/dates'
 
-const STATIC_FACTIONS = [
-  {
-    id: 33097,
-    name: 'Occultus',
-    description:
-      'The first circle. The head of the sacred order, where loyalty is proven, strength is forged, and the directive is carried from the shadows.',
-  },
-  {
-    id: 9728,
-    name: 'Occul2us',
-    description:
-      'The war division. Few in number yet relentless, devoted to conflict, ritualistic bloodshed, and answering the call when war awakens.',
-  },
-  {
-    id: 9171,
-    name: 'Occul3us',
-    description:
-      'The growing circle. A rising extension of the order, following the same directive while nurturing those yet to ascend.',
-  },
-]
 
 function getFactionCache() {
   const raw = localStorage.getItem('occultusFactions')
@@ -159,6 +140,7 @@ export default function Factions() {
   const [factions, setFactions] = useState([])
   const [lastUpdated, setLastUpdated] = useState(null)
   const [live, setLive] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     ;(async () => {
@@ -170,26 +152,23 @@ export default function Factions() {
           setFactionCache(json.data)
           setFactions(json.data)
           setLive(true)
-
-          const cached = localStorage.getItem('occultusFactions')
-          if (cached) {
-            const parsed = JSON.parse(cached)
-            setLastUpdated(parsed.updatedAt)
-          }
+          setLastUpdated(json.lastUpdated || null)
+          setLoading(false)
           return
         }
       } catch { /* swallow */ }
 
-      // Fallback to cache
+      // Fallback to localStorage cache
       const cached = getFactionCache()
       if (cached.length) {
         setFactions(cached)
         setLive(true)
       }
+      setLoading(false)
     })()
   }, [])
 
-  const displayFactions = (live ? factions : STATIC_FACTIONS).slice().reverse()
+  const displayFactions = factions.slice().reverse()
 
   return (
     <>
@@ -218,30 +197,40 @@ export default function Factions() {
 
       {/* FACTION GRID */}
       <section style={{ padding: '60px 48px' }}>
-        <div
-          className="grid gap-8 faction-grid-responsive"
-          style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
-        >
-          {displayFactions.map((f) => {
-            const factionId      = live ? f.basic?.id : f.id
-            const membershipTier = getMembershipTier(user, factionId)
-            return (
-              <FactionCard
-                key={factionId}
-                faction={f}
-                membershipTier={membershipTier}
-                isLive={live}
-              />
-            )
-          })}
-        </div>
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>Loading faction data…</p>
+          </div>
+        ) : displayFactions.length === 0 ? (
+          <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>No faction data available.</p>
+          </div>
+        ) : (
+          <div
+            className="grid gap-8 faction-grid-responsive"
+            style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
+          >
+            {displayFactions.map((f) => {
+              const factionId      = f.basic?.id
+              const membershipTier = getMembershipTier(user, factionId)
+              return (
+                <FactionCard
+                  key={factionId}
+                  faction={f}
+                  membershipTier={membershipTier}
+                  isLive={live}
+                />
+              )
+            })}
+          </div>
+        )}
 
         {lastUpdated && (
           <div
             className="max-w-3xl mx-auto mt-8 p-5 rounded-3xl text-center text-sm"
             style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa' }}
           >
-            Last updated: {new Date(lastUpdated).toLocaleString()}
+            Last updated: {formatUTC(lastUpdated)}
           </div>
         )}
       </section>

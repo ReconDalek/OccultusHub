@@ -130,6 +130,7 @@ export async function login(request, env) {
         image: user.image_url,
         isAdmin: user.is_admin === 1,
         isOwner: user.is_owner === 1,
+        fishingPoints: user.fishing_points || 0,
       },
     });
   } catch (error) {
@@ -163,6 +164,8 @@ export async function session(request, env, user) {
         image: userData.image_url,
         isAdmin: userData.is_admin === 1,
         isOwner: userData.is_owner === 1,
+        fishingPoints: userData.fishing_points || 0,
+        lastFishedAt: userData.last_fished_at || null,
       },
     });
   } catch (error) {

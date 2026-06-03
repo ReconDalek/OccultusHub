@@ -3,7 +3,9 @@ import { API_BASE_URL } from '../../config/api'
 import { getSessionToken } from '../../lib/auth'
 
 function timeAgo(iso) {
-  const diff = Date.now() - new Date(iso).getTime()
+  // D1 returns timestamps without timezone marker — treat as UTC
+  const str = iso && !iso.endsWith('Z') ? iso.replace(' ', 'T') + 'Z' : iso
+  const diff = Date.now() - new Date(str).getTime()
   const m = Math.floor(diff / 60000)
   if (m < 1) return 'just now'
   if (m < 60) return `${m}m ago`

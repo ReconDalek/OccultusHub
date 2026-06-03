@@ -7,6 +7,7 @@ import * as eventsController from './controllers/eventsController.js';
 import * as discordController from './controllers/discordController.js';
 import * as noticesController from './controllers/noticesController.js';
 import * as cipherController from './controllers/cipherController.js';
+import * as fishingController from './controllers/fishingController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -25,6 +26,10 @@ export async function handleRequest(request, env) {
 
   if (pathname === '/api/pages/visibility' && method === 'GET') {
     return adminController.getPages(request, env, null);
+  }
+
+  if (pathname === '/api/settings/public' && method === 'GET') {
+    return adminController.getPublicSettings(request, env);
   }
 
   if (pathname === '/api/faction-cache' && method === 'GET') {
@@ -115,6 +120,30 @@ export async function handleRequest(request, env) {
     if (pathname.match(/^\/api\/admin\/settings\/[^/]+$/) && method === 'POST') {
       return adminController.updateSetting(request, env, user);
     }
+
+    if (pathname === '/api/admin/fishing/reset' && method === 'POST') {
+      return fishingController.resetLeaderboard(request, env, user);
+    }
+  }
+
+  // Fishing endpoints
+  if (pathname === '/api/fishing/cast' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return fishingController.startCast(request, env, user);
+  }
+
+  if (pathname === '/api/fishing/leaderboard' && method === 'GET') {
+    return fishingController.getLeaderboard(request, env);
+  }
+
+  if (pathname === '/api/fishing/catch' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return fishingController.recordCatch(request, env, user);
+  }
+
+  if (pathname === '/api/fishing/stats' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return fishingController.getUserStats(request, env, user);
   }
 
   // Cipher submit — open to all (authenticated or guest)
@@ -152,6 +181,9 @@ export async function handleRequest(request, env) {
     }
     if (pathname.match(/^\/api\/leadership\/faction-schedules\/\d+$/) && method === 'DELETE') {
       return eventsController.deleteFactionSchedule(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/faction-schedules\/\d+\/advance$/) && method === 'POST') {
+      return eventsController.advanceFactionSchedule(request, env, user);
     }
   }
 

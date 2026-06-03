@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from '../../hooks/useSession'
 import { API_BASE_URL } from '../../config/api'
+import { formatUTC } from '../../lib/dates'
 
 export default function UsersTab() {
   const { user: currentUser } = useSession()
@@ -119,7 +120,7 @@ export default function UsersTab() {
               {history.map((entry, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                   <td style={{ padding: '8px', color: '#f4f4f5' }}>
-                    {new Date(entry.login_at).toLocaleString()}
+                    {formatUTC(entry.login_at)}
                   </td>
                   <td style={{ padding: '8px', color: '#a1a1aa' }}>
                     {entry.ip_address}

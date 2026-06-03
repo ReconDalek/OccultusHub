@@ -88,15 +88,37 @@ export async function createFactionSchedule(request, env, user) {
       return errorResponse('scheduled_at is required for active events', 400);
     }
 
+    // Fetch faction name if an opponent ID is provided for active wars
+    let opponent_faction_name = null;
+    if (opponent_faction_id && resolvedStage === 'active') {
+      try {
+        const { getRandomUserApiKey } = await import('../services/tornApiService.js');
+        const apiKey = await getRandomUserApiKey(env);
+        if (apiKey) {
+          const tornRes = await fetch(
+            `https://api.torn.com/v2/faction/${opponent_faction_id}/basic`,
+            { headers: { Authorization: `ApiKey ${apiKey}` } }
+          );
+          if (tornRes.ok) {
+            const tornData = await tornRes.json();
+            opponent_faction_name = tornData?.basic?.name ?? null;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch opponent faction name:', e);
+      }
+    }
+
     const result = await env.DB.prepare(
-      `INSERT INTO faction_schedules (faction_id, type, stage, scheduled_at, opponent_faction_id, chain_target, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`
+      `INSERT INTO faction_schedules (faction_id, type, stage, scheduled_at, opponent_faction_id, opponent_faction_name, chain_target, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`
     ).bind(
       faction_id,
       type,
       resolvedStage,
       scheduled_at || null,
       opponent_faction_id || null,
+      opponent_faction_name,
       chain_target || null,
       user.userId
     ).first();
@@ -105,6 +127,51 @@ export async function createFactionSchedule(request, env, user) {
   } catch (error) {
     console.error('createFactionSchedule error:', error);
     return errorResponse('Failed to create faction schedule', 500);
+  }
+}
+
+export async function advanceFactionSchedule(request, env, user) {
+  try {
+    const match = new URL(request.url).pathname.match(/\/api\/leadership\/faction-schedules\/(?<id>\d+)\/advance/);
+    const { id } = match?.groups ?? {};
+    const { scheduled_at, opponent_faction_id } = await request.json();
+
+    if (!scheduled_at) return errorResponse('scheduled_at is required', 400);
+
+    // Fetch faction name from Torn API if an opponent ID was provided
+    let opponent_faction_name = null;
+    if (opponent_faction_id) {
+      try {
+        const { getRandomUserApiKey } = await import('../services/tornApiService.js');
+        const apiKey = await getRandomUserApiKey(env);
+        if (apiKey) {
+          const tornRes = await fetch(
+            `https://api.torn.com/v2/faction/${opponent_faction_id}/basic`,
+            { headers: { Authorization: `ApiKey ${apiKey}` } }
+          );
+          if (tornRes.ok) {
+            const tornData = await tornRes.json();
+            opponent_faction_name = tornData?.basic?.name ?? null;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch opponent faction name:', e);
+      }
+    }
+
+    const result = await env.DB.prepare(
+      `UPDATE faction_schedules
+       SET stage = 'active', scheduled_at = ?, opponent_faction_id = ?, opponent_faction_name = ?
+       WHERE id = ? AND stage = 'enlisting'
+       RETURNING *`
+    ).bind(scheduled_at, opponent_faction_id || null, opponent_faction_name, id).first();
+
+    if (!result) return errorResponse('Schedule not found or not in enlisting stage', 404);
+
+    return jsonResponse({ schedule: result });
+  } catch (error) {
+    console.error('advanceFactionSchedule error:', error);
+    return errorResponse('Failed to advance schedule', 500);
   }
 }
 
