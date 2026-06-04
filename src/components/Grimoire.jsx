@@ -83,32 +83,85 @@ const LORE = [
   },
 ]
 
-export default function Grimoire({ open, onClose }) {
-  const [page, setPage] = useState(0)
+const GRIMOIRE_KEY = 'grimoire_found'
+const TOTAL = LORE.length               // 20
+const FIRST = 0                         // The Founding — always known
+const LAST  = TOTAL - 1                 // The Final Entry — unlocked last
+
+export function getFoundPages() {
+  try {
+    const stored = localStorage.getItem(GRIMOIRE_KEY)
+    if (stored) {
+      const arr = JSON.parse(stored)
+      if (Array.isArray(arr) && arr.length > 0) return arr
+    }
+  } catch {}
+  return [FIRST]
+}
+
+export function findNextGrimoirePage() {
+  const found = getFoundPages()
+  // Middle pages 1–18 first
+  const middle = Array.from({ length: TOTAL - 2 }, (_, i) => i + 1)
+  const unfoundMiddle = middle.filter(i => !found.includes(i))
+  if (unfoundMiddle.length > 0) {
+    const idx = unfoundMiddle[Math.floor(Math.random() * unfoundMiddle.length)]
+    const next = [...found, idx]
+    localStorage.setItem(GRIMOIRE_KEY, JSON.stringify(next))
+    return idx
+  }
+  // All middle pages found — unlock The Final Entry
+  if (!found.includes(LAST)) {
+    const next = [...found, LAST]
+    localStorage.setItem(GRIMOIRE_KEY, JSON.stringify(next))
+    return LAST
+  }
+  // Everything found
+  return null
+}
+
+export default function Grimoire({ open, onClose, openToPage = null }) {
+  const [page, setPage] = useState(FIRST)       // LORE index currently displayed
+  const [foundPages, setFoundPages] = useState([FIRST])
   const [flipping, setFlipping] = useState(false)
+  const [isNew, setIsNew] = useState(false)      // newly found badge
 
   useEffect(() => {
-    if (open) setPage(Math.floor(Math.random() * LORE.length))
-  }, [open])
+    if (!open) return
+    const found = getFoundPages()
+    setFoundPages(found)
+    if (openToPage !== null && found.includes(openToPage)) {
+      setPage(openToPage)
+      setIsNew(true)
+    } else {
+      setPage(found.includes(FIRST) ? FIRST : found[0])
+      setIsNew(false)
+    }
+  }, [open, openToPage])
 
   function turnPage(dir) {
     if (flipping) return
+    // Navigate through ALL 20 positions
     setFlipping(true)
     setTimeout(() => {
-      setPage(p => (p + dir + LORE.length) % LORE.length)
+      setPage(p => (p + dir + TOTAL) % TOTAL)
+      setIsNew(false)
       setFlipping(false)
     }, 260)
   }
 
   if (!open) return null
 
+  const found = foundPages
   const entry = LORE[page]
+  const isTorn = !found.includes(page)
+  const foundCount = found.length
 
   return (
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 10002,
-        background: 'rgba(0,0,0,0.9)',
+        background: 'rgba(0,0,0,0.92)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '24px',
       }}
@@ -120,33 +173,54 @@ export default function Grimoire({ open, onClose }) {
           50%  { opacity: 0; transform: rotateY(30deg); }
           100% { opacity: 1; transform: rotateY(0deg); }
         }
+        @keyframes grimNewPage {
+          0%   { box-shadow: 0 0 0 0 rgba(179,18,63,0); }
+          40%  { box-shadow: 0 0 40px 8px rgba(179,18,63,0.25); }
+          100% { box-shadow: 0 0 0 0 rgba(179,18,63,0); }
+        }
       `}</style>
 
       <div style={{
-        maxWidth: '480px', width: '100%',
+        maxWidth: '500px', width: '100%',
         background: 'linear-gradient(160deg, rgba(10,6,20,0.99), rgba(14,8,28,0.99))',
-        border: '1px solid rgba(109,40,217,0.3)',
+        border: `1px solid ${isNew ? 'rgba(179,18,63,0.5)' : 'rgba(109,40,217,0.3)'}`,
         borderRadius: '4px',
         boxShadow: '0 0 80px rgba(109,40,217,0.1), inset 0 0 60px rgba(0,0,0,0.5)',
         overflow: 'hidden',
         perspective: '800px',
+        animation: isNew ? 'grimNewPage 1.8s ease-out' : 'none',
       }}>
-        {/* Tome header */}
+
+        {/* Header */}
         <div style={{
-          padding: '20px 28px 16px',
+          padding: '16px 24px 14px',
           borderBottom: '1px solid rgba(109,40,217,0.2)',
           background: 'linear-gradient(rgba(109,40,217,0.08), transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '18px', color: 'rgba(109,40,217,0.7)', fontFamily: 'monospace' }}>📖</span>
-            <span style={{ fontFamily: 'Cinzel, serif', fontSize: '13px', letterSpacing: '3px', color: 'rgba(179,18,63,0.8)' }}>
-              THE GRIMOIRE
-            </span>
+            <span style={{ fontSize: '16px', color: 'rgba(109,40,217,0.7)' }}>📖</span>
+            <div>
+              <span style={{ fontFamily: 'Cinzel, serif', fontSize: '12px', letterSpacing: '3px', color: 'rgba(179,18,63,0.8)', display: 'block' }}>
+                THE GRIMOIRE
+              </span>
+              <span style={{ fontSize: '10px', color: '#4c1d95', letterSpacing: '0.08em' }}>
+                {foundCount} of {TOTAL} pages recovered
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', color: '#4c1d95', letterSpacing: '0.1em' }}>
-              {page + 1} of {LORE.length}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {isNew && (
+              <span style={{
+                fontSize: '9px', letterSpacing: '1.5px', color: '#fca5a5',
+                background: 'rgba(179,18,63,0.2)', border: '1px solid rgba(179,18,63,0.4)',
+                padding: '2px 8px', borderRadius: '4px', fontFamily: 'Cinzel, serif',
+              }}>
+                RECOVERED
+              </span>
+            )}
+            <span style={{ fontSize: '11px', color: '#4c1d95', letterSpacing: '0.08em' }}>
+              {page + 1} / {TOTAL}
             </span>
             <button onClick={onClose} style={{
               background: 'none', border: 'none', color: '#6d28d9',
@@ -157,39 +231,72 @@ export default function Grimoire({ open, onClose }) {
 
         {/* Page content */}
         <div style={{
-          padding: '32px 36px',
-          minHeight: '260px',
+          padding: '28px 32px',
+          minHeight: '240px',
           animation: flipping ? 'grimPageFlip 0.52s ease-in-out' : 'none',
         }}>
-          {/* Decorative top border */}
-          <div style={{ textAlign: 'center', color: 'rgba(109,40,217,0.3)', fontSize: '14px', letterSpacing: '6px', marginBottom: '24px', fontFamily: 'monospace' }}>
+          <div style={{ textAlign: 'center', color: 'rgba(109,40,217,0.3)', fontSize: '14px', letterSpacing: '6px', marginBottom: '20px', fontFamily: 'monospace' }}>
             ⋯ ✦ ⋯
           </div>
 
-          <h3 style={{
-            margin: '0 0 20px', fontFamily: 'Cinzel, serif',
-            fontSize: '17px', letterSpacing: '2px', textAlign: 'center',
-            color: '#e9d5ff',
-          }}>
-            {entry.title}
-          </h3>
+          {isTorn ? (
+            /* Torn / missing page */
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: '36px', marginBottom: '12px',
+                filter: 'grayscale(1) opacity(0.3)',
+              }}>📄</div>
+              <h3 style={{
+                margin: '0 0 16px', fontFamily: 'Cinzel, serif',
+                fontSize: '15px', letterSpacing: '2px',
+                color: 'rgba(100,80,130,0.5)',
+              }}>
+                — Page Missing —
+              </h3>
+              <p style={{
+                color: 'rgba(100,80,130,0.35)', lineHeight: 1.8, fontSize: '13px',
+                fontStyle: 'italic', margin: 0,
+              }}>
+                This page has been torn from the grimoire.<br />
+                The eye may yet reveal what was lost.
+              </p>
+              <div style={{
+                marginTop: '18px', padding: '10px 16px', borderRadius: '6px',
+                background: 'rgba(109,40,217,0.05)', border: '1px dashed rgba(109,40,217,0.15)',
+                display: 'inline-block',
+              }}>
+                <span style={{ fontSize: '11px', color: 'rgba(109,40,217,0.4)', letterSpacing: '1px', fontFamily: 'Cinzel, serif' }}>
+                  AWAIT THE WATCHING EYE
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Found page */
+            <>
+              <h3 style={{
+                margin: '0 0 18px', fontFamily: 'Cinzel, serif',
+                fontSize: '17px', letterSpacing: '2px', textAlign: 'center',
+                color: '#e9d5ff',
+              }}>
+                {entry.title}
+              </h3>
+              <p style={{
+                color: '#a1a1aa', lineHeight: 2, fontSize: '14px',
+                textAlign: 'center', margin: 0, fontStyle: 'italic',
+              }}>
+                {entry.body}
+              </p>
+            </>
+          )}
 
-          <p style={{
-            color: '#a1a1aa', lineHeight: 2, fontSize: '14px',
-            textAlign: 'center', margin: 0, fontStyle: 'italic',
-          }}>
-            {entry.body}
-          </p>
-
-          {/* Decorative bottom */}
-          <div style={{ textAlign: 'center', color: 'rgba(109,40,217,0.3)', fontSize: '14px', letterSpacing: '6px', marginTop: '24px', fontFamily: 'monospace' }}>
+          <div style={{ textAlign: 'center', color: 'rgba(109,40,217,0.3)', fontSize: '14px', letterSpacing: '6px', marginTop: '20px', fontFamily: 'monospace' }}>
             ⋯ ✦ ⋯
           </div>
         </div>
 
         {/* Navigation */}
         <div style={{
-          padding: '16px 28px',
+          padding: '14px 24px',
           borderTop: '1px solid rgba(109,40,217,0.15)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
@@ -197,16 +304,30 @@ export default function Grimoire({ open, onClose }) {
             background: 'rgba(109,40,217,0.1)', border: '1px solid rgba(109,40,217,0.25)',
             color: '#a78bfa', padding: '7px 16px', borderRadius: '6px',
             cursor: 'pointer', fontSize: '13px', fontFamily: 'Cinzel, serif', letterSpacing: '1px',
-          }}>← Previous</button>
+          }}>← Prev</button>
 
-          <div style={{ display: 'flex', gap: '4px' }}>
-            {LORE.map((_, i) => (
-              <div key={i} style={{
-                width: '5px', height: '5px', borderRadius: '50%',
-                background: i === page ? '#7c3aed' : 'rgba(109,40,217,0.2)',
-                transition: 'background 0.2s',
-              }} />
-            ))}
+          {/* Dot nav — all 20 pages */}
+          <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '200px' }}>
+            {LORE.map((_, i) => {
+              const isCur   = i === page
+              const isFound = found.includes(i)
+              return (
+                <div
+                  key={i}
+                  onClick={() => { if (!flipping) { setFlipping(true); setTimeout(() => { setPage(i); setIsNew(false); setFlipping(false) }, 260) } }}
+                  style={{
+                    width: '6px', height: '6px', borderRadius: '50%', cursor: 'pointer',
+                    background: isCur
+                      ? (isFound ? '#b3123f' : 'rgba(179,18,63,0.4)')
+                      : (isFound ? '#7c3aed' : 'rgba(109,40,217,0.15)'),
+                    border: isCur ? '1px solid rgba(179,18,63,0.6)' : 'none',
+                    transition: 'background 0.2s',
+                    boxShadow: isCur && isFound ? '0 0 4px rgba(179,18,63,0.5)' : 'none',
+                  }}
+                  title={isFound ? LORE[i].title : 'Unknown'}
+                />
+              )
+            })}
           </div>
 
           <button onClick={() => turnPage(1)} style={{

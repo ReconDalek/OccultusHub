@@ -5,6 +5,8 @@ export default function RuneTab() {
   const [leaderboard, setLeaderboard] = useState([])
   const [loading, setLoading] = useState(true)
   const [resetting, setResetting] = useState(false)
+  const [toggling, setToggling] = useState(false)
+  const [enabled, setEnabled] = useState(true)
   const [message, setMessage] = useState(null)
 
   function fetchLeaderboard() {
@@ -16,7 +18,37 @@ export default function RuneTab() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchLeaderboard() }, [])
+  function fetchEnabled() {
+    fetch(`${API_BASE_URL}/api/settings/public`)
+      .then(r => r.json())
+      .then(d => setEnabled(d?.runes_enabled !== '0'))
+      .catch(() => {})
+  }
+
+  useEffect(() => { fetchLeaderboard(); fetchEnabled() }, [])
+
+  async function toggleEnabled() {
+    setToggling(true)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/settings/runes_enabled`, {
+        method: 'POST',
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: enabled ? '0' : '1' }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setEnabled(e => !e)
+        setMessage({ type: 'success', text: `Rune Casting ${enabled ? 'disabled' : 'enabled'}.` })
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to update setting.' })
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Network error.' })
+    } finally {
+      setToggling(false)
+    }
+  }
 
   async function resetLeaderboard() {
     if (!window.confirm('Reset all rune essence and clear the rune leaderboard? This cannot be undone.')) return
@@ -48,16 +80,31 @@ export default function RuneTab() {
           </h3>
           <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>Manage the rune casting easter egg leaderboard</p>
         </div>
-        <button
-          onClick={resetLeaderboard} disabled={resetting}
-          style={{
-            padding: '10px 20px', borderRadius: '10px', fontWeight: 700, fontSize: '13px',
-            background: 'rgba(239,68,68,0.18)', border: '1px solid rgba(239,68,68,0.35)',
-            color: '#f87171', cursor: resetting ? 'not-allowed' : 'pointer', opacity: resetting ? 0.6 : 1,
-          }}
-        >
-          {resetting ? 'Resetting...' : '🗑 Reset Rune Leaderboard'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={toggleEnabled}
+            disabled={toggling}
+            style={{
+              padding: '10px 20px', borderRadius: '10px', fontWeight: 700, fontSize: '13px',
+              background: enabled ? 'rgba(34,197,94,0.15)' : 'rgba(109,40,217,0.15)',
+              border: `1px solid ${enabled ? 'rgba(34,197,94,0.35)' : 'rgba(109,40,217,0.35)'}`,
+              color: enabled ? '#86efac' : '#a78bfa',
+              cursor: toggling ? 'not-allowed' : 'pointer', opacity: toggling ? 0.6 : 1,
+            }}
+          >
+            {toggling ? '...' : enabled ? 'ᚠ Enabled' : 'ᚠ Disabled'}
+          </button>
+          <button
+            onClick={resetLeaderboard} disabled={resetting}
+            style={{
+              padding: '10px 20px', borderRadius: '10px', fontWeight: 700, fontSize: '13px',
+              background: 'rgba(239,68,68,0.18)', border: '1px solid rgba(239,68,68,0.35)',
+              color: '#f87171', cursor: resetting ? 'not-allowed' : 'pointer', opacity: resetting ? 0.6 : 1,
+            }}
+          >
+            {resetting ? 'Resetting...' : '🗑 Reset Rune Leaderboard'}
+          </button>
+        </div>
       </div>
 
       {message && (

@@ -45,6 +45,7 @@ export default function Navbar() {
   const [modalOpen, setModalOpen]       = useState(false)
   const [dropdownOpen, setDropdown]     = useState(false)
   const [grimoireOpen, setGrimoire]     = useState(false)
+  const [grimoirePage, setGrimoirePage] = useState(null)
   const dropdownRef  = useRef(null)
   const logoClickRef = useRef({ count: 0, timer: null })
 
@@ -58,13 +59,23 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  useEffect(() => {
+    function handler(e) {
+      setGrimoirePage(e.detail?.index ?? null)
+      setGrimoire(true)
+    }
+    window.addEventListener('openGrimoirePage', handler)
+    return () => window.removeEventListener('openGrimoirePage', handler)
+  }, [])
+
   function handleLogoClick(e) {
     const lc = logoClickRef.current
     lc.count += 1
     clearTimeout(lc.timer)
-    if (lc.count >= 3) {
+    if (lc.count >= 5) {
       lc.count = 0
       e.preventDefault()
+      setGrimoirePage(null)
       setGrimoire(true)
       return
     }
@@ -291,7 +302,7 @@ export default function Navbar() {
       </nav>
 
       <LoginModal open={modalOpen} onClose={() => setModalOpen(false)} />
-      <Grimoire open={grimoireOpen} onClose={() => setGrimoire(false)} />
+      <Grimoire open={grimoireOpen} onClose={() => { setGrimoire(false); setGrimoirePage(null) }} openToPage={grimoirePage} />
     </>
   )
 }

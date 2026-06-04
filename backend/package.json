@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "predeploy": "if exist ..\\.wrangler rd /s /q ..\\.wrangler",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute occultusdb --file=src/db/schema.sql --remote",
     "db:migrate": "wrangler d1 execute occultusdb --file=src/db/migration_add_cache_support.sql --remote",

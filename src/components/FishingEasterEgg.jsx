@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import FishingGame from './FishingGame'
 import FishingLeaderboard from './FishingLeaderboard'
+import { useSession } from '../hooks/useSession'
+import { useSite } from '../contexts/SiteContext'
+
+const COOLDOWN_MS = 12 * 60 * 60 * 1000
 
 // Void entity shapes — wisps, wraiths, spectres, phantom eyes. Deliberately NOT fish-shaped.
 const ENTITY_SHAPES = [
@@ -96,11 +100,19 @@ const ENTITY_COLORS = [
 function getRandom(min, max) { return min + Math.random() * (max - min) }
 
 export default function FishingEasterEgg() {
+  const { user } = useSession()
+  const { fishingEnabled } = useSite()
   const [visible, setVisible] = useState(false)
   const [entityProps, setEntityProps] = useState(null)
   const [gameOpen, setGameOpen] = useState(false)
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
   const scheduleRef = useRef(null)
+
+  function isInCooldown() {
+    if (!user?.lastFishedAt) return false
+    const last = new Date(user.lastFishedAt.replace(' ', 'T') + 'Z').getTime()
+    return Date.now() - last < COOLDOWN_MS
+  }
 
   const spawnEntity = useCallback(() => {
     const goRight = Math.random() > 0.5
@@ -110,9 +122,10 @@ export default function FishingEasterEgg() {
     const sizeH      = Math.floor(sizeW * 0.52)
     const topPct     = getRandom(18, 80)
     const duration   = getRandom(14, 24)
+    if (!fishingEnabled || isInCooldown()) { scheduleNext(); return }
     setEntityProps({ goRight, variantIdx, colorIdx, sizeW, sizeH, topPct, duration, key: Date.now() })
     setVisible(true)
-  }, [])
+  }, [fishingEnabled, user])
 
   const scheduleNext = useCallback(() => {
     scheduleRef.current = setTimeout(spawnEntity, getRandom(30000, 90000))

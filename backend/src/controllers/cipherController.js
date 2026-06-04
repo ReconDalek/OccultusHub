@@ -11,7 +11,15 @@ function seededRandom(seed) {
 }
 
 function dateToSeed(dateStr) {
-  return parseInt(dateStr.replace(/-/g, ''), 10);
+  // FNV-1a 32-bit hash — consecutive date strings (which differ by 1 in the
+  // last digit) produce completely unrelated seeds, so phrase/cipher selections
+  // are uniformly distributed across days instead of drifting by ~1/115 per day.
+  let hash = 2166136261 >>> 0;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash ^= dateStr.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash;
 }
 
 // ── Plaintext phrase pool ─────────────────────────────────────────────────────

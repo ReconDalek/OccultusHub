@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import RuneCastingGame from './RuneCastingGame'
 import RuneLeaderboard from './RuneLeaderboard'
+import { useSession } from '../hooks/useSession'
+import { useSite } from '../contexts/SiteContext'
+
+const COOLDOWN_MS = 12 * 60 * 60 * 1000
 
 const RUNE_SYMBOLS = ['ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚺ','ᚾ','ᛊ','ᛏ','ᛚ','⊕','☽','⊗']
 const RUNE_COLORS  = [
@@ -14,11 +18,19 @@ const RUNE_COLORS  = [
 function getRandom(min, max) { return min + Math.random() * (max - min) }
 
 export default function RuneEasterEgg() {
+  const { user } = useSession()
+  const { runesEnabled } = useSite()
   const [visible, setVisible] = useState(false)
   const [props, setProps] = useState(null)
   const [gameOpen, setGameOpen] = useState(false)
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
   const scheduleRef = useRef(null)
+
+  function isInCooldown() {
+    if (!user?.lastRuneCastAt) return false
+    const last = new Date(user.lastRuneCastAt.replace(' ', 'T') + 'Z').getTime()
+    return Date.now() - last < COOLDOWN_MS
+  }
 
   const spawn = useCallback(() => {
     const goRight = Math.random() > 0.5
@@ -28,9 +40,10 @@ export default function RuneEasterEgg() {
     const topPct = getRandom(15, 82)
     const duration = getRandom(16, 28)
     const rotate = getRandom(-20, 20)
+    if (!runesEnabled || isInCooldown()) { scheduleNext(); return }
     setProps({ goRight, symbol, color, size, topPct, duration, rotate, key: Date.now() })
     setVisible(true)
-  }, [])
+  }, [runesEnabled, user])
 
   const scheduleNext = useCallback(() => {
     scheduleRef.current = setTimeout(spawn, getRandom(45000, 100000))

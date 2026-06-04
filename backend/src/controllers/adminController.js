@@ -328,7 +328,12 @@ export async function getSettings(request, env, user) {
 
 export async function getPublicSettings(request, env) {
   try {
-    const PUBLIC_KEYS = ['site_title'];
+    const PUBLIC_KEYS = [
+      'site_title', 'fishing_enabled', 'runes_enabled',
+      'event_blood_moon', 'event_new_year', 'event_valentines', 'event_st_patricks',
+      'event_walpurgis', 'event_summer_solstice', 'event_halloween', 'event_day_of_dead',
+      'event_winter_solstice', 'event_yuletide',
+    ];
     const result = await env.DB.prepare(
       `SELECT key, value FROM system_settings WHERE key IN (${PUBLIC_KEYS.map(() => '?').join(',')})`
     ).bind(...PUBLIC_KEYS).all();

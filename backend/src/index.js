@@ -3,20 +3,22 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 export default {
   async fetch(request, env, ctx) {
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': env.CORS_ORIGIN,
+      'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Credentials': 'true',
+    };
+
+    // Handle preflight before any route logic
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
     try {
-      // Add CORS headers to response
       const response = await handleRequest(request, env);
-
       const headers = new Headers(response.headers);
-      headers.set('Access-Control-Allow-Origin', env.CORS_ORIGIN);
-      headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-      headers.set('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-      headers.set('Access-Control-Allow-Credentials', 'true');
-
-      // Handle preflight requests
-      if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers });
-      }
+      for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v);
 
       return new Response(response.body, {
         status: response.status,
@@ -24,7 +26,10 @@ export default {
         headers,
       });
     } catch (error) {
-      return errorHandler(error);
+      const errResponse = errorHandler(error);
+      const headers = new Headers(errResponse.headers);
+      for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v);
+      return new Response(errResponse.body, { status: errResponse.status, headers });
     }
   },
 

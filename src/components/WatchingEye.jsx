@@ -1,22 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-
-const MESSAGES = [
-  { title: 'The Veil Speaks',         body: 'Three circles bind the one. The one dissolves the three. Neither begins. Neither ends. You were observed before you arrived.' },
-  { title: 'A Warning Carved in Shadow', body: 'The rite was performed at midnight. The name was not spoken. It did not need to be. It already knew.' },
-  { title: 'On Loyalty',              body: 'Loyalty is not a virtue in the order. It is a requirement. Air is not called noble merely because you breathe it.' },
-  { title: 'The Silence Rule',        body: 'There are things discussed within these walls that have no equivalent in language. For these things, silence is not an absence. It is the message itself.' },
-  { title: 'The Watchers',            body: 'There are members who are never seen at the front. They do not strike. They observe. What they record is held in a place only the order can access.' },
-  { title: 'The Trial',               body: 'Those who seek to rise undergo no formal test. The trial is ongoing. It began the day you joined. It does not end.' },
-  { title: 'The Mark',                body: 'You carry it without knowing what it looks like. Others within the order recognise it. Outsiders cannot see it. This is by design.' },
-  { title: 'On Strength',             body: 'Strength within the order is not measured in victories. It is measured in endurance. The one who outlasts is the one who understands.' },
-  { title: 'That Which Watches',      body: 'The eye does not judge. It catalogues. Everything you have done within these walls has been noted. Some of it has been useful.' },
-  { title: 'The Archive',             body: 'Records go back further than the order\'s official founding. This discrepancy is not an error. It is intentional.' },
-  { title: 'The Unnamed Hour',        body: 'There is an hour between the second toll and the third that has no name. The order has always known what happens within it.' },
-  { title: 'On Absence',              body: 'Those who leave are not forgotten. They are archived. Their knowledge remains useful. Their absence is noted in every record that bears their name.' },
-  { title: 'The City Beneath',        body: 'Torn is a city of surfaces. What the order operates beneath those surfaces cannot be mapped. The map exists only in collective memory.' },
-  { title: 'The Directive',           body: 'The directive was never written down. It does not need to be. Those who have heard it understand. Those who have not — will, in time.' },
-  { title: 'The Mirror Doctrine',     body: 'What you see in the abyss is not the abyss. It is a reflection of what the abyss has already seen in you.' },
-]
+import { findNextGrimoirePage, getFoundPages } from './Grimoire'
 
 function Eye({ openAmount }) {
   const h = 28
@@ -51,7 +34,7 @@ export default function WatchingEye() {
   const [phase, setPhase] = useState('hidden') // hidden | opening | open | closing
   const [openAmount, setOpenAmount] = useState(0)
   const [pos, setPos] = useState({ x: 50, y: 50 })
-  const [message, setMessage] = useState(null)
+  const [allFound, setAllFound] = useState(false)
   const scheduleRef = useRef(null)
   const animRef = useRef(null)
   const openTimerRef = useRef(null)
@@ -105,8 +88,22 @@ export default function WatchingEye() {
     if (phase === 'hidden') return
     clearTimeout(openTimerRef.current)
     setPhase('closing')
-    const msg = MESSAGES[Math.floor(Math.random() * MESSAGES.length)]
-    setMessage(msg)
+
+    const found = getFoundPages()
+    const allPagesFound = found.length >= 20
+
+    if (allPagesFound) {
+      // Grimoire is complete — dispatch open event without a new page
+      setAllFound(true)
+      window.dispatchEvent(new CustomEvent('openGrimoirePage', { detail: { index: null } }))
+      return
+    }
+
+    // Find and unlock a new page
+    const newPageIndex = findNextGrimoirePage()
+    if (newPageIndex !== null) {
+      window.dispatchEvent(new CustomEvent('openGrimoirePage', { detail: { index: newPageIndex } }))
+    }
   }
 
   return (
@@ -125,49 +122,6 @@ export default function WatchingEye() {
           title="The order watches..."
         >
           <Eye openAmount={openAmount} />
-        </div>
-      )}
-
-      {message && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 10002,
-            background: 'rgba(0,0,0,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '24px',
-          }}
-          onClick={() => setMessage(null)}
-        >
-          <div
-            style={{
-              maxWidth: '420px', width: '100%',
-              background: 'rgba(6,2,12,0.98)',
-              border: '1px solid rgba(179,18,63,0.3)',
-              borderRadius: '16px', padding: '32px',
-              boxShadow: '0 0 60px rgba(179,18,63,0.12)',
-              textAlign: 'center',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ fontSize: '32px', marginBottom: '16px', color: 'rgba(179,18,63,0.7)', fontFamily: 'monospace' }}>👁</div>
-            <h3 style={{ margin: '0 0 16px', fontFamily: 'Cinzel, serif', letterSpacing: '2px', fontSize: '16px', color: '#fca5a5' }}>
-              {message.title}
-            </h3>
-            <p style={{ color: '#a1a1aa', lineHeight: 1.8, fontSize: '14px', margin: '0 0 24px' }}>
-              {message.body}
-            </p>
-            <button
-              onClick={() => setMessage(null)}
-              style={{
-                background: 'rgba(179,18,63,0.15)', border: '1px solid rgba(179,18,63,0.3)',
-                color: '#fca5a5', padding: '8px 24px', borderRadius: '8px',
-                cursor: 'pointer', fontSize: '13px', letterSpacing: '0.1em',
-                fontFamily: 'Cinzel, serif',
-              }}
-            >
-              Close the eye
-            </button>
-          </div>
         </div>
       )}
     </>

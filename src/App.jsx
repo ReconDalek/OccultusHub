@@ -15,7 +15,7 @@ import DiscordWidget     from './components/DiscordWidget/DiscordWidget'
 import FishingEasterEgg from './components/FishingEasterEgg'
 import RuneEasterEgg    from './components/RuneEasterEgg'
 import WatchingEye      from './components/WatchingEye'
-import BloodMoon        from './components/BloodMoon'
+import SeasonalEvents  from './components/SeasonalEvents'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -43,7 +43,7 @@ function Layout({ children }) {
       <FishingEasterEgg />
       <RuneEasterEgg />
       <WatchingEye />
-      <BloodMoon />
+      <SeasonalEvents />
     </>
   )
 }
@@ -99,7 +99,7 @@ function AppRoutes() {
     return (
       <div
         className="flex items-center justify-center"
-        style={{ minHeight: '100vh', background: '#07070a', color: '#a1a1aa' }}
+        style={{ minHeight: '100vh', color: '#a1a1aa' }}
       >
         Loading...
       </div>

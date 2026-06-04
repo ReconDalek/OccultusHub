@@ -25,7 +25,7 @@ export default function Leadership() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#07070a', color: '#f4f4f5' }}>
+    <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
       <div className="max-w-7xl mx-auto px-6 py-12">
         {/* Header */}
         <div className="mb-12">

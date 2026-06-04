@@ -3,8 +3,9 @@ import UsersTab from '../components/AdminTabs/UsersTab'
 import PagesTab from '../components/AdminTabs/PagesTab'
 import CacheTab from '../components/AdminTabs/CacheTab'
 import SettingsTab from '../components/AdminTabs/SettingsTab'
-import FishingTab  from '../components/AdminTabs/FishingTab'
-import RuneTab     from '../components/AdminTabs/RuneTab'
+import FishingTab       from '../components/AdminTabs/FishingTab'
+import RuneTab          from '../components/AdminTabs/RuneTab'
+import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
@@ -16,10 +17,11 @@ export default function Admin() {
     { id: 'settings', label: 'Settings' },
     { id: 'fishing',  label: '◈ Void Scrying' },
     { id: 'runes',    label: 'ᚠ Rune Casting' },
+    { id: 'events',   label: '🌕 Events' },
   ]
 
   return (
-    <div className="min-h-screen" style={{ background: '#07070a', color: '#f4f4f5' }}>
+    <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
       <div className="max-w-7xl mx-auto px-6 py-12">
         {/* Header */}
         <div className="mb-12">
@@ -76,6 +78,7 @@ export default function Admin() {
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'fishing'  && <FishingTab />}
           {activeTab === 'runes'    && <RuneTab />}
+          {activeTab === 'events'   && <SeasonalEventsTab />}
         </div>
       </div>
     </div>
