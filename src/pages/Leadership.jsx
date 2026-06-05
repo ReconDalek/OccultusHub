@@ -4,12 +4,16 @@ import InternalNoticesTab from '../components/LeadershipTabs/InternalNoticesTab'
 import EventsSchedulesTab from '../components/LeadershipTabs/EventsSchedulesTab'
 import LeaderToolsTab from '../components/LeadershipTabs/LeaderToolsTab'
 import CipherReviewTab from '../components/LeadershipTabs/CipherReviewTab'
+import ChainTrackingTab from '../components/LeadershipTabs/ChainTrackingTab'
+import MemberRanksTab from '../components/LeadershipTabs/MemberRanksTab'
 
 const tabs = [
   { id: 'notices', label: 'Internal Notices' },
-  { id: 'events', label: 'Events & Schedules' },
-  { id: 'tools', label: 'Leader Tools' },
-  { id: 'cipher', label: 'Cipher Review' },
+  { id: 'events',  label: 'Events & Schedules' },
+  { id: 'tools',   label: 'Leader Tools' },
+  { id: 'chains',  label: '⛓ Chain & War' },
+  { id: 'ranks',   label: '🏅 Member Ranks' },
+  { id: 'cipher',  label: 'Cipher Review' },
 ]
 
 export default function Leadership() {
@@ -81,9 +85,11 @@ export default function Leadership() {
               }}
             >
               {activeTab === 'notices' && <InternalNoticesTab />}
-              {activeTab === 'events' && <EventsSchedulesTab />}
-              {activeTab === 'tools' && <LeaderToolsTab />}
-              {activeTab === 'cipher' && <CipherReviewTab />}
+              {activeTab === 'events'  && <EventsSchedulesTab />}
+              {activeTab === 'tools'   && <LeaderToolsTab />}
+              {activeTab === 'chains'  && <ChainTrackingTab />}
+              {activeTab === 'ranks'   && <MemberRanksTab />}
+              {activeTab === 'cipher'  && <CipherReviewTab />}
             </div>
           </>
         )}

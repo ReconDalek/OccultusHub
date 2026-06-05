@@ -9,6 +9,8 @@ import * as noticesController from './controllers/noticesController.js';
 import * as cipherController from './controllers/cipherController.js';
 import * as fishingController from './controllers/fishingController.js';
 import * as runeController from './controllers/runeController.js';
+import * as chainController from './controllers/chainController.js';
+import * as memberController from './controllers/memberController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -129,6 +131,24 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/admin/runes/reset' && method === 'POST') {
       return runeController.resetLeaderboard(request, env, user);
     }
+
+    // Chain cache endpoints
+    if (pathname === '/api/admin/chains/status' && method === 'GET') {
+      return chainController.getChainCacheStatus(request, env, user);
+    }
+
+    if (pathname === '/api/admin/chains/refresh' && method === 'POST') {
+      return chainController.refreshChainsAdmin(request, env, user);
+    }
+
+    // Member database endpoints
+    if (pathname === '/api/admin/members/status' && method === 'GET') {
+      return memberController.getMemberSyncStatus(request, env, user);
+    }
+
+    if (pathname === '/api/admin/members/sync' && method === 'POST') {
+      return memberController.triggerMemberSync(request, env, user);
+    }
   }
 
   // Fishing endpoints
@@ -203,6 +223,31 @@ export async function handleRequest(request, env) {
     }
     if (pathname.match(/^\/api\/leadership\/faction-schedules\/\d+\/advance$/) && method === 'POST') {
       return eventsController.advanceFactionSchedule(request, env, user);
+    }
+
+    // Chain tracking — read chain cache per faction
+    if (pathname === '/api/leadership/chains' && method === 'GET') {
+      return chainController.getChains(request, env);
+    }
+
+    // Chain report — live proxy to Torn API (cached by frontend)
+    if (pathname === '/api/leadership/chain-report' && method === 'GET') {
+      return chainController.getChainReport(request, env);
+    }
+
+    // Save member hit contributions for a chain
+    if (pathname === '/api/leadership/chain-hits' && method === 'POST') {
+      return chainController.saveChainHits(request, env, user);
+    }
+
+    // Manually import a historical chain (metadata + hits in one shot, no minimum)
+    if (pathname === '/api/leadership/chain-import' && method === 'POST') {
+      return chainController.saveChainImport(request, env, user);
+    }
+
+    // Faction member list with chain hit totals (for Ranks tab)
+    if (pathname === '/api/leadership/members' && method === 'GET') {
+      return memberController.getFactionMembers(request, env);
     }
   }
 

@@ -34,8 +34,29 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    // "0 9 * * 1" — weekly chain history refresh (Monday 09:00 UTC)
+    if (event.cron === '0 9 * * 1') {
+      try {
+        const { fetchAndCacheChains } = await import('./controllers/chainController.js');
+        console.log('Starting scheduled chain cache refresh...');
+        ctx.waitUntil(
+          fetchAndCacheChains(env).then((result) => {
+            console.log(`Chain cache refresh complete: ${result.added} new chains added`);
+            if (result.errors.length) console.warn('Chain refresh errors:', result.errors);
+          }).catch((err) => {
+            console.error('Scheduled chain refresh failed:', err);
+          })
+        );
+      } catch (error) {
+        console.error('Chain scheduled event handler error:', error);
+      }
+      return;
+    }
+
+    // "0 */12 * * *" — faction/company cache refresh every 12 hours
     try {
       const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');
+      const { syncMembersFromCache } = await import('./controllers/memberController.js');
 
       const apiKey = await getRandomUserApiKey(env);
       if (!apiKey) {
@@ -51,9 +72,23 @@ export default {
       ctx.waitUntil(
         Promise.all([
           fetchAndCacheFactions(env, factionIds, apiKey),
-          fetchAndCacheCompanies(env, companyIds, apiKey)
-        ]).then(([factionResult, companyResult]) => {
-          console.log(`Scheduled refresh complete: ${factionResult.fetched} factions, ${companyResult.fetched} companies`);
+          fetchAndCacheCompanies(env, companyIds, apiKey),
+        ]).then(async ([factionResult, companyResult]) => {
+          console.log(`Cache refresh complete: ${factionResult.fetched} factions, ${companyResult.fetched} companies`);
+
+          // Sync faction members from the freshly-cached data (no extra API calls)
+          try {
+            const memberResult = await syncMembersFromCache(env);
+            console.log(
+              `Member sync complete: ${memberResult.synced} synced, ` +
+              `${memberResult.added} new, ${memberResult.departed} departed`
+            );
+            if (memberResult.errors.length) {
+              console.warn('Member sync errors:', memberResult.errors);
+            }
+          } catch (memberErr) {
+            console.error('Member sync failed:', memberErr);
+          }
         }).catch(error => {
           console.error('Scheduled cache refresh failed:', error);
         })
