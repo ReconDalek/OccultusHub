@@ -21,33 +21,44 @@ export async function saveCustomHits(request, env, user) {
       return errorResponse('members array required', 400);
     }
 
-    const type = hit_type.trim();
+    const type     = hit_type.trim();
+    const notesTxt = notes?.trim() || null;
     let saved = 0;
+
+    const customHitsStmts    = [];
+    const factionMemberStmts = [];
 
     for (const m of members) {
       const tornId = parseInt(m.torn_user_id, 10);
       const hits   = parseInt(m.hits, 10);
       if (!tornId || !(hits > 0)) continue;
 
-      await env.DB.prepare(
-        `INSERT INTO custom_hits
-           (faction_id, torn_user_id, username, hit_type, hits, notes, saved_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        faction_id, tornId, m.username ?? null, type, hits,
-        notes?.trim() || null, user.userId
-      ).run();
+      customHitsStmts.push(
+        env.DB.prepare(
+          `INSERT INTO custom_hits
+             (faction_id, torn_user_id, username, hit_type, hits, notes, saved_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).bind(faction_id, tornId, m.username ?? null, type, hits, notesTxt, user.userId)
+      );
 
-      // Ensure member exists in faction_members (add as inactive placeholder if unknown)
       if (m.username) {
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO faction_members
-             (torn_user_id, username, faction_id, is_active, joined_at, last_updated_at)
-           VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-        ).bind(tornId, m.username, faction_id).run();
+        factionMemberStmts.push(
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO faction_members
+               (torn_user_id, username, faction_id, is_active, joined_at, last_updated_at)
+             VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+          ).bind(tornId, m.username, faction_id)
+        );
       }
 
       saved++;
+    }
+
+    for (let i = 0; i < customHitsStmts.length; i += 100) {
+      await env.DB.batch(customHitsStmts.slice(i, i + 100));
+    }
+    for (let i = 0; i < factionMemberStmts.length; i += 100) {
+      await env.DB.batch(factionMemberStmts.slice(i, i + 100));
     }
 
     return jsonResponse({ saved, message: `${saved} custom hit record${saved !== 1 ? 's' : ''} saved` });
