@@ -90,8 +90,7 @@ function ColumnHeaders() {
 
 function MemberRow({ member, showFaction }) {
   const warUnits  = Math.round(member.total_war_units || 0)
-  //const totalHits = (member.total_chain_hits || 0) + warUnits + (member.total_custom_hits || 0)
-  const totalHits = (member.total_chain_hits || 0)
+  const totalHits = (member.total_chain_hits || 0) + warUnits + (member.total_custom_hits || 0)
   const derived   = getDerivedRank(totalHits)
   const tier      = getRankTier(derived)
   const mismatch  = isMismatch(member.faction_position, derived)
