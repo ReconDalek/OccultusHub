@@ -36,6 +36,15 @@ export default function GameRulebook({ onClose }) {
             <RoleRule icon="◎" color="#22c55e" name="The Warden">
               Carries one bullet for the entire game. Choose each night how to use it — or wait. <strong style={{color:'#4ade80'}}>Guard Self</strong>: stand ready. If the Cabal targets you, your bullet fires back and one attacker falls. The bullet is only spent if you are actually attacked. <strong style={{color:'#fb923c'}}>Shoot</strong>: fire proactively. Your target always dies — but if they were innocent, the congregation bears the loss.
             </RoleRule>
+            <RoleRule icon="✦" color="#f59e0b" name="The Apostate">
+              A neutral soul who seeks only the void. No night ability. <strong style={{color:'#fbbf24'}}>Win condition</strong>: be banished by the Congregation during a day vote. Act suspicious enough to be voted out — but not so obviously that players suspect your true motive. If the Apostate is banished, the Rite ends immediately and the Apostate wins alone.
+            </RoleRule>
+            <RoleRule icon="◬" color="#e879f9" name="The Deceiver">
+              A hidden servant of the Cabal. Shares the Cabal's private channel and wins with them. Each night, choose one player to corrupt their aura. If the Inquisitor investigates that player tonight, the result is inverted — Cabal appears Pure, and the innocent appear Tainted. The Deceiver is revealed as Tainted if investigated without corruption.
+            </RoleRule>
+            <RoleRule icon="✧" color="#38bdf8" name="The Acolyte">
+              A devoted protector of the Congregation. Carries one blessing for the entire game. Each night, choose a player to anoint. If the Cabal would sacrifice them that night, the attack is deflected and they survive. The blessing is spent on use. The Acolyte is not required to act — they may hold their blessing.
+            </RoleRule>
           </Section>
 
           <Section title="Win Conditions">
@@ -45,33 +54,40 @@ export default function GameRulebook({ onClose }) {
             <RuleItem icon="◈" title="Cabal Victory">
               The Cabal equals or outnumbers the remaining Congregation members.
             </RuleItem>
+            <RuleItem icon="✦" title="Apostate Victory">
+              The Apostate is banished by the Congregation's day vote. The Rite ends immediately — neither faction wins.
+            </RuleItem>
           </Section>
 
           <Section title="Player Scaling">
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
               <thead>
                 <tr>
-                  {['Players', 'Cabal', 'Inquisitor', 'Warden', 'Congregation'].map(h => (
-                    <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: '#71717a', borderBottom: '1px solid rgba(255,255,255,0.08)', letterSpacing: 1 }}>{h}</th>
+                  {['Players', 'Cabal', 'Inq.', 'Warden', 'Apostate', 'Deceiver', 'Acolyte', 'Cong.'].map(h => (
+                    <th key={h} style={{ padding: '5px 6px', textAlign: 'left', color: '#71717a', borderBottom: '1px solid rgba(255,255,255,0.08)', letterSpacing: 1 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {[
-                  [4, 1, 0, 0, 3],
-                  [5, 1, 1, 0, 3],
-                  [6, 1, 1, 1, 3],
-                  [7, 2, 1, 1, 3],
-                  [8, 2, 1, 1, 4],
-                  [10, 2, 1, 1, 6],
-                  [12, 3, 1, 1, 7],
+                  [4,  1, 0, 0, 0, 0, 0, 3],
+                  [5,  1, 1, 0, 0, 0, 0, 3],
+                  [6,  1, 1, 1, 0, 0, 0, 3],
+                  [7,  2, 1, 1, 0, 0, 0, 3],
+                  [8,  2, 1, 1, 1, 0, 0, 3],
+                  [9,  2, 1, 1, 1, 1, 0, 3],
+                  [10, 2, 1, 1, 1, 1, 1, 3],
+                  [12, 3, 1, 1, 1, 1, 1, 4],
                 ].map(row => (
                   <tr key={row[0]}>
                     {row.map((cell, i) => (
-                      <td key={i} style={{ padding: '6px 10px', color: '#d4d4d8', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td key={i} style={{ padding: '5px 6px', color: '#d4d4d8', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                         {i === 1 ? <span style={{ color: '#b3123f' }}>{cell}</span> :
                          i === 2 ? <span style={{ color: cell ? '#9f67ff' : '#52525b' }}>{cell || '—'}</span> :
-                         i === 3 ? <span style={{ color: cell ? '#22c55e' : '#52525b' }}>{cell || '—'}</span> : cell}
+                         i === 3 ? <span style={{ color: cell ? '#22c55e' : '#52525b' }}>{cell || '—'}</span> :
+                         i === 4 ? <span style={{ color: cell ? '#f59e0b' : '#52525b' }}>{cell || '—'}</span> :
+                         i === 5 ? <span style={{ color: cell ? '#e879f9' : '#52525b' }}>{cell || '—'}</span> :
+                         i === 6 ? <span style={{ color: cell ? '#38bdf8' : '#52525b' }}>{cell || '—'}</span> : cell}
                       </td>
                     ))}
                   </tr>
@@ -87,6 +103,10 @@ export default function GameRulebook({ onClose }) {
           <Section title="General Rules">
             <ul style={{ paddingLeft: 18, display: 'grid', gap: 8 }}>
               <li>Dead players cannot speak, vote, or take actions.</li>
+              <li>The Apostate is a neutral role. If banished by the Congregation, the Apostate wins and the Rite ends immediately. Neither the Congregation nor the Cabal achieves victory.</li>
+              <li>The Deceiver is a Cabal-aligned role. They share the Cabal's private channel, know the Cabal's identities, and count toward the Cabal's numerical dominance.</li>
+              <li>The Acolyte's blessing is spent whether or not the target was attacked that night. An unspent blessing carries to subsequent nights.</li>
+              <li>If the Deceiver corrupts the same player the Inquisitor investigates, the result is flipped. The Inquisitor receives no indication that corruption occurred.</li>
               <li>The Cabal know each other's identities from the start.</li>
               <li>The Warden's bullet is only spent if they shoot proactively, or if they are guarding themselves when targeted.</li>
               <li>If no Cabal member submits a sacrifice action, no one is sacrificed that night.</li>

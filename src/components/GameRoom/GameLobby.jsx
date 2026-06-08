@@ -129,9 +129,14 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
 function RoleScaling({ count }) {
   const c = Math.max(count, 4)
   const cabals = Math.max(1, Math.floor(c / 4))
-  const hasInq = c >= 5
-  const hasWarden = c >= 6
-  const specials = cabals + (hasInq ? 1 : 0) + (hasWarden ? 1 : 0)
+  const hasInq      = c >= 5
+  const hasWarden   = c >= 6
+  const hasApostate = c >= 8
+  const hasDeceiver = c >= 9
+  const hasAcolyte  = c >= 10
+  const specials = cabals
+    + (hasInq ? 1 : 0) + (hasWarden ? 1 : 0)
+    + (hasApostate ? 1 : 0) + (hasDeceiver ? 1 : 0) + (hasAcolyte ? 1 : 0)
   const cong = c - specials
 
   return (
@@ -142,8 +147,11 @@ function RoleScaling({ count }) {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <RolePill count={cabals} label="Cabal" color="#b3123f" />
         <RolePill count={cong} label="Congregation" color="#a1a1aa" />
-        {hasInq && <RolePill count={1} label="Inquisitor" color="#9f67ff" />}
-        {hasWarden && <RolePill count={1} label="Warden" color="#22c55e" />}
+        {hasInq      && <RolePill count={1} label="Inquisitor" color="#9f67ff" />}
+        {hasWarden   && <RolePill count={1} label="Warden"     color="#22c55e" />}
+        {hasApostate && <RolePill count={1} label="Apostate"   color="#f59e0b" />}
+        {hasDeceiver && <RolePill count={1} label="Deceiver"   color="#e879f9" />}
+        {hasAcolyte  && <RolePill count={1} label="Acolyte"    color="#38bdf8" />}
       </div>
     </div>
   )

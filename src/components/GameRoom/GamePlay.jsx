@@ -6,7 +6,12 @@ const ROLE_META = {
   cabal:        { icon: '◈', color: '#b3123f', label: 'Cabal Agent' },
   inquisitor:   { icon: '◉', color: '#9f67ff', label: 'Inquisitor' },
   warden:       { icon: '◎', color: '#22c55e', label: 'Warden' },
+  apostate:     { icon: '✦', color: '#f59e0b', label: 'The Apostate' },
+  deceiver:     { icon: '◬', color: '#e879f9', label: 'Deceiver' },
+  acolyte:      { icon: '✧', color: '#38bdf8', label: 'Acolyte' },
 }
+
+const CABAL_FACTION = ['cabal', 'deceiver']
 
 const DAY_SECS   = 240
 const NIGHT_SECS = 120
@@ -100,14 +105,17 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   // Role ability states from server
   const bulletSpent        = myPlayer?.bullet_spent
   const canInvestigateNow  = myPlayer?.can_investigate_now // null when not night
+  const anointSpent        = myPlayer?.anoint_spent
 
   const roleMeta = ROLE_META[myRole] || ROLE_META.congregation
 
   // Whether this player has an actionable night ability right now
   const hasNightAction = isNight && isAlive && (
     myRole === 'cabal' ||
+    myRole === 'deceiver' ||
     (myRole === 'inquisitor' && canInvestigateNow === true) ||
-    (myRole === 'warden' && !bulletSpent)
+    (myRole === 'warden' && !bulletSpent) ||
+    (myRole === 'acolyte' && !anointSpent)
   )
 
   const hasPendingAction = isAlive && (
@@ -190,7 +198,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
     if (!msg || sending) return
     setSending(true)
     try {
-      const channel = isNight && myRole === 'cabal' ? 'cabal' : 'public'
+      const channel = isNight && isCabalFaction ? 'cabal' : 'public'
       const body = { message: msg, channel, ...(guestToken ? { guest_token: guestToken } : {}) }
       const res = await fetch(`${API_BASE_URL}/api/game/rooms/${roomCode}/message`, {
         method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
@@ -219,9 +227,11 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
     setSubmitting(true)
     try {
       let action_type
-      if (myRole === 'cabal')      action_type = 'kill'
+      if (myRole === 'cabal')           action_type = 'kill'
+      else if (myRole === 'deceiver')   action_type = 'deceive'
       else if (myRole === 'inquisitor') action_type = 'investigate'
-      else if (myRole === 'warden') action_type = isGuard ? 'guard' : 'shoot'
+      else if (myRole === 'acolyte')    action_type = 'anoint'
+      else if (myRole === 'warden')     action_type = isGuard ? 'guard' : 'shoot'
 
       const body = {
         action_type,
@@ -244,7 +254,8 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
 
   const publicMessages = messages.filter(m => m.channel === 'public')
   const cabalMessages  = messages.filter(m => m.channel === 'cabal')
-  const displayMessages = isNight && myRole === 'cabal' ? cabalMessages : publicMessages
+  const isCabalFaction = CABAL_FACTION.includes(myRole)
+  const displayMessages = isNight && isCabalFaction ? cabalMessages : publicMessages
 
   const maxSecs  = isNight ? NIGHT_SECS : DAY_SECS
   const timerPct = timeLeft !== null ? Math.max(0, (timeLeft / maxSecs) * 100) : null
@@ -455,11 +466,49 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         </div>
       )}
 
+      {/* Deceiver corrupt */}
+      {isAlive && isNight && myRole === 'deceiver' && !myAction && (
+        <ActionPanel color="#e879f9" title="Corrupt an Investigation">
+          <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.55, marginBottom: 8 }}>
+            Choose a target. If the Inquisitor investigates them tonight, the result will be inverted.
+          </p>
+          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+            {actionTarget ? `Target: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
+          </p>
+          <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
+            style={{ ...compactBtn('#e879f9'), opacity: actionTarget ? 1 : 0.4 }}>
+            ◬ Corrupt
+          </button>
+        </ActionPanel>
+      )}
+
+      {/* Acolyte anoint */}
+      {isAlive && isNight && myRole === 'acolyte' && !anointSpent && !myAction && (
+        <ActionPanel color="#38bdf8" title="Bestow Your Blessing — 1 use">
+          <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.55, marginBottom: 8 }}>
+            Anoint a player. If the Cabal targets them tonight, the sacrifice is turned away. Your blessing is spent on use.
+          </p>
+          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+            {actionTarget ? `Anoint: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
+          </p>
+          <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
+            style={{ ...compactBtn('#38bdf8'), opacity: actionTarget ? 1 : 0.4 }}>
+            ✧ Anoint
+          </button>
+        </ActionPanel>
+      )}
+      {isAlive && isNight && myRole === 'acolyte' && anointSpent && (
+        <div style={{ padding: '10px 12px', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 8 }}>
+          <p style={{ fontSize: 12, color: '#52525b' }}>✧ Your blessing has been bestowed.</p>
+          <p style={{ fontSize: 11, color: '#3f3f46', marginTop: 4 }}>You observe the night.</p>
+        </div>
+      )}
+
       {/* Submitted */}
       {isAlive && isNight && hasNightAction && myAction && <DonePanel color="#4ade80" text="Action submitted" sub="Awaiting dawn..." />}
 
-      {/* No night action (congregation or spent) */}
-      {isNight && isAlive && !hasNightAction && myRole === 'congregation' && (
+      {/* No night action (congregation, apostate, or spent) */}
+      {isNight && isAlive && !hasNightAction && (myRole === 'congregation' || myRole === 'apostate') && (
         <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
           <p style={{ fontSize: 12, color: '#52525b', lineHeight: 1.5 }}>You sleep through the Witching Hour.</p>
         </div>
@@ -482,7 +531,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   // ─── ChatPanel ───────────────────────────────────────────────────
   const chatPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-      {isNight && myRole === 'cabal' && (
+      {isNight && isCabalFaction && (
         <div style={{ padding: '7px 16px', background: 'rgba(179,18,63,0.1)', borderBottom: '1px solid rgba(179,18,63,0.22)', fontSize: 11, color: '#fb7185', letterSpacing: 2, flexShrink: 0 }}>
           ◈ CABAL CHANNEL — private
         </div>
@@ -494,7 +543,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         <div ref={chatEndRef} />
       </div>
       <div style={{ padding: '10px 12px', borderTop: `1px solid ${isNight ? 'rgba(109,40,217,0.2)' : 'rgba(255,255,255,0.07)'}`, flexShrink: 0, transition: 'border-color 2s ease' }}>
-        {(!isNight || myRole === 'cabal') && isAlive ? (
+        {(!isNight || isCabalFaction) && isAlive ? (
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               value={chatInput}
@@ -549,13 +598,20 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             <p style={{ fontSize: 13, color: '#a1a1aa', maxWidth: 280, margin: '0 auto 20px', lineHeight: 1.7 }}>
               {roleFlavorText[myRole]}
             </p>
-            {myRole === 'cabal' && (
+            {isCabalFaction && (
               <div style={{ marginBottom: 18, padding: '10px 12px', background: 'rgba(179,18,63,0.1)', borderRadius: 8 }}>
-                <p style={{ fontSize: 11, color: '#b3123f', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Your Cabal</p>
-                {players.filter(p => p.role === 'cabal' && !p.is_me).map(p => (
-                  <div key={p.id} style={{ fontSize: 13, color: '#f87171' }}>{p.display_name}</div>
+                <p style={{ fontSize: 11, color: '#b3123f', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
+                  {myRole === 'deceiver' ? 'Your Allies' : 'Your Cabal'}
+                </p>
+                {players.filter(p => CABAL_FACTION.includes(p.role) && !p.is_me).map(p => (
+                  <div key={p.id} style={{ fontSize: 13, color: '#f87171' }}>
+                    {p.display_name}
+                    <span style={{ fontSize: 11, color: '#71717a', marginLeft: 6 }}>
+                      ({ROLE_META[p.role]?.label})
+                    </span>
+                  </div>
                 ))}
-                {players.filter(p => p.role === 'cabal' && !p.is_me).length === 0 && (
+                {players.filter(p => CABAL_FACTION.includes(p.role) && !p.is_me).length === 0 && (
                   <div style={{ fontSize: 12, color: '#71717a' }}>You act alone</div>
                 )}
               </div>
@@ -765,6 +821,9 @@ const roleFlavorText = {
   cabal: 'You serve the darkness. Each night, choose a member of the Congregation to sacrifice. Stay hidden. Sow doubt.',
   inquisitor: 'The Oracle grants you sight — but only on odd-numbered nights. Use your investigation wisely.',
   warden: 'You carry one bullet. Guard yourself and fire back if targeted, or shoot a suspect — your shot always kills, but choose wisely.',
+  apostate: 'You seek the void. You win if the Congregation banishes you during a day vote. Act suspicious enough to be voted out — but not so obvious they suspect your true motive.',
+  deceiver: 'You are the Cabal\'s shadow hand. Each night, choose one player to corrupt their aura. If the Inquisitor investigates them tonight, what they see will be inverted.',
+  acolyte: 'You carry the Congregation\'s last hope. Once per game, anoint a player at night. If the Cabal would sacrifice them, your blessing turns the attack away.',
 }
 
 function compactBtn(color) {

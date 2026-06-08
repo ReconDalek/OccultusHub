@@ -289,6 +289,9 @@ function RoleReference() {
     { name: 'The Cabal', icon: '◈', color: '#b3123f', desc: 'Sacrifice the Congregation under cover of night' },
     { name: 'Inquisitor', icon: '◉', color: '#9f67ff', desc: 'Investigate one player on odd-numbered nights' },
     { name: 'Warden', icon: '◎', color: '#22c55e', desc: 'One bullet — guard yourself or shoot a suspect' },
+    { name: 'Apostate', icon: '✦', color: '#f59e0b', desc: 'Neutral — wins alone if banished by the Congregation' },
+    { name: 'Deceiver', icon: '◬', color: '#e879f9', desc: 'Cabal ally — corrupts the Inquisitor\'s investigations' },
+    { name: 'Acolyte',  icon: '✧', color: '#38bdf8', desc: 'One blessing — shield a player from a night sacrifice' },
   ]
   return (
     <div style={{ marginTop: 48 }}>

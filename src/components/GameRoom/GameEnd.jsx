@@ -1,8 +1,11 @@
 const ROLE_META = {
   congregation: { icon: '◌', color: '#a1a1aa', label: 'Congregation' },
-  cabal: { icon: '◈', color: '#b3123f', label: 'Cabal Agent' },
-  inquisitor: { icon: '◉', color: '#9f67ff', label: 'Inquisitor' },
-  warden: { icon: '◎', color: '#22c55e', label: 'Warden' },
+  cabal:        { icon: '◈', color: '#b3123f', label: 'Cabal Agent' },
+  inquisitor:   { icon: '◉', color: '#9f67ff', label: 'Inquisitor' },
+  warden:       { icon: '◎', color: '#22c55e', label: 'Warden' },
+  apostate:     { icon: '✦', color: '#f59e0b', label: 'The Apostate' },
+  deceiver:     { icon: '◬', color: '#e879f9', label: 'Deceiver' },
+  acolyte:      { icon: '✧', color: '#38bdf8', label: 'Acolyte' },
 }
 
 export default function GameEnd({ gameState, displayName, onPlayAgain }) {
@@ -10,18 +13,24 @@ export default function GameEnd({ gameState, displayName, onPlayAgain }) {
   const players = gameState?.players || []
   const messages = gameState?.messages || []
   const winner = room?.winner
-  const isCabalWin = winner === 'cabal'
+  const isCabalWin      = winner === 'cabal'
+  const isApostateWin   = winner === 'apostate'
+  const isCongregation  = !isCabalWin && !isApostateWin
 
   const oracleMsgs = messages.filter(m => m.display_name === 'The Oracle')
   const lastOracleMsg = oracleMsgs[oracleMsgs.length - 1]?.message || ''
 
+  const winIcon  = isCabalWin ? '◈' : isApostateWin ? '✦' : '✦'
+  const winColor = isCabalWin ? '#b3123f' : isApostateWin ? '#f59e0b' : '#9f67ff'
+  const winTitle = isCabalWin ? 'THE CABAL PREVAILS' : isApostateWin ? 'THE APOSTATE PREVAILS' : 'THE CONGREGATION ENDURES'
+
   return (
     <div style={{ minHeight: 'calc(100vh - 72px)', padding: '48px 20px 60px', color: '#f4f4f5' }}>
       <div style={{ maxWidth: 540, margin: '0 auto', textAlign: 'center' }}>
-        <div style={{ fontSize: 56, marginBottom: 16 }}>{isCabalWin ? '◈' : '✦'}</div>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>{winIcon}</div>
 
-        <h1 className="font-cinzel" style={{ fontSize: 32, letterSpacing: 6, marginBottom: 8, color: isCabalWin ? '#b3123f' : '#9f67ff' }}>
-          {isCabalWin ? 'THE CABAL PREVAILS' : 'THE CONGREGATION ENDURES'}
+        <h1 className="font-cinzel" style={{ fontSize: 32, letterSpacing: 6, marginBottom: 8, color: winColor }}>
+          {winTitle}
         </h1>
 
         <p style={{ color: '#71717a', fontSize: 13, maxWidth: 380, margin: '0 auto 32px', lineHeight: 1.6 }}>

@@ -13,15 +13,24 @@ function inquisitorCanActThisPhase(phase) {
 function assignRoles(playerCount) {
   const cabals = Math.max(1, Math.floor(playerCount / 4));
   const hasInquisitor = playerCount >= 5;
-  const hasWarden = playerCount >= 6;
-  const specialCount = cabals + (hasInquisitor ? 1 : 0) + (hasWarden ? 1 : 0);
+  const hasWarden     = playerCount >= 6;
+  const hasApostate   = playerCount >= 8;
+  const hasDeceiver   = playerCount >= 9;
+  const hasAcolyte    = playerCount >= 10;
+  const specialCount = cabals
+    + (hasInquisitor ? 1 : 0) + (hasWarden   ? 1 : 0)
+    + (hasApostate   ? 1 : 0) + (hasDeceiver ? 1 : 0)
+    + (hasAcolyte    ? 1 : 0);
   const congregation = playerCount - specialCount;
 
   const roles = [
     ...Array(cabals).fill('cabal'),
     ...Array(congregation).fill('congregation'),
     ...(hasInquisitor ? ['inquisitor'] : []),
-    ...(hasWarden ? ['warden'] : []),
+    ...(hasWarden     ? ['warden']     : []),
+    ...(hasApostate   ? ['apostate']   : []),
+    ...(hasDeceiver   ? ['deceiver']   : []),
+    ...(hasAcolyte    ? ['acolyte']    : []),
   ];
 
   for (let i = roles.length - 1; i > 0; i--) {
@@ -38,10 +47,13 @@ function generateCode() {
   return code;
 }
 
+const CABAL_FACTION = ['cabal', 'deceiver'];
+
 function checkWinCondition(players) {
   const alive = players.filter(p => p.is_alive);
-  const aliveCabal = alive.filter(p => p.role === 'cabal').length;
-  const aliveGood = alive.filter(p => p.role !== 'cabal').length;
+  const aliveCabal = alive.filter(p => CABAL_FACTION.includes(p.role)).length;
+  // Apostate is neutral — doesn't count as "good" for congregation's protection
+  const aliveGood  = alive.filter(p => !CABAL_FACTION.includes(p.role) && p.role !== 'apostate').length;
   if (aliveCabal === 0) return 'congregation';
   if (aliveCabal >= aliveGood) return 'cabal';
   return null;
@@ -249,7 +261,7 @@ export async function getRoom(request, env, user) {
     const sanitizedPlayers = players.results.map(p => {
       const isSelf = myPlayer && p.id === myPlayer.id;
       const showRole = isSelf || !p.is_alive || room.status === 'ended';
-      const isCabalAlly = myPlayer?.role === 'cabal' && p.role === 'cabal';
+      const isCabalAlly = CABAL_FACTION.includes(myPlayer?.role) && CABAL_FACTION.includes(p.role);
       return {
         id: p.id,
         display_name: p.display_name,
@@ -261,7 +273,7 @@ export async function getRoom(request, env, user) {
     });
 
     let messages;
-    if (myPlayer?.role === 'cabal' || room.status === 'ended') {
+    if (CABAL_FACTION.includes(myPlayer?.role) || room.status === 'ended') {
       messages = await env.DB.prepare(
         `SELECT id, display_name, message, channel, phase, created_at
          FROM game_messages WHERE room_id = ? AND id > ? ORDER BY id ASC LIMIT 100`
@@ -299,7 +311,7 @@ export async function getRoom(request, env, user) {
     }
 
     let cabalVoteCounts = [];
-    if (myPlayer?.role === 'cabal' && room.status === 'night') {
+    if (CABAL_FACTION.includes(myPlayer?.role) && room.status === 'night') {
       const cv = await env.DB.prepare(
         `SELECT target_player_id, COUNT(*) as cnt FROM game_actions
          WHERE room_id = ? AND phase = ? AND action_type = 'kill' GROUP BY target_player_id`
@@ -310,6 +322,7 @@ export async function getRoom(request, env, user) {
     // Per-role state for limited abilities
     let bulletSpent = null;
     let canInvestigateNow = null;
+    let anointSpent = null;
     if (myPlayer?.role === 'warden') {
       const bs = await env.DB.prepare(
         `SELECT COUNT(*) as cnt FROM game_actions WHERE player_id = ? AND action_type IN ('shoot', 'guard_fired')`
@@ -317,6 +330,11 @@ export async function getRoom(request, env, user) {
       bulletSpent = bs.cnt > 0;
     } else if (myPlayer?.role === 'inquisitor') {
       canInvestigateNow = room.status === 'night' ? inquisitorCanActThisPhase(room.phase) : null;
+    } else if (myPlayer?.role === 'acolyte') {
+      const as = await env.DB.prepare(
+        `SELECT COUNT(*) as cnt FROM game_actions WHERE player_id = ? AND action_type = 'anoint'`
+      ).bind(myPlayer.id).first();
+      anointSpent = as.cnt > 0;
     }
 
     return jsonResponse({
@@ -337,6 +355,7 @@ export async function getRoom(request, env, user) {
         is_host: myPlayer.is_host,
         bullet_spent: bulletSpent,
         can_investigate_now: canInvestigateNow,
+        anoint_spent: anointSpent,
       } : null,
       my_action: myAction || null,
       my_vote: myVote || null,
@@ -377,7 +396,7 @@ export async function sendMessage(request, env, user) {
 
     if (room.status === 'night') {
       if (!player.is_alive) return errorResponse('The sacrificed speak no more this night', 403);
-      if (channel === 'cabal' && player.role !== 'cabal') return errorResponse('You are not of the Cabal', 403);
+      if (channel === 'cabal' && !CABAL_FACTION.includes(player.role)) return errorResponse('You are not of the Cabal', 403);
       if (channel === 'public') return errorResponse('The Congregation sleeps — silence until dawn', 403);
     }
     if (room.status === 'day' && channel !== 'public') {
@@ -491,6 +510,14 @@ export async function submitAction(request, env, user) {
         `SELECT COUNT(*) as cnt FROM game_actions WHERE player_id = ? AND action_type IN ('shoot', 'guard_fired')`
       ).bind(actor.id).first();
       if (spent.cnt > 0) return errorResponse('Your bullet has already been spent', 400);
+    } else if (actor.role === 'deceiver') {
+      if (action_type !== 'deceive') return errorResponse('Invalid action for Deceiver', 400);
+    } else if (actor.role === 'acolyte') {
+      if (action_type !== 'anoint') return errorResponse('Invalid action for Acolyte', 400);
+      const spent = await env.DB.prepare(
+        `SELECT COUNT(*) as cnt FROM game_actions WHERE player_id = ? AND action_type = 'anoint'`
+      ).bind(actor.id).first();
+      if (spent.cnt > 0) return errorResponse('Your blessing has already been bestowed', 400);
     } else {
       return errorResponse('Your role has no night action', 400);
     }
@@ -514,10 +541,15 @@ export async function submitAction(request, env, user) {
        DO UPDATE SET target_player_id = excluded.target_player_id, action_type = excluded.action_type`
     ).bind(room.id, actor.id, action_type, target_player_id, room.phase).run();
 
-    // Auto-advance if all required role-players have submitted
-    // Required: all alive Cabal + alive Inquisitor (if odd night) + alive Warden (if bullet not spent)
+    // Auto-advance if all required role-players have submitted.
+    // Required: all alive Cabal + Deceiver + alive Inquisitor (odd nights) + alive Warden (bullet not spent)
+    // Acolyte is NOT required — they may choose to hold their blessing.
     const cabalCount = await env.DB.prepare(
       `SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1 AND role = 'cabal'`
+    ).bind(room.id).first();
+
+    const deceiverCount = await env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1 AND role = 'deceiver'`
     ).bind(room.id).first();
 
     let inqCount = { cnt: 0 };
@@ -533,9 +565,10 @@ export async function submitAction(request, env, user) {
        AND (SELECT COUNT(*) FROM game_actions ga WHERE ga.player_id = gp.id AND ga.action_type IN ('shoot', 'guard_fired')) = 0`
     ).bind(room.id).first();
 
-    const requiredCount = cabalCount.cnt + inqCount.cnt + wardenCount.cnt;
+    const requiredCount = cabalCount.cnt + deceiverCount.cnt + inqCount.cnt + wardenCount.cnt;
+    // Exclude 'anoint' so an Acolyte submitting early can't prematurely trigger auto-advance
     const actionsDone = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM game_actions WHERE room_id = ? AND phase = ?`
+      `SELECT COUNT(*) as cnt FROM game_actions WHERE room_id = ? AND phase = ? AND action_type != 'anoint'`
     ).bind(room.id, room.phase).first();
 
     if (actionsDone.cnt >= requiredCount) await resolveNight(env, room);
@@ -598,6 +631,12 @@ async function resolveDay(env, room) {
 
   if (banished) {
     await env.DB.prepare('UPDATE game_players SET is_alive = 0 WHERE id = ?').bind(banished.id).run();
+    if (banished.role === 'apostate') {
+      await oracleMessage(env, room.id, room.phase,
+        `${banished.display_name} steps forward with a hollow smile as the circle casts its judgment. They wanted this. The Congregation has been deceived — ${banished.display_name} was The Apostate.`
+      );
+      return endGame(env, room, 'apostate');
+    }
     await oracleMessage(env, room.id, room.phase,
       `By the will of the Congregation, ${banished.display_name} has been banished from the circle. They were ${roleDisplayName(banished.role)}.`
     );
@@ -629,10 +668,12 @@ async function resolveNight(env, room) {
      WHERE ga.room_id = ? AND ga.phase = ?`
   ).bind(room.id, room.phase).all();
 
-  const kills       = actions.results.filter(a => a.action_type === 'kill');
-  const guards      = actions.results.filter(a => a.action_type === 'guard');
-  const shoots      = actions.results.filter(a => a.action_type === 'shoot');
+  const kills        = actions.results.filter(a => a.action_type === 'kill');
+  const guards       = actions.results.filter(a => a.action_type === 'guard');
+  const shoots       = actions.results.filter(a => a.action_type === 'shoot');
   const investigates = actions.results.filter(a => a.action_type === 'investigate');
+  const anoints      = actions.results.filter(a => a.action_type === 'anoint');
+  const deceives     = actions.results.filter(a => a.action_type === 'deceive');
 
   let nightHadEvent = false;
 
@@ -676,6 +717,20 @@ async function resolveNight(env, room) {
       chosenKillTarget = null;
     }
     // If not targeted: guard stays as 'guard' (bullet not spent), Warden can use it next night
+  }
+
+  // ── Acolyte anoint: protects target from cabal kill ──────────────────
+  if (chosenKillTarget !== null && anoints.length > 0) {
+    const shielded = anoints.find(a => a.target_player_id === chosenKillTarget);
+    if (shielded) {
+      const protected_player = await env.DB.prepare('SELECT display_name FROM game_players WHERE id = ?')
+        .bind(chosenKillTarget).first();
+      await oracleMessage(env, room.id, room.phase,
+        `A protective blessing shields ${protected_player?.display_name} from harm. The Cabal's sacrifice is turned away.`
+      );
+      chosenKillTarget = null;
+      nightHadEvent = true;
+    }
   }
 
   // ── Warden proactive shoot ────────────────────────────────────────────
@@ -723,7 +778,10 @@ async function resolveNight(env, room) {
     const target = await env.DB.prepare('SELECT id, display_name, role FROM game_players WHERE id = ?')
       .bind(inv.target_player_id).first();
     if (!target) continue;
-    const isEvil = target.role === 'cabal'
+    const wasDeceived = deceives.some(d => d.target_player_id === inv.target_player_id);
+    const actuallyEvil = CABAL_FACTION.includes(target.role);
+    const appearsEvil  = wasDeceived ? !actuallyEvil : actuallyEvil;
+    const isEvil = appearsEvil
       ? 'TAINTED — a servant of the Cabal'
       : 'PURE — not of the Cabal';
     await env.DB.prepare(
@@ -753,6 +811,8 @@ async function endGame(env, room, winner) {
   ).bind(winner, room.id).run();
   const winMsg = winner === 'congregation'
     ? 'The Congregation has prevailed! All Cabal agents have been banished. The circle is purified. The Rite is complete.'
+    : winner === 'apostate'
+    ? 'The Apostate has claimed their dark victory. Banished willingly into the void, they have won. The circle\'s judgment fell upon the wrong soul.'
     : 'The Cabal has claimed dominion. They now outnumber the Congregation. The shadows have won. The Rite is forfeit.';
   await oracleMessage(env, room.id, room.phase, winMsg);
 }
@@ -761,6 +821,7 @@ function roleDisplayName(role) {
   const map = {
     cabal: 'a Cabal Agent', congregation: 'of the Congregation',
     inquisitor: 'the Inquisitor', warden: 'the Warden',
+    apostate: 'the Apostate', deceiver: 'the Deceiver', acolyte: 'the Acolyte',
   };
   return map[role] || role;
 }
