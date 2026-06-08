@@ -17,7 +17,17 @@ const MONTHLY_PRESETS = [
 
 const BLANK_FORM = { category: '', title: '', description: '', start_date: '', end_date: '', start_time: '', end_time: '', isMultiDay: false }
 
+function fmtTime(t) {
+  if (!t) return null
+  const [h, m] = t.split(':')
+  const hour = parseInt(h)
+  return `${hour % 12 || 12}:${m}${hour >= 12 ? 'pm' : 'am'}`
+}
+
 function EventsSection({ token }) {
+  const calendarStartTime = (() => {
+    try { return JSON.parse(localStorage.getItem('occultusUser'))?.calendarStartTime || null } catch { return null }
+  })()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(BLANK_FORM)
@@ -150,8 +160,16 @@ function EventsSection({ token }) {
   }
 
   const formatEventLabel = (ev) => {
-    if (ev.end_date) return `${ev.start_date} → ${ev.end_date}`
-    return ev.start_date + (ev.start_time ? ` · ${ev.start_time}${ev.end_time ? ` – ${ev.end_time}` : ''} TCT` : '')
+    const isFlexible = ev.fixed_start_time === 0
+    const displayStart = isFlexible && calendarStartTime ? calendarStartTime : ev.start_time
+    const displayEnd   = isFlexible ? null : ev.end_time
+    const dateStr = ev.end_date && ev.end_date !== ev.start_date
+      ? `${ev.start_date} → ${ev.end_date}`
+      : ev.start_date
+    const timeStr = displayStart
+      ? ` · ${fmtTime(displayStart)}${displayEnd ? ` – ${fmtTime(displayEnd)}` : ''} TCT${isFlexible ? ' (your start)' : ''}`
+      : ''
+    return dateStr + timeStr
   }
 
   return (

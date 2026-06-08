@@ -126,9 +126,9 @@ export async function importTornEvents(request, env, user) {
       const startDate = epochToDate(ev.start);
       const endDate   = epochToDate(ev.end);
       const fixedStart = ev.fixed_start_time ? 1 : 0;
-      // Only extract a clock time for fixed-start events (otherwise user's personal offset applies)
-      const startTime = ev.fixed_start_time ? epochToTime(ev.start) : null;
-      const endTime   = ev.fixed_start_time ? epochToTime(ev.end)   : null;
+      // Always store the epoch-derived time; frontend substitutes user's personal start for non-fixed events
+      const startTime = epochToTime(ev.start);
+      const endTime   = epochToTime(ev.end);
       const category  = ev.torn_type; // 'event' | 'competition'
 
       const existing = await env.DB.prepare(

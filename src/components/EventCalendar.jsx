@@ -360,11 +360,12 @@ export default function EventCalendar({ events = [], calendarStartTime = null })
                 const c = gridColour(ev)
                 const isMultiDay = !!ev.end_date
                 // For non-fixed torn events, use the viewer's personal calendar start time
-                const effectiveStartTime = (ev.fixed_start_time === 0 && calendarStartTime)
+                const isFlexible = ev.fixed_start_time === 0 || ev.fixed_start_time === false
+                const effectiveStartTime = (isFlexible && calendarStartTime)
                   ? calendarStartTime
                   : ev.start_time
                 const timeRange = effectiveStartTime
-                  ? `${formatTime(effectiveStartTime)}${ev.end_time && ev.fixed_start_time !== 0 ? ` – ${formatTime(ev.end_time)}` : ''} TCT${ev.fixed_start_time === 0 ? ' (your start)' : ''}`
+                  ? `${formatTime(effectiveStartTime)}${ev.end_time && !isFlexible ? ` – ${formatTime(ev.end_time)}` : ''} TCT${isFlexible ? ' (your start)' : ''}`
                   : null
                 return (
                   <div key={ev.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
