@@ -150,11 +150,6 @@ function MemberRow({ member, showFaction }) {
             style={{ color: tier.color, fontSize: '13px', fontWeight: '700', cursor: hasBreakdown ? 'help' : 'default' }}
           >
             {fmt(totalHits)}
-            {(warUnits > 0 || member.total_custom_hits > 0) && (
-              <span style={{ color: '#a78bfa', fontSize: '10px', fontWeight: '400', marginLeft: '4px' }}>
-                +{fmt(warUnits + (member.total_custom_hits || 0))}
-              </span>
-            )}
           </span>
         )
       })()}
