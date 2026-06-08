@@ -21,7 +21,11 @@ function EventsSection({ token }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(BLANK_FORM)
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
   const [error, setError] = useState('')
 
   const fetchEvents = () => {
@@ -70,13 +74,79 @@ function EventsSection({ token }) {
     }
   }
 
+  const handleEdit = (ev) => {
+    setEditingId(ev.id)
+    setEditForm({
+      category: ev.category || '',
+      title: ev.title || '',
+      description: ev.description || '',
+      start_date: ev.start_date || '',
+      end_date: ev.end_date || '',
+      start_time: ev.start_time || '',
+      end_time: ev.end_time || '',
+      isMultiDay: !!ev.end_date,
+    })
+    setError('')
+  }
+
+  const handleSaveEdit = async (id) => {
+    if (!editForm.title || !editForm.start_date) { setError('Title and start date are required.'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const body = {
+        title: editForm.title,
+        description: editForm.description,
+        start_date: editForm.start_date,
+        end_date: editForm.isMultiDay ? editForm.end_date : null,
+        start_time: editForm.start_time || null,
+        end_time: editForm.end_time || null,
+        category: editForm.category || null,
+      }
+      const res = await fetch(`${API_BASE_URL}/api/leadership/events/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error()
+      setEditingId(null)
+      fetchEvents()
+    } catch {
+      setError('Failed to update event.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this event?')) return
     await fetch(`${API_BASE_URL}/api/leadership/events/${id}`, {
       method: 'DELETE',
       headers: { Authorization: token },
     })
+    if (editingId === id) setEditingId(null)
     fetchEvents()
+  }
+
+  const handleImportTorn = async () => {
+    if (!window.confirm('Load events from the Torn API? Existing Torn events will be updated.')) return
+    setImporting(true)
+    setImportResult(null)
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/events/import-torn`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Import failed')
+      setImportResult(data)
+      fetchEvents()
+    } catch (e) {
+      setError(e.message || 'Failed to import Torn events.')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const formatEventLabel = (ev) => {
@@ -89,6 +159,34 @@ function EventsSection({ token }) {
       {/* Calendar preview */}
       <div style={{ marginBottom: '28px' }}>
         <EventCalendar events={events} />
+      </div>
+
+      {/* Import from Torn + result */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <button
+          onClick={handleImportTorn}
+          disabled={importing}
+          style={{
+            padding: '9px 18px',
+            borderRadius: '8px',
+            border: '1px solid rgba(159,103,255,0.4)',
+            cursor: importing ? 'not-allowed' : 'pointer',
+            background: 'rgba(109,40,217,0.2)',
+            color: '#c4b5fd',
+            fontWeight: 600,
+            fontSize: '13px',
+            opacity: importing ? 0.6 : 1,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {importing ? 'Loading…' : '⬇ Load from Torn API'}
+        </button>
+        {importResult && (
+          <span style={{ fontSize: '13px', color: '#7fffd4' }}>
+            {importResult.imported} new, {importResult.updated} updated ({importResult.total} total from Torn)
+          </span>
+        )}
+        {error && <span style={{ fontSize: '13px', color: '#b3123f' }}>{error}</span>}
       </div>
 
       {/* Monthly event quick-add */}
@@ -194,7 +292,6 @@ function EventsSection({ token }) {
           </div>
         </div>
 
-        {error && <p style={{ color: '#b3123f', fontSize: '13px', margin: 0 }}>{error}</p>}
         <button type="submit" disabled={saving} style={submitBtn(saving)}>
           {saving ? 'Adding…' : 'Add Event'}
         </button>
@@ -209,30 +306,92 @@ function EventsSection({ token }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {events.map((ev) => {
             const preset = MONTHLY_PRESETS.find(p => p.category === ev.category)
+            const isEditing = editingId === ev.id
             return (
-              <div key={ev.id} style={listRow}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{ev.title}</span>
-                    {preset && (
-                      <span style={{
-                        fontSize: '11px', padding: '2px 9px', borderRadius: '20px',
-                        background: preset.category === 'social' ? 'rgba(14,140,100,0.25)' : 'rgba(180,130,10,0.25)',
-                        color:      preset.category === 'social' ? '#80ffcc'               : '#ffe080',
-                      }}>
-                        {preset.label}
-                      </span>
-                    )}
-                    {ev.end_date && (
-                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', background: 'rgba(109,40,217,0.25)', color: '#9f67ff' }}>
-                        Multi-day
-                      </span>
-                    )}
+              <div key={ev.id} style={{ borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                {isEditing ? (
+                  /* Inline edit form */
+                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <input type="text" placeholder="Title *" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} style={inputStyle} />
+                      <input type="text" placeholder="Description" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} style={inputStyle} />
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#a1a1aa' }}>
+                      <input type="checkbox" checked={editForm.isMultiDay} onChange={(e) => setEditForm({ ...editForm, isMultiDay: e.target.checked, end_date: '' })} style={{ accentColor: '#b3123f' }} />
+                      Multi-day event
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: editForm.isMultiDay ? '1fr 1fr' : '1fr', gap: '8px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{editForm.isMultiDay ? 'Start date' : 'Date'}</span>
+                        <input type="date" value={editForm.start_date} onChange={(e) => setEditForm({ ...editForm, start_date: e.target.value })} style={inputStyle} />
+                      </div>
+                      {editForm.isMultiDay && (
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#a1a1aa' }}>End date</span>
+                          <input type="date" value={editForm.end_date} onChange={(e) => setEditForm({ ...editForm, end_date: e.target.value })} style={inputStyle} />
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Start time (TCT)</span>
+                        <input type="time" value={editForm.start_time} onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })} style={inputStyle} />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>End time (TCT)</span>
+                        <input type="time" value={editForm.end_time} onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })} style={inputStyle} />
+                      </div>
+                    </div>
+                    {error && <p style={{ color: '#b3123f', fontSize: '12px', margin: 0 }}>{error}</p>}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleSaveEdit(ev.id)} disabled={saving} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #b3123f, #6d28d9)', color: '#f4f4f5', fontWeight: 600, fontSize: '13px' }}>
+                        {saving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => setEditingId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: '#a1a1aa', fontSize: '13px' }}>
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                  {ev.description && <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '2px' }}>{ev.description}</div>}
-                  <div style={{ color: '#9f67ff', fontSize: '12px', marginTop: '4px' }}>{formatEventLabel(ev)}</div>
-                </div>
-                <button onClick={() => handleDelete(ev.id)} style={deleteBtn}>Delete</button>
+                ) : (
+                  /* Read view */
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', gap: '16px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 600, fontSize: '14px' }}>{ev.title}</span>
+                        {ev.source === 'torn' && (
+                          <span style={{ fontSize: '11px', padding: '2px 9px', borderRadius: '20px', background: 'rgba(109,40,217,0.25)', color: '#c4b5fd' }}>
+                            Torn
+                          </span>
+                        )}
+                        {preset && ev.source !== 'torn' && (
+                          <span style={{
+                            fontSize: '11px', padding: '2px 9px', borderRadius: '20px',
+                            background: preset.category === 'social' ? 'rgba(14,140,100,0.25)' : 'rgba(180,130,10,0.25)',
+                            color:      preset.category === 'social' ? '#80ffcc'               : '#ffe080',
+                          }}>
+                            {preset.label}
+                          </span>
+                        )}
+                        {ev.end_date && (
+                          <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', background: 'rgba(109,40,217,0.25)', color: '#9f67ff' }}>
+                            Multi-day
+                          </span>
+                        )}
+                      </div>
+                      {ev.description && <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '2px' }}>{ev.description}</div>}
+                      <div style={{ color: '#9f67ff', fontSize: '12px', marginTop: '4px' }}>
+                        {formatEventLabel(ev)}
+                        {ev.fixed_start_time === 0 && <span style={{ color: '#a1a1aa' }}> · flexible start</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      <button onClick={() => handleEdit(ev)} style={{ background: 'rgba(109,40,217,0.15)', border: '1px solid rgba(109,40,217,0.3)', color: '#9f67ff', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px' }}>
+                        Edit
+                      </button>
+                      <button onClick={() => handleDelete(ev.id)} style={deleteBtn}>Delete</button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
