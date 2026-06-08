@@ -103,7 +103,7 @@ function layoutWeek(events, week, year, month) {
   return { items: raw, layerCount: layerEnds.length }
 }
 
-export default function EventCalendar({ events = [] }) {
+export default function EventCalendar({ events = [], calendarStartTime = null }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState(null)
 
@@ -359,8 +359,12 @@ export default function EventCalendar({ events = [] }) {
               {selectedEvents.map(ev => {
                 const c = gridColour(ev)
                 const isMultiDay = !!ev.end_date
-                const timeRange  = ev.start_time
-                  ? `${formatTime(ev.start_time)}${ev.end_time ? ` – ${formatTime(ev.end_time)}` : ''} TCT`
+                // For non-fixed torn events, use the viewer's personal calendar start time
+                const effectiveStartTime = (ev.fixed_start_time === 0 && calendarStartTime)
+                  ? calendarStartTime
+                  : ev.start_time
+                const timeRange = effectiveStartTime
+                  ? `${formatTime(effectiveStartTime)}${ev.end_time && ev.fixed_start_time !== 0 ? ` – ${formatTime(ev.end_time)}` : ''} TCT${ev.fixed_start_time === 0 ? ' (your start)' : ''}`
                   : null
                 return (
                   <div key={ev.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>

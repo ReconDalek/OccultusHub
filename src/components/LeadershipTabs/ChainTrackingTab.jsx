@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
+import WarTrackingTab from './WarTrackingTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -702,54 +703,32 @@ function ChainImporter() {
   const respect     = preview?.chain.respect?.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) ?? '—'
   const factionName = preview ? (FACTION_NAMES[preview.chain.faction_id] ?? String(preview.chain.faction_id)) : null
 
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{
+      padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
+      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+    }}>+ Load Historic Chain</button>
+  )
+
   return (
-    <div
-      style={{
-        marginBottom: '20px',
-        borderRadius: '12px',
-        border: '1px solid rgba(255,255,255,0.08)',
-        background: 'rgba(255,255,255,0.02)',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Toggle header */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          width: '100%',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '12px 18px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          textAlign: 'left',
-        }}
-      >
-        <span style={{ fontSize: '15px' }}>📥</span>
-        <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>
-          Load Historical Chain
-        </span>
-        <span style={{ color: '#a1a1aa', fontSize: '11px', marginLeft: 'auto' }}>
-          Import any past chain by ID — no minimum hit count required
-        </span>
-        <span
-          style={{
-            color: '#a1a1aa',
-            fontSize: '11px',
-            transition: 'transform 0.2s',
-            display: 'inline-block',
-            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-          }}
-        >
-          ▼
-        </span>
-      </button>
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+    }}>
+      <div style={{
+        background: '#141414', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px',
+        padding: '24px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflowY: 'auto',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <h3 style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '600', margin: 0 }}>Load Historic Chain</h3>
+          <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+        </div>
 
-      {open && (
-        <div style={{ padding: '4px 18px 20px 18px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '16px' }}>
+          Import any past chain by ID — no minimum hit count required.
+        </p>
 
+        <div style={{ padding: '0' }}>
           {/* ── Chain ID input ── */}
           <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
             <input
@@ -910,7 +889,7 @@ function ChainImporter() {
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -1000,39 +979,6 @@ function FactionChains({ factionId }) {
   )
 }
 
-// ─── Wars placeholder ─────────────────────────────────────────────────────────
-
-function WarPlaceholder() {
-  return (
-    <div
-      style={{
-        padding: '60px 40px',
-        textAlign: 'center',
-        background: 'rgba(255,255,255,0.02)',
-        borderRadius: '16px',
-        border: '1px dashed rgba(255,255,255,0.12)',
-        marginTop: '8px',
-      }}
-    >
-      <div style={{ fontSize: '40px', marginBottom: '16px' }}>⚔️</div>
-      <h3
-        style={{
-          fontFamily: 'Cinzel, serif',
-          color: '#f4f4f5',
-          fontSize: '18px',
-          letterSpacing: '1px',
-          marginBottom: '8px',
-        }}
-      >
-        War Tracking
-      </h3>
-      <p style={{ color: '#a1a1aa', fontSize: '14px', maxWidth: '380px', margin: '0 auto' }}>
-        War history tracking is coming soon. This tab will display ranked war results
-        and per-member hit contributions across all three factions.
-      </p>
-    </div>
-  )
-}
 
 // ─── Sub-tab bar ──────────────────────────────────────────────────────────────
 
@@ -1128,12 +1074,14 @@ export default function ChainTrackingTab() {
         ))}
       </div>
 
-      {topTab === 'wars' && <WarPlaceholder />}
+      {topTab === 'wars' && <WarTrackingTab />}
 
       {topTab === 'chains' && (
         <div>
-          <ChainImporter />
-          <SubTabs options={factionTabs} active={factionId} onChange={setFactionId} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+            <SubTabs options={factionTabs} active={factionId} onChange={setFactionId} />
+            <ChainImporter />
+          </div>
           <FactionChains key={factionId} factionId={factionId} />
         </div>
       )}

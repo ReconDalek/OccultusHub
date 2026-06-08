@@ -26,6 +26,25 @@ export async function login(request, env) {
       return errorResponse('Invalid API key', 401);
     }
 
+    // Fetch user's calendar start time preference (non-blocking)
+    let calendarStartTime = null;
+    try {
+      const calRes = await fetch(
+        `${TORN_API_URL}/v2/user/calendar`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+      if (calRes.ok) {
+        const calData = await calRes.json();
+        const raw = calData?.calendar?.start_time ?? null;
+        if (raw) {
+          // Normalise "10:00 TCT" → "10:00"
+          calendarStartTime = raw.replace(/\s*TCT$/i, '').trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch user calendar start time:', e);
+    }
+
     console.log('Torn user data:', JSON.stringify(tornUser));
 
     // Encrypt API key (base64 encoding)
@@ -49,6 +68,7 @@ export async function login(request, env) {
              faction_position = ?,
              image_url = ?,
              api_key = ?,
+             calendar_start_time = COALESCE(?, calendar_start_time),
              last_login = CURRENT_TIMESTAMP
          WHERE id = ?`
       )
@@ -58,6 +78,7 @@ export async function login(request, env) {
           tornUser.faction?.position ?? user.faction_position,
           tornUser.profile_image ?? user.image_url,
           encryptedApiKey,
+          calendarStartTime,
           user.id
         )
         .run();
@@ -76,8 +97,8 @@ export async function login(request, env) {
       });
 
       const result = await env.DB.prepare(
-        `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url, api_key)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url, api_key, calendar_start_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          RETURNING *`
       )
         .bind(
@@ -86,7 +107,8 @@ export async function login(request, env) {
           tornUser.faction?.faction_id ?? null,
           tornUser.faction?.position ?? null,
           tornUser.profile_image ?? null,
-          encryptedApiKey
+          encryptedApiKey,
+          calendarStartTime
         )
         .first();
 
@@ -132,6 +154,7 @@ export async function login(request, env) {
         isOwner: user.is_owner === 1,
         fishingPoints: user.fishing_points || 0,
         runePoints: user.rune_points || 0,
+        calendarStartTime: user.calendar_start_time || null,
       },
     });
   } catch (error) {
@@ -169,6 +192,7 @@ export async function session(request, env, user) {
         lastFishedAt: userData.last_fished_at || null,
         runePoints: userData.rune_points || 0,
         lastRuneCastAt: userData.last_rune_cast_at || null,
+        calendarStartTime: userData.calendar_start_time || null,
       },
     });
   } catch (error) {

@@ -163,14 +163,25 @@ export async function getFactionMembers(request, env) {
          fm.status,
          fm.last_seen_at,
          fm.joined_at,
-         COALESCE(SUM(ch.total_attacks), 0) AS total_chain_hits,
-         COALESCE(SUM(ch.bonus_hits),    0) AS total_bonus_hits
+         COALESCE(SUM(ch.total_attacks), 0)                        AS total_chain_hits,
+         COALESCE(SUM(ch.bonus_hits),    0)                        AS total_bonus_hits,
+         COALESCE(SUM(wh.war_hits),      0)                        AS total_war_hits,
+         COALESCE(SUM(wh.outside_hits),  0)                        AS total_war_outside_hits,
+         COALESCE(SUM(wh.assists),       0)                        AS total_war_assists,
+         COALESCE(SUM(wh.payout_amount), 0)                        AS total_war_payout,
+         ROUND(COALESCE(SUM(wh.units),   0), 1)                    AS total_war_units,
+         COALESCE(SUM(cx.hits),          0)                        AS total_custom_hits,
+         COALESCE(SUM(ch.total_attacks), 0)
+           + ROUND(COALESCE(SUM(wh.units), 0), 0)
+           + COALESCE(SUM(cx.hits), 0)                             AS total_hits
        FROM faction_members fm
-       LEFT JOIN chain_hits ch ON ch.torn_user_id = fm.torn_user_id
+       LEFT JOIN chain_hits  ch ON ch.torn_user_id = fm.torn_user_id
+       LEFT JOIN war_hits    wh ON wh.torn_user_id = fm.torn_user_id
+       LEFT JOIN custom_hits cx ON cx.torn_user_id = fm.torn_user_id
        WHERE fm.is_active = 1
          AND fm.faction_id = ?
        GROUP BY fm.torn_user_id
-       ORDER BY total_chain_hits DESC, fm.username ASC`
+       ORDER BY total_hits DESC, fm.username ASC`
     ).bind(factionId).all();
 
     return jsonResponse({ members: result.results || [] });

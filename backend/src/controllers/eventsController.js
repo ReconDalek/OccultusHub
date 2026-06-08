@@ -43,6 +43,38 @@ export async function createEvent(request, env, user) {
   }
 }
 
+export async function updateEvent(request, env, user) {
+  try {
+    const match = new URL(request.url).pathname.match(/\/api\/leadership\/events\/(\d+)/);
+    if (!match) return errorResponse('Invalid event ID', 400);
+    const { title, description, start_date, end_date, start_time, end_time, category } = await request.json();
+    if (!title || !start_date) return errorResponse('Title and start date are required', 400);
+
+    const result = await env.DB.prepare(
+      `UPDATE events
+       SET title = ?, description = ?, start_date = ?, end_date = ?,
+           start_time = ?, end_time = ?, category = ?
+       WHERE id = ?
+       RETURNING *`
+    ).bind(
+      title.trim(),
+      description?.trim() || '',
+      start_date,
+      end_date || null,
+      start_time || null,
+      end_time || null,
+      category || null,
+      match[1]
+    ).first();
+
+    if (!result) return errorResponse('Event not found', 404);
+    return jsonResponse({ event: result });
+  } catch (error) {
+    console.error('updateEvent error:', error);
+    return errorResponse('Failed to update event', 500);
+  }
+}
+
 export async function deleteEvent(request, env, user) {
   try {
     const match = new URL(request.url).pathname.match(/\/api\/leadership\/events\/(\d+)/);
@@ -53,6 +85,85 @@ export async function deleteEvent(request, env, user) {
   } catch (error) {
     console.error('deleteEvent error:', error);
     return errorResponse('Failed to delete event', 500);
+  }
+}
+
+function epochToDate(epoch) {
+  return new Date(epoch * 1000).toISOString().split('T')[0];
+}
+
+function epochToTime(epoch) {
+  const d = new Date(epoch * 1000);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+export async function importTornEvents(request, env, user) {
+  try {
+    // Get the requesting user's stored API key
+    const userData = await env.DB.prepare('SELECT api_key FROM users WHERE id = ?').bind(user.userId).first();
+    if (!userData?.api_key) return errorResponse('No API key on file', 400);
+
+    const apiKey = atob(userData.api_key);
+
+    const tornRes = await fetch('https://api.torn.com/v2/torn/calendar', {
+      headers: { Authorization: `ApiKey ${apiKey}` },
+    });
+    if (!tornRes.ok) return errorResponse('Failed to fetch Torn calendar', 502);
+
+    const tornData = await tornRes.json();
+    const { competitions = [], events = [] } = tornData?.calendar ?? {};
+
+    const toInsert = [
+      ...competitions.map(e => ({ ...e, torn_type: 'competition' })),
+      ...events.map(e => ({ ...e, torn_type: 'event' })),
+    ];
+
+    let imported = 0;
+    let updated = 0;
+
+    for (const ev of toInsert) {
+      const tornRef = `torn_${ev.torn_type}_${ev.start}`;
+      const startDate = epochToDate(ev.start);
+      const endDate   = epochToDate(ev.end);
+      const fixedStart = ev.fixed_start_time ? 1 : 0;
+      // Only extract a clock time for fixed-start events (otherwise user's personal offset applies)
+      const startTime = ev.fixed_start_time ? epochToTime(ev.start) : null;
+      const endTime   = ev.fixed_start_time ? epochToTime(ev.end)   : null;
+      const category  = ev.torn_type; // 'event' | 'competition'
+
+      const existing = await env.DB.prepare(
+        'SELECT id FROM events WHERE torn_ref = ?'
+      ).bind(tornRef).first();
+
+      if (existing) {
+        await env.DB.prepare(
+          `UPDATE events
+           SET title = ?, description = ?, start_date = ?, end_date = ?,
+               start_time = ?, end_time = ?, fixed_start_time = ?, category = ?
+           WHERE torn_ref = ?`
+        ).bind(
+          ev.title, ev.description || '', startDate, endDate,
+          startTime, endTime, fixedStart, category, tornRef
+        ).run();
+        updated++;
+      } else {
+        await env.DB.prepare(
+          `INSERT INTO events
+             (title, description, start_date, end_date, start_time, end_time,
+              category, source, torn_ref, fixed_start_time, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'torn', ?, ?, ?)`
+        ).bind(
+          ev.title, ev.description || '', startDate, endDate,
+          startTime, endTime, category, tornRef, fixedStart, user.userId
+        ).run();
+        imported++;
+      }
+    }
+
+    return jsonResponse({ imported, updated, total: toInsert.length });
+  } catch (error) {
+    console.error('importTornEvents error:', error);
+    return errorResponse('Failed to import Torn events', 500);
   }
 }
 

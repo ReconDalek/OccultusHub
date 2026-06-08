@@ -55,25 +55,39 @@ export default function Leadership() {
           <>
             {/* Tab navigation */}
             <div
-              className="flex gap-0 mb-8 border-b"
-              style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+              style={{
+                borderBottom: '1px solid rgba(255,255,255,0.08)',
+                marginBottom: '32px',
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                WebkitOverflowScrolling: 'touch',
+              }}
             >
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className="px-6 py-3 font-medium border-none cursor-pointer transition-all"
-                  style={{
-                    background: 'transparent',
-                    color: activeTab === tab.id ? '#f4f4f5' : '#a1a1aa',
-                    borderBottom: activeTab === tab.id ? '2px solid #b3123f' : 'none',
-                  }}
-                  onMouseEnter={(e) => { if (activeTab !== tab.id) e.target.style.color = '#f4f4f5' }}
-                  onMouseLeave={(e) => { if (activeTab !== tab.id) e.target.style.color = '#a1a1aa' }}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              <div style={{ display: 'flex', gap: 0, minWidth: 'max-content' }}>
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{
+                      padding: '12px 20px',
+                      fontWeight: '500',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'color 0.15s',
+                      whiteSpace: 'nowrap',
+                      background: 'transparent',
+                      color: activeTab === tab.id ? '#f4f4f5' : '#a1a1aa',
+                      borderBottom: activeTab === tab.id ? '2px solid #b3123f' : '2px solid transparent',
+                      fontSize: '14px',
+                    }}
+                    onMouseEnter={(e) => { if (activeTab !== tab.id) e.currentTarget.style.color = '#f4f4f5' }}
+                    onMouseLeave={(e) => { if (activeTab !== tab.id) e.currentTarget.style.color = '#a1a1aa' }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Tab content */}

@@ -11,6 +11,8 @@ import * as fishingController from './controllers/fishingController.js';
 import * as runeController from './controllers/runeController.js';
 import * as chainController from './controllers/chainController.js';
 import * as memberController from './controllers/memberController.js';
+import * as warController from './controllers/warController.js';
+import * as customHitsController from './controllers/customHitsController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -45,6 +47,10 @@ export async function handleRequest(request, env) {
 
   if (pathname === '/api/cipher/today' && method === 'GET') {
     return cipherController.getTodayCipher(request, env);
+  }
+
+  if (pathname === '/api/wars/summary' && method === 'GET') {
+    return warController.getWarsSummary(request, env);
   }
 
   if (pathname === '/api/events' && method === 'GET') {
@@ -149,6 +155,13 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/admin/members/sync' && method === 'POST') {
       return memberController.triggerMemberSync(request, env, user);
     }
+
+    if (pathname === '/api/admin/wars/check' && method === 'POST') {
+      return warController.triggerWarCheck(request, env, user);
+    }
+    if (pathname === '/api/admin/wars/backfill' && method === 'POST') {
+      return warController.backfillHistoricWars(request, env);
+    }
   }
 
   // Fishing endpoints
@@ -212,6 +225,12 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/leadership/events' && method === 'POST') {
       return eventsController.createEvent(request, env, user);
     }
+    if (pathname === '/api/leadership/events/import-torn' && method === 'POST') {
+      return eventsController.importTornEvents(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/events\/\d+$/) && method === 'PUT') {
+      return eventsController.updateEvent(request, env, user);
+    }
     if (pathname.match(/^\/api\/leadership\/events\/\d+$/) && method === 'DELETE') {
       return eventsController.deleteEvent(request, env, user);
     }
@@ -248,6 +267,37 @@ export async function handleRequest(request, env) {
     // Faction member list with chain hit totals (for Ranks tab)
     if (pathname === '/api/leadership/members' && method === 'GET') {
       return memberController.getFactionMembers(request, env);
+    }
+
+    // War tracking endpoints
+    if (pathname === '/api/leadership/wars' && method === 'GET') {
+      return warController.getWars(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/armory$/) && method === 'GET') {
+      return warController.getWarArmory(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/payout$/) && method === 'GET') {
+      return warController.getWarPayout(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/payout$/) && method === 'POST') {
+      return warController.saveWarPayout(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/save-hits$/) && method === 'POST') {
+      return warController.saveWarHits(request, env, user);
+    }
+    if (pathname === '/api/leadership/wars/manual' && method === 'POST') {
+      return warController.createManualWar(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+$/) && method === 'GET') {
+      return warController.getWarDetails(request, env);
+    }
+
+    // Custom / miscellaneous hits
+    if (pathname === '/api/leadership/custom-hits' && method === 'GET') {
+      return customHitsController.getCustomHits(request, env);
+    }
+    if (pathname === '/api/leadership/custom-hits' && method === 'POST') {
+      return customHitsController.saveCustomHits(request, env, user);
     }
   }
 

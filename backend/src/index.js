@@ -34,6 +34,42 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    // "0 1 * * 2" — Tuesday 01:00 UTC: check for ranked war matches
+    if (event.cron === '0 1 * * 2') {
+      try {
+        const { checkWarMatches } = await import('./controllers/warController.js');
+        console.log('Starting ranked war match check...');
+        ctx.waitUntil(
+          checkWarMatches(env).then((results) => {
+            console.log(`War match check complete:`, JSON.stringify(results));
+          }).catch((err) => {
+            console.error('War match check failed:', err);
+          })
+        );
+      } catch (error) {
+        console.error('War match check handler error:', error);
+      }
+      return;
+    }
+
+    // "*/30 * * * *" — every 30 minutes: track active/matched wars
+    if (event.cron === '*/30 * * * *') {
+      try {
+        const { trackActiveWars } = await import('./controllers/warController.js');
+        console.log('Starting active war tracking...');
+        ctx.waitUntil(
+          trackActiveWars(env).then((result) => {
+            console.log(`War tracking complete: ${result.checked} wars checked`);
+          }).catch((err) => {
+            console.error('War tracking failed:', err);
+          })
+        );
+      } catch (error) {
+        console.error('War tracking handler error:', error);
+      }
+      return;
+    }
+
     // "0 9 * * 1" — weekly chain history refresh (Monday 09:00 UTC)
     if (event.cron === '0 9 * * 1') {
       try {

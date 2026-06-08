@@ -37,6 +37,20 @@ async function fetchWithRetry(url, maxRetries = MAX_RETRIES) {
   throw lastError;
 }
 
+export async function getRandomApiKeyForFaction(env, factionId) {
+  try {
+    const result = await env.DB.prepare(
+      `SELECT api_key FROM users WHERE api_key IS NOT NULL AND faction_id = ? ORDER BY RANDOM() LIMIT 1`
+    ).bind(factionId).first();
+
+    if (!result?.api_key) return null;
+    try { return atob(result.api_key); } catch { return null; }
+  } catch (error) {
+    console.error('Error getting faction API key:', error);
+    return null;
+  }
+}
+
 export async function getRandomUserApiKey(env) {
   try {
     const result = await env.DB.prepare(

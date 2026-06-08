@@ -1,0 +1,817 @@
+import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { getRandomApiKeyForFaction } from '../services/tornApiService.js';
+
+const FACTION_IDS   = [33097, 9728, 9171];
+const TORN_API_BASE = 'https://api.torn.com';
+const MAX_COMPLETED_WARS_WITH_ATTACKS = 5; // keep raw attack rows for N most-recent wars per faction
+
+// ── Text parsing helpers ──────────────────────────────────────────────────────
+
+function parseScheduledStart(text) {
+  const m = text.match(/will begin in \d+ hours? on \w+ (\d{2}:\d{2}:\d{2}) - (\d{2})\/(\d{2})\/(\d{2})/);
+  if (!m) return null;
+  const [, time, day, month, yr] = m;
+  const [h, min, s] = time.split(':').map(Number);
+  return Math.floor(Date.UTC(2000 + parseInt(yr, 10), parseInt(month, 10) - 1, parseInt(day, 10), h, min, s) / 1000);
+}
+
+function parseOpponentFactionId(text, ourFactionId) {
+  const re = /factions\.php\?step=profile&ID=(\d+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const id = parseInt(m[1], 10);
+    if (id !== ourFactionId) return id;
+  }
+  return null;
+}
+
+function parseOpponentName(text, ourFactionId) {
+  const re = /factions\.php\?step=profile&ID=(\d+)[^>]*>([^<]+)<\/a>/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (parseInt(m[1], 10) !== ourFactionId) return m[2].trim();
+  }
+  return null;
+}
+
+function parseWarId(text) {
+  const m = text.match(/rankID=(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function parseRankChange(text) {
+  const m = text.match(/ranked (down|up) from (.+?) and received/);
+  return m ? `Ranked ${m[1]} from ${m[2].trim()}` : null;
+}
+
+function parseBonusRespect(text) {
+  const m = text.match(/([\d,]+) bonus respect/);
+  return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+}
+
+function parseRewards(text) {
+  // Everything after "bonus respect, " is cache rewards, e.g. "1x Heavy Arms Cache, 3x Armor Cache"
+  const m = text.match(/bonus respect,\s*(.+?)\s*$/);
+  if (!m) return null;
+  const items = m[1].split(',').map(s => s.trim()).filter(Boolean);
+  return items.length ? JSON.stringify(items) : null;
+}
+
+// Items to silently ignore in armory tracking (consumed freely, not worth reporting)
+const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer/i;
+
+function parseArmoryEntry(text) {
+  const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
+  const itemM = text.match(/faction's (.+?) items?/);
+  if (!userM || !itemM) return null;
+  if (ARMORY_IGNORE.test(itemM[1].trim())) return null;   // skip beer etc.
+  return { torn_user_id: parseInt(userM[1], 10), username: userM[2].trim(), item_name: itemM[1].trim() };
+}
+
+function categoriseAttack(attack, ourFactionId, opponentFactionId) {
+  const af  = attack.attacker?.faction?.id ?? null;
+  const df  = attack.defender?.faction?.id ?? null;
+  const res = attack.result;
+
+  // Assist: our member helped another player's attack — no faction on defender side required
+  if (res === 'Assist' && af === ourFactionId) return 'assist';
+
+  if (af === ourFactionId  && df === opponentFactionId) return 'war_attack';
+  if (af === opponentFactionId && df === ourFactionId)  return 'war_defend';
+  if (af === ourFactionId)                              return 'outside_attack';
+  if (df === ourFactionId)                              return 'outside_defend';
+  return null;
+}
+
+// ── Aggregate member stats from war_attacks (shared SQL) ─────────────────────
+
+async function buildMemberStats(env, warId) {
+  const { results: attackerStats } = await env.DB.prepare(
+    `SELECT
+       attacker_id, attacker_name,
+       COUNT(CASE WHEN attack_type='war_attack' THEN 1 END)                                                              AS war_attacks,
+       COUNT(CASE WHEN attack_type='war_attack' AND result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN 1 END) AS war_hits,
+       COUNT(CASE WHEN attack_type='war_attack' AND (result IN ('Escape','Lost') OR is_interrupted=1) THEN 1 END)        AS war_losses,
+       COUNT(CASE WHEN attack_type='war_attack' AND is_interrupted=1 THEN 1 END)                                         AS war_interrupted,
+       ROUND(SUM(CASE WHEN attack_type='war_attack'    THEN respect_gain ELSE 0 END), 2)                                 AS war_respect_gained,
+       ROUND(SUM(CASE WHEN attack_type='war_attack'    THEN respect_loss ELSE 0 END), 2)                                 AS war_respect_lost,
+       ROUND(AVG(CASE WHEN attack_type='war_attack'    THEN fair_fight   END), 2)                                        AS avg_fair_fight,
+       COUNT(CASE WHEN attack_type='outside_attack'    THEN 1 END)                                                       AS outside_attacks,
+       ROUND(SUM(CASE WHEN attack_type='outside_attack' THEN respect_gain ELSE 0 END), 2)                                AS outside_respect,
+       COUNT(CASE WHEN attack_type='assist'            THEN 1 END)                                                       AS assists,
+       (COUNT(CASE WHEN attack_type='war_attack'    THEN 1 END) +
+        COUNT(CASE WHEN attack_type='outside_attack' THEN 1 END)) * 25                                                   AS energy_used
+     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0
+     GROUP BY attacker_id, attacker_name ORDER BY war_hits DESC`
+  ).bind(warId).all();
+
+  const { results: defendStats } = await env.DB.prepare(
+    `SELECT
+       defender_id, defender_name,
+       COUNT(*)                                                                                           AS total_defends,
+       COUNT(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN 1 END)       AS defends_lost,
+       COUNT(CASE WHEN result IN ('Escape','Lost','Stalemate') OR is_interrupted=1 THEN 1 END)            AS defends_won,
+       COUNT(CASE WHEN is_interrupted=1 THEN 1 END)                                                       AS defends_interrupted
+     FROM war_attacks WHERE ranked_war_id=? AND attack_type='war_defend' AND defender_id>0
+     GROUP BY defender_id, defender_name`
+  ).bind(warId).all();
+
+  const totals = await env.DB.prepare(
+    `SELECT
+       -- Successful hits we landed on the enemy (war_attack, did not fail)
+       COUNT(CASE WHEN attack_type='war_attack'
+                   AND result NOT IN ('Escape','Lost','Stalemate')
+                   AND is_interrupted=0 THEN 1 END)                                             AS total_war_hits,
+
+       -- Defends we won: enemy attacked us but failed
+       COUNT(CASE WHEN attack_type='war_defend'
+                   AND (result IN ('Escape','Lost','Stalemate') OR is_interrupted=1) THEN 1 END) AS total_defends_won,
+
+       -- Enemy attacks that landed on us (they succeeded)
+       COUNT(CASE WHEN attack_type='war_defend'
+                   AND result NOT IN ('Escape','Lost','Stalemate')
+                   AND is_interrupted=0 THEN 1 END)                                             AS total_enemy_hits,
+
+       COUNT(CASE WHEN attack_type='outside_attack' THEN 1 END)                                 AS total_outside_attacks,
+       COUNT(CASE WHEN attack_type='assist'         THEN 1 END)                                 AS total_assists,
+
+       -- Respect we gained from our successful war attacks
+       ROUND(SUM(CASE WHEN attack_type='war_attack' THEN respect_gain ELSE 0 END), 2)           AS total_respect_gained,
+
+       -- Respect we lost when the enemy successfully attacked us
+       ROUND(SUM(CASE WHEN attack_type='war_defend'
+                       AND result NOT IN ('Escape','Lost','Stalemate')
+                       AND is_interrupted=0 THEN respect_loss ELSE 0 END), 2)                   AS total_respect_lost,
+
+       -- Net respect across war context
+       ROUND(
+         SUM(CASE WHEN attack_type='war_attack' THEN respect_gain ELSE 0 END) -
+         SUM(CASE WHEN attack_type='war_defend'
+                   AND result NOT IN ('Escape','Lost','Stalemate')
+                   AND is_interrupted=0 THEN respect_loss ELSE 0 END)
+       , 2)                                                                                       AS total_net_respect
+     FROM war_attacks WHERE ranked_war_id=?`
+  ).bind(warId).first();
+
+  return { attackerStats: attackerStats || [], defendStats: defendStats || [], totals: totals || {} };
+}
+
+// ── Summarise completed war then purge raw attack rows ───────────────────────
+
+async function summariseAndCleanWar(env, warId, factionId) {
+  const stats = await buildMemberStats(env, warId);
+  const summaryJson = JSON.stringify(stats);
+
+  await env.DB.prepare(`UPDATE ranked_wars SET summary_json=? WHERE id=?`).bind(summaryJson, warId).run();
+
+  // Delete raw attack rows for this war
+  await env.DB.prepare(`DELETE FROM war_attacks WHERE ranked_war_id=?`).bind(warId).run();
+
+  // Also purge attacks for any completed wars older than the Nth most-recent per faction
+  await env.DB.prepare(`
+    DELETE FROM war_attacks WHERE ranked_war_id IN (
+      SELECT id FROM ranked_wars
+      WHERE faction_id=? AND status='completed'
+      ORDER BY COALESCE(scheduled_start, 0) DESC
+      LIMIT -1 OFFSET ?
+    )`
+  ).bind(factionId, MAX_COMPLETED_WARS_WITH_ATTACKS).run();
+
+  console.log(`summariseAndCleanWar: war ${warId} — attacks purged, summary stored`);
+}
+
+// ── Fetch live scores from rankedwars API and update DB ───────────────────────
+
+async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
+  const res = await fetch(
+    `${TORN_API_BASE}/v2/faction/rankedwars?limit=20&sort=DESC`,
+    { headers: { Authorization: `ApiKey ${apiKey}` } }
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error) return null;
+
+  for (const rw of data.rankedwars || []) {
+    const ids = rw.factions.map((f) => f.id);
+    if (!ids.includes(factionId) || !ids.includes(opponentId)) continue;
+
+    const ourFac = rw.factions.find((f) => f.id === factionId);
+    const oppFac = rw.factions.find((f) => f.id === opponentId);
+    if (!ourFac || !oppFac) continue;
+
+    // War ended: end timestamp is set in the API
+    if (rw.end > 0) {
+      return { ended: true, tornWarId: rw.id, winner: rw.winner, target: rw.target, ourScore: ourFac.score, oppScore: oppFac.score, ourChain: ourFac.chain, oppChain: oppFac.chain };
+    }
+
+    // War still active — update live scores
+    await env.DB.prepare(
+      `UPDATE ranked_wars SET our_score=?, opponent_score=?, target=?, our_chain=?, opponent_chain=?, torn_war_id=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(ourFac.score, oppFac.score, rw.target, ourFac.chain, oppFac.chain, rw.id, warId).run();
+
+    return { ended: false, ourScore: ourFac.score, oppScore: oppFac.score };
+  }
+  return null;
+}
+
+// ── Cron: check for new war matches (Tuesday 01:00 UTC) ──────────────────────
+
+export async function checkWarMatches(env) {
+  const now          = Math.floor(Date.now() / 1000);
+  const sevenDaysAgo = now - 7 * 24 * 3600;
+  const results      = [];
+
+  for (const factionId of FACTION_IDS) {
+    try {
+      const apiKey = await getRandomApiKeyForFaction(env, factionId);
+      if (!apiKey) { results.push({ factionId, error: 'no API key' }); continue; }
+
+      const res = await fetch(
+        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
+
+      for (const item of data.news || []) {
+        if (item.timestamp < sevenDaysAgo)     continue;
+        if (!item.text.includes('will begin')) continue;
+
+        const scheduledStart = parseScheduledStart(item.text);
+        const opponentId     = parseOpponentFactionId(item.text, factionId);
+        const opponentName   = parseOpponentName(item.text, factionId);
+        if (!scheduledStart || !opponentId) continue;
+
+        const existing = await env.DB.prepare(
+          `SELECT id FROM ranked_wars WHERE faction_id=? AND opponent_faction_id=? AND scheduled_start=?`
+        ).bind(factionId, opponentId, scheduledStart).first();
+
+        if (!existing) {
+          await env.DB.prepare(
+            `INSERT INTO ranked_wars (faction_id, opponent_faction_id, opponent_faction_name, status, scheduled_start, last_checked_at)
+             VALUES (?, ?, ?, 'matched', ?, CURRENT_TIMESTAMP)`
+          ).bind(factionId, opponentId, opponentName, scheduledStart).run();
+          results.push({ factionId, opponentId, opponentName, scheduledStart, action: 'created' });
+          console.log(`checkWarMatches: faction ${factionId} vs ${opponentId} scheduled ${new Date(scheduledStart * 1000).toISOString()}`);
+        } else {
+          results.push({ factionId, opponentId, action: 'exists' });
+        }
+      }
+    } catch (err) {
+      console.error(`checkWarMatches: faction ${factionId}:`, err.message);
+      results.push({ factionId, error: err.message });
+    }
+  }
+  return results;
+}
+
+// ── Cron: track matched/active wars (every 30 minutes) ───────────────────────
+
+export async function trackActiveWars(env) {
+  const now         = Math.floor(Date.now() / 1000);
+  const fourDaysAgo = now - 4 * 24 * 3600;
+
+  const { results: wars } = await env.DB.prepare(
+    `SELECT * FROM ranked_wars WHERE status IN ('matched', 'active')`
+  ).all();
+
+  if (!wars?.length) return { checked: 0 };
+
+  let checked = 0;
+
+  for (const war of wars) {
+    const { id: warId, faction_id: factionId, opponent_faction_id: opponentId,
+            status, scheduled_start, started_at: warStartedAt,
+            last_attack_id: lastAttackId } = war;
+    try {
+      const apiKey = await getRandomApiKeyForFaction(env, factionId);
+      if (!apiKey) { console.warn(`trackActiveWars: no API key for faction ${factionId}`); continue; }
+
+      // ── 1. Fetch live scores from rankedwars API ────────────────────────────
+      // For active wars: updates scores OR detects war end
+      if (status === 'active') {
+        const scoreResult = await fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey);
+
+        if (scoreResult?.ended) {
+          const result     = scoreResult.winner === factionId ? 'won' : 'lost';
+          // Save final scores before summarising
+          await env.DB.prepare(
+            `UPDATE ranked_wars SET our_score=?, opponent_score=?, target=?, our_chain=?, opponent_chain=?, torn_war_id=?, status='completed', ended_at=?, result=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
+          ).bind(scoreResult.ourScore, scoreResult.oppScore, scoreResult.target, scoreResult.ourChain, scoreResult.oppChain, scoreResult.tornWarId, now, result, warId).run();
+
+          await summariseAndCleanWar(env, warId, factionId);
+          console.log(`trackActiveWars: war ${warId} ended (scores API) — ${result}`);
+          checked++;
+          continue; // no need to fetch attacks for a completed war
+        }
+      }
+
+      // ── 2. Check rankedWar news for state changes ───────────────────────────
+      const newsRes = await fetch(
+        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+
+      if (newsRes.ok) {
+        const items = (await newsRes.json()).news || [];
+
+        for (const item of items) {
+          const involvesBoth = item.text.includes(`ID=${factionId}`) && item.text.includes(`ID=${opponentId}`);
+          if (!involvesBoth) continue;
+
+          // War ended — "defeated ... in a ranked war [view]"
+          if (item.text.includes('defeated') && item.text.includes('rankID=')) {
+            const tornWarId    = parseWarId(item.text);
+            const weWon        = item.text.match(new RegExp(`ID=${factionId}[^>]*>[^<]+<\\/a> defeated`));
+            const result       = weWon ? 'won' : 'lost';
+            let rankChange     = null;
+            let bonusRespect   = null;
+            let rewardsJson = null;
+            for (const n of items) {
+              if ((n.text.includes('ranked down') || n.text.includes('ranked up')) && n.text.includes('bonus respect')) {
+                rankChange   = parseRankChange(n.text);
+                bonusRespect = parseBonusRespect(n.text);
+                rewardsJson  = parseRewards(n.text);
+                break;
+              }
+            }
+            await env.DB.prepare(
+              `UPDATE ranked_wars SET status='completed', ended_at=?, torn_war_id=?, result=?, rank_change=?, bonus_respect=?, rewards_json=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status!='completed'`
+            ).bind(item.timestamp, tornWarId, result, rankChange, bonusRespect, rewardsJson, warId).run();
+
+            await summariseAndCleanWar(env, warId, factionId);
+            console.log(`trackActiveWars: war ${warId} ended (news) — ${result}`);
+            checked++;
+            break;
+          }
+
+          // War started — "has begun"
+          if (status === 'matched' && item.text.includes('has begun')) {
+            await env.DB.prepare(
+              `UPDATE ranked_wars SET status='active', started_at=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status='matched'`
+            ).bind(item.timestamp, warId).run();
+            console.log(`trackActiveWars: war ${warId} now ACTIVE`);
+            break;
+          }
+        }
+      }
+
+      // Promote to active by scheduled_start if news missed it
+      if (status === 'matched' && scheduled_start && scheduled_start <= now) {
+        await env.DB.prepare(
+          `UPDATE ranked_wars SET status='active', started_at=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status='matched'`
+        ).bind(scheduled_start, warId).run();
+      }
+
+      // ── 3. Armory usage ─────────────────────────────────────────────────────
+      const armoryRes = await fetch(
+        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+      if (armoryRes.ok) {
+        for (const item of (await armoryRes.json()).news || []) {
+          if (item.timestamp < fourDaysAgo) break;
+          const parsed = parseArmoryEntry(item.text);
+          if (!parsed) continue;
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO war_armory_usage (ranked_war_id, faction_id, torn_news_id, torn_user_id, username, item_name, used_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(warId, factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
+        }
+      }
+
+      // ── 4. Fetch attacks (active wars only, isolated to this faction) ───────
+      const currentStatus = await env.DB.prepare(`SELECT status FROM ranked_wars WHERE id=?`).bind(warId).first();
+      if (currentStatus?.status === 'active') {
+        await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey);
+      }
+
+      await env.DB.prepare(`UPDATE ranked_wars SET last_checked_at=CURRENT_TIMESTAMP WHERE id=?`).bind(warId).run();
+      checked++;
+    } catch (err) {
+      console.error(`trackActiveWars: war ${warId}:`, err.message);
+    }
+  }
+  return { checked };
+}
+
+async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, warStartedAt, lastAttackId, apiKey) {
+  // lastAttackId: highest torn attack ID already stored — stop when we see IDs <= this
+  // Pagination: follow _metadata.links.prev "to" timestamp until we've gone past war start
+  // INSERT OR IGNORE handles any page-boundary overlaps automatically
+
+  let nextUrl     = `${TORN_API_BASE}/v2/faction/attacks?limit=100&sort=DESC`;
+  let maxId       = lastAttackId;
+  let totalNew    = 0;
+  const MAX_PAGES = 20;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await fetch(nextUrl, { headers: { Authorization: `ApiKey ${apiKey}` } });
+    if (!res.ok) { console.error(`fetchAndStoreAttacks: HTTP ${res.status}`); break; }
+    const data = await res.json();
+    if (data.error) { console.error(`fetchAndStoreAttacks: API error`, data.error); break; }
+
+    const attacks = data.attacks || [];
+    if (!attacks.length) break;
+
+    let allOlderThanWar = true;  // assume true; set false if any attack is within war window
+    let hitWatermark    = false;
+
+    for (const attack of attacks) {
+      // Stop indicator: we've reached already-fetched territory
+      if (attack.id <= lastAttackId) { hitWatermark = true; break; }
+
+      // Track max ID seen this run
+      if (attack.id > maxId) maxId = attack.id;
+
+      // If this attack started during the war window, mark page as relevant
+      if (attack.started >= warStartedAt) allOlderThanWar = false;
+
+      const attackType = categoriseAttack(attack, factionId, opponentFactionId);
+      if (!attackType) continue;
+
+      const { meta } = await env.DB.prepare(
+        `INSERT OR IGNORE INTO war_attacks
+           (ranked_war_id, faction_id, torn_attack_id, attacker_id, attacker_name,
+            defender_id, defender_name, attack_type, result, respect_gain, respect_loss,
+            is_interrupted, fair_fight, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        warId, factionId, attack.id,
+        attack.attacker?.id   ?? 0, attack.attacker?.name ?? null,
+        attack.defender?.id   ?? 0, attack.defender?.name ?? null,
+        attackType, attack.result ?? null,
+        attack.respect_gain   ?? 0, attack.respect_loss ?? 0,
+        attack.is_interrupted ? 1 : 0, attack.modifiers?.fair_fight ?? 1,
+        attack.started
+      ).run();
+      if (meta?.changes > 0) totalNew++;
+    }
+
+    // Stop if we've hit the watermark or the page only contains pre-war attacks or no more pages
+    if (hitWatermark || allOlderThanWar) break;
+
+    // Follow the prev link for the next (older) page
+    const prevUrl = data._metadata?.links?.prev;
+    if (!prevUrl) break;
+
+    // Extract `to` timestamp from the prev URL for the next fetch
+    nextUrl = `${TORN_API_BASE}/v2/faction/attacks?limit=100&sort=DESC` +
+              `&to=${new URL(prevUrl).searchParams.get('to')}`;
+  }
+
+  // Update watermark to highest ID seen
+  if (maxId > lastAttackId) {
+    await env.DB.prepare(
+      `UPDATE ranked_wars SET last_attack_id=?, last_attack_fetched=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(maxId, maxId, warId).run();
+  }
+  if (totalNew > 0) console.log(`fetchAndStoreAttacks: war ${warId} — ${totalNew} new attacks (maxId=${maxId})`);
+  return totalNew;
+}
+
+// ── GET /api/leadership/wars?faction_id=X ────────────────────────────────────
+
+export async function getWars(request, env) {
+  try {
+    const url       = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+    if (!factionId || !FACTION_IDS.includes(factionId)) {
+      return errorResponse('Invalid or missing faction_id', 400);
+    }
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM ranked_wars WHERE faction_id=? ORDER BY COALESCE(scheduled_start, 0) DESC LIMIT 5`
+    ).bind(factionId).all();
+    return jsonResponse({ wars: results || [] });
+  } catch (err) {
+    console.error('getWars error:', err);
+    return errorResponse('Failed to fetch wars', 500);
+  }
+}
+
+// ── GET /api/leadership/war/:id ───────────────────────────────────────────────
+// Falls back to summary_json when raw attack rows have been purged.
+
+export async function getWarDetails(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)(?:$|\?|\/)/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const war = await env.DB.prepare(`SELECT * FROM ranked_wars WHERE id=?`).bind(warId).first();
+    if (!war) return errorResponse('War not found', 404);
+
+    // Check whether raw attack rows exist
+    const attackCount = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM war_attacks WHERE ranked_war_id=?`
+    ).bind(warId).first();
+
+    if ((attackCount?.n ?? 0) > 0) {
+      // Live data from war_attacks
+      const { attackerStats, defendStats, totals } = await buildMemberStats(env, warId);
+      return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false });
+    }
+
+    // Archived data from summary_json
+    if (war.summary_json) {
+      const archived = JSON.parse(war.summary_json);
+      return jsonResponse({ war, summary: archived.totals || {}, attackerStats: archived.attackerStats || [], defendStats: archived.defendStats || [], fromSummary: true });
+    }
+
+    return jsonResponse({ war, summary: {}, attackerStats: [], defendStats: [], fromSummary: false });
+  } catch (err) {
+    console.error('getWarDetails error:', err);
+    return errorResponse('Failed to fetch war details', 500);
+  }
+}
+
+// ── GET /api/leadership/war/:id/armory ───────────────────────────────────────
+
+export async function getWarArmory(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/armory/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+    const { results } = await env.DB.prepare(
+      `SELECT torn_user_id, username, item_name, COUNT(*) AS count, MIN(used_at) AS first_used, MAX(used_at) AS last_used
+       FROM war_armory_usage WHERE ranked_war_id=?
+       GROUP BY torn_user_id, username, item_name ORDER BY torn_user_id, last_used DESC`
+    ).bind(warId).all();
+    return jsonResponse({ armory: results || [] });
+  } catch (err) {
+    console.error('getWarArmory error:', err);
+    return errorResponse('Failed to fetch armory data', 500);
+  }
+}
+
+// ── GET /api/wars/summary  (public — for home page) ──────────────────────────
+
+export async function getWarsSummary(request, env) {
+  try {
+    const summary = {};
+    for (const factionId of FACTION_IDS) {
+      const { results } = await env.DB.prepare(
+        `SELECT id, faction_id, opponent_faction_id, opponent_faction_name,
+                status, scheduled_start, started_at, ended_at, result, rank_change, bonus_respect, rewards_json,
+                our_score, opponent_score, target, our_chain, opponent_chain
+         FROM ranked_wars WHERE faction_id=? ORDER BY COALESCE(scheduled_start, 0) DESC LIMIT 5`
+      ).bind(factionId).all();
+      summary[factionId] = results || [];
+    }
+    return jsonResponse({ summary });
+  } catch (err) {
+    console.error('getWarsSummary error:', err);
+    return errorResponse('Failed to fetch wars summary', 500);
+  }
+}
+
+// ── GET /api/leadership/war/:id/payout ───────────────────────────────────────
+
+export async function getWarPayout(request, env) {
+  try {
+    const id = parseInt(request.url.match(/\/war\/(\d+)\/payout/)?.[1], 10);
+    if (!id) return errorResponse('Invalid war id', 400);
+    const war = await env.DB.prepare(`SELECT payout_json, is_paid FROM ranked_wars WHERE id=?`).bind(id).first();
+    if (!war) return errorResponse('War not found', 404);
+    return jsonResponse({ payout: war.payout_json ? JSON.parse(war.payout_json) : null, is_paid: !!war.is_paid });
+  } catch (err) {
+    console.error('getWarPayout error:', err);
+    return errorResponse('Failed to fetch payout', 500);
+  }
+}
+
+// ── POST /api/leadership/war/:id/payout ──────────────────────────────────────
+
+export async function saveWarPayout(request, env) {
+  try {
+    const id = parseInt(request.url.match(/\/war\/(\d+)\/payout/)?.[1], 10);
+    if (!id) return errorResponse('Invalid war id', 400);
+    const body = await request.json();
+    const { payout, is_paid } = body;
+    await env.DB.prepare(
+      `UPDATE ranked_wars SET payout_json=?, is_paid=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(JSON.stringify(payout), is_paid ? 1 : 0, id).run();
+    return jsonResponse({ ok: true });
+  } catch (err) {
+    console.error('saveWarPayout error:', err);
+    return errorResponse('Failed to save payout', 500);
+  }
+}
+
+// ── POST /api/leadership/war/:id/save-hits ───────────────────────────────────
+// Writes permanent war_hits records for ranking. Requires is_paid=1 on the war.
+// Protected by hits_saved flag to prevent double-saves.
+
+export async function saveWarHits(request, env, user) {
+  try {
+    const id = parseInt(request.url.match(/\/war\/(\d+)\/save-hits/)?.[1], 10);
+    if (!id) return errorResponse('Invalid war id', 400);
+
+    const war = await env.DB.prepare(`SELECT faction_id, is_paid, hits_saved FROM ranked_wars WHERE id=?`).bind(id).first();
+    if (!war) return errorResponse('War not found', 404);
+    if (!war.is_paid) return errorResponse('War must be fully paid before saving to rankings', 400);
+    if (war.hits_saved) return errorResponse('Hits already saved to rankings for this war', 409);
+
+    const body = await request.json();
+    const { members } = body;
+    if (!Array.isArray(members) || !members.length) return errorResponse('members array required', 400);
+
+    let saved = 0;
+    for (const m of members) {
+      if (!m.torn_user_id) continue;
+      await env.DB.prepare(
+        `INSERT INTO war_hits
+           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
+           username=excluded.username, war_hits=excluded.war_hits,
+           outside_hits=excluded.outside_hits, assists=excluded.assists,
+           respect_gained=excluded.respect_gained, payout_amount=excluded.payout_amount,
+           units=excluded.units, saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP`
+      ).bind(
+        id, war.faction_id, m.torn_user_id, m.username ?? null,
+        m.war_hits ?? 0, m.outside_hits ?? 0, m.assists ?? 0,
+        m.respect_gained ?? 0, m.payout_amount ?? 0, m.units ?? 0,
+        user.userId
+      ).run();
+
+      // Ensure member is in faction_members (add if unknown)
+      if (m.username) {
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO faction_members
+             (torn_user_id, username, faction_id, is_active, joined_at, last_updated_at)
+           VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+        ).bind(m.torn_user_id, m.username, war.faction_id).run();
+      }
+
+      saved++;
+    }
+
+    await env.DB.prepare(`UPDATE ranked_wars SET hits_saved=1 WHERE id=?`).bind(id).run();
+    return jsonResponse({ saved, message: `${saved} member war records saved to rankings` });
+  } catch (err) {
+    console.error('saveWarHits error:', err);
+    return errorResponse('Failed to save war hits', 500);
+  }
+}
+
+// ── POST /api/leadership/wars/manual ─────────────────────────────────────────
+// Creates a manual war entry (for historic data) + saves war_hits.
+// Accepts: { faction_id, started_at, opponent_name, members: [{torn_user_id, username, war_hits}] }
+
+export async function createManualWar(request, env, user) {
+  try {
+    const body = await request.json();
+    const { faction_id, started_at, opponent_name, members } = body;
+
+    if (!faction_id || !FACTION_IDS.includes(faction_id)) return errorResponse('Invalid faction_id', 400);
+    if (!started_at) return errorResponse('started_at (unix timestamp) required', 400);
+    if (!Array.isArray(members) || !members.length) return errorResponse('members array required', 400);
+
+    // Create the ranked_wars entry
+    const result = await env.DB.prepare(
+      `INSERT INTO ranked_wars
+         (faction_id, opponent_faction_id, opponent_faction_name, status, started_at,
+          is_manual, hits_saved, is_paid, last_checked_at)
+       VALUES (?, 0, ?, 'manual', ?, 1, 1, 1, CURRENT_TIMESTAMP)`
+    ).bind(faction_id, opponent_name || 'Manual Entry', started_at).run();
+
+    const warId = result.meta?.last_row_id;
+    if (!warId) return errorResponse('Failed to create war entry', 500);
+
+    // Save war_hits — resolve torn_user_id from faction_members if not supplied
+    let saved = 0;
+    for (const m of members) {
+      if (!((m.war_hits ?? 0) > 0)) continue;
+
+      let tornId   = m.torn_user_id ? parseInt(m.torn_user_id, 10) : null;
+      let username = m.username ?? null;
+
+      // Look up by username when no ID provided
+      if (!tornId && username) {
+        const found = await env.DB.prepare(
+          `SELECT torn_user_id FROM faction_members WHERE username=? AND faction_id=? LIMIT 1`
+        ).bind(username, faction_id).first();
+        if (found) tornId = found.torn_user_id;
+      }
+      if (!tornId) continue;  // can't save without an ID
+
+      await env.DB.prepare(
+        `INSERT INTO war_hits
+           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by)
+         VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)
+         ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
+           username=excluded.username, war_hits=excluded.war_hits, units=excluded.units,
+           saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP`
+      ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, user.userId).run();
+
+      if (username) {
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO faction_members
+             (torn_user_id, username, faction_id, is_active, joined_at, last_updated_at)
+           VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+        ).bind(tornId, username, faction_id).run();
+      }
+      saved++;
+    }
+
+    return jsonResponse({ warId, saved, message: `Manual war entry created with ${saved} member records` });
+  } catch (err) {
+    console.error('createManualWar error:', err);
+    return errorResponse('Failed to create manual war entry', 500);
+  }
+}
+
+// ── POST /api/admin/wars/check  (manual trigger) ─────────────────────────────
+
+export async function triggerWarCheck(request, env) {
+  try {
+    const results = await checkWarMatches(env);
+    return jsonResponse({ message: 'War match check complete', results });
+  } catch (err) {
+    console.error('triggerWarCheck error:', err);
+    return errorResponse('War check failed', 500);
+  }
+}
+
+// ── POST /api/admin/wars/backfill ─────────────────────────────────────────────
+// One-shot: fetch last 10 ranked wars per faction from Torn API and insert any
+// not already in the DB. Skips wars already present (by torn_war_id).
+// Safe to call multiple times — duplicates are ignored.
+
+export async function backfillHistoricWars(request, env) {
+  const summary = [];
+
+  for (const factionId of FACTION_IDS) {
+    try {
+      const apiKey = await getRandomApiKeyForFaction(env, factionId);
+      if (!apiKey) { summary.push({ factionId, error: 'no API key' }); continue; }
+
+      const res = await fetch(
+        `${TORN_API_BASE}/v2/faction/rankedwars?limit=10&sort=DESC`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
+
+      const wars   = data.rankedwars || [];
+      let inserted = 0;
+      let skipped  = 0;
+
+      for (const rw of wars) {
+        // Only store wars that include this faction
+        const ourFac = rw.factions?.find(f => f.id === factionId);
+        const oppFac = rw.factions?.find(f => f.id !== factionId);
+        if (!ourFac || !oppFac) { skipped++; continue; }
+
+        // Skip if already stored by torn_war_id
+        const existing = await env.DB.prepare(
+          `SELECT id FROM ranked_wars WHERE torn_war_id=? AND faction_id=?`
+        ).bind(rw.id, factionId).first();
+        if (existing) { skipped++; continue; }
+
+        const isCompleted = rw.end > 0;
+        const status      = isCompleted ? 'completed' : (rw.start > 0 ? 'active' : 'matched');
+        const result      = isCompleted
+          ? (rw.winner === factionId ? 'won' : 'lost')
+          : null;
+
+        await env.DB.prepare(
+          `INSERT INTO ranked_wars
+             (faction_id, opponent_faction_id, opponent_faction_name,
+              torn_war_id, status, result,
+              started_at, ended_at,
+              our_score, opponent_score, target,
+              our_chain, opponent_chain,
+              hits_saved, last_checked_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`
+        ).bind(
+          factionId,
+          oppFac.id,
+          oppFac.name ?? null,
+          rw.id,
+          status,
+          result,
+          rw.start > 0 ? rw.start : null,
+          isCompleted  ? rw.end   : null,
+          ourFac.score ?? 0,
+          oppFac.score ?? 0,
+          rw.target    ?? 0,
+          ourFac.chain ?? 0,
+          oppFac.chain ?? 0
+        ).run();
+
+        inserted++;
+      }
+
+      summary.push({ factionId, wars: wars.length, inserted, skipped });
+    } catch (err) {
+      console.error(`backfillHistoricWars faction ${factionId}:`, err);
+      summary.push({ factionId, error: err.message });
+    }
+  }
+
+  return jsonResponse({ summary });
+}

@@ -1,0 +1,1029 @@
+import { useState, useEffect, useCallback } from 'react'
+import { API_BASE_URL } from '../../config/api'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const FACTIONS = [
+  { id: 33097, name: 'Occultus'  },
+  { id: 9728,  name: 'Occul2us' },
+  { id: 9171,  name: 'Occul3us' },
+]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatUnixDate(unix) {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+  }) + ' UTC'
+}
+
+function fmt(n, dp = 0) {
+  if (n == null || n === 0) return dp > 0 ? '0.00' : '0'
+  return Number(n).toLocaleString('en-GB', {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  })
+}
+
+function authHeaders() {
+  const token = localStorage.getItem('occultusSession')
+  return token ? { Authorization: token } : {}
+}
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ status, result }) {
+  const cfg = {
+    matched:   { label: 'MATCHED',   bg: 'rgba(234,179,8,0.15)',   border: 'rgba(234,179,8,0.4)',   color: '#eab308' },
+    active:    { label: 'ACTIVE',    bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.4)',   color: '#22c55e' },
+    completed: result === 'won'
+      ? { label: 'WON',     bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.4)',   color: '#22c55e' }
+      : { label: 'LOST',    bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)',   color: '#ef4444' },
+  }[status] || { label: status?.toUpperCase(), bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.15)', color: '#a1a1aa' }
+
+  return (
+    <span style={{
+      padding: '2px 10px', borderRadius: '20px', fontSize: '10px', fontWeight: '700',
+      letterSpacing: '0.08em', background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color,
+    }}>
+      {cfg.label}
+    </span>
+  )
+}
+
+// ─── Stat pill ────────────────────────────────────────────────────────────────
+
+function Stat({ label, value, accent, red }) {
+  const color = accent ? '#22c55e' : red ? '#ef4444' : '#f4f4f5'
+  const bg    = accent ? 'rgba(34,197,94,0.07)' : red ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.03)'
+  const bdr   = accent ? 'rgba(34,197,94,0.2)'  : red ? 'rgba(239,68,68,0.2)'  : 'rgba(255,255,255,0.07)'
+  return (
+    <div style={{ background: bg, border: `1px solid ${bdr}`, borderRadius: '8px', padding: '10px 14px' }}>
+      <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
+        {label}
+      </p>
+      <p style={{ color, fontSize: '15px', fontWeight: '700', margin: 0 }}>{value}</p>
+    </div>
+  )
+}
+
+// ─── Section divider ─────────────────────────────────────────────────────────
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginTop: '20px' }}>
+      <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.07)', display: 'inline-block' }} />
+        {title}
+        <span style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.07)', display: 'inline-block' }} />
+      </p>
+      {children}
+    </div>
+  )
+}
+
+// ─── Member stats table ───────────────────────────────────────────────────────
+
+function MemberStatsTable({ attackerStats, defendStats }) {
+  // Merge defend stats into a map keyed by member ID
+  const defendMap = {}
+  for (const d of defendStats || []) {
+    defendMap[d.defender_id] = d
+  }
+
+  // Build combined rows: all attackers + any defenders not already in attacker list
+  const rows = [...(attackerStats || [])]
+  const attackerIds = new Set(rows.map((r) => r.attacker_id))
+  for (const d of defendStats || []) {
+    if (!attackerIds.has(d.defender_id)) {
+      rows.push({
+        attacker_id: d.defender_id,
+        attacker_name: d.defender_name,
+        war_hits: 0, war_losses: 0, war_interrupted: 0,
+        war_respect_gained: 0, war_respect_lost: 0, avg_fair_fight: 0,
+        outside_attacks: 0, outside_respect: 0, energy_used: 0,
+      })
+    }
+  }
+
+  if (!rows.length) {
+    return <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attack data recorded yet.</p>
+  }
+
+  const th = {
+    padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase',
+    letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600',
+    borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap',
+  }
+  const thL = { ...th, textAlign: 'left' }
+  const td  = { padding: '8px 10px', fontSize: '12px', color: '#f4f4f5', textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.04)' }
+  const tdL = { ...td, textAlign: 'left', color: '#e4e4e7' }
+
+  return (
+    <div style={{ overflowX: 'auto', marginTop: '8px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+        <thead>
+          <tr>
+            <th style={thL}>Member</th>
+            <th style={th}>War Hits</th>
+            <th style={th}>Losses</th>
+            <th style={th}>Interrupted</th>
+            <th style={th}>Gained</th>
+            <th style={th}>Lost</th>
+            <th style={th}>Net</th>
+            <th style={th}>Fair Fight</th>
+            <th style={th}>Def Won</th>
+            <th style={th}>Def Lost</th>
+            <th style={th}>Outside</th>
+            <th style={th}>Assists</th>
+            <th style={th}>Energy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const def    = defendMap[r.attacker_id] || {}
+            const net    = (r.war_respect_gained || 0) - (r.war_respect_lost || 0)
+            const netPos = net >= 0
+            return (
+              <tr key={r.attacker_id}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <td style={tdL}>{r.attacker_name || `[${r.attacker_id}]`}</td>
+                <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
+                <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
+                <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : '#71717a' }}>{fmt(r.war_interrupted)}</td>
+                <td style={{ ...td, color: '#22c55e' }}>{fmt(r.war_respect_gained, 2)}</td>
+                <td style={{ ...td, color: '#ef4444' }}>{fmt(r.war_respect_lost, 2)}</td>
+                <td style={{ ...td, color: netPos ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
+                  {netPos ? '+' : ''}{fmt(net, 2)}
+                </td>
+                <td style={td}>{fmt(r.avg_fair_fight, 2)}</td>
+                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : '#71717a' }}>{fmt(def.defends_won)}</td>
+                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : '#71717a' }}>{fmt(def.defends_lost)}</td>
+                <td style={td}>{fmt(r.outside_attacks)}</td>
+                <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : '#71717a' }}>{fmt(r.assists)}</td>
+                <td style={{ ...td, color: '#a1a1aa' }}>{fmt(r.energy_used)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── Armory table ─────────────────────────────────────────────────────────────
+
+function ArmoryTable({ armory }) {
+  if (!armory?.length) {
+    return <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No armory data recorded.</p>
+  }
+
+  // Group by member
+  const byMember = {}
+  for (const row of armory) {
+    const key = row.torn_user_id || row.username
+    if (!byMember[key]) byMember[key] = { username: row.username, torn_user_id: row.torn_user_id, items: [] }
+    byMember[key].items.push(row)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+      {Object.values(byMember).map((member) => (
+        <div key={member.torn_user_id || member.username}
+          style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <p style={{ color: '#e4e4e7', fontWeight: '600', fontSize: '13px', margin: '0 0 6px 0' }}>
+            {member.username || `[${member.torn_user_id}]`}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {member.items.map((item, i) => (
+              <span key={i} style={{
+                padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500',
+                background: 'rgba(159,103,255,0.1)', border: '1px solid rgba(159,103,255,0.25)', color: '#c4b5fd',
+              }}>
+                {item.item_name} ×{item.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Payout calculator ────────────────────────────────────────────────────────
+
+const PCT_OPTIONS = [0, 25, 50, 75, 100]
+
+function PctToggle({ label, value, onChange, disabled }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', opacity: disabled ? 0.4 : 1 }}>
+      <span style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+      <div style={{ display: 'flex', gap: '3px' }}>
+        {PCT_OPTIONS.map(p => (
+          <button key={p} onClick={() => !disabled && onChange(p)} style={{
+            padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: disabled ? 'default' : 'pointer',
+            border: `1px solid ${value === p ? 'rgba(179,18,63,0.6)' : 'rgba(255,255,255,0.08)'}`,
+            background: value === p ? 'rgba(179,18,63,0.2)' : 'transparent',
+            color: value === p ? '#f4f4f5' : '#71717a', fontWeight: value === p ? '600' : '400',
+          }}>{p}%</button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function computePayouts(attackerStats, { warPct, outsidePct, assistPct, capEnabled, capType, capValue }) {
+  // When cap is off, always use attack-based formula regardless of capType
+  const useRespect = capEnabled && capType === 'respect'
+  const cap        = capEnabled && capValue > 0 ? capValue : Infinity
+
+  return attackerStats
+    .filter(r => (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.war_respect_gained || 0) > 0)
+    .map(r => {
+      const rawUnits = useRespect
+        ? (parseFloat(r.war_respect_gained) || 0)
+        : (r.war_hits        || 0) * warPct     / 100
+        + (r.outside_attacks || 0) * outsidePct / 100
+        + (r.assists         || 0) * assistPct  / 100
+      const units = Math.min(rawUnits, cap)
+      return { ...r, rawUnits, units }
+    })
+    .filter(r => r.units > 0)
+}
+
+function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSaved }) {
+  const [warPct,      setWarPct]      = useState(100)
+  const [outsidePct,  setOutsidePct]  = useState(0)
+  const [assistPct,   setAssistPct]   = useState(0)
+  const [totalAmount, setTotalAmount] = useState('')
+  const [factionShare,setFactionShare]= useState(10)
+  const [capEnabled,  setCapEnabled]  = useState(false)
+  const [capType,     setCapType]     = useState('attacks')
+  const [capValue,    setCapValue]    = useState('')
+  const [paidSet,     setPaidSet]     = useState(new Set())
+  const [hitsSaved,   setHitsSaved]   = useState(!!initialHitsSaved)
+  const [saving,      setSaving]      = useState(false)
+  const [rankSaving,  setRankSaving]  = useState(false)
+  const [saveMsg,     setSaveMsg]     = useState(null)
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => {
+        setHitsSaved(!!d.is_paid && !!initialHitsSaved)
+        if (!d.payout) return
+        const p = d.payout
+        if (p.settings) {
+          setWarPct(p.settings.warPct ?? 100);    setOutsidePct(p.settings.outsidePct ?? 0)
+          setAssistPct(p.settings.assistPct ?? 0); setTotalAmount(p.settings.totalAmount ?? '')
+          setFactionShare(p.settings.factionShare ?? 10); setCapEnabled(p.settings.capEnabled ?? false)
+          setCapType(p.settings.capType ?? 'attacks'); setCapValue(p.settings.capValue ?? '')
+        }
+        if (p.paid) setPaidSet(new Set(Object.keys(p.paid).map(Number)))
+      })
+      .catch(() => {})
+  }, [warId])
+
+  const settings = { warPct, outsidePct, assistPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare }
+  const rows         = computePayouts(attackerStats, settings)
+  const totalUnits   = rows.reduce((s, r) => s + r.units, 0)
+  const amount       = parseFloat(totalAmount) || 0
+  const available    = amount * (1 - factionShare / 100)
+  const factionCut   = amount - available
+  const perUnit      = totalUnits > 0 ? available / totalUnits : 0
+  rows.forEach(r => { r.payout = Math.floor(r.units * perUnit) })
+  const totalRemaining = rows.reduce((s, r) => s + (!paidSet.has(r.attacker_id) ? r.payout : 0), 0)
+  const allPaid        = rows.length > 0 && rows.every(r => paidSet.has(r.attacker_id))
+  const useRespect     = capEnabled && capType === 'respect'
+
+  const togglePaid = (id) => {
+    if (hitsSaved) return  // locked after saving to rankings
+    setPaidSet(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  const flash = (msg) => { setSaveMsg(msg); setTimeout(() => setSaveMsg(null), 3000) }
+
+  // Save draft: payout_json + paid state only (no war_hits write)
+  const saveDraft = async () => {
+    setSaving(true)
+    try {
+      const paid = {}; rows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
+      await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payout: { settings, paid }, is_paid: allPaid }),
+      })
+      flash('Draft saved')
+      onPayoutSaved?.(allPaid)
+    } catch { flash('Error saving') }
+    finally { setSaving(false) }
+  }
+
+  // Save to rankings: writes war_hits permanently then locks
+  const saveToRankings = async () => {
+    if (!allPaid || hitsSaved) return
+    setRankSaving(true)
+    try {
+      const paid = {}; rows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
+      // First persist payout + is_paid
+      await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payout: { settings, paid }, is_paid: true }),
+      })
+      // Then write permanent war_hits
+      const members = rows.map(r => ({
+        torn_user_id:   r.attacker_id,
+        username:       r.attacker_name,
+        war_hits:       r.war_hits       || 0,
+        outside_hits:   r.outside_attacks || 0,
+        assists:        r.assists         || 0,
+        respect_gained: r.war_respect_gained || 0,
+        payout_amount:  r.payout,
+        units:          r.units,
+      }))
+      const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/save-hits`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members }),
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Save failed') }
+      setHitsSaved(true); flash('✓ Saved to rankings')
+      onPayoutSaved?.(true)
+    } catch (e) { flash(e.message || 'Error saving') }
+    finally { setRankSaving(false) }
+  }
+
+  const inputStyle = {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px', color: '#f4f4f5', padding: '7px 10px', fontSize: '13px', width: '100%',
+  }
+  const th = (align = 'right') => ({ padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: align, whiteSpace: 'nowrap' })
+  const td = (align = 'right') => ({ padding: '8px 10px', fontSize: '12px', color: '#a1a1aa', textAlign: align, borderBottom: '1px solid rgba(255,255,255,0.04)' })
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      {hitsSaved && (
+        <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', marginBottom: '14px' }}>
+          <p style={{ color: '#4ade80', fontSize: '12px', margin: 0 }}>✓ Payout saved to member rankings — results are locked</p>
+        </div>
+      )}
+
+      {/* ── Settings ── */}
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '16px', marginBottom: '16px', opacity: hitsSaved ? 0.6 : 1, pointerEvents: hitsSaved ? 'none' : 'auto' }}>
+        <p style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>Payout Settings</p>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+          <PctToggle label="War Hits"        value={warPct}     onChange={setWarPct}     disabled={useRespect} />
+          <PctToggle label="Chain / Outside" value={outsidePct} onChange={setOutsidePct} disabled={useRespect} />
+          <PctToggle label="Assists"         value={assistPct}  onChange={setAssistPct}  disabled={useRespect} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+          <div>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Total Payout ($)</label>
+            <input type="number" min="0" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="e.g. 500000000" style={inputStyle} />
+          </div>
+          <div>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction Share ({factionShare}%)</label>
+            <input type="range" min="0" max="50" step="1" value={factionShare} onChange={e => setFactionShare(Number(e.target.value))}
+              style={{ width: '100%', accentColor: '#b3123f', marginTop: '6px' }} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <button onClick={() => { setCapEnabled(e => !e) }} style={{
+            padding: '5px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+            border: `1px solid ${capEnabled ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}`,
+            background: capEnabled ? 'rgba(234,179,8,0.1)' : 'transparent',
+            color: capEnabled ? '#eab308' : '#71717a',
+          }}>{capEnabled ? '⚡ Cap ON' : 'Cap OFF'}</button>
+
+          {capEnabled && <>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {['attacks', 'respect'].map(t => (
+                <button key={t} onClick={() => setCapType(t)} style={{
+                  padding: '5px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer',
+                  border: `1px solid ${capType === t ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                  background: capType === t ? 'rgba(179,18,63,0.15)' : 'transparent',
+                  color: capType === t ? '#f4f4f5' : '#71717a',
+                }}>{t === 'attacks' ? 'Attack Cap' : 'Respect Cap'}</button>
+              ))}
+            </div>
+            <input type="number" min="0" value={capValue} onChange={e => setCapValue(e.target.value)}
+              placeholder={capType === 'attacks' ? 'Max units' : 'Max respect'}
+              style={{ ...inputStyle, width: '130px' }} />
+          </>}
+        </div>
+
+        {amount > 0 && (
+          <div style={{ marginTop: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+            {[['Faction cut', `$${factionCut.toLocaleString('en-GB')}`, '#f4f4f5'],
+              ['Available',   `$${available.toLocaleString('en-GB')}`,  '#22c55e'],
+              ['Per unit',    `$${Math.floor(perUnit).toLocaleString('en-GB')}`, '#f4f4f5'],
+              ['Remaining',   `$${totalRemaining.toLocaleString('en-GB')}`, totalRemaining > 0 ? '#eab308' : '#22c55e'],
+            ].map(([l, v, c]) => (
+              <span key={l} style={{ fontSize: '11px', color: '#a1a1aa' }}>{l}: <strong style={{ color: c }}>{v}</strong></span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Member table ── */}
+      {rows.length === 0 ? (
+        <p style={{ color: '#71717a', fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
+            <thead>
+              <tr>
+                <th style={th('left')}>Member</th>
+                <th style={th()}>War Hits</th>
+                <th style={th()}>Outside</th>
+                <th style={th()}>Assists</th>
+                <th style={th()}>Respect</th>
+                <th style={th()}>Units</th>
+                <th style={th()}>Payout</th>
+                <th style={th('center')}>Pay</th>
+                <th style={th('center')}>Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const paid = paidSet.has(r.attacker_id)
+                return (
+                  <tr key={r.attacker_id}
+                    style={{ opacity: paid ? 0.5 : 1 }}
+                    onMouseEnter={e => { if (!paid) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ ...td('left'), color: '#e4e4e7', textDecoration: paid ? 'line-through' : 'none' }}>
+                      {r.attacker_name || `[${r.attacker_id}]`}
+                    </td>
+                    <td style={td()}>{r.war_hits || 0}</td>
+                    <td style={td()}>{r.outside_attacks || 0}</td>
+                    <td style={td()}>{r.assists || 0}</td>
+                    <td style={{ ...td(), color: '#a78bfa' }}>{(parseFloat(r.war_respect_gained) || 0).toFixed(2)}</td>
+                    <td style={{ ...td(), color: '#f4f4f5', fontWeight: '600' }}>{r.units.toFixed(useRespect ? 2 : 1)}</td>
+                    <td style={{ ...td(), color: '#22c55e', fontWeight: '700', fontSize: '13px' }}>
+                      ${r.payout.toLocaleString('en-GB')}
+                    </td>
+                    <td style={{ ...td('center') }}>
+                      {paid || hitsSaved ? (
+                        <span style={{ fontSize: '10px', color: '#52525b', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>Paid</span>
+                      ) : (
+                        <a href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${r.attacker_id}&money=${r.payout}`}
+                          target="_blank" rel="noreferrer"
+                          style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '6px', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                          Pay ↗
+                        </a>
+                      )}
+                    </td>
+                    <td style={{ ...td('center') }}>
+                      <button onClick={() => togglePaid(r.attacker_id)} disabled={hitsSaved} style={{
+                        width: '22px', height: '22px', borderRadius: '6px',
+                        cursor: hitsSaved ? 'default' : 'pointer',
+                        border: `1px solid ${paid ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                        background: paid ? 'rgba(34,197,94,0.2)' : 'transparent',
+                        color: paid ? '#4ade80' : '#52525b', fontSize: '13px', lineHeight: 1,
+                      }}>{paid ? '✓' : ''}</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan="5" style={{ padding: '10px', fontSize: '11px', color: '#a1a1aa', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                  {paidSet.size} of {rows.length} paid
+                </td>
+                <td style={{ padding: '10px', fontSize: '12px', fontWeight: '700', color: '#f4f4f5', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totalUnits.toFixed(1)}</td>
+                <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#22c55e', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                  ${rows.reduce((s, r) => s + r.payout, 0).toLocaleString('en-GB')}
+                </td>
+                <td colSpan="2" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {/* ── Action buttons ── */}
+      {!hitsSaved && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+          <button onClick={saveDraft} disabled={saving} style={{
+            padding: '7px 18px', borderRadius: '8px', fontSize: '12px', cursor: saving ? 'not-allowed' : 'pointer',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#a1a1aa',
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? 'Saving…' : 'Save Draft'}</button>
+
+          <button onClick={saveToRankings} disabled={!allPaid || rankSaving} style={{
+            padding: '7px 20px', borderRadius: '8px', fontSize: '13px',
+            cursor: (!allPaid || rankSaving) ? 'not-allowed' : 'pointer',
+            background: allPaid ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${allPaid ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.1)'}`,
+            color: allPaid ? '#4ade80' : '#52525b', fontWeight: '600',
+            opacity: rankSaving ? 0.6 : 1,
+          }}>
+            {rankSaving ? 'Saving…' : allPaid ? '✓ Save to Rankings' : `Save to Rankings (${paidSet.size}/${rows.length} paid)`}
+          </button>
+
+          {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('✓') ? '#4ade80' : '#f87171' }}>{saveMsg}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Expanded war detail ──────────────────────────────────────────────────────
+
+function WarDetail({ warId, onPayoutSaved }) {
+  const [data,    setData]    = useState(null)
+  const [armory,  setArmory]  = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [activeSection, setActiveSection] = useState('stats')
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      fetch(`${API_BASE_URL}/api/leadership/war/${warId}`,         { headers: authHeaders() }).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/api/leadership/war/${warId}/armory`,  { headers: authHeaders() }).then((r) => r.json()),
+    ]).then(([detail, arm]) => {
+      setData(detail)
+      setArmory(arm.armory || [])
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [warId])
+
+
+  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading war details…</p>
+  if (!data?.war) return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>Failed to load war details.</p>
+
+  const { summary, attackerStats, defendStats } = data
+
+  const sectionBtns = [
+    { value: 'stats',  label: 'Member Stats' },
+    { value: 'armory', label: `Armory (${armory?.length ?? 0} entries)` },
+    { value: 'payout', label: '💰 Payout' },
+  ]
+
+  return (
+    <div>
+      {/* Summary stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: '8px', marginBottom: '16px' }}>
+        <Stat label="War Hits"      value={fmt(summary.total_war_hits)}       accent />
+        <Stat label="Defends Won"   value={fmt(summary.total_defends_won)}    accent />
+        <Stat label="Enemy Hits"    value={fmt(summary.total_enemy_hits)}     red />
+        <Stat label="Outside Atks"  value={fmt(summary.total_outside_attacks)} />
+        <Stat label="Assists"       value={fmt(summary.total_assists)} />
+        <Stat label="Respect Gained" value={fmt(summary.total_respect_gained, 2)} accent />
+        <Stat label="Respect Lost"   value={fmt(summary.total_respect_lost,   2)} red />
+        <Stat label="Net Respect"
+              value={(summary.total_net_respect >= 0 ? '+' : '') + fmt(summary.total_net_respect, 2)}
+              accent={summary.total_net_respect >= 0} red={summary.total_net_respect < 0} />
+      </div>
+
+      {/* Section selector */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+        {sectionBtns.map((s) => (
+          <button key={s.value} onClick={() => setActiveSection(s.value)}
+            style={{
+              padding: '6px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+              border: `1px solid ${activeSection === s.value ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: activeSection === s.value ? 'rgba(179,18,63,0.15)' : 'transparent',
+              color: activeSection === s.value ? '#f4f4f5' : '#a1a1aa',
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSection === 'stats'  && <MemberStatsTable attackerStats={attackerStats} defendStats={defendStats} />}
+      {activeSection === 'armory' && <ArmoryTable armory={armory} />}
+      {activeSection === 'payout' && (
+        <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!data?.war?.hits_saved} onPayoutSaved={onPayoutSaved} />
+      )}
+    </div>
+  )
+}
+
+// ─── War card ─────────────────────────────────────────────────────────────────
+
+// ─── Active war scoreboard ────────────────────────────────────────────────────
+
+function ScoreBoard({ war, ourFactionName }) {
+  const { our_score = 0, opponent_score = 0, target = 0, our_chain = 0, opponent_chain = 0,
+          opponent_faction_name, started_at } = war
+
+  const total     = our_score + opponent_score
+  const weWinning = our_score >= opponent_score
+
+  // Progress bars: each side fills towards centre based on score / target
+  const ourPct  = target > 0 ? Math.min((our_score / target) * 100, 100) : 0
+  const oppPct  = target > 0 ? Math.min((opponent_score / target) * 100, 100) : 0
+
+  // How long the war has been running
+  const elapsed = started_at ? Math.floor(Date.now() / 1000) - started_at : 0
+  const elH = Math.floor(elapsed / 3600)
+  const elM = Math.floor((elapsed % 3600) / 60)
+
+  const scoreStyle = (winning) => ({
+    fontSize: '26px', fontWeight: '800', fontFamily: 'Cinzel, serif',
+    color: winning ? '#22c55e' : '#f4f4f5',
+    textShadow: winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
+    lineHeight: 1,
+  })
+
+  return (
+    <div style={{
+      padding: '16px 18px 18px',
+      borderTop: '1px solid rgba(34,197,94,0.12)',
+      background: 'rgba(34,197,94,0.03)',
+    }}>
+      {/* Names + scores */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+        {/* Opponent side */}
+        <div style={{ textAlign: 'left' }}>
+          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
+            {opponent_faction_name || 'Opponent'}
+          </p>
+          <span style={scoreStyle(!weWinning)}>{(opponent_score || 0).toLocaleString('en-GB')}</span>
+          {opponent_chain > 0 && (
+            <p style={{ color: '#f97316', fontSize: '10px', margin: '3px 0 0 0' }}>⛓ chain ×{opponent_chain}</p>
+          )}
+        </div>
+
+        {/* Centre: target */}
+        <div style={{ textAlign: 'center', padding: '0 8px' }}>
+          <p style={{ color: '#71717a', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
+          <p style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: '600', margin: 0 }}>
+            {target > 0 ? target.toLocaleString('en-GB') : '—'}
+          </p>
+          {elapsed > 0 && (
+            <p style={{ color: '#52525b', fontSize: '9px', margin: '4px 0 0 0' }}>
+              {elH}h {elM}m elapsed
+            </p>
+          )}
+        </div>
+
+        {/* Our side */}
+        <div style={{ textAlign: 'right' }}>
+          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
+            {ourFactionName}
+          </p>
+          <span style={scoreStyle(weWinning)}>{(our_score || 0).toLocaleString('en-GB')}</span>
+          {our_chain > 0 && (
+            <p style={{ color: '#f97316', fontSize: '10px', margin: '3px 0 0 0' }}>⛓ chain ×{our_chain}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '12px' }}>
+        {/* Opponent bar — fills left-to-right */}
+        <div style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px 0 0 4px', overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{
+            width: `${oppPct}%`, height: '100%', borderRadius: '4px 0 0 4px',
+            background: !weWinning ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.5)',
+            transition: 'width 0.6s ease',
+          }} />
+        </div>
+
+        {/* Centre divider */}
+        <div style={{ width: '2px', height: '14px', background: 'rgba(255,255,255,0.15)', borderRadius: '1px', flexShrink: 0 }} />
+
+        {/* Our bar — fills right-to-left */}
+        <div style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '0 4px 4px 0', overflow: 'hidden', display: 'flex', justifyContent: 'flex-start' }}>
+          <div style={{
+            width: `${ourPct}%`, height: '100%', borderRadius: '0 4px 4px 0',
+            background: weWinning ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.5)',
+            transition: 'width 0.6s ease',
+          }} />
+        </div>
+      </div>
+
+      {/* Lead indicator */}
+      {total > 0 && (
+        <p style={{ textAlign: 'center', color: '#52525b', fontSize: '10px', margin: '6px 0 0 0' }}>
+          {weWinning
+            ? `+${(our_score - opponent_score).toLocaleString('en-GB')} lead — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more to win`
+            : `${(opponent_score - our_score).toLocaleString('en-GB')} behind — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more to win`}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ─── War card ─────────────────────────────────────────────────────────────────
+
+function WarCard({ war, factionName }) {
+  const [expanded, setExpanded] = useState(false)
+  const [isPaid,   setIsPaid]   = useState(!!war.is_paid)
+
+  const dateLabel = war.status === 'completed'
+    ? formatUnixDate(war.ended_at || war.started_at)
+    : war.status === 'active'
+    ? `Started ${formatUnixDate(war.started_at)}`
+    : `Scheduled ${formatUnixDate(war.scheduled_start)}`
+
+  const isActive = war.status === 'active'
+
+  return (
+    <div style={{
+      borderRadius: '12px',
+      border: `1px solid ${isActive ? 'rgba(34,197,94,0.3)' : isPaid ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.07)'}`,
+      background: isActive ? 'rgba(34,197,94,0.02)' : 'rgba(255,255,255,0.02)',
+      overflow: 'hidden',
+    }}>
+      {/* Card header */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{
+          width: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
+          padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px',
+        }}
+      >
+        <span style={{ fontSize: '18px' }}>{war.result === 'won' ? '🏆' : war.result === 'lost' ? '💀' : '⚔️'}</span>
+        <div style={{ flex: 1, textAlign: 'left' }}>
+          <p style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', margin: '0 0 2px 0' }}>
+            vs {war.opponent_faction_name || `Faction #${war.opponent_faction_id}`}
+          </p>
+          <p style={{ color: '#71717a', fontSize: '11px', margin: 0 }}>{dateLabel}</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {isPaid && (
+            <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', color: '#4ade80' }}>
+              PAID
+            </span>
+          )}
+          {war.status === 'completed' && war.our_score > 0 && (
+            <span style={{ color: '#71717a', fontSize: '11px' }}>
+              {(war.our_score || 0).toLocaleString('en-GB')} — {(war.opponent_score || 0).toLocaleString('en-GB')}
+            </span>
+          )}
+          <StatusBadge status={war.status} result={war.result} />
+          <span style={{ color: '#a1a1aa', fontSize: '16px', lineHeight: 1 }}>{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {/* Live scoreboard — always visible for active wars */}
+      {isActive && <ScoreBoard war={war} ourFactionName={factionName} />}
+
+      {/* Rank change banner */}
+      {war.rank_change && (() => {
+        const isUp     = war.rank_change.toLowerCase().includes('ranked up')
+        const rewards  = war.rewards_json ? (() => { try { return JSON.parse(war.rewards_json) } catch { return [] } })() : []
+        const bg       = isUp ? 'rgba(34,197,94,0.08)'  : 'rgba(179,18,63,0.08)'
+        const border   = isUp ? 'rgba(34,197,94,0.2)'   : 'rgba(179,18,63,0.15)'
+        const color    = isUp ? '#4ade80'                : '#f87171'
+        return (
+          <div style={{ padding: '8px 18px', background: bg, borderTop: `1px solid ${border}` }}>
+            <p style={{ color, fontSize: '11px', margin: '0 0 4px 0', fontWeight: '500' }}>
+              {isUp ? '▲' : '▼'} {war.rank_change}
+            </p>
+            {(war.bonus_respect || rewards.length > 0) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+                {war.bonus_respect > 0 && (
+                  <span style={{ color: '#a1a1aa', fontSize: '10px' }}>
+                    +{war.bonus_respect.toLocaleString('en-GB')} bonus respect
+                  </span>
+                )}
+                {rewards.map((item, i) => (
+                  <span key={i} style={{
+                    background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.25)',
+                    color: '#c4b5fd', fontSize: '10px', borderRadius: '4px', padding: '1px 6px',
+                  }}>{item}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div style={{ padding: '0 18px 18px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <WarDetail warId={war.id} onPayoutSaved={(paid) => setIsPaid(paid)} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Faction war list ─────────────────────────────────────────────────────────
+
+function FactionWars({ factionId }) {
+  const [wars,    setWars]    = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    fetch(`${API_BASE_URL}/api/leadership/wars?faction_id=${factionId}`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => setWars(d.wars || []))
+      .catch(() => setError('Failed to load wars'))
+      .finally(() => setLoading(false))
+  }, [factionId])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading wars…</p>
+  if (error)   return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>{error}</p>
+  if (!wars.length) return (
+    <p style={{ color: '#71717a', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
+      No ranked wars tracked yet. Wars are detected automatically on Tuesdays at 01:00 UTC.
+    </p>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+      {wars.map((war) => <WarCard key={war.id} war={war} factionName={FACTIONS.find(f => f.id === factionId)?.name || 'Us'} />)}
+    </div>
+  )
+}
+
+// ─── Manual war entry ────────────────────────────────────────────────────────
+
+function ManualWarEntry({ onClose, onSaved }) {
+  const [factionId,    setFactionId]    = useState(33097)
+  const [date,         setDate]         = useState('')
+  const [opponentName, setOpponentName] = useState('')
+  const [members,      setMembers]      = useState([{ name: '', hits: '' }])
+  const [saving,       setSaving]       = useState(false)
+  const [error,        setError]        = useState(null)
+
+  const addRow    = () => setMembers(m => [...m, { id: '', name: '', hits: '' }])
+  const removeRow = (i) => setMembers(m => m.filter((_, idx) => idx !== i))
+  const updateRow = (i, field, val) => setMembers(m => m.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
+
+  const submit = async () => {
+    setError(null)
+    const validMembers = members.filter(r => parseInt(r.id, 10) > 0 && parseInt(r.hits, 10) > 0)
+    if (!date) return setError('Date is required')
+    if (!validMembers.length) return setError('At least one member with a User ID and hits is required')
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/wars/manual`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          faction_id:    factionId,
+          started_at:    Math.floor(new Date(date).getTime() / 1000),
+          opponent_name: opponentName.trim() || null,
+          members:       validMembers.map(r => ({ torn_user_id: parseInt(r.id, 10), username: r.name.trim() || null, war_hits: parseInt(r.hits, 10) })),
+        }),
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Save failed') }
+      onSaved?.()
+      onClose()
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  const inputStyle = {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px', color: '#f4f4f5', padding: '7px 10px', fontSize: '13px',
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+    }}>
+      <div style={{
+        background: '#141414', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px',
+        padding: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflowY: 'auto',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <h3 style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '600', margin: 0 }}>Add Historic War</h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Faction + Date */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+          <div>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction</label>
+            <select value={factionId} onChange={e => setFactionId(Number(e.target.value))} style={{ ...inputStyle, width: '100%' }}>
+              {FACTIONS.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '14px' }}>
+          <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Opponent Name (optional)</label>
+          <input type="text" value={opponentName} onChange={e => setOpponentName(e.target.value)} placeholder="e.g. Enemy Faction" style={{ ...inputStyle, width: '100%' }} />
+        </div>
+
+        {/* Member rows */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Members &amp; War Hits</label>
+            <button onClick={addRow} style={{
+              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+              color: '#a1a1aa', borderRadius: '6px', padding: '3px 12px', fontSize: '12px', cursor: 'pointer',
+            }}>+ Add Row</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 90px 32px', gap: '6px', marginBottom: '4px' }}>
+            {['User ID', 'Name (optional)', 'War Hits', ''].map(h => (
+              <span key={h} style={{ fontSize: '10px', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '2px' }}>{h}</span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {members.map((r, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 90px 32px', gap: '6px', alignItems: 'center' }}>
+                <input type="number" min="1" value={r.id} onChange={e => updateRow(i, 'id', e.target.value)}
+                  placeholder="e.g. 2741093" style={{ ...inputStyle, textAlign: 'center' }} />
+                <input type="text" value={r.name} onChange={e => updateRow(i, 'name', e.target.value)}
+                  placeholder="Username" style={inputStyle} />
+                <input type="number" min="0" value={r.hits} onChange={e => updateRow(i, 'hits', e.target.value)}
+                  placeholder="Hits" style={{ ...inputStyle, textAlign: 'center' }} />
+                <button onClick={() => removeRow(i)} disabled={members.length === 1} style={{
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#52525b',
+                  borderRadius: '6px', cursor: members.length === 1 ? 'default' : 'pointer',
+                  fontSize: '14px', lineHeight: 1, padding: '6px',
+                }}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {error && <p style={{ color: '#f87171', fontSize: '12px', marginBottom: '10px' }}>{error}</p>}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{
+            padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+          }}>Cancel</button>
+          <button onClick={submit} disabled={saving} style={{
+            padding: '8px 20px', borderRadius: '8px', fontSize: '13px', cursor: saving ? 'not-allowed' : 'pointer',
+            background: 'rgba(179,18,63,0.15)', border: '1px solid rgba(179,18,63,0.4)', color: '#f4f4f5', fontWeight: '600',
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? 'Saving…' : 'Save War'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Sub-tab bar ──────────────────────────────────────────────────────────────
+
+function SubTabs({ options, active, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: '4px', marginBottom: '4px', flexWrap: 'wrap' }}>
+      {options.map((opt) => (
+        <button key={opt.value} onClick={() => onChange(opt.value)}
+          style={{
+            padding: '7px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s',
+            border: `1px solid ${active === opt.value ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
+            background: active === opt.value ? 'rgba(179,18,63,0.15)' : 'transparent',
+            color: active === opt.value ? '#f4f4f5' : '#a1a1aa',
+            fontWeight: active === opt.value ? '600' : '400',
+          }}
+          onMouseEnter={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#f4f4f5' }}
+          onMouseLeave={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#a1a1aa' }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+export default function WarTrackingTab() {
+  const [factionId,  setFactionId]  = useState(33097)
+  const [showManual, setShowManual] = useState(false)
+  const [reloadKey,  setReloadKey]  = useState(0)
+  const factionTabs = FACTIONS.map((f) => ({ value: f.id, label: f.name }))
+
+  return (
+    <div>
+      {showManual && (
+        <ManualWarEntry
+          onClose={() => setShowManual(false)}
+          onSaved={() => setReloadKey(k => k + 1)}
+        />
+      )}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
+        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+          Last 5 ranked wars per faction. Wars are auto-detected weekly and attack data
+          is tracked every 30 minutes during active wars.
+        </p>
+        <button onClick={() => setShowManual(true)} style={{
+          padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
+          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+        }}>+ Add Historic War</button>
+      </div>
+      <SubTabs options={factionTabs} active={factionId} onChange={setFactionId} />
+      <FactionWars key={`${factionId}-${reloadKey}`} factionId={factionId} />
+    </div>
+  )
+}

@@ -4,6 +4,7 @@ import { useSession } from '../hooks/useSession'
 import EventCalendar from '../components/EventCalendar'
 import FactionEventCards from '../components/FactionEventCards'
 import DailyCipher from '../components/DailyCipher'
+import WarSummary from '../components/WarSummary'
 import { API_BASE_URL } from '../config/api'
 
 const FACTIONS = [
@@ -74,7 +75,7 @@ function MemberHome({ user }) {
             <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
               UPCOMING EVENTS
             </h2>
-            <EventCalendar events={events} />
+            <EventCalendar events={events} calendarStartTime={user.calendarStartTime || null} />
           </div>
 
           {/* Faction event cards */}
@@ -92,6 +93,11 @@ function MemberHome({ user }) {
         {/* Daily Cipher */}
         <div style={{ marginTop: 24 }}>
           <DailyCipher />
+        </div>
+
+        {/* Ranked War History */}
+        <div style={{ marginTop: 24 }}>
+          <WarSummary />
         </div>
       </div>
     </div>
