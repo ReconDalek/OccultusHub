@@ -26,6 +26,7 @@ import Respect    from './pages/Respect'
 import Admin          from './pages/Admin'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy  from './pages/PrivacyPolicy'
+import GameRoom       from './pages/GameRoom'
 import NotFound       from './pages/NotFound'
 
 function Layout({ children }) {
@@ -164,6 +165,8 @@ function AppRoutes() {
           </Layout>
         }
       />
+
+      <Route path="/game" element={<Layout><GameRoom /></Layout>} />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
       <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />

@@ -13,6 +13,7 @@ import * as chainController from './controllers/chainController.js';
 import * as memberController from './controllers/memberController.js';
 import * as warController from './controllers/warController.js';
 import * as customHitsController from './controllers/customHitsController.js';
+import * as gameController from './controllers/gameController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -327,6 +328,44 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/discord/messages' && method === 'POST') {
       return discordController.sendMessage(request, env, user);
     }
+  }
+
+  // Game Room — The Rite (public + optional auth)
+  if (pathname === '/api/game/current' && method === 'GET') {
+    return gameController.getCurrentRoom(request, env);
+  }
+  if (pathname === '/api/game/current/join' && method === 'POST') {
+    return gameController.joinOrCreate(request, env, user);
+  }
+  if (pathname === '/api/game/rooms' && method === 'POST') {
+    return gameController.createRoom(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}$/) && method === 'GET') {
+    return gameController.getRoom(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/join$/) && method === 'POST') {
+    return gameController.joinRoom(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/leave$/) && method === 'POST') {
+    return gameController.leaveRoom(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/start$/) && method === 'POST') {
+    return gameController.startGame(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/message$/) && method === 'POST') {
+    return gameController.sendMessage(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/vote$/) && method === 'POST') {
+    return gameController.castVote(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/action$/) && method === 'POST') {
+    return gameController.submitAction(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/advance$/) && method === 'POST') {
+    return gameController.advancePhase(request, env, user);
+  }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/inquisitor-messages$/) && method === 'GET') {
+    return gameController.getInquisitorMessages(request, env, user);
   }
 
   // 404 - Not found

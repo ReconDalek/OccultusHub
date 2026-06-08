@@ -26,6 +26,7 @@ function buildNavLinks(user, pages) {
   const links = [
     { label: 'Home',  to: '/'      },
     { label: 'About', to: '/about' },
+    { label: 'The Rite', to: '/game' },
   ]
   if (user?.isFactionMember) {
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
