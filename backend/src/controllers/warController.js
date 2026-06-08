@@ -680,40 +680,60 @@ export async function createManualWar(request, env, user) {
     const warId = result.meta?.last_row_id;
     if (!warId) return errorResponse('Failed to create war entry', 500);
 
-    // Save war_hits — resolve torn_user_id from faction_members if not supplied
+    // Build all insert statements first, then execute in batches of 100.
+    // This replaces N sequential awaits with a handful of batch calls,
+    // reducing 800 round trips to ~8 and keeping well within Worker CPU limits.
+    const warHitsStmts    = [];
+    const factionMemberStmts = [];
     let saved = 0;
+
     for (const m of members) {
       if (!((m.war_hits ?? 0) > 0)) continue;
 
       let tornId   = m.torn_user_id ? parseInt(m.torn_user_id, 10) : null;
       let username = m.username ?? null;
 
-      // Look up by username when no ID provided
+      // Username-only lookup still requires a DB read — keep sequential but these are rare
       if (!tornId && username) {
         const found = await env.DB.prepare(
           `SELECT torn_user_id FROM faction_members WHERE username=? AND faction_id=? LIMIT 1`
         ).bind(username, faction_id).first();
         if (found) tornId = found.torn_user_id;
       }
-      if (!tornId) continue;  // can't save without an ID
+      if (!tornId) continue;
 
-      await env.DB.prepare(
-        `INSERT INTO war_hits
-           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by)
-         VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)
-         ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
-           username=excluded.username, war_hits=excluded.war_hits, units=excluded.units,
-           saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP`
-      ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, user.userId).run();
+      warHitsStmts.push(
+        env.DB.prepare(
+          `INSERT INTO war_hits
+             (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by)
+           VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)
+           ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
+             username=excluded.username, war_hits=excluded.war_hits, units=excluded.units,
+             saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP`
+        ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, user.userId)
+      );
 
       if (username) {
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO faction_members
-             (torn_user_id, username, faction_id, is_active, joined_at, last_updated_at)
-           VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-        ).bind(tornId, username, faction_id).run();
+        factionMemberStmts.push(
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO faction_members
+               (torn_user_id, username, faction_id, is_active, joined_at, last_updated_at)
+             VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+          ).bind(tornId, username, faction_id)
+        );
       }
+
       saved++;
+    }
+
+    // Execute war_hits inserts in batches of 100
+    for (let i = 0; i < warHitsStmts.length; i += 100) {
+      await env.DB.batch(warHitsStmts.slice(i, i + 100));
+    }
+
+    // Execute faction_members inserts in batches of 100
+    for (let i = 0; i < factionMemberStmts.length; i += 100) {
+      await env.DB.batch(factionMemberStmts.slice(i, i + 100));
     }
 
     return jsonResponse({ warId, saved, message: `Manual war entry created with ${saved} member records` });
