@@ -152,6 +152,9 @@ export async function getFactionMembers(request, env) {
       return errorResponse('Invalid or missing faction_id. Valid values: 33097, 9728, 9171', 400);
     }
 
+    // Pre-aggregate each hits table separately before joining to avoid
+    // Cartesian product inflation (N chain rows × M war rows × P custom rows
+    // would cause every SUM to be multiplied by the row counts of the others).
     const result = await env.DB.prepare(
       `SELECT
          fm.torn_user_id,
@@ -163,24 +166,43 @@ export async function getFactionMembers(request, env) {
          fm.status,
          fm.last_seen_at,
          fm.joined_at,
-         COALESCE(SUM(ch.total_attacks), 0)                        AS total_chain_hits,
-         COALESCE(SUM(ch.bonus_hits),    0)                        AS total_bonus_hits,
-         COALESCE(SUM(wh.war_hits),      0)                        AS total_war_hits,
-         COALESCE(SUM(wh.outside_hits),  0)                        AS total_war_outside_hits,
-         COALESCE(SUM(wh.assists),       0)                        AS total_war_assists,
-         COALESCE(SUM(wh.payout_amount), 0)                        AS total_war_payout,
-         ROUND(COALESCE(SUM(wh.units),   0), 1)                    AS total_war_units,
-         COALESCE(SUM(cx.hits),          0)                        AS total_custom_hits,
-         COALESCE(SUM(ch.total_attacks), 0)
-           + ROUND(COALESCE(SUM(wh.units), 0), 0)
-           + COALESCE(SUM(cx.hits), 0)                             AS total_hits
+         COALESCE(ch.total_chain_hits,       0)                    AS total_chain_hits,
+         COALESCE(ch.total_bonus_hits,       0)                    AS total_bonus_hits,
+         COALESCE(wh.total_war_hits,         0)                    AS total_war_hits,
+         COALESCE(wh.total_war_outside_hits, 0)                    AS total_war_outside_hits,
+         COALESCE(wh.total_war_assists,      0)                    AS total_war_assists,
+         COALESCE(wh.total_war_payout,       0)                    AS total_war_payout,
+         ROUND(COALESCE(wh.total_war_units,  0), 1)                AS total_war_units,
+         COALESCE(cx.total_custom_hits,      0)                    AS total_custom_hits,
+         COALESCE(ch.total_chain_hits, 0)
+           + ROUND(COALESCE(wh.total_war_units, 0), 0)
+           + COALESCE(cx.total_custom_hits, 0)                     AS total_hits
        FROM faction_members fm
-       LEFT JOIN chain_hits  ch ON ch.torn_user_id = fm.torn_user_id
-       LEFT JOIN war_hits    wh ON wh.torn_user_id = fm.torn_user_id
-       LEFT JOIN custom_hits cx ON cx.torn_user_id = fm.torn_user_id
+       LEFT JOIN (
+         SELECT torn_user_id,
+                SUM(total_attacks) AS total_chain_hits,
+                SUM(bonus_hits)    AS total_bonus_hits
+         FROM chain_hits
+         GROUP BY torn_user_id
+       ) ch ON ch.torn_user_id = fm.torn_user_id
+       LEFT JOIN (
+         SELECT torn_user_id,
+                SUM(war_hits)      AS total_war_hits,
+                SUM(outside_hits)  AS total_war_outside_hits,
+                SUM(assists)       AS total_war_assists,
+                SUM(payout_amount) AS total_war_payout,
+                SUM(units)         AS total_war_units
+         FROM war_hits
+         GROUP BY torn_user_id
+       ) wh ON wh.torn_user_id = fm.torn_user_id
+       LEFT JOIN (
+         SELECT torn_user_id,
+                SUM(hits) AS total_custom_hits
+         FROM custom_hits
+         GROUP BY torn_user_id
+       ) cx ON cx.torn_user_id = fm.torn_user_id
        WHERE fm.is_active = 1
          AND fm.faction_id = ?
-       GROUP BY fm.torn_user_id
        ORDER BY total_hits DESC, fm.username ASC`
     ).bind(factionId).all();
 
