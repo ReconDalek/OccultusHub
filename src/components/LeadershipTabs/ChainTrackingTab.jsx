@@ -1017,8 +1017,8 @@ export default function ChainTrackingTab() {
   const [factionId, setFactionId] = useState(33097)
 
   const topTabs     = [
-    { value: 'chains', label: '⛓ Chains' },
-    { value: 'wars',   label: '⚔️ Wars'  },
+    { value: 'chains', label: 'Chains' },
+    { value: 'wars',   label: 'Wars'  },
   ]
   const factionTabs = FACTIONS.map((f) => ({ value: f.id, label: f.name }))
 
@@ -1037,10 +1037,10 @@ export default function ChainTrackingTab() {
         >
           Chain & War Tracking
         </h2>
-        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
-          Only chains ≥ 1,000 hits are tracked. Expand a chain to load the full member report
-          and save contributions to the database.
-        </p>
+        {/*<p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+          Only chains ≥ 1,000 hits are tracked automatically. 
+          Expand a chain to load the full member report and save to the database.
+        </p>*/}
       </div>
 
       {/* Top-level tabs */}

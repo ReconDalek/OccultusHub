@@ -10,10 +10,10 @@ import MemberRanksTab from '../components/LeadershipTabs/MemberRanksTab'
 const tabs = [
   { id: 'notices', label: 'Internal Notices' },
   { id: 'events',  label: 'Events & Schedules' },
-  { id: 'tools',   label: 'Leader Tools' },
-  { id: 'chains',  label: '⛓ Chain & War' },
-  { id: 'ranks',   label: '🏅 Member Ranks' },
+  { id: 'chains',  label: 'Chain & War' },
+  { id: 'ranks',   label: 'Member Ranks' },
   { id: 'cipher',  label: 'Cipher Review' },
+  { id: 'tools',   label: 'Leader Tools' },
 ]
 
 export default function Leadership() {
@@ -49,7 +49,7 @@ export default function Leadership() {
             className="max-w-3xl p-10 rounded-3xl text-center"
             style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa' }}
           >
-            Access Restricted — Leadership Clearance Required
+             — Access Restricted — 
           </div>
         ) : (
           <>

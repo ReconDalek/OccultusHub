@@ -27,7 +27,7 @@ const RANK_TIERS = [
 ]
 
 // Positions that are never flagged for a rank mismatch
-const EXEMPT_POSITIONS = ['council', 'leader', 'co-leader', 'co leader', 'recruit', 'archon']
+const EXEMPT_POSITIONS = ['council', 'leader', 'co-leader', 'socius', 'recruit', 'archon']
 
 // Shared grid — headers and rows must use the same value
 const GRID = '1fr 130px 110px 110px 24px'
@@ -90,7 +90,8 @@ function ColumnHeaders() {
 
 function MemberRow({ member, showFaction }) {
   const warUnits  = Math.round(member.total_war_units || 0)
-  const totalHits = (member.total_chain_hits || 0) + warUnits + (member.total_custom_hits || 0)
+  //const totalHits = (member.total_chain_hits || 0) + warUnits + (member.total_custom_hits || 0)
+  const totalHits = (member.total_chain_hits || 0)
   const derived   = getDerivedRank(totalHits)
   const tier      = getRankTier(derived)
   const mismatch  = isMismatch(member.faction_position, derived)
@@ -623,7 +624,8 @@ export default function MemberRanksTab() {
             Member Ranks
           </h2>
           <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
-            Active members ranked by total hits (chains + custom). ⚠ indicates a rank mismatch.
+            Current members ranked by total hits
+            ⚠ indicates a rank mismatch.
             Hover a hit count to see the breakdown.
           </p>
         </div>

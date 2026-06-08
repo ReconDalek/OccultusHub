@@ -1014,7 +1014,7 @@ export default function WarTrackingTab() {
       )}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
         <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
-          Last 5 ranked wars per faction. Wars are auto-detected weekly and attack data
+          Wars are auto-detected weekly and attack data
           is tracked every 30 minutes during active wars.
         </p>
         <button onClick={() => setShowManual(true)} style={{
