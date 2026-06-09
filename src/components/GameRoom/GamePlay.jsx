@@ -13,8 +13,10 @@ const ROLE_META = {
 
 const CABAL_FACTION = ['cabal', 'deceiver']
 
-const DAY_SECS   = 240
-const NIGHT_SECS = 120
+const DAY_SECS        = 150
+const NIGHT_SECS      = 90
+const VOTE_WINDOW_SECS = 30  // last 30s of day — voting only, chat locked
+const ACT_WINDOW_SECS  = 30  // last 30s of night — urgency indicator
 
 const ANIM_CSS = `
 @keyframes nightFall {
@@ -46,6 +48,21 @@ const ANIM_CSS = `
 @keyframes sunGlow {
   0%, 100% { box-shadow: 0 0 5px 1px rgba(234,179,8,0.4); }
   50%      { box-shadow: 0 0 10px 2px rgba(234,179,8,0.65); }
+}
+@keyframes torchFlicker {
+  0%, 100% { opacity: 0.85; transform: scaleY(1)   scaleX(1); }
+  20%      { opacity: 1;    transform: scaleY(1.12) scaleX(0.88); }
+  40%      { opacity: 0.78; transform: scaleY(0.94) scaleX(1.06); }
+  60%      { opacity: 0.92; transform: scaleY(1.08) scaleX(0.93); }
+  80%      { opacity: 0.72; transform: scaleY(0.97) scaleX(1.03); }
+}
+@keyframes moonBeam {
+  0%, 100% { opacity: 0.06; }
+  50%      { opacity: 0.11; }
+}
+@keyframes ropeWay {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50%      { transform: rotate(1.5deg); }
 }
 `
 
@@ -102,6 +119,11 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   const myRole   = myPlayer?.role
   const isAlive  = myPlayer?.is_alive
 
+  const isDay1         = isDay && room?.phase === 1
+  const isVotingWindow = isDay && !isDay1 && timeLeft !== null && timeLeft <= VOTE_WINDOW_SECS
+  const isDiscussion   = isDay && !isVotingWindow
+  const isActWindow    = isNight && timeLeft !== null && timeLeft <= ACT_WINDOW_SECS
+
   // Role ability states from server
   const bulletSpent        = myPlayer?.bullet_spent
   const canInvestigateNow  = myPlayer?.can_investigate_now // null when not night
@@ -119,7 +141,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   )
 
   const hasPendingAction = isAlive && (
-    (isDay && !myVote) ||
+    (isVotingWindow && !myVote) ||
     (isNight && hasNightAction && !myAction)
   )
 
@@ -266,13 +288,45 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   const getCanSelect = (p) => {
     if (!p.is_alive || !isAlive) return false
     if (p.is_me) return false
-    if (isDay) return !myVote
+    if (isDay) return isVotingWindow && !myVote
     return isNight && hasNightAction && !myAction && needsTargetSelection
   }
 
   // ─── CirclePanel ─────────────────────────────────────────────────
   const circlePanel = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: isMobile ? '14px' : '14px 12px', overflowY: 'auto', flex: isMobile ? 1 : undefined }}>
+
+      {/* Phase directive banner */}
+      <div style={{
+        padding: '10px 12px',
+        background: isNight
+          ? (isActWindow ? 'rgba(179,18,63,0.12)' : 'rgba(109,40,217,0.08)')
+          : isVotingWindow ? 'rgba(234,179,8,0.14)' : isDay1 ? 'rgba(234,179,8,0.06)' : 'rgba(234,179,8,0.08)',
+        border: `1px solid ${isNight
+          ? (isActWindow ? 'rgba(179,18,63,0.35)' : 'rgba(109,40,217,0.22)')
+          : isVotingWindow ? 'rgba(234,179,8,0.45)' : 'rgba(234,179,8,0.22)'}`,
+        borderRadius: 8,
+        transition: 'background 0.5s, border-color 0.5s',
+      }}>
+        <p style={{ fontSize: 10, color: isNight ? (isActWindow ? '#fb7185' : '#a78bfa') : '#eab308', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>
+          {isNight
+            ? (isActWindow ? '⚠ Last chance — act now' : '🌑 The Witching Hour')
+            : isVotingWindow ? `⚖ Voting — ${timeLeft}s remaining`
+            : isDay1 ? '☀️ Day 1 — Introduction'
+            : `☀️ Day ${Math.ceil(room.phase / 2)} — Discussion`}
+        </p>
+        <p style={{ fontSize: 12, color: '#a1a1aa', lineHeight: 1.55 }}>
+          {isNight
+            ? (hasNightAction
+                ? (isActWindow ? 'Dawn approaches — submit your action now or it will be lost.' : 'Use your ability before dawn. Others sleep.')
+                : 'The circle sleeps. You watch the darkness pass.')
+            : isVotingWindow
+            ? 'Chat is locked. Select a player and cast your banishment vote.'
+            : isDay1
+            ? 'Today is a day of introduction — no banishment. Speak, suspect, and prepare.'
+            : 'Discuss and identify the Cabal. Voting opens in the final 30 seconds.'}
+        </p>
+      </div>
 
       {/* Role badge */}
       <div style={{ padding: '10px 12px', background: `${roleMeta.color}15`, border: `1px solid ${roleMeta.color}35`, borderRadius: 8 }}>
@@ -356,8 +410,8 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
 
       {/* ── Action panels ── */}
 
-      {/* Day vote */}
-      {isAlive && isDay && !myVote && (
+      {/* Day vote — only during voting window */}
+      {isAlive && isVotingWindow && !myVote && (
         <ActionPanel color="#eab308" title="Cast Your Judgment">
           <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
             {voteTarget ? `Banish: ${players.find(p => p.id === voteTarget)?.display_name}` : 'Select a player above'}
@@ -368,7 +422,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
           </button>
         </ActionPanel>
       )}
-      {isAlive && isDay && myVote && <DonePanel color="#4ade80" text="Vote cast" sub="Awaiting others..." />}
+      {isAlive && isVotingWindow && myVote && <DonePanel color="#4ade80" text="Vote cast" sub="Awaiting others..." />}
 
       {/* Cabal kill */}
       {isAlive && isNight && myRole === 'cabal' && !myAction && (
@@ -531,19 +585,24 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   // ─── ChatPanel ───────────────────────────────────────────────────
   const chatPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-      {isNight && isCabalFaction && (
-        <div style={{ padding: '7px 16px', background: 'rgba(179,18,63,0.1)', borderBottom: '1px solid rgba(179,18,63,0.22)', fontSize: 11, color: '#fb7185', letterSpacing: 2, flexShrink: 0 }}>
-          ◈ CABAL CHANNEL — private
-        </div>
-      )}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
+      <div style={{
+        padding: '7px 16px', flexShrink: 0,
+        borderBottom: `1px solid ${isNight && isCabalFaction ? 'rgba(179,18,63,0.22)' : isNight ? 'rgba(109,40,217,0.18)' : 'rgba(255,255,255,0.07)'}`,
+        background: isNight && isCabalFaction ? 'rgba(179,18,63,0.1)' : 'transparent',
+        fontSize: 11, letterSpacing: 2,
+        color: isNight && isCabalFaction ? '#fb7185' : '#52525b',
+        transition: 'all 1.5s ease',
+      }}>
+        {isNight && isCabalFaction ? '◈ CABAL CHANNEL — private' : isNight ? '— silence until dawn —' : '◌ PUBLIC CHAT'}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, background: isNight ? 'rgba(2,0,8,0.5)' : 'rgba(4,3,8,0.42)' }}>
         {displayMessages.map(m => (
           <ChatMessage key={m.id} msg={m} isOracle={!m.player_id || m.display_name === 'The Oracle'} isNight={isNight} />
         ))}
         <div ref={chatEndRef} />
       </div>
       <div style={{ padding: '10px 12px', borderTop: `1px solid ${isNight ? 'rgba(109,40,217,0.2)' : 'rgba(255,255,255,0.07)'}`, flexShrink: 0, transition: 'border-color 2s ease' }}>
-        {(!isNight || isCabalFaction) && isAlive ? (
+        {(!isNight || isCabalFaction) && isAlive && !isVotingWindow ? (
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               value={chatInput}
@@ -569,8 +628,8 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             </button>
           </div>
         ) : (
-          <div style={{ textAlign: 'center', fontSize: 12, color: '#52525b', padding: '6px 0' }}>
-            {!isAlive ? 'The sacrificed observe in silence' : 'The Congregation sleeps — silence until dawn'}
+          <div style={{ textAlign: 'center', fontSize: 12, color: isVotingWindow ? '#eab308' : '#52525b', padding: '6px 0' }}>
+            {!isAlive ? 'The sacrificed observe in silence' : isVotingWindow ? '⚖ Voting is open — cast your judgment' : 'The Congregation sleeps — silence until dawn'}
           </div>
         )}
       </div>
@@ -581,6 +640,8 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
 
   return (
     <div style={{ height: 'calc(100vh - 72px)', color: '#f4f4f5', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+
+      <PhaseBackground isNight={isNight} isCabalFaction={isCabalFaction} />
 
       {effectStyle && (
         <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 50, ...effectStyle }} />
@@ -661,9 +722,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {mobileTab === 'circle' ? (
             <div style={{ flex: 1, overflowY: 'auto' }}>{circlePanel}</div>
-          ) : (
-            {chatPanel}
-          )}
+          ) : chatPanel}
           <div style={{
             display: 'flex', flexShrink: 0,
             borderTop: `1px solid ${isNight ? 'rgba(109,40,217,0.25)' : 'rgba(255,255,255,0.1)'}`,
@@ -679,7 +738,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             width: 220, flexShrink: 0,
             borderRight: `1px solid ${isNight ? 'rgba(109,40,217,0.2)' : 'rgba(255,255,255,0.07)'}`,
             overflowY: 'auto',
-            background: isNight ? 'rgba(3,0,10,0.4)' : 'transparent',
+            background: isNight ? 'rgba(3,0,10,0.55)' : 'rgba(5,4,8,0.45)',
             transition: 'background 2s ease, border-color 2s ease',
           }}>
             {circlePanel}
@@ -688,6 +747,362 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         </div>
       )}
     </div>
+  )
+}
+
+// ─── Phase Backgrounds ───────────────────────────────────────────────────────
+
+function PhaseBackground({ isNight, isCabalFaction }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', inset: 0, opacity: isNight ? 0 : 1, transition: 'opacity 2.5s ease' }}>
+        <TownSquareBg />
+      </div>
+      <div style={{ position: 'absolute', inset: 0, opacity: isNight && !isCabalFaction ? 1 : 0, transition: 'opacity 2.5s ease' }}>
+        <DarkRoomBg />
+      </div>
+      <div style={{ position: 'absolute', inset: 0, opacity: isNight && isCabalFaction ? 1 : 0, transition: 'opacity 2.5s ease' }}>
+        <CabalChamberBg />
+      </div>
+    </div>
+  )
+}
+
+function TownSquareBg() {
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 1200 800"
+      preserveAspectRatio="xMidYMax slice"
+      xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="sq-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1c2530" />
+          <stop offset="60%" stopColor="#2e3d4f" />
+          <stop offset="100%" stopColor="#3d4e5e" />
+        </linearGradient>
+        <linearGradient id="sq-ground" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#2e2418" />
+          <stop offset="100%" stopColor="#1a140d" />
+        </linearGradient>
+        <linearGradient id="sq-platform" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1e1710" />
+          <stop offset="100%" stopColor="#120e09" />
+        </linearGradient>
+      </defs>
+
+      {/* Sky */}
+      <rect x="0" y="0" width="1200" height="520" fill="url(#sq-sky)" />
+      {/* Cloud wisps */}
+      <ellipse cx="200"  cy="120" rx="140" ry="30" fill="rgba(255,255,255,0.025)" />
+      <ellipse cx="160"  cy="105" rx="90"  ry="20" fill="rgba(255,255,255,0.02)" />
+      <ellipse cx="750"  cy="90"  rx="180" ry="35" fill="rgba(255,255,255,0.02)" />
+      <ellipse cx="1050" cy="140" rx="120" ry="28" fill="rgba(255,255,255,0.025)" />
+
+      {/* Distant fog band */}
+      <rect x="0" y="460" width="1200" height="60" fill="rgba(180,180,200,0.04)" />
+
+      {/* ── Left building cluster ── */}
+      <rect x="0"   y="180" width="160" height="340" fill="#0f0c09" />
+      <rect x="0"   y="150" width="110" height="80"  fill="#0f0c09" />
+      <rect x="60"  y="220" width="80"  height="300" fill="#12100d" />
+      {/* Chimney */}
+      <rect x="25"  y="130" width="18"  height="40"  fill="#0d0b08" />
+      {/* Windows */}
+      {[[15,200],[55,200],[15,265],[55,265],[70,240],[115,240]].map(([x,y],i) => (
+        <rect key={i} x={x} y={y} width="22" height="28" rx="2"
+          fill={i%3===0 ? 'rgba(180,130,50,0.07)' : '#07060a'} />
+      ))}
+      {/* Door arch */}
+      <rect x="30" y="430" width="40" height="90" fill="#070605" rx="3" />
+      <ellipse cx="50" cy="430" rx="20" ry="10" fill="#070605" />
+
+      {/* ── Right building cluster ── */}
+      <rect x="1020" y="200" width="180" height="320" fill="#0f0c09" />
+      <rect x="1060" y="160" width="100" height="360" fill="#12100d" />
+      <rect x="1100" y="130" width="60"  height="390" fill="#100e0b" />
+      {/* Windows */}
+      {[[1030,220],[1030,280],[1065,185],[1065,240],[1065,295],[1110,150],[1110,205],[1110,260]].map(([x,y],i) => (
+        <rect key={i} x={x} y={y} width="22" height="28" rx="2"
+          fill={i%4===0 ? 'rgba(180,130,50,0.06)' : '#07060a'} />
+      ))}
+
+      {/* ── Ground ── */}
+      <rect x="0" y="510" width="1200" height="290" fill="url(#sq-ground)" />
+      {/* Cobblestone grid */}
+      {[520,535,550,567,585,605,628,655,685,720,760].map((y,i) => (
+        <line key={i} x1="0" y1={y} x2="1200" y2={y}
+          stroke="rgba(0,0,0,0.35)" strokeWidth={i===0?2:1.5} />
+      ))}
+      {[100,200,300,380,450,510,570,630,690,750,820,900,1000,1100].map((x,i) => (
+        <line key={i} x1={x} y1="510" x2={x + (i%2===0?30:-30)} y2="800"
+          stroke="rgba(0,0,0,0.25)" strokeWidth="1.2" />
+      ))}
+
+      {/* ── Crowd silhouettes ── */}
+      {[
+        [155,490,0.82],[195,495,0.78],[230,488,0.85],[270,492,0.80],[310,487,0.83],
+        [850,490,0.81],[895,494,0.79],[935,488,0.84],[975,492,0.77],[1010,487,0.82],
+      ].map(([x,y,op],i) => (
+        <g key={i} style={{ opacity: op }}>
+          <ellipse cx={x} cy={y-18} rx={7+i%2} ry={8+i%3} fill="#0a0806" />
+          <path d={`M${x-9},${y-10} L${x-12},${y+20} L${x+12},${y+20} L${x+9},${y-10} Z`}
+            fill="#0c0a07" />
+        </g>
+      ))}
+
+      {/* ── Gallows ── centre-right ── */}
+      {/* Platform base */}
+      <rect x="540" y="360" width="220" height="16" fill="url(#sq-platform)" rx="2" />
+      <rect x="550" y="376" width="200" height="10" fill="#150f08" rx="1" />
+      <rect x="560" y="386" width="180" height="10" fill="#130d07" rx="1" />
+      {/* Platform legs */}
+      <rect x="560" y="396" width="16" height="120" fill="#110d07" />
+      <rect x="726" y="396" width="16" height="120" fill="#110d07" />
+      <rect x="630" y="396" width="14" height="120" fill="#110d07" />
+      {/* Trapdoor outline */}
+      <rect x="612" y="360" width="76" height="16" fill="#1c1510"
+        stroke="rgba(0,0,0,0.5)" strokeWidth="1" />
+      <line x1="650" y1="360" x2="650" y2="376" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
+
+      {/* Main vertical post */}
+      <rect x="658" y="170" width="14" height="195" fill="#110d07" />
+      {/* Horizontal arm */}
+      <rect x="658" y="170" width="120" height="12" fill="#110d07" />
+      {/* Diagonal brace */}
+      <line x1="658" y1="200" x2="730" y2="170" stroke="#110d07" strokeWidth="10" strokeLinecap="round" />
+
+      {/* Rope + noose (swinging) */}
+      <g style={{ transformOrigin: '775px 182px', animation: 'ropeWay 4s ease-in-out infinite' }}>
+        <line x1="775" y1="182" x2="775" y2="310" stroke="#221a10" strokeWidth="3.5" />
+        <ellipse cx="775" cy="318" rx="10" ry="8" fill="none"
+          stroke="#221a10" strokeWidth="3.5" />
+        <line x1="775" y1="326" x2="775" y2="340" stroke="#221a10" strokeWidth="3.5" />
+      </g>
+
+      {/* Torch on post */}
+      <rect x="646" y="225" width="10" height="4" fill="#2a1a08" />
+      <rect x="636" y="210" width="8" height="18" rx="1" fill="#1a1208" />
+      <ellipse cx="640" cy="208" rx="5" ry="7" fill="rgba(220,120,20,0.6)" />
+
+      {/* Ground shadows under platform */}
+      <ellipse cx="650" cy="516" rx="100" ry="12" fill="rgba(0,0,0,0.35)" />
+    </svg>
+  )
+}
+
+function DarkRoomBg() {
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 1200 800"
+      preserveAspectRatio="xMidYMid slice"
+      xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="dr-room" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#030208" />
+          <stop offset="100%" stopColor="#050310" />
+        </linearGradient>
+        <linearGradient id="dr-nightsky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#020510" />
+          <stop offset="100%" stopColor="#050d20" />
+        </linearGradient>
+        <radialGradient id="dr-moon" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stopColor="#f8f4ec" />
+          <stop offset="70%"  stopColor="#e8e0cc" />
+          <stop offset="100%" stopColor="#c8bea8" />
+        </radialGradient>
+        <radialGradient id="dr-moonglow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stopColor="rgba(240,230,200,0.18)" />
+          <stop offset="100%" stopColor="rgba(240,230,200,0)" />
+        </radialGradient>
+        <linearGradient id="dr-beam" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="rgba(200,210,230,0.08)" />
+          <stop offset="100%" stopColor="rgba(200,210,230,0)" />
+        </linearGradient>
+        <clipPath id="dr-window-clip">
+          <path d="M490,80 L490,350 L710,350 L710,80 Q600,20 490,80 Z" />
+        </clipPath>
+      </defs>
+
+      {/* Room walls */}
+      <rect x="0" y="0" width="1200" height="800" fill="url(#dr-room)" />
+
+      {/* Stone texture suggestion — very subtle horizontal bands */}
+      {[80,160,240,320,400,480,560,640,720].map((y,i) => (
+        <rect key={i} x="0" y={y} width="1200" height="2"
+          fill="rgba(255,255,255,0.012)" />
+      ))}
+
+      {/* Moonbeam shaft through window */}
+      <polygon points="490,80 710,80 780,800 420,800"
+        fill="url(#dr-beam)"
+        style={{ animation: 'moonBeam 5s ease-in-out infinite' }} />
+
+      {/* Window arch opening — night sky inside */}
+      <path d="M490,80 L490,350 L710,350 L710,80 Q600,20 490,80 Z"
+        fill="url(#dr-nightsky)" />
+
+      {/* Moon glow halo */}
+      <ellipse cx="600" cy="155" rx="80" ry="80"
+        fill="url(#dr-moonglow)" />
+
+      {/* Moon */}
+      <circle cx="600" cy="155" r="38" fill="url(#dr-moon)" />
+      {/* Moon surface craters (very subtle) */}
+      <circle cx="588" cy="145" r="8"  fill="rgba(180,165,140,0.25)" />
+      <circle cx="615" cy="165" r="5"  fill="rgba(180,165,140,0.2)" />
+      <circle cx="600" cy="170" r="4"  fill="rgba(180,165,140,0.15)" />
+
+      {/* Stars */}
+      {[
+        [510,95],[530,110],[555,90],[570,105],[620,92],[650,108],
+        [675,95],[690,115],[700,100],[520,130],[535,145],[688,130],
+      ].map(([x,y],i) => (
+        <circle key={i} cx={x} cy={y} r={i%3===0?1.2:0.8}
+          fill={`rgba(255,255,255,${0.4+i%3*0.15})`} />
+      ))}
+
+      {/* Window frame — stone surround */}
+      <path d="M480,75 L480,360 L720,360 L720,75 Q600,10 480,75 Z"
+        fill="none" stroke="#0f0c09" strokeWidth="20" />
+      {/* Inner frame */}
+      <path d="M490,80 L490,350 L710,350 L710,80 Q600,20 490,80 Z"
+        fill="none" stroke="#1a1510" strokeWidth="6" />
+      {/* Window cross-bar */}
+      <line x1="490" y1="220" x2="710" y2="220" stroke="#1a1510" strokeWidth="5" />
+      <line x1="600" y1="80"  x2="600" y2="350" stroke="#1a1510" strokeWidth="5" />
+
+      {/* Window sill */}
+      <rect x="468" y="350" width="264" height="18" fill="#0f0c09" rx="2" />
+
+      {/* Floor — faint moonlit cobblestones */}
+      <rect x="0" y="680" width="1200" height="120" fill="rgba(10,8,20,0.6)" />
+      {[685,700,718,740].map((y,i) => (
+        <line key={i} x1="0" y1={y} x2="1200" y2={y}
+          stroke="rgba(255,255,255,0.03)" strokeWidth="1.5" />
+      ))}
+
+      {/* Dim vignette corners */}
+      <radialGradient id="dr-vignette" cx="50%" cy="50%" r="70%">
+        <stop offset="0%"   stopColor="rgba(0,0,0,0)" />
+        <stop offset="100%" stopColor="rgba(0,0,0,0.65)" />
+      </radialGradient>
+      <rect x="0" y="0" width="1200" height="800" fill="url(#dr-vignette)" />
+    </svg>
+  )
+}
+
+function CabalChamberBg() {
+  // Single hooded figure silhouette path (points facing up)
+  const figPath = (cx, scale) => {
+    const s = scale
+    const x = cx
+    return `
+      M${x},${290-80*s}
+      C${x-12*s},${290-90*s} ${x-22*s},${290-70*s} ${x-26*s},${290-50*s}
+      L${x-32*s},${290-20*s}
+      C${x-22*s},${290-28*s} ${x-14*s},${290-18*s} ${x},${290-18*s}
+      C${x+14*s},${290-18*s} ${x+22*s},${290-28*s} ${x+32*s},${290-20*s}
+      L${x+26*s},${290-50*s}
+      C${x+22*s},${290-70*s} ${x+12*s},${290-90*s} ${x},${290-80*s}
+      Z
+      M${x-32*s},${290-20*s}
+      L${x-48*s},${290+100*s}
+      L${x+48*s},${290+100*s}
+      L${x+32*s},${290-20*s}
+      C${x+22*s},${290-28*s} ${x+14*s},${290-18*s} ${x},${290-18*s}
+      C${x-14*s},${290-18*s} ${x-22*s},${290-28*s} ${x-32*s},${290-20*s}
+      Z
+    `
+  }
+
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 1200 800"
+      preserveAspectRatio="xMidYMax slice"
+      xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="cc-wall" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#0a0404" />
+          <stop offset="100%" stopColor="#140808" />
+        </linearGradient>
+        <radialGradient id="cc-torch-l" cx="0%" cy="50%" r="100%">
+          <stop offset="0%"   stopColor="rgba(200,90,10,0.28)" />
+          <stop offset="100%" stopColor="rgba(200,90,10,0)" />
+        </radialGradient>
+        <radialGradient id="cc-torch-r" cx="100%" cy="50%" r="100%">
+          <stop offset="0%"   stopColor="rgba(200,90,10,0.28)" />
+          <stop offset="100%" stopColor="rgba(200,90,10,0)" />
+        </radialGradient>
+        <radialGradient id="cc-floor-glow" cx="50%" cy="100%" r="60%">
+          <stop offset="0%"   stopColor="rgba(160,60,10,0.12)" />
+          <stop offset="100%" stopColor="rgba(160,60,10,0)" />
+        </radialGradient>
+        <radialGradient id="cc-vignette" cx="50%" cy="50%" r="70%">
+          <stop offset="0%"   stopColor="rgba(0,0,0,0)" />
+          <stop offset="100%" stopColor="rgba(0,0,0,0.75)" />
+        </radialGradient>
+      </defs>
+
+      {/* Stone walls */}
+      <rect x="0" y="0" width="1200" height="800" fill="url(#cc-wall)" />
+
+      {/* Stone block lines */}
+      {[100,200,300,400,500,600,700].map((y,i) => (
+        <line key={i} x1="0" y1={y} x2="1200" y2={y}
+          stroke="rgba(255,255,255,0.018)" strokeWidth="2" />
+      ))}
+      {[150,300,450,600,750,900,1050].map((x,i) => (
+        <line key={i} x1={x} y1={0} x2={x} y2={800}
+          stroke="rgba(255,255,255,0.012)" strokeWidth="1.5" />
+      ))}
+
+      {/* Torch glow pools */}
+      <rect x="0"    y="0" width="600" height="800" fill="url(#cc-torch-l)" />
+      <rect x="600"  y="0" width="600" height="800" fill="url(#cc-torch-r)" />
+
+      {/* Floor glow */}
+      <rect x="0" y="0" width="1200" height="800" fill="url(#cc-floor-glow)" />
+
+      {/* ── Left torch ── */}
+      <rect x="90" y="195" width="12" height="45" rx="2" fill="#1e1008" />
+      <rect x="85" y="186" width="22" height="12" rx="2" fill="#251508" />
+      <g style={{ transformOrigin: '96px 185px', animation: 'torchFlicker 1.8s ease-in-out infinite' }}>
+        <ellipse cx="96" cy="175" rx="9"  ry="14" fill="rgba(230,100,10,0.85)" />
+        <ellipse cx="96" cy="168" rx="6"  ry="9"  fill="rgba(255,180,40,0.9)" />
+        <ellipse cx="96" cy="163" rx="3.5" ry="5" fill="rgba(255,240,180,0.95)" />
+      </g>
+
+      {/* ── Right torch ── */}
+      <rect x="1098" y="195" width="12" height="45" rx="2" fill="#1e1008" />
+      <rect x="1093" y="186" width="22" height="12" rx="2" fill="#251508" />
+      <g style={{ transformOrigin: '1104px 185px', animation: 'torchFlicker 2.1s ease-in-out infinite 0.4s' }}>
+        <ellipse cx="1104" cy="175" rx="9"  ry="14" fill="rgba(230,100,10,0.85)" />
+        <ellipse cx="1104" cy="168" rx="6"  ry="9"  fill="rgba(255,180,40,0.9)" />
+        <ellipse cx="1104" cy="163" rx="3.5" ry="5" fill="rgba(255,240,180,0.95)" />
+      </g>
+
+      {/* ── Ritual circle on floor (very faint) ── */}
+      <ellipse cx="600" cy="700" rx="280" ry="60"
+        fill="none" stroke="rgba(160,40,10,0.12)" strokeWidth="2" />
+      <ellipse cx="600" cy="700" rx="220" ry="46"
+        fill="none" stroke="rgba(160,40,10,0.08)" strokeWidth="1.5" />
+      {/* Triangle inside circle */}
+      <polygon points="600,645 370,745 830,745"
+        fill="none" stroke="rgba(160,40,10,0.09)" strokeWidth="1.5" />
+
+      {/* ── Three cloaked figures ── */}
+      {/* Left figure (smaller — further back) */}
+      <path d={figPath(340, 0.78)} fill="#0d0505" />
+      <ellipse cx="340" cy="226" rx="16" ry="14" fill="#080202" />
+
+      {/* Centre figure (largest — closest) */}
+      <path d={figPath(600, 1.0)} fill="#0e0606" />
+      <ellipse cx="600" cy="210" rx="20" ry="18" fill="#090202" />
+
+      {/* Right figure (smaller — further back) */}
+      <path d={figPath(860, 0.78)} fill="#0d0505" />
+      <ellipse cx="860" cy="226" rx="16" ry="14" fill="#080202" />
+
+      {/* Deep vignette */}
+      <rect x="0" y="0" width="1200" height="800" fill="url(#cc-vignette)" />
+    </svg>
   )
 }
 

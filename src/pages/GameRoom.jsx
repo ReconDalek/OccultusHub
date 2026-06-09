@@ -58,6 +58,12 @@ export default function GameRoom() {
       const res = await fetch(`${API_BASE_URL}/api/game/rooms/${code}?${params}`, {
         headers: authHeaders(),
       })
+      if (res.status === 410) {
+        clearInterval(pollRef.current)
+        setScreen('landing')
+        setError('The lobby expired before the rite could begin.')
+        return
+      }
       if (!res.ok) return
       const data = await res.json()
 
@@ -149,6 +155,7 @@ export default function GameRoom() {
         guestToken={guestToken}
         authHeaders={authHeaders}
         roomCode={roomCode}
+        user={user}
         onStart={() => startPolling(roomCode, guestToken)}
         onLeave={handleLeave}
         onShowRulebook={() => setShowRulebook(true)}

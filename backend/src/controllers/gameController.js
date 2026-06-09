@@ -1,7 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
-const DAY_SECS   = 240; // 4 minutes
-const NIGHT_SECS = 120; // 2 minutes
+const DAY_SECS   = 150; // 2 min discussion + 30 sec voting window
+const NIGHT_SECS = 90;  // 1 min action + 30 sec urgency window
 
 // Inquisitor can only investigate on odd-numbered nights (1, 3, 5...).
 // Night number = phase / 2 (nights are always even phases).
@@ -101,7 +101,8 @@ export async function createRoom(request, env, user) {
     }
 
     const room = await env.DB.prepare(
-      `INSERT INTO game_rooms (code, host_name, status) VALUES (?, ?, 'lobby') RETURNING id`
+      `INSERT INTO game_rooms (code, host_name, status, lobby_expires_at)
+       VALUES (?, ?, 'lobby', datetime('now', '+5 minutes')) RETURNING id`
     ).bind(code, hostName).first();
 
     const guestToken = user ? null : crypto.randomUUID();
@@ -144,6 +145,9 @@ export async function joinRoom(request, env, user) {
     await env.DB.prepare(
       `INSERT INTO game_players (room_id, user_id, display_name, guest_token) VALUES (?, ?, ?, ?)`
     ).bind(room.id, user?.userId || null, displayName, guestToken).run();
+    await env.DB.prepare(
+      `UPDATE game_rooms SET lobby_expires_at = datetime('now', '+5 minutes') WHERE id = ?`
+    ).bind(room.id).run();
 
     return jsonResponse({ joined: true, guest_token: guestToken });
   } catch (err) {
@@ -223,13 +227,15 @@ export async function startGame(request, env, user) {
 
     await env.DB.prepare(
       `UPDATE game_rooms SET status = 'day', phase = 1, phase_type = 'day',
-       phase_ends_at = datetime('now', '+${DAY_SECS} seconds') WHERE id = ?`
+       phase_ends_at = datetime('now', '+${DAY_SECS} seconds'),
+       lobby_expires_at = NULL WHERE id = ?`
     ).bind(room.id).run();
 
     await oracleMessage(env, room.id, 1,
-      'The Rite begins. Shadows gather. Look around you — not all who stand here are of the Congregation. The Reckoning is upon us. Speak, suspect, and cast your judgment.'
+      'The Rite begins. Shadows gather. Look around you — not all who stand here are of the Congregation. Today is a day of introduction only — no one will be banished on the first day. Speak freely. The first vote comes tomorrow.'
     );
 
+    // Day 1 is discussion-only — bots do not vote, no banishment occurs
     return jsonResponse({ started: true });
   } catch (err) {
     console.error('startGame error:', err);
@@ -248,10 +254,18 @@ export async function getRoom(request, env, user) {
     let room = await env.DB.prepare('SELECT * FROM game_rooms WHERE code = ?').bind(code).first();
     if (!room) return errorResponse('Room not found', 404);
 
+    if (room.status === 'lobby' && room.lobby_expires_at) {
+      const expiresAt = new Date(room.lobby_expires_at.replace(' ', 'T') + 'Z');
+      if (Date.now() > expiresAt.getTime()) {
+        await env.DB.prepare('DELETE FROM game_rooms WHERE id = ?').bind(room.id).run();
+        return errorResponse('Lobby expired — no game was started', 410);
+      }
+    }
+
     room = await checkAndAdvanceIfExpired(env, room);
 
     const players = await env.DB.prepare(
-      `SELECT id, display_name, role, is_alive, is_host, user_id, guest_token FROM game_players WHERE room_id = ?`
+      `SELECT id, display_name, role, is_alive, is_host, is_bot, user_id, guest_token FROM game_players WHERE room_id = ?`
     ).bind(room.id).all();
 
     let myPlayer = null;
@@ -267,6 +281,7 @@ export async function getRoom(request, env, user) {
         display_name: p.display_name,
         is_alive: p.is_alive,
         is_host: p.is_host,
+        is_bot: !!p.is_bot,
         role: (showRole || isCabalAlly) ? p.role : null,
         is_me: isSelf,
       };
@@ -345,6 +360,7 @@ export async function getRoom(request, env, user) {
         phase_type: room.phase_type,
         winner: room.winner,
         phase_ends_at: room.phase_ends_at || null,
+        lobby_expires_at: room.lobby_expires_at || null,
       },
       players: sanitizedPlayers,
       messages: messages.results,
@@ -426,6 +442,7 @@ export async function castVote(request, env, user) {
     const room = await env.DB.prepare('SELECT id, status, phase FROM game_rooms WHERE code = ?').bind(code).first();
     if (!room) return errorResponse('Room not found', 404);
     if (room.status !== 'day') return errorResponse('Voting only occurs during The Reckoning', 400);
+    if (room.phase === 1) return errorResponse('No banishment on the first day', 400);
 
     let voter;
     if (user) {
@@ -658,6 +675,7 @@ async function resolveDay(env, room) {
   await oracleMessage(env, room.id, nextPhase,
     'Darkness descends. The Witching Hour begins. The Congregation sleeps... but something stirs in the shadows.'
   );
+  await botActForPhase(env, room.id, nextPhase, 'night');
 }
 
 async function resolveNight(env, room) {
@@ -803,6 +821,140 @@ async function resolveNight(env, room) {
   await oracleMessage(env, room.id, nextPhase,
     "Dawn rises on the circle. Another Reckoning begins. Speak your suspicions and cast your judgment upon the Cabal's agents."
   );
+  await botActForPhase(env, room.id, nextPhase, 'day');
+}
+
+// ── Bot auto-actions ────────────────────────────────────────────────────────
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+async function botActForPhase(env, roomId, phase, status) {
+  const { results: allPlayers } = await env.DB.prepare(
+    `SELECT id, role, is_alive, is_bot FROM game_players WHERE room_id = ?`
+  ).bind(roomId).all();
+
+  const bots      = allPlayers.filter(p => p.is_bot && p.is_alive);
+  const nonBots   = allPlayers.filter(p => !p.is_bot && p.is_alive);
+  const alive     = allPlayers.filter(p => p.is_alive);
+
+  if (bots.length === 0) return;
+
+  if (status === 'day') {
+    if (phase === 1) return; // Day 1 is discussion-only — no bot votes
+    // Bots vote for a random non-bot alive player (fallback: any alive non-self)
+    const stmts = [];
+    for (const bot of bots) {
+      const targets = (nonBots.length > 0 ? nonBots : alive).filter(p => p.id !== bot.id);
+      if (!targets.length) continue;
+      const target = pickRandom(targets);
+      stmts.push(env.DB.prepare(
+        `INSERT INTO game_votes (room_id, voter_player_id, target_player_id, phase)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(room_id, voter_player_id, phase) DO UPDATE SET target_player_id = excluded.target_player_id`
+      ).bind(roomId, bot.id, target.id, phase));
+    }
+    if (stmts.length) await env.DB.batch(stmts);
+
+    // Check if all alive players have voted → auto-resolve
+    const room = await env.DB.prepare('SELECT * FROM game_rooms WHERE id = ?').bind(roomId).first();
+    if (!room || room.status !== 'day') return;
+    const voteCount  = await env.DB.prepare(`SELECT COUNT(*) as cnt FROM game_votes WHERE room_id = ? AND phase = ?`).bind(roomId, phase).first();
+    const aliveCount = await env.DB.prepare(`SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1`).bind(roomId).first();
+    if (voteCount.cnt >= aliveCount.cnt) await resolveDay(env, room);
+
+  } else if (status === 'night') {
+    const nonCabal  = alive.filter(p => !CABAL_FACTION.includes(p.role));
+    const anyCabal  = alive.filter(p => CABAL_FACTION.includes(p.role));
+    const stmts     = [];
+
+    for (const bot of bots) {
+      let action_type = null, target_id = null;
+
+      if (bot.role === 'cabal') {
+        const targets = nonCabal.filter(p => p.id !== bot.id);
+        if (!targets.length) continue;
+        action_type = 'kill'; target_id = pickRandom(targets).id;
+      } else if (bot.role === 'deceiver') {
+        const targets = nonCabal.filter(p => p.id !== bot.id);
+        if (!targets.length) continue;
+        action_type = 'deceive'; target_id = pickRandom(targets).id;
+      } else if (bot.role === 'inquisitor' && inquisitorCanActThisPhase(phase)) {
+        const targets = alive.filter(p => p.id !== bot.id);
+        if (!targets.length) continue;
+        action_type = 'investigate'; target_id = pickRandom(targets).id;
+      } else if (bot.role === 'warden') {
+        // Check bullet not spent
+        const spent = await env.DB.prepare(
+          `SELECT COUNT(*) as cnt FROM game_actions WHERE player_id = ? AND action_type IN ('shoot', 'guard_fired')`
+        ).bind(bot.id).first();
+        if (spent.cnt > 0) continue;
+        action_type = 'guard'; target_id = bot.id;
+      } else {
+        continue; // congregation, apostate, acolyte — not required
+      }
+
+      stmts.push(env.DB.prepare(
+        `INSERT INTO game_actions (room_id, player_id, action_type, target_player_id, phase)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(room_id, player_id, phase) DO UPDATE SET action_type = excluded.action_type, target_player_id = excluded.target_player_id`
+      ).bind(roomId, bot.id, action_type, target_id, phase));
+    }
+    if (stmts.length) await env.DB.batch(stmts);
+
+    // Check if all required actors have submitted → auto-resolve
+    const room = await env.DB.prepare('SELECT * FROM game_rooms WHERE id = ?').bind(roomId).first();
+    if (!room || room.status !== 'night') return;
+
+    const cabalCount   = await env.DB.prepare(`SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1 AND role = 'cabal'`).bind(roomId).first();
+    const deceiverCount= await env.DB.prepare(`SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1 AND role = 'deceiver'`).bind(roomId).first();
+    let inqCount = { cnt: 0 };
+    if (inquisitorCanActThisPhase(phase)) {
+      inqCount = await env.DB.prepare(`SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1 AND role = 'inquisitor'`).bind(roomId).first();
+    }
+    const wardenCount  = await env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM game_players gp WHERE gp.room_id = ? AND gp.is_alive = 1 AND gp.role = 'warden'
+       AND (SELECT COUNT(*) FROM game_actions ga WHERE ga.player_id = gp.id AND ga.action_type IN ('shoot', 'guard_fired')) = 0`
+    ).bind(roomId).first();
+    const required     = cabalCount.cnt + deceiverCount.cnt + inqCount.cnt + wardenCount.cnt;
+    const done         = await env.DB.prepare(`SELECT COUNT(*) as cnt FROM game_actions WHERE room_id = ? AND phase = ? AND action_type != 'anoint'`).bind(roomId, phase).first();
+    if (done.cnt >= required) await resolveNight(env, room);
+  }
+}
+
+// POST /api/game/rooms/:code/fill-bots — admin only
+export async function fillBots(request, env, user) {
+  try {
+    const code = new URL(request.url).pathname.split('/')[4].toUpperCase();
+    const body = await request.json().catch(() => ({}));
+
+    const room = await env.DB.prepare('SELECT id, status FROM game_rooms WHERE code = ?').bind(code).first();
+    if (!room) return errorResponse('Room not found', 404);
+    if (room.status !== 'lobby') return errorResponse('Can only fill bots in lobby', 400);
+
+    const { results: players } = await env.DB.prepare(
+      'SELECT id FROM game_players WHERE room_id = ?'
+    ).bind(room.id).all();
+
+    const current = players.length;
+    const target  = Math.max(4, parseInt(body.count) || 4);
+    const needed  = target - current;
+    if (needed <= 0) return jsonResponse({ added: 0 });
+
+    const stmts = [];
+    for (let i = 0; i < needed; i++) {
+      stmts.push(env.DB.prepare(
+        `INSERT INTO game_players (room_id, display_name, is_bot) VALUES (?, ?, 1)`
+      ).bind(room.id, `Bot_${current + i + 1}`));
+    }
+    await env.DB.batch(stmts);
+
+    return jsonResponse({ added: needed });
+  } catch (err) {
+    console.error('fillBots error:', err);
+    return errorResponse('Failed to fill bots', 500);
+  }
 }
 
 async function endGame(env, room, winner) {
@@ -860,7 +1012,9 @@ export async function joinOrCreate(request, env, user) {
     if (!displayName) return errorResponse('A name is required', 400);
 
     let room = await env.DB.prepare(
-      `SELECT id, code, status FROM game_rooms WHERE status = 'lobby' ORDER BY created_at DESC LIMIT 1`
+      `SELECT id, code, status, lobby_expires_at FROM game_rooms
+       WHERE status = 'lobby' AND (lobby_expires_at IS NULL OR lobby_expires_at > datetime('now'))
+       ORDER BY created_at DESC LIMIT 1`
     ).first();
 
     let isHost = false;
@@ -872,11 +1026,11 @@ export async function joinOrCreate(request, env, user) {
         if (!exists) break;
       }
       room = await env.DB.prepare(
-        `INSERT INTO game_rooms (code, host_name, status) VALUES (?, ?, 'lobby') RETURNING id, code, status`
+        `INSERT INTO game_rooms (code, host_name, status, lobby_expires_at)
+         VALUES (?, ?, 'lobby', datetime('now', '+5 minutes')) RETURNING id, code, status`
       ).bind(code, displayName).first();
       isHost = true;
     } else {
-      if (room.status !== 'lobby') return errorResponse('A rite is already in progress — wait for it to end', 400);
       if (user) {
         const existing = await env.DB.prepare(
           'SELECT id FROM game_players WHERE room_id = ? AND user_id = ?'
@@ -892,6 +1046,9 @@ export async function joinOrCreate(request, env, user) {
     await env.DB.prepare(
       `INSERT INTO game_players (room_id, user_id, display_name, is_host, guest_token) VALUES (?, ?, ?, ?, ?)`
     ).bind(room.id, user?.userId || null, displayName, isHost ? 1 : 0, guestToken).run();
+    await env.DB.prepare(
+      `UPDATE game_rooms SET lobby_expires_at = datetime('now', '+5 minutes') WHERE id = ?`
+    ).bind(room.id).run();
 
     return jsonResponse({ code: room.code, guest_token: guestToken });
   } catch (err) {

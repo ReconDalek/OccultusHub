@@ -6,6 +6,7 @@ import SettingsTab from '../components/AdminTabs/SettingsTab'
 import FishingTab       from '../components/AdminTabs/FishingTab'
 import RuneTab          from '../components/AdminTabs/RuneTab'
 import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
+import AdminCardsTab from '../components/AdminTabs/AdminCardsTab'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
@@ -18,6 +19,7 @@ export default function Admin() {
     { id: 'fishing',  label: '◈ Void Scrying' },
     { id: 'runes',    label: 'ᚠ Rune Casting' },
     { id: 'events',   label: '🌕 Events' },
+    { id: 'cards',    label: '◼ Cards' },
   ]
 
   return (
@@ -79,6 +81,7 @@ export default function Admin() {
           {activeTab === 'fishing'  && <FishingTab />}
           {activeTab === 'runes'    && <RuneTab />}
           {activeTab === 'events'   && <SeasonalEventsTab />}
+          {activeTab === 'cards'    && <AdminCardsTab />}
         </div>
       </div>
     </div>

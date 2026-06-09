@@ -27,6 +27,7 @@ function buildNavLinks(user, pages) {
     { label: 'Home',  to: '/'      },
     { label: 'About', to: '/about' },
     { label: 'The Rite', to: '/game' },
+    { label: 'Cards', to: '/cards' },
   ]
   if (user?.isFactionMember) {
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })

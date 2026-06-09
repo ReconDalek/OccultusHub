@@ -14,6 +14,7 @@ import * as memberController from './controllers/memberController.js';
 import * as warController from './controllers/warController.js';
 import * as customHitsController from './controllers/customHitsController.js';
 import * as gameController from './controllers/gameController.js';
+import * as cahController from './controllers/cahController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -364,8 +365,75 @@ export async function handleRequest(request, env) {
   if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/advance$/) && method === 'POST') {
     return gameController.advancePhase(request, env, user);
   }
+  if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/fill-bots$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    const isAdmin = await requireAdmin(user);
+    if (!isAdmin) return errorResponse('Admin access required', 403);
+    return gameController.fillBots(request, env, user);
+  }
   if (pathname.match(/^\/api\/game\/rooms\/[A-Z0-9]{6}\/inquisitor-messages$/) && method === 'GET') {
     return gameController.getInquisitorMessages(request, env, user);
+  }
+
+  // Cards Against Occultus — public + optional auth
+  if (pathname === '/api/cards/current' && method === 'GET') {
+    return cahController.getCurrentRoom(request, env);
+  }
+  if (pathname === '/api/cards/current/join' && method === 'POST') {
+    return cahController.joinOrCreate(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}$/) && method === 'GET') {
+    return cahController.getRoom(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/start$/) && method === 'POST') {
+    return cahController.startGame(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/submit$/) && method === 'POST') {
+    return cahController.submitCard(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/judge$/) && method === 'POST') {
+    return cahController.judgeWinner(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/pact$/) && method === 'POST') {
+    return cahController.invokePact(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/message$/) && method === 'POST') {
+    return cahController.sendMessage(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/leave$/) && method === 'POST') {
+    return cahController.leaveRoom(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/settings$/) && method === 'POST') {
+    return cahController.updateSettings(request, env, user);
+  }
+  if (pathname.match(/^\/api\/cards\/rooms\/[A-Z0-9]{6}\/fill-bots$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    const isAdmin = await requireAdmin(user);
+    if (!isAdmin) return errorResponse('Admin access required', 403);
+    return cahController.fillBots(request, env, user);
+  }
+
+  // Cards admin (admin-gated)
+  if (pathname.startsWith('/api/admin/cards')) {
+    if (!user) return errorResponse('Authentication required', 401);
+    const isAdmin = await requireAdmin(user);
+    if (!isAdmin) return errorResponse('Admin access required', 403);
+
+    if (pathname === '/api/admin/cards' && method === 'GET') {
+      return cahController.adminGetCards(request, env);
+    }
+    if (pathname === '/api/admin/cards' && method === 'POST') {
+      return cahController.adminCreateCard(request, env, user);
+    }
+    if (pathname.match(/^\/api\/admin\/cards\/(shadow|fate)\/\d+$/) && method === 'PUT') {
+      return cahController.adminUpdateCard(request, env);
+    }
+    if (pathname.match(/^\/api\/admin\/cards\/(shadow|fate)\/\d+\/toggle$/) && method === 'POST') {
+      return cahController.adminToggleCard(request, env);
+    }
+    if (pathname.match(/^\/api\/admin\/cards\/(shadow|fate)\/\d+$/) && method === 'DELETE') {
+      return cahController.adminDeleteCard(request, env);
+    }
   }
 
   // 404 - Not found

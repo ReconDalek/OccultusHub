@@ -1,13 +1,42 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
-export default function GameLobby({ gameState, displayName, guestToken, authHeaders, roomCode, onStart, onLeave, onShowRulebook }) {
+export default function GameLobby({ gameState, displayName, guestToken, authHeaders, roomCode, user, onStart, onLeave, onShowRulebook }) {
   const [starting, setStarting] = useState(false)
+  const [filling, setFilling] = useState(false)
   const [error, setError] = useState('')
 
   const players = gameState?.players || []
   const myPlayer = gameState?.my_player
   const isHost = myPlayer?.is_host
+  const lobbyExpiresAt = gameState?.room?.lobby_expires_at
+
+  const [secsLeft, setSecsLeft] = useState(null)
+  useEffect(() => {
+    if (!lobbyExpiresAt) { setSecsLeft(null); return }
+    const tick = () => {
+      const ms = new Date(lobbyExpiresAt.replace(' ', 'T') + 'Z').getTime() - Date.now()
+      setSecsLeft(Math.max(0, Math.floor(ms / 1000)))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [lobbyExpiresAt])
+
+  const handleFillBots = async () => {
+    setFilling(true); setError('')
+    try {
+      const needed = Math.max(0, 4 - players.length)
+      const res = await fetch(`${API_BASE_URL}/api/game/rooms/${roomCode}/fill-bots`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ count: players.length + needed }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Failed to fill bots') }
+    } catch (_) { setError('Connection error') }
+    setFilling(false)
+  }
 
   const handleStart = async () => {
     if (players.length < 4) { setError('Need at least 4 players to begin the rite'); return }
@@ -76,6 +105,7 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
                   {p.display_name}
                 </span>
                 {p.is_host && <span style={{ fontSize: 10, color: '#eab308', letterSpacing: 2, textTransform: 'uppercase' }}>Host</span>}
+                {p.is_bot && <span style={{ fontSize: 10, color: '#52525b', letterSpacing: 2, textTransform: 'uppercase' }}>Bot</span>}
                 {p.is_me && !p.is_host && <span style={{ fontSize: 10, color: '#9f67ff', letterSpacing: 2, textTransform: 'uppercase' }}>You</span>}
               </div>
             ))}
@@ -89,6 +119,21 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
           </div>
         )}
 
+        {secsLeft !== null && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: secsLeft < 60 ? 'rgba(179,18,63,0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${secsLeft < 60 ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.06)'}`,
+            borderRadius: 8, padding: '10px 14px', fontSize: 12,
+            color: secsLeft < 60 ? '#fb7185' : '#71717a', marginBottom: 16,
+          }}>
+            <span>Lobby closes if no game starts</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+              {String(Math.floor(secsLeft / 60)).padStart(2, '0')}:{String(secsLeft % 60).padStart(2, '0')}
+            </span>
+          </div>
+        )}
+
         {error && (
           <div style={{ background: 'rgba(179,18,63,0.15)', border: '1px solid rgba(179,18,63,0.4)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#fb7185', marginBottom: 16 }}>
             {error}
@@ -96,6 +141,15 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
         )}
 
         <div style={{ display: 'grid', gap: 10 }}>
+          {user?.isAdmin && isHost && players.length < 4 && (
+            <button
+              onClick={handleFillBots}
+              disabled={filling}
+              style={{ ...ghostBtn, width: '100%', padding: '11px 20px', borderColor: 'rgba(82,82,91,0.4)', color: '#71717a', fontSize: 13 }}
+            >
+              {filling ? 'Adding bots...' : `◈ Fill with Bots (${4 - players.length} needed)`}
+            </button>
+          )}
           {isHost ? (
             <button
               onClick={handleStart}

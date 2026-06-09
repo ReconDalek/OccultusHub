@@ -27,6 +27,7 @@ import Admin          from './pages/Admin'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy  from './pages/PrivacyPolicy'
 import GameRoom       from './pages/GameRoom'
+import CardsGame      from './pages/CardsGame'
 import NotFound       from './pages/NotFound'
 
 function Layout({ children }) {
@@ -167,6 +168,7 @@ function AppRoutes() {
       />
 
       <Route path="/game" element={<Layout><GameRoom /></Layout>} />
+      <Route path="/cards" element={<Layout><CardsGame /></Layout>} />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
       <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
