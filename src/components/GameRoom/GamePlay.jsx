@@ -279,7 +279,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   const isCabalFaction = CABAL_FACTION.includes(myRole)
   const displayMessages = isNight && isCabalFaction ? cabalMessages : publicMessages
 
-  const maxSecs  = isNight ? NIGHT_SECS : DAY_SECS
+  const maxSecs  = isNight ? NIGHT_SECS : (isDay1 ? 120 : DAY_SECS)
   const timerPct = timeLeft !== null ? Math.max(0, (timeLeft / maxSecs) * 100) : null
 
   // Player list: can the caller select this player?
@@ -602,7 +602,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         <div ref={chatEndRef} />
       </div>
       <div style={{ padding: '10px 12px', borderTop: `1px solid ${isNight ? 'rgba(109,40,217,0.2)' : 'rgba(255,255,255,0.07)'}`, flexShrink: 0, transition: 'border-color 2s ease' }}>
-        {(!isNight || isCabalFaction) && isAlive && !isVotingWindow ? (
+        {(!isNight || isCabalFaction) && isAlive && !isVotingWindow && !isActWindow ? (
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               value={chatInput}
@@ -628,8 +628,13 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             </button>
           </div>
         ) : (
-          <div style={{ textAlign: 'center', fontSize: 12, color: isVotingWindow ? '#eab308' : '#52525b', padding: '6px 0' }}>
-            {!isAlive ? 'The sacrificed observe in silence' : isVotingWindow ? '⚖ Voting is open — cast your judgment' : 'The Congregation sleeps — silence until dawn'}
+          <div style={{ textAlign: 'center', fontSize: 12, padding: '6px 0',
+            color: isVotingWindow ? '#eab308' : isActWindow ? '#fb7185' : '#52525b' }}>
+            {!isAlive
+              ? 'The sacrificed observe in silence'
+              : isVotingWindow ? '⚖ Voting is open — cast your judgment'
+              : isActWindow   ? '⚠ Submit your action — chat is sealed'
+              : 'The Congregation sleeps — silence until dawn'}
           </div>
         )}
       </div>
@@ -1201,21 +1206,44 @@ function DonePanel({ color, text, sub }) {
 }
 
 function ChatMessage({ msg, isOracle, isNight }) {
+  if (isOracle) {
+    return (
+      <div style={{
+        width: '100%',
+        padding: '10px 14px',
+        background: 'linear-gradient(135deg, rgba(109,40,217,0.12), rgba(179,18,63,0.08))',
+        border: '1px solid rgba(167,139,250,0.25)',
+        borderLeft: '3px solid #9f67ff',
+        borderRadius: 6,
+        boxShadow: '0 0 12px rgba(109,40,217,0.08)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: '#a78bfa' }}>◈</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#9f67ff', letterSpacing: 2, textTransform: 'uppercase' }}>
+            The Oracle
+          </span>
+        </div>
+        <p style={{ fontSize: 13, color: '#e9d5ff', lineHeight: 1.7, wordBreak: 'break-word', fontStyle: 'italic' }}>
+          {msg.message}
+        </p>
+      </div>
+    )
+  }
   return (
     <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
       <div style={{
         minWidth: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-        background: isOracle ? 'rgba(109,40,217,0.3)' : isNight ? 'rgba(109,40,217,0.12)' : 'rgba(255,255,255,0.06)',
+        background: isNight ? 'rgba(109,40,217,0.12)' : 'rgba(255,255,255,0.06)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: isOracle ? 13 : 11, color: isOracle ? '#9f67ff' : '#71717a',
+        fontSize: 11, color: '#71717a',
       }}>
-        {isOracle ? '◈' : msg.display_name[0]?.toUpperCase()}
+        {msg.display_name[0]?.toUpperCase()}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: isOracle ? '#a78bfa' : '#c084fc', marginRight: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#c084fc', marginRight: 6 }}>
           {msg.display_name}
         </span>
-        <span style={{ fontSize: 14, color: isOracle ? '#e9d5ff' : '#d4d4d8', lineHeight: 1.55, wordBreak: 'break-word' }}>
+        <span style={{ fontSize: 13, color: '#d4d4d8', lineHeight: 1.55, wordBreak: 'break-word' }}>
           {msg.message}
         </span>
       </div>

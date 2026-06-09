@@ -1,7 +1,8 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
-const DAY_SECS   = 150; // 2 min discussion + 30 sec voting window
-const NIGHT_SECS = 90;  // 1 min action + 30 sec urgency window
+const DAY1_SECS  = 120; // Day 1: discussion only, no voting window
+const DAY_SECS   = 150; // Day 2+: 2 min discussion + 30 sec voting window
+const NIGHT_SECS = 90;  // 1 min discussion + 30 sec action window
 
 // Inquisitor can only investigate on odd-numbered nights (1, 3, 5...).
 // Night number = phase / 2 (nights are always even phases).
@@ -190,7 +191,7 @@ export async function leaveRoom(request, env, user) {
       if (user) {
         player = await env.DB.prepare('SELECT id, display_name, is_alive FROM game_players WHERE room_id = ? AND user_id = ?').bind(room.id, user.userId).first();
       } else if (body.guest_token) {
-        player = await env.DB.prepare('SELECT id, display_name, is_alive FROM game_players WHERE room_id = ? AND guest_token = ?').bind(room.id, body.guest_token).run();
+        player = await env.DB.prepare('SELECT id, display_name, is_alive FROM game_players WHERE room_id = ? AND guest_token = ?').bind(room.id, body.guest_token).first();
       }
 
       if (player && player.is_alive) {
@@ -254,7 +255,7 @@ export async function startGame(request, env, user) {
 
     await env.DB.prepare(
       `UPDATE game_rooms SET status = 'day', phase = 1, phase_type = 'day',
-       phase_ends_at = datetime('now', '+${DAY_SECS} seconds'),
+       phase_ends_at = datetime('now', '+${DAY1_SECS} seconds'),
        lobby_expires_at = NULL WHERE id = ?`
     ).bind(room.id).run();
 
@@ -657,6 +658,20 @@ export async function advancePhase(request, env, user) {
 }
 
 async function resolveDay(env, room) {
+  // Day 1 is discussion-only — skip all vote logic, just transition to night
+  if (room.phase === 1) {
+    const nextPhase = 2;
+    await env.DB.prepare(
+      `UPDATE game_rooms SET status = 'night', phase = ?, phase_type = 'night',
+       phase_ends_at = datetime('now', '+${NIGHT_SECS} seconds') WHERE id = ?`
+    ).bind(nextPhase, room.id).run();
+    await oracleMessage(env, room.id, nextPhase,
+      'The sun descends below the horizon. Darkness falls upon the circle. The Witching Hour begins — something moves in the shadows.'
+    );
+    await botActForPhase(env, room.id, nextPhase, 'night');
+    return;
+  }
+
   const votes = await env.DB.prepare(
     `SELECT target_player_id, COUNT(*) as cnt FROM game_votes
      WHERE room_id = ? AND phase = ? GROUP BY target_player_id ORDER BY cnt DESC`
