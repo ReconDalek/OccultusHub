@@ -155,6 +155,24 @@ async function autoAdvanceCAH(env, room) {
   const round = await env.DB.prepare(`SELECT * FROM cah_rounds WHERE id = ?`).bind(room.current_round_id).first();
   if (!round) return;
 
+  // ── Complete phase — wait 10 s, then start next round ───────────────────
+  if (round.status === 'complete' && round.complete_ends_at) {
+    const endsAt = new Date(round.complete_ends_at.replace(' ', 'T') + 'Z');
+    if (Date.now() <= endsAt.getTime()) return;
+
+    const locked = await env.DB.prepare(
+      `UPDATE cah_rounds SET complete_ends_at = NULL WHERE id = ? AND complete_ends_at = ?`
+    ).bind(round.id, round.complete_ends_at).run();
+    if (locked.changes === 0) return;
+
+    const { results: players } = await env.DB.prepare(`SELECT * FROM cah_players WHERE room_id = ?`).bind(room.id).all();
+    const activePlayers = (players || []).filter(p => p.is_active !== 0);
+    const nonHarb = activePlayers.filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
+    await refillHands(env, room.id, nonHarb);
+    await startNextRound(env, room, activePlayers);
+    return;
+  }
+
   // ── Picking phase expired ────────────────────────────────────────────────
   if (round.status === 'picking' && round.picking_ends_at) {
     const endsAt = new Date(round.picking_ends_at.replace(' ', 'T') + 'Z');
@@ -317,9 +335,10 @@ async function botJudge(env, room, round, players) {
   const activePlayers = (updatedPlayers || []).filter(p => p.is_active !== 0);
   const won = await checkWin(env, updatedRoom, activePlayers);
   if (!won) {
-    const nonHarb = activePlayers.filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
-    await refillHands(env, room.id, nonHarb);
-    await startNextRound(env, updatedRoom, activePlayers);
+    // Set a 10-second window so players can see the winning cards before the next round
+    await env.DB.prepare(
+      `UPDATE cah_rounds SET complete_ends_at = datetime('now', '+10 seconds') WHERE id = ?`
+    ).bind(round.id).run();
   }
 }
 
@@ -624,6 +643,7 @@ export async function getRoom(request, env, user) {
         winner_player_id: round.winner_player_id,
         picking_ends_at: round.picking_ends_at || null,
         judging_ends_at: round.judging_ends_at || null,
+        complete_ends_at: round.complete_ends_at || null,
       } : null,
       submissions,
       myHand,
@@ -810,11 +830,10 @@ export async function judgeWinner(request, env, user) {
     const updatedRoom = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE id = ?`).bind(room.id).first();
     const won = await checkWin(env, updatedRoom, updatedPlayers || []);
     if (!won) {
-      // Refill hands and start next round
-      const activeUpdated = (updatedPlayers || []).filter(p => p.is_active !== 0);
-      const nonHarb = activeUpdated.filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
-      await refillHands(env, room.id, nonHarb);
-      await startNextRound(env, updatedRoom, activeUpdated);
+      // Set a 10-second window so all players can see the winning cards before the next round
+      await env.DB.prepare(
+        `UPDATE cah_rounds SET complete_ends_at = datetime('now', '+10 seconds') WHERE id = ?`
+      ).bind(round.id).run();
     }
 
     return jsonResponse({ ok: true });

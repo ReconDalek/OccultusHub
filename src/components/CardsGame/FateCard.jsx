@@ -107,9 +107,9 @@ export default function FateCard({
           {/* Header */}
           <div style={{
             fontFamily: 'Cinzel, serif',
-            fontSize: 7,
+            fontSize: small ? 7 : 8,
             letterSpacing: '2px',
-            color: 'rgba(60,30,10,0.35)',
+            color: isWinner ? 'rgba(109,40,217,0.7)' : 'rgba(60,30,10,0.55)',
             textTransform: 'uppercase',
           }}>
             {isWinner ? '✦ Soul Claimed' : 'Cards Against Occultus'}
@@ -155,9 +155,9 @@ export default function FateCard({
           {/* Footer */}
           <div style={{
             fontFamily: 'Cinzel, serif',
-            fontSize: 7,
-            color: 'rgba(60,30,10,0.3)',
-            letterSpacing: '1.5px',
+            fontSize: small ? 7 : 8,
+            color: 'rgba(60,30,10,0.5)',
+            letterSpacing: '2px',
             textAlign: 'right',
           }}>
             {isBlank ? 'VESSEL' : 'FATE'}

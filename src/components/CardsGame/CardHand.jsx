@@ -20,9 +20,19 @@ export default function CardHand({
     </div>
   )
 
-  const CARD_W = 154
-  const CARD_H = 215
-  const OVERLAP = Math.min(50, Math.max(10, 320 / count))
+  // Responsive card sizing — shrink on narrow screens so the hand doesn't overflow
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 800
+  const isSmall = vw < 500
+  const isMid   = vw < 720
+
+  const CARD_W = isSmall ? 100 : isMid ? 120 : 154
+  const CARD_H = isSmall ? 138 : isMid ? 165 : 215
+  // Tighter overlap on small screens to keep everything on-screen
+  const OVERLAP = isSmall
+    ? Math.min(28, Math.max(8, 200 / count))
+    : isMid
+    ? Math.min(38, Math.max(10, 260 / count))
+    : Math.min(50, Math.max(10, 320 / count))
   const totalWidth = CARD_W + (count - 1) * OVERLAP
   const MAX_ROTATE = Math.min(22, count * 2.5)
 
@@ -91,6 +101,8 @@ export default function CardHand({
                 customText={customTexts[card.id] || ''}
                 onCustomTextChange={onCustomTextChange ? (t) => onCustomTextChange(card.id, t) : null}
                 disabled={disabled || (!isSelected && selectedIds.length >= picks)}
+                small={isSmall || isMid}
+                style={{ width: CARD_W, height: CARD_H }}
               />
             </div>
           )

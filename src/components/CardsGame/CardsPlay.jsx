@@ -18,7 +18,6 @@ export default function CardsPlay({
   const [customTexts, setCustomTexts] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [judging, setJudging] = useState(false)
-  const [pacting, setPacting] = useState(false)
   const [chatMsg, setChatMsg] = useState('')
   const [sendingChat, setSendingChat] = useState(false)
   const [error, setError] = useState('')
@@ -26,8 +25,9 @@ export default function CardsPlay({
 
   // Countdown timer — drives off whichever phase timer is active
   useEffect(() => {
-    const endStr = round?.status === 'picking' ? round?.picking_ends_at
-                 : round?.status === 'judging' ? round?.judging_ends_at
+    const endStr = round?.status === 'picking'  ? round?.picking_ends_at
+                 : round?.status === 'judging'  ? round?.judging_ends_at
+                 : round?.status === 'complete' ? round?.complete_ends_at
                  : null
     if (!endStr) { setTimeLeft(null); return }
     const tick = () => {
@@ -37,7 +37,7 @@ export default function CardsPlay({
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [round?.status, round?.picking_ends_at, round?.judging_ends_at])
+  }, [round?.status, round?.picking_ends_at, round?.judging_ends_at, round?.complete_ends_at])
 
   const me = players.find(p => p.id === myPlayerId)
   const isWaiting = me && !me.is_active
@@ -109,25 +109,6 @@ export default function CardsPlay({
       }
     } finally {
       setJudging(false)
-    }
-  }, [code, authHeaders, guestToken])
-
-  const handlePact = useCallback(async () => {
-    if (!window.confirm('Invoke The Pact? This costs you 1 soul and redraws the Shadow Card. It can only be used once per game.')) return
-    setPacting(true)
-    setError('')
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/cards/rooms/${code}/pact`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ guest_token: guestToken }),
-      })
-      if (!res.ok) {
-        const d = await res.json()
-        setError(d.error || 'Failed')
-      }
-    } finally {
-      setPacting(false)
     }
   }, [code, authHeaders, guestToken])
 
@@ -283,26 +264,6 @@ export default function CardsPlay({
             roundNumber={round?.round_number}
             large
           />
-          {/* Pact button */}
-          {round?.status === 'picking' && !room.pact_used && (
-            <button
-              onClick={handlePact}
-              disabled={pacting}
-              title="Redraw the Shadow Card (costs 1 soul, once per game)"
-              style={{
-                padding: '6px 16px',
-                borderRadius: 8,
-                border: '1px solid rgba(179,18,63,0.3)',
-                background: 'transparent',
-                color: '#f4a0b0',
-                fontSize: 11,
-                cursor: 'pointer',
-                letterSpacing: '0.5px',
-              }}
-            >
-              {pacting ? '…' : '⚑ Invoke The Pact'}
-            </button>
-          )}
         </div>
 
         {/* Status / judging panel */}
@@ -402,24 +363,39 @@ export default function CardsPlay({
             </div>
           )}
 
-          {/* Complete phase — show winner */}
+          {/* Complete phase — show winner cards with countdown */}
           {round?.status === 'complete' && (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontFamily: 'Cinzel, serif', fontSize: 16, color: '#f4a0b0', marginBottom: 8 }}>
-                ✦ Soul claimed
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
+              {/* Winner heading */}
+              <div style={{ fontFamily: 'Cinzel, serif', fontSize: 16, color: '#f4a0b0', marginBottom: 4, letterSpacing: 2 }}>
+                ✦ Soul Claimed
               </div>
-              {submissions.map((sub, idx) => sub.is_winner && (
+              {submissions.filter(s => s.is_winner).map((sub, idx) => (
                 <div key={idx}>
-                  <div style={{ fontSize: 14, color: '#f4f4f5', marginBottom: 12 }}>{sub.display_name}</div>
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#f4f4f5', marginBottom: 16 }}>
+                    {sub.display_name}
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
                     {(sub.cards || []).map((c, ci) => (
-                      <FateCard key={ci} card={{ text: c.text, is_blank: false }} isWinner small />
+                      <FateCard key={ci} card={{ text: c.text, is_blank: false }} isWinner />
                     ))}
                   </div>
                 </div>
               ))}
-              <div style={{ marginTop: 16, fontSize: 12, color: '#a1a1aa' }}>
-                Next round beginning…
+              {/* Countdown to next round */}
+              <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                <div style={{ fontSize: 12, color: '#71717a', letterSpacing: 1 }}>
+                  Next round in
+                </div>
+                {timeLeft !== null && (
+                  <div style={{
+                    fontSize: 18, fontVariantNumeric: 'tabular-nums', fontWeight: 700,
+                    color: timeLeft <= 3 ? '#fb7185' : '#a78bfa',
+                    minWidth: 28, textAlign: 'center',
+                  }}>
+                    {timeLeft}
+                  </div>
+                )}
               </div>
             </div>
           )}
