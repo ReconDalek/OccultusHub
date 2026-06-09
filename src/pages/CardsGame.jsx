@@ -166,11 +166,31 @@ export default function CardsGame() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to join'); return }
-      setRoomCode(data.code)
-      setMyPlayerId(data.playerId)
-      if (data.guestToken) setGuestToken(data.guestToken)
+
+      const code = data.code
+      const pid = data.playerId
+      const gTok = data.guestToken || null
+
+      setRoomCode(code)
+      setMyPlayerId(pid)
+      if (gTok) setGuestToken(gTok)
       lastMsgId.current = 0
-      localStorage.setItem('cah_game', JSON.stringify({ code: data.code, playerId: data.playerId, guestToken: data.guestToken || null }))
+      localStorage.setItem('cah_game', JSON.stringify({ code, playerId: pid, guestToken: gTok }))
+
+      // Immediately poll to get actual room status (may be playing, not lobby)
+      try {
+        const params = new URLSearchParams({ since: '0' })
+        if (gTok) params.set('guest_token', gTok)
+        const pollRes = await fetch(`${API_BASE_URL}/api/cards/rooms/${code}?${params}`, { headers: authHeaders() })
+        if (pollRes.ok) {
+          const pollData = await pollRes.json()
+          if (pollData.messages?.length) lastMsgId.current = pollData.messages.at(-1).id
+          setGameData(pollData)
+          const status = pollData.room?.status
+          setScreen(status === 'ended' ? 'ended' : status === 'playing' ? 'game' : 'lobby')
+          return
+        }
+      } catch (_) {}
       setScreen('lobby')
     } finally {
       setJoining(false)
@@ -304,21 +324,36 @@ export default function CardsGame() {
                 </div>
               )}
 
-              {/* Lobby preview */}
+              {/* Lobby / game preview */}
               {lobbyPreview && (
                 <div style={{
                   padding: '12px 16px',
                   borderRadius: 10,
-                  border: '1px solid rgba(109,40,217,0.3)',
-                  background: 'rgba(109,40,217,0.07)',
+                  border: lobbyPreview.status === 'playing'
+                    ? '1px solid rgba(52,211,153,0.3)'
+                    : '1px solid rgba(109,40,217,0.3)',
+                  background: lobbyPreview.status === 'playing'
+                    ? 'rgba(52,211,153,0.07)'
+                    : 'rgba(109,40,217,0.07)',
                   marginBottom: 20,
                   fontSize: 13,
                   color: '#d4d4d8',
                 }}>
-                  <div style={{ color: '#a78bfa', fontSize: 11, letterSpacing: '1px', marginBottom: 4 }}>
-                    OPEN LOBBY
-                  </div>
-                  <strong>{lobbyPreview.host_name}</strong>'s room — {lobbyPreview.playerCount} player{lobbyPreview.playerCount !== 1 ? 's' : ''} waiting
+                  {lobbyPreview.status === 'playing' ? (
+                    <>
+                      <div style={{ color: '#34d399', fontSize: 11, letterSpacing: '1px', marginBottom: 4 }}>
+                        GAME IN PROGRESS
+                      </div>
+                      {lobbyPreview.playerCount} player{lobbyPreview.playerCount !== 1 ? 's' : ''} in the ritual — join and wait for the next round
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ color: '#a78bfa', fontSize: 11, letterSpacing: '1px', marginBottom: 4 }}>
+                        OPEN LOBBY
+                      </div>
+                      <strong>{lobbyPreview.host_name}</strong>'s room — {lobbyPreview.playerCount} player{lobbyPreview.playerCount !== 1 ? 's' : ''} waiting
+                    </>
+                  )}
                 </div>
               )}
 
@@ -345,7 +380,7 @@ export default function CardsGame() {
                   transition: 'opacity 0.2s',
                 }}
               >
-                {joining ? 'Entering…' : lobbyPreview ? 'Join Lobby' : 'Create Lobby'}
+                {joining ? 'Entering…' : lobbyPreview?.status === 'playing' ? 'Join Game' : lobbyPreview ? 'Join Lobby' : 'Create Lobby'}
               </button>
             </div>
           </div>

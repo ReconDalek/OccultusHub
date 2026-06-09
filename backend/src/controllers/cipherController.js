@@ -194,12 +194,6 @@ const CIPHER_TYPES = [
     hint: 'Only two distinct symbols are used throughout.',
   },
   {
-    type: 'pigpen',
-    name: 'Pigpen Cipher',
-    difficulty: 'Hard',
-    hint: 'Geometric shapes hold the key to decryption.',
-  },
-  {
     type: 'simple_sub',
     name: 'Simple Substitution',
     difficulty: 'Hard',
@@ -269,17 +263,19 @@ function encodeNums(text) {
 }
 
 function encodeRailFence(text, rails) {
-  const stripped = text.replace(/ /g, '\x00'); // preserve spaces as marker
+  // Encode letters only — spaces are stripped so the output matches standard
+  // online rail fence decoders (which also expect no spaces in the ciphertext).
+  const letters = text.replace(/ /g, '');
   const rows = Array.from({ length: rails }, () => []);
   let row = 0;
   let dir = 1;
-  for (const ch of stripped) {
+  for (const ch of letters) {
     rows[row].push(ch);
     if (row === 0) dir = 1;
     if (row === rails - 1) dir = -1;
     row += dir;
   }
-  return rows.flat().join('').replace(/\x00/g, ' ');
+  return rows.flat().join('');
 }
 
 function encodeVigenere(text, key) {
@@ -306,18 +302,6 @@ function encodeBacon(text) {
   }).join(' ');
 }
 
-function encodePigpen(text) {
-  // Pigpen uses tic-tac-toe grid + X grid symbols
-  // Map A-I to grid, J-R to X grid, S-Z to dotted versions
-  const pigpen = {
-    A: '[1]', B: '[2]', C: '[3]', D: '[4]', E: '[5]', F: '[6]',
-    G: '[7]', H: '[8]', I: '[9]', J: '(1)', K: '(2)', L: '(3)',
-    M: '(4)', N: '(5)', O: '(6)', P: '(7)', Q: '(8)', R: '(9)',
-    S: '{1}', T: '{2}', U: '{3}', V: '{4}', W: '{5}', X: '{6}',
-    Y: '{7}', Z: '{8}'
-  };
-  return text.split('').map(c => pigpen[c] || c).join('');
-}
 
 function encodeSimpleSub(text, seed) {
   const rng = seededRandom(seed);
@@ -465,9 +449,6 @@ export function generateCipherForDate(dateStr) {
     }
     case 'bacon':
       ciphertext = encodeBacon(plaintext);
-      break;
-    case 'pigpen':
-      ciphertext = encodePigpen(plaintext);
       break;
     case 'simple_sub':
       ciphertext = encodeSimpleSub(plaintext, dateToSeed(dateStr));

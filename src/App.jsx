@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { SessionProvider } from './hooks/useSession'
 import { CipherProvider } from './contexts/CipherContext'
 import { SiteProvider, useSite } from './contexts/SiteContext'
@@ -26,15 +26,21 @@ import Respect    from './pages/Respect'
 import Admin          from './pages/Admin'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy  from './pages/PrivacyPolicy'
+import Games          from './pages/Games'
 import GameRoom       from './pages/GameRoom'
 import CardsGame      from './pages/CardsGame'
 import NotFound       from './pages/NotFound'
 
+const GAME_ROUTES = ['/rite', '/cards'] // active gameplay routes — suppress easter egg overlays
+
 function Layout({ children }) {
+  const { pathname } = useLocation()
+  const isGameRoute = GAME_ROUTES.includes(pathname)
+
   return (
     <>
       <BackgroundOverlay />
-      <CipherOverlay />
+      {!isGameRoute && <CipherOverlay />}
       <Navbar />
       <div style={{ position: 'relative', zIndex: 1 }}>
         {children}
@@ -42,9 +48,9 @@ function Layout({ children }) {
       <QuoteBox />
       <Footer />
       <DiscordWidget />
-      <FishingEasterEgg />
-      <RuneEasterEgg />
-      <WatchingEye />
+      {!isGameRoute && <FishingEasterEgg />}
+      {!isGameRoute && <RuneEasterEgg />}
+      {!isGameRoute && <WatchingEye />}
       <SeasonalEvents />
     </>
   )
@@ -167,7 +173,8 @@ function AppRoutes() {
         }
       />
 
-      <Route path="/game" element={<Layout><GameRoom /></Layout>} />
+      <Route path="/games" element={<Layout><Games /></Layout>} />
+      <Route path="/rite" element={<Layout><GameRoom /></Layout>} />
       <Route path="/cards" element={<Layout><CardsGame /></Layout>} />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />

@@ -75,10 +75,19 @@ export default function WatchingEye() {
 
   useEffect(() => {
     if (phase !== 'closing') return
-    animateTo(0, 1600, () => { setPhase('hidden'); scheduleNext() })
+    animateTo(0, 1600, () => {
+      setPhase('hidden')
+      // Only reschedule if the grimoire is not yet complete
+      const found = getFoundPages()
+      if (found.length < 20) scheduleNext()
+      // else: all pages found — eye retires permanently
+    })
   }, [phase])
 
   useEffect(() => {
+    // Don't appear at all if the grimoire is already complete
+    const found = getFoundPages()
+    if (found.length >= 20) return
     // First appearance after 3-6 minutes
     scheduleRef.current = setTimeout(appear, 3 * 60 * 1000 + Math.random() * 3 * 60 * 1000)
     return () => { clearTimeout(scheduleRef.current); clearTimeout(openTimerRef.current); cancelAnimationFrame(animRef.current) }

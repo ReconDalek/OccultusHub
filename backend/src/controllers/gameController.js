@@ -174,13 +174,19 @@ export async function leaveRoom(request, env, user) {
         await env.DB.prepare('DELETE FROM game_players WHERE room_id = ? AND guest_token = ?').bind(room.id, body.guest_token).run();
       }
 
-      const remaining = await env.DB.prepare('SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ?').bind(room.id).first();
-      if (remaining.cnt === 0) {
+      // Close the room if no human players remain (bots alone can't keep a lobby alive)
+      const humanRemaining = await env.DB.prepare(
+        'SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_bot = 0'
+      ).bind(room.id).first();
+      if (humanRemaining.cnt === 0) {
         await env.DB.prepare('DELETE FROM game_rooms WHERE id = ?').bind(room.id).run();
       } else {
         const stillHost = await env.DB.prepare('SELECT id FROM game_players WHERE room_id = ? AND is_host = 1').bind(room.id).first();
         if (!stillHost) {
-          const next = await env.DB.prepare('SELECT id FROM game_players WHERE room_id = ? ORDER BY joined_at ASC LIMIT 1').bind(room.id).first();
+          // Promote the next human player to host
+          const next = await env.DB.prepare(
+            'SELECT id FROM game_players WHERE room_id = ? AND is_bot = 0 ORDER BY joined_at ASC LIMIT 1'
+          ).bind(room.id).first();
           if (next) await env.DB.prepare('UPDATE game_players SET is_host = 1 WHERE id = ?').bind(next.id).run();
         }
       }
@@ -318,12 +324,12 @@ export async function getRoom(request, env, user) {
     let messages;
     if (CABAL_FACTION.includes(myPlayer?.role) || room.status === 'ended') {
       messages = await env.DB.prepare(
-        `SELECT id, display_name, message, channel, phase, created_at
+        `SELECT id, player_id, display_name, message, channel, phase, created_at
          FROM game_messages WHERE room_id = ? AND id > ? ORDER BY id ASC LIMIT 100`
       ).bind(room.id, since).all();
     } else {
       messages = await env.DB.prepare(
-        `SELECT id, display_name, message, channel, phase, created_at
+        `SELECT id, player_id, display_name, message, channel, phase, created_at
          FROM game_messages WHERE room_id = ? AND channel = 'public' AND id > ? ORDER BY id ASC LIMIT 100`
       ).bind(room.id, since).all();
     }
@@ -380,6 +386,13 @@ export async function getRoom(request, env, user) {
       anointSpent = as.cnt > 0;
     }
 
+    // Compute server-side seconds remaining so the client doesn't need to rely on clock sync
+    let phaseSecsRemaining = null;
+    if (room.phase_ends_at && ['day','night'].includes(room.status)) {
+      const endsMs = new Date(room.phase_ends_at.replace(' ', 'T') + 'Z').getTime();
+      phaseSecsRemaining = Math.max(0, Math.floor((endsMs - Date.now()) / 1000));
+    }
+
     return jsonResponse({
       room: {
         code: room.code,
@@ -388,6 +401,7 @@ export async function getRoom(request, env, user) {
         phase_type: room.phase_type,
         winner: room.winner,
         phase_ends_at: room.phase_ends_at || null,
+        phase_secs_remaining: phaseSecsRemaining,
         lobby_expires_at: room.lobby_expires_at || null,
       },
       players: sanitizedPlayers,

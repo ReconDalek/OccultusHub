@@ -40,6 +40,8 @@ export default function CardsPlay({
   }, [round?.status, round?.picking_ends_at, round?.judging_ends_at])
 
   const me = players.find(p => p.id === myPlayerId)
+  const isWaiting = me && !me.is_active
+
   const isHarbinger = round && me?.id === round.harbinger_player_id
   const harbinger = players.find(p => p.id === round?.harbinger_player_id)
 
@@ -146,6 +148,72 @@ export default function CardsPlay({
   }, [chatMsg, code, authHeaders, guestToken])
 
   const omenData = round?.omen ? OMEN_INFO[round.omen] : null
+
+  // ── Waiting to join next round ───────────────────────────────────────────
+  if (isWaiting) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '60vh' }}>
+        {/* Players souls bar — still visible while waiting */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', padding: '8px 0 24px', width: '100%' }}>
+          {players.map(p => (
+            <div key={p.id} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 24,
+              border: p.is_harbinger ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.08)',
+              background: p.is_harbinger ? 'rgba(179,18,63,0.12)' : 'rgba(255,255,255,0.04)',
+              fontSize: 12, color: p.id === myPlayerId ? '#f4f4f5' : '#a1a1aa',
+            }}>
+              {p.is_harbinger && <span style={{ color: '#ff6b6b', fontSize: 10 }}>◈</span>}
+              <span>{p.display_name}</span>
+              <span style={{ fontSize: 9, color: '#b3123f' }}>
+                {Array.from({ length: p.souls }).map((_, i) => <span key={i}>●</span>)}
+                {p.souls === 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>○</span>}
+              </span>
+              <span style={{ fontSize: 10, color: '#a1a1aa' }}>{p.souls}/{room.souls_to_win}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: 'center', padding: '40px 20px', flex: 1 }}>
+          <div style={{ fontSize: 36, marginBottom: 20, opacity: 0.5 }}>⌛</div>
+          <div style={{ fontFamily: 'Cinzel, serif', fontSize: 20, letterSpacing: '3px', marginBottom: 12 }}>
+            Entering the Circle
+          </div>
+          <p style={{ color: '#a1a1aa', fontSize: 14, maxWidth: 320, margin: '0 auto 32px', lineHeight: 1.7 }}>
+            A ritual is in progress. You will join at the start of the next round.
+          </p>
+          <div style={{
+            display: 'inline-block',
+            padding: '8px 20px',
+            borderRadius: 8,
+            border: '1px solid rgba(109,40,217,0.3)',
+            background: 'rgba(109,40,217,0.08)',
+            fontSize: 12,
+            color: '#a78bfa',
+            letterSpacing: '1px',
+            marginBottom: 32,
+          }}>
+            {round?.status === 'picking' ? 'Players are choosing their fates…'
+              : round?.status === 'judging' ? 'The Harbinger is judging…'
+              : round?.status === 'complete' ? 'Round ending — almost your turn…'
+              : 'Waiting for the round to begin…'}
+          </div>
+        </div>
+        <div style={{ padding: '20px 0' }}>
+          <button
+            onClick={onLeave}
+            style={{
+              padding: '7px 18px', borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'transparent', color: '#a1a1aa',
+              fontSize: 12, cursor: 'pointer',
+            }}
+          >
+            Leave
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, minHeight: '100%' }}>

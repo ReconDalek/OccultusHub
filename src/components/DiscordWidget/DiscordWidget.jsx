@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useSession } from '../../hooks/useSession'
 import { getSessionToken } from '../../lib/auth'
 import { API_BASE_URL } from '../../config/api'
@@ -85,8 +86,12 @@ function MessageItem({ msg, isGrouped, name }) {
   )
 }
 
+const GAME_ROUTES = ['/rite', '/cards']
+
 export default function DiscordWidget() {
   const { user } = useSession()
+  const { pathname } = useLocation()
+  if (GAME_ROUTES.includes(pathname)) return null
   const [open, setOpen] = useState(false)
   const [discordStatus, setDiscordStatus] = useState(null)
   const [channels, setChannels] = useState([])

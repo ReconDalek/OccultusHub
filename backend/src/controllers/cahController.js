@@ -72,14 +72,24 @@ async function refillHands(env, roomId, playerIds) {
   }
 }
 
-async function startNextRound(env, room, players) {
+async function startNextRound(env, room, _players) {
+  // Activate any late-joining players (is_active=0 humans) before the round starts
+  await env.DB.prepare(
+    `UPDATE cah_players SET is_active = 1 WHERE room_id = ? AND is_active = 0 AND is_bot = 0`
+  ).bind(room.id).run();
+
+  // Re-fetch all players so newly activated ones are included
+  const { results: allPlayerRows } = await env.DB.prepare(
+    `SELECT * FROM cah_players WHERE room_id = ? ORDER BY joined_at ASC`
+  ).bind(room.id).all();
+  const players = (allPlayerRows || []).filter(p => p.is_active !== 0);
+
   const roundNumber = (room.current_round_id
     ? (await env.DB.prepare(`SELECT round_number FROM cah_rounds WHERE id = ?`).bind(room.current_round_id).first())?.round_number || 0
     : 0) + 1;
 
   // Pick harbinger (cycle through active players by join order)
-  const activePlayers = players.filter(p => p.is_active !== 0);
-  const sortedPlayers = [...activePlayers].sort((a, b) => a.id - b.id);
+  const sortedPlayers = [...players].sort((a, b) => a.id - b.id);
   const harbIdx = (roundNumber - 1) % sortedPlayers.length;
   const harbinger = sortedPlayers[harbIdx];
 
@@ -106,7 +116,8 @@ async function startNextRound(env, room, players) {
     await dealCards(env, room.id, nonHarb, 1);
   }
 
-  const round = await env.DB.prepare(
+  // Insert round, then re-fetch the full row (RETURNING id only gives us the id)
+  const inserted = await env.DB.prepare(
     `INSERT INTO cah_rounds (room_id, round_number, shadow_card_id, harbinger_player_id, omen, status, picking_ends_at)
      VALUES (?, ?, ?, ?, ?, 'picking', datetime('now', '+90 seconds'))
      RETURNING id`
@@ -114,19 +125,21 @@ async function startNextRound(env, room, players) {
 
   await env.DB.prepare(
     `UPDATE cah_rooms SET current_round_id = ?, last_activity = CURRENT_TIMESTAMP WHERE id = ?`
-  ).bind(round.id, room.id).run();
+  ).bind(inserted.id, room.id).run();
+
+  // Re-fetch the full round row — bots need status/shadow_card_id/etc.
+  const round = await env.DB.prepare(
+    `SELECT * FROM cah_rounds WHERE id = ?`
+  ).bind(inserted.id).first();
 
   // System message
-  const shadow = await env.DB.prepare(
-    `SELECT text FROM cah_shadow_cards WHERE id = ?`
-  ).bind(shadowCardId).first();
   let omenText = '';
   if (omen === 'blood_moon') omenText = ' 🌑 The Blood Moon rises — submit two cards.';
   else if (omen === 'the_veil') omenText = ' 👁 The Veil is drawn — the Harbinger judges blind.';
   else if (omen === 'the_awakening') omenText = ' ✦ The Awakening — each player receives an extra card.';
   await systemMsg(env, room.id, `Round ${roundNumber} begins. ${harbinger.display_name} is the Harbinger.${omenText}`);
 
-  // Bots auto-submit their cards
+  // Bots auto-submit their cards (full round data now available)
   await botActForCAH(env, room, round, players);
 
   return round;
@@ -361,11 +374,11 @@ export async function getCurrentRoom(request, env) {
   try {
     const room = await env.DB.prepare(
       `SELECT id, code, status, host_name, souls_to_win, omens_enabled
-       FROM cah_rooms WHERE status = 'lobby' ORDER BY created_at DESC LIMIT 1`
+       FROM cah_rooms WHERE status IN ('lobby', 'playing') ORDER BY created_at DESC LIMIT 1`
     ).first();
     if (!room) return jsonResponse({ room: null });
     const { results: players } = await env.DB.prepare(
-      `SELECT id, display_name FROM cah_players WHERE room_id = ?`
+      `SELECT id, display_name FROM cah_players WHERE room_id = ? AND is_active != 0`
     ).bind(room.id).all();
     return jsonResponse({ room: { ...room, playerCount: players?.length || 0 } });
   } catch (e) {
@@ -383,17 +396,16 @@ export async function joinOrCreate(request, env, user) {
     const soulsToWin = Math.min(10, Math.max(3, parseInt(body.souls_to_win) || 5));
     const omensEnabled = body.omens_enabled !== false ? 1 : 0;
 
-    // Find existing non-expired lobby
+    // Find any active room (lobby or playing) — there is only ever one at a time
     let room = await env.DB.prepare(
-      `SELECT * FROM cah_rooms WHERE status = 'lobby'
-       AND (lobby_expires_at IS NULL OR lobby_expires_at > datetime('now'))
+      `SELECT * FROM cah_rooms WHERE status IN ('lobby', 'playing')
        ORDER BY created_at DESC LIMIT 1`
     ).first();
 
     const guestToken = (!user) ? crypto.randomUUID() : null;
 
     if (!room) {
-      // Create new room — 1-hour lobby expiry (closes only if abandoned)
+      // No active room — create a new lobby
       let code, attempts = 0;
       while (attempts < 10) {
         code = generateCode();
@@ -408,15 +420,17 @@ export async function joinOrCreate(request, env, user) {
       room = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE code = ?`).bind(code).first();
     }
 
-    // Check if already in room (including inactive players who can rejoin mid-game)
+    // Check if player is already in this room
     let existing = null;
     if (user) {
       existing = await env.DB.prepare(
         `SELECT * FROM cah_players WHERE room_id = ? AND user_id = ?`
       ).bind(room.id, user.userId).first();
+    } else if (guestToken === null && room.status === 'playing') {
+      // For guests rejoining a playing game we can't look them up — treat as new
     }
 
-    // If player left mid-game and is rejoining, reactivate them
+    // If player previously left mid-game, reactivate them immediately
     if (existing && existing.is_active === 0 && room.status === 'playing') {
       await env.DB.prepare(`UPDATE cah_players SET is_active = 1 WHERE id = ?`).bind(existing.id).run();
       existing = await env.DB.prepare(`SELECT * FROM cah_players WHERE id = ?`).bind(existing.id).first();
@@ -429,20 +443,36 @@ export async function joinOrCreate(request, env, user) {
       ).bind(room.id).first();
       if ((playerCount?.n || 0) >= 20) return errorResponse('Room is full', 400);
 
-      const isHost = (room.host_name === displayName && !await env.DB.prepare(
-        `SELECT id FROM cah_players WHERE room_id = ? AND is_host = 1`
-      ).bind(room.id).first()) ? 1 : 0;
-
-      await env.DB.prepare(
-        `INSERT INTO cah_players (room_id, user_id, display_name, guest_token, is_host)
-         VALUES (?, ?, ?, ?, ?)`
-      ).bind(room.id, user?.userId || null, displayName, guestToken, isHost).run();
+      if (room.status === 'playing') {
+        // Late joiner — add as inactive so they sit out the current round
+        await env.DB.prepare(
+          `INSERT INTO cah_players (room_id, user_id, display_name, guest_token, is_host, is_active)
+           VALUES (?, ?, ?, ?, 0, 0)`
+        ).bind(room.id, user?.userId || null, displayName, guestToken).run();
+        // Fetch the new player to deal them a hand for the next round
+        const newPlayer = user
+          ? await env.DB.prepare(`SELECT id FROM cah_players WHERE room_id = ? AND user_id = ?`).bind(room.id, user.userId).first()
+          : await env.DB.prepare(`SELECT id FROM cah_players WHERE room_id = ? AND guest_token = ?`).bind(room.id, guestToken).first();
+        if (newPlayer) await dealCards(env, room.id, [newPlayer.id], HAND_SIZE);
+        await systemMsg(env, room.id, `${displayName} joins the circle and will enter the fray next round.`);
+      } else {
+        // Lobby join — normal, active from the start
+        const isHost = (room.host_name === displayName && !await env.DB.prepare(
+          `SELECT id FROM cah_players WHERE room_id = ? AND is_host = 1`
+        ).bind(room.id).first()) ? 1 : 0;
+        await env.DB.prepare(
+          `INSERT INTO cah_players (room_id, user_id, display_name, guest_token, is_host)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(room.id, user?.userId || null, displayName, guestToken, isHost).run();
+      }
     }
 
-    // Reset expiry on any join activity
-    await env.DB.prepare(
-      `UPDATE cah_rooms SET lobby_expires_at = datetime('now', '+5 minutes') WHERE id = ?`
-    ).bind(room.id).run();
+    // Reset lobby expiry on join activity (only relevant for lobby rooms)
+    if (room.status === 'lobby') {
+      await env.DB.prepare(
+        `UPDATE cah_rooms SET lobby_expires_at = datetime('now', '+5 minutes') WHERE id = ?`
+      ).bind(room.id).run();
+    }
 
     const player = user
       ? await env.DB.prepare(`SELECT * FROM cah_players WHERE room_id = ? AND user_id = ?`).bind(room.id, user.userId).first()

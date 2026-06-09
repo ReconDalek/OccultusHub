@@ -26,8 +26,7 @@ function buildNavLinks(user, pages) {
   const links = [
     { label: 'Home',  to: '/'      },
     { label: 'About', to: '/about' },
-    { label: 'The Rite', to: '/game' },
-    { label: 'Cards', to: '/cards' },
+    { label: 'Games', to: '/games' },
   ]
   if (user?.isFactionMember) {
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
@@ -87,10 +86,13 @@ export default function Navbar() {
   const factionLabel = OCCULTUS_CONFIG.factionNames[Number(user?.factionId)] || 'Visitor'
   const navLinks = buildNavLinks(user, pages)
 
-  const linkStyle = (to) => ({
-    color: location.pathname === to ? '#f4f4f5' : '#a1a1aa',
-    textDecoration: 'none',
-  })
+  const GAME_PATHS = ['/games', '/rite', '/cards']
+  const linkStyle = (to) => {
+    const isActive = to === '/games'
+      ? GAME_PATHS.includes(location.pathname)
+      : location.pathname === to
+    return { color: isActive ? '#f4f4f5' : '#a1a1aa', textDecoration: 'none' }
+  }
 
   function NavLink({ to, label }) {
     return (
@@ -276,29 +278,47 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* ── Row 2: Mobile nav links only (hidden on md+) ── */}
+        {/* ── Row 2: Mobile nav links only (hidden on md+) — horizontally scrollable ── */}
         {navLinks.length > 0 && (
           <div
-            className="flex md:hidden items-center justify-center gap-x-5 pb-3"
-            style={{ paddingLeft: '16px', paddingRight: '16px', borderTop: '1px solid rgba(255,255,255,0.05)' }}
+            className="md:hidden"
+            style={{
+              borderTop: '1px solid rgba(255,255,255,0.05)',
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              /* hide scrollbar on all browsers */
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+            }}
           >
-            {navLinks.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className="transition-colors duration-300 no-underline whitespace-nowrap"
-                style={{
-                  ...linkStyle(link.to),
-                  fontSize: '13px',
-                  letterSpacing: '0.3px',
-                  paddingTop: '10px',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = '#f4f4f5')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = linkStyle(link.to).color)}
-              >
-                {link.label}
-              </Link>
-            ))}
+            <style>{`.mob-nav::-webkit-scrollbar { display: none; }`}</style>
+            <div
+              className="mob-nav flex items-center gap-x-5 pb-3"
+              style={{
+                paddingLeft: 16,
+                paddingRight: 16,
+                width: 'max-content',
+                minWidth: '100%',
+              }}
+            >
+              {navLinks.map((link) => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className="transition-colors duration-300 no-underline whitespace-nowrap"
+                  style={{
+                    ...linkStyle(link.to),
+                    fontSize: '13px',
+                    letterSpacing: '0.3px',
+                    paddingTop: '10px',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f4f4f5')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = linkStyle(link.to).color)}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
           </div>
         )}
       </nav>

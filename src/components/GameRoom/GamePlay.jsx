@@ -146,15 +146,18 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   )
 
   // ── Phase timer countdown ──────────────────────────────────────────
+  // Initialise from server's computed secs_remaining to avoid client/server clock skew,
+  // then tick down locally every second.
   useEffect(() => {
     if (!room?.phase_ends_at) { setTimeLeft(null); return }
-    const update = () => {
-      const endsAt = new Date(room.phase_ends_at.replace(' ', 'T') + 'Z')
-      const diff = Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000))
-      setTimeLeft(diff)
+    // Use the server-supplied value as the authoritative starting point
+    const serverSecs = room?.phase_secs_remaining
+    if (serverSecs !== null && serverSecs !== undefined) {
+      setTimeLeft(serverSecs)
     }
-    update()
-    const iv = setInterval(update, 1000)
+    const iv = setInterval(() => {
+      setTimeLeft(prev => (prev !== null && prev > 0) ? prev - 1 : 0)
+    }, 1000)
     return () => clearInterval(iv)
   }, [room?.phase_ends_at])
 
@@ -277,7 +280,14 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
   const publicMessages = messages.filter(m => m.channel === 'public')
   const cabalMessages  = messages.filter(m => m.channel === 'cabal')
   const isCabalFaction = CABAL_FACTION.includes(myRole)
-  const displayMessages = isNight && isCabalFaction ? cabalMessages : publicMessages
+  const currentPhase   = room?.phase ?? 0
+  // Show current-phase messages + Oracle messages from the previous phase
+  // (so banishment/sacrifice announcements aren't instantly cleared on transition)
+  const displayMessages = (isNight && isCabalFaction ? cabalMessages : publicMessages)
+    .filter(m =>
+      m.phase === currentPhase ||
+      (m.phase === currentPhase - 1 && m.display_name === 'The Oracle')
+    )
 
   const maxSecs  = isNight ? NIGHT_SECS : (isDay1 ? 120 : DAY_SECS)
   const timerPct = timeLeft !== null ? Math.max(0, (timeLeft / maxSecs) * 100) : null
@@ -395,7 +405,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
                 {p.display_name}{p.is_me ? ' (you)' : ''}
               </span>
               {voteCount > 0 && isDay && (
-                <span style={{ fontSize: 11, color: '#fb923c', fontWeight: 700, flexShrink: 0 }}>{voteCount}▲</span>
+                <span title={`${voteCount} vote${voteCount !== 1 ? 's' : ''} to banish`} style={{ fontSize: 11, color: '#fb923c', fontWeight: 700, flexShrink: 0 }}>{voteCount} ⚖</span>
               )}
               {cabalVoteCount > 0 && isNight && myRole === 'cabal' && (
                 <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700, flexShrink: 0 }}>{cabalVoteCount}◈</span>
@@ -597,7 +607,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, background: isNight ? 'rgba(2,0,8,0.5)' : 'rgba(4,3,8,0.42)' }}>
         {displayMessages.map(m => (
-          <ChatMessage key={m.id} msg={m} isOracle={!m.player_id || m.display_name === 'The Oracle'} isNight={isNight} />
+          <ChatMessage key={m.id} msg={m} isOracle={m.display_name === 'The Oracle'} isNight={isNight} />
         ))}
         <div ref={chatEndRef} />
       </div>
