@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import ShadowCard from './ShadowCard'
 import FateCard from './FateCard'
@@ -22,6 +22,22 @@ export default function CardsPlay({
   const [chatMsg, setChatMsg] = useState('')
   const [sendingChat, setSendingChat] = useState(false)
   const [error, setError] = useState('')
+  const [timeLeft, setTimeLeft] = useState(null)
+
+  // Countdown timer — drives off whichever phase timer is active
+  useEffect(() => {
+    const endStr = round?.status === 'picking' ? round?.picking_ends_at
+                 : round?.status === 'judging' ? round?.judging_ends_at
+                 : null
+    if (!endStr) { setTimeLeft(null); return }
+    const tick = () => {
+      const ms = new Date(endStr.replace(' ', 'T') + 'Z').getTime() - Date.now()
+      setTimeLeft(Math.max(0, Math.floor(ms / 1000)))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [round?.status, round?.picking_ends_at, round?.judging_ends_at])
 
   const me = players.find(p => p.id === myPlayerId)
   const isHarbinger = round && me?.id === round.harbinger_player_id
@@ -226,8 +242,21 @@ export default function CardsPlay({
           {/* Picking phase — progress */}
           {round?.status === 'picking' && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 8, letterSpacing: '1px' }}>
-                {isHarbinger ? 'You are the Harbinger — await the fates.' : 'AWAITING SUBMISSIONS'}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                  {isHarbinger ? 'You are the Harbinger — await the fates.' : 'AWAITING SUBMISSIONS'}
+                </div>
+                {timeLeft !== null && (
+                  <div style={{
+                    fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 600,
+                    color: timeLeft <= 15 ? '#fb7185' : timeLeft <= 30 ? '#fbbf24' : '#a1a1aa',
+                    padding: '2px 8px', borderRadius: 6,
+                    background: timeLeft <= 15 ? 'rgba(179,18,63,0.12)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${timeLeft <= 15 ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  }}>
+                    {String(Math.floor(timeLeft / 60)).padStart(2,'0')}:{String(timeLeft % 60).padStart(2,'0')}
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {Array.isArray(submissions) && submissions.map((s, i) => {
@@ -252,8 +281,21 @@ export default function CardsPlay({
           {/* Judging phase */}
           {round?.status === 'judging' && (
             <div>
-              <div style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 12, letterSpacing: '1px' }}>
-                {isHarbinger ? 'CHOOSE THE WINNER — TAP A CARD TO CROWN IT' : `Waiting for ${harbinger?.display_name} to judge…`}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                  {isHarbinger ? 'CHOOSE THE WINNER — TAP A CARD TO CROWN IT' : `Waiting for ${harbinger?.display_name} to judge…`}
+                </div>
+                {timeLeft !== null && (
+                  <div style={{
+                    fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 600,
+                    color: timeLeft <= 10 ? '#fb7185' : timeLeft <= 20 ? '#fbbf24' : '#a78bfa',
+                    padding: '2px 8px', borderRadius: 6,
+                    background: timeLeft <= 10 ? 'rgba(179,18,63,0.12)' : 'rgba(109,40,217,0.1)',
+                    border: `1px solid ${timeLeft <= 10 ? 'rgba(179,18,63,0.3)' : 'rgba(109,40,217,0.3)'}`,
+                  }}>
+                    {String(Math.floor(timeLeft / 60)).padStart(2,'0')}:{String(timeLeft % 60).padStart(2,'0')}
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
                 {submissions.map((sub, idx) => (

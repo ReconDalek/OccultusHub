@@ -77,8 +77,9 @@ async function startNextRound(env, room, players) {
     ? (await env.DB.prepare(`SELECT round_number FROM cah_rounds WHERE id = ?`).bind(room.current_round_id).first())?.round_number || 0
     : 0) + 1;
 
-  // Pick harbinger (cycle through players by join order)
-  const sortedPlayers = [...players].sort((a, b) => a.id - b.id);
+  // Pick harbinger (cycle through active players by join order)
+  const activePlayers = players.filter(p => p.is_active !== 0);
+  const sortedPlayers = [...activePlayers].sort((a, b) => a.id - b.id);
   const harbIdx = (roundNumber - 1) % sortedPlayers.length;
   const harbinger = sortedPlayers[harbIdx];
 
@@ -106,8 +107,8 @@ async function startNextRound(env, room, players) {
   }
 
   const round = await env.DB.prepare(
-    `INSERT INTO cah_rounds (room_id, round_number, shadow_card_id, harbinger_player_id, omen, status)
-     VALUES (?, ?, ?, ?, ?, 'picking')
+    `INSERT INTO cah_rounds (room_id, round_number, shadow_card_id, harbinger_player_id, omen, status, picking_ends_at)
+     VALUES (?, ?, ?, ?, ?, 'picking', datetime('now', '+90 seconds'))
      RETURNING id`
   ).bind(room.id, roundNumber, shadowCardId, harbinger.id, omen).first();
 
@@ -129,6 +130,92 @@ async function startNextRound(env, room, players) {
   await botActForCAH(env, room, round, players);
 
   return round;
+}
+
+// ── Round timer auto-advance ────────────────────────────────────────────────
+// Called on every getRoom poll. Advances picking→judging or judging→complete
+// when the timer has expired, auto-submitting cards / auto-picking a winner.
+
+async function autoAdvanceCAH(env, room) {
+  if (!room.current_round_id || room.status !== 'playing') return;
+
+  const round = await env.DB.prepare(`SELECT * FROM cah_rounds WHERE id = ?`).bind(room.current_round_id).first();
+  if (!round) return;
+
+  // ── Picking phase expired ────────────────────────────────────────────────
+  if (round.status === 'picking' && round.picking_ends_at) {
+    const endsAt = new Date(round.picking_ends_at.replace(' ', 'T') + 'Z');
+    if (Date.now() <= endsAt.getTime()) return;
+
+    // Atomic lock: clear picking_ends_at so only one request does the work
+    const locked = await env.DB.prepare(
+      `UPDATE cah_rounds SET picking_ends_at = NULL WHERE id = ? AND picking_ends_at = ?`
+    ).bind(round.id, round.picking_ends_at).run();
+    if (locked.changes === 0) return;
+
+    const { results: players } = await env.DB.prepare(`SELECT * FROM cah_players WHERE room_id = ?`).bind(room.id).all();
+    const shadow = await env.DB.prepare(`SELECT * FROM cah_shadow_cards WHERE id = ?`).bind(round.shadow_card_id).first();
+    const effectivePicks = (round.omen === 'blood_moon') ? Math.max(shadow.picks, 2) : shadow.picks;
+
+    const nonHarb = (players || []).filter(p => p.id !== round.harbinger_player_id && p.is_active !== 0);
+    const { results: subs } = await env.DB.prepare(
+      `SELECT DISTINCT player_id FROM cah_submissions WHERE round_id = ?`
+    ).bind(round.id).all();
+    const submittedSet = new Set((subs || []).map(s => s.player_id));
+
+    // Auto-submit random cards for every active player who hasn't submitted (bots AND slow humans)
+    for (const player of nonHarb) {
+      if (submittedSet.has(player.id)) continue;
+      const { results: hand } = await env.DB.prepare(
+        `SELECT card_id FROM cah_hands WHERE room_id = ? AND player_id = ?`
+      ).bind(room.id, player.id).all();
+      const cardIds = (hand || []).map(h => h.card_id);
+      if (!cardIds.length) continue;
+      const shuffled = [...cardIds].sort(() => Math.random() - 0.5);
+      const chosen = shuffled.slice(0, Math.min(effectivePicks, shuffled.length));
+      const stmts = [];
+      for (let i = 0; i < chosen.length; i++) {
+        stmts.push(env.DB.prepare(
+          `INSERT OR REPLACE INTO cah_submissions (round_id, player_id, card_id, pick_order) VALUES (?, ?, ?, ?)`
+        ).bind(round.id, player.id, chosen[i], i + 1));
+        stmts.push(env.DB.prepare(
+          `DELETE FROM cah_hands WHERE room_id = ? AND player_id = ? AND card_id = ?`
+        ).bind(room.id, player.id, chosen[i]));
+      }
+      if (stmts.length) await env.DB.batch(stmts);
+    }
+
+    // Move to judging
+    await env.DB.prepare(
+      `UPDATE cah_rounds SET status = 'judging', judging_ends_at = datetime('now', '+45 seconds') WHERE id = ?`
+    ).bind(round.id).run();
+    const harbinger = (players || []).find(p => p.id === round.harbinger_player_id);
+    await systemMsg(env, room.id, `Time's up — fates locked in. ${harbinger?.display_name || 'The Harbinger'} must now choose.`);
+
+    if (harbinger?.is_bot) {
+      const updatedRound = await env.DB.prepare(`SELECT * FROM cah_rounds WHERE id = ?`).bind(round.id).first();
+      await botJudge(env, room, updatedRound, players || []);
+    }
+    return;
+  }
+
+  // ── Judging phase expired ─────────────────────────────────────────────────
+  if (round.status === 'judging' && round.judging_ends_at && !round.winner_player_id) {
+    const endsAt = new Date(round.judging_ends_at.replace(' ', 'T') + 'Z');
+    if (Date.now() <= endsAt.getTime()) return;
+
+    const locked = await env.DB.prepare(
+      `UPDATE cah_rounds SET judging_ends_at = NULL WHERE id = ? AND judging_ends_at = ?`
+    ).bind(round.id, round.judging_ends_at).run();
+    if (locked.changes === 0) return;
+
+    const { results: players } = await env.DB.prepare(`SELECT * FROM cah_players WHERE room_id = ?`).bind(room.id).all();
+    // Re-fetch round in case status changed
+    const freshRound = await env.DB.prepare(`SELECT * FROM cah_rounds WHERE id = ?`).bind(round.id).first();
+    if (freshRound?.status === 'judging') {
+      await botJudge(env, room, freshRound, players || []);
+    }
+  }
 }
 
 // ── Bot auto-actions for Cards Against Occultus ─────────────────────────────
@@ -172,8 +259,8 @@ async function botActForCAH(env, room, round, players) {
       if (stmts.length) await env.DB.batch(stmts);
     }
 
-    // Check if all non-harbinger submitted → move to judging
-    const nonHarb = players.filter(p => p.id !== round.harbinger_player_id);
+    // Check if all active non-harbinger players have submitted → move to judging
+    const nonHarb = players.filter(p => p.id !== round.harbinger_player_id && p.is_active !== 0);
     const { results: subs } = await env.DB.prepare(
       `SELECT DISTINCT player_id FROM cah_submissions WHERE round_id = ?`
     ).bind(round.id).all();
@@ -181,7 +268,9 @@ async function botActForCAH(env, room, round, players) {
     const allSubmitted = nonHarb.every(p => submittedSet.has(p.id));
 
     if (allSubmitted) {
-      await env.DB.prepare(`UPDATE cah_rounds SET status = 'judging' WHERE id = ?`).bind(round.id).run();
+      await env.DB.prepare(
+        `UPDATE cah_rounds SET status = 'judging', judging_ends_at = datetime('now', '+45 seconds') WHERE id = ?`
+      ).bind(round.id).run();
       await systemMsg(env, room.id, `All fates have been cast. ${harbinger?.display_name || 'The Harbinger'} must now choose.`);
       // If harbinger is also a bot, judge immediately
       if (harbinger?.is_bot) {
@@ -212,11 +301,12 @@ async function botJudge(env, room, round, players) {
 
   const { results: updatedPlayers } = await env.DB.prepare(`SELECT * FROM cah_players WHERE room_id = ?`).bind(room.id).all();
   const updatedRoom = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE id = ?`).bind(room.id).first();
-  const won = await checkWin(env, updatedRoom, updatedPlayers || []);
+  const activePlayers = (updatedPlayers || []).filter(p => p.is_active !== 0);
+  const won = await checkWin(env, updatedRoom, activePlayers);
   if (!won) {
-    const nonHarb = (updatedPlayers || []).filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
+    const nonHarb = activePlayers.filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
     await refillHands(env, room.id, nonHarb);
-    await startNextRound(env, updatedRoom, updatedPlayers || []);
+    await startNextRound(env, updatedRoom, activePlayers);
   }
 }
 
@@ -303,7 +393,7 @@ export async function joinOrCreate(request, env, user) {
     const guestToken = (!user) ? crypto.randomUUID() : null;
 
     if (!room) {
-      // Create new room
+      // Create new room — 1-hour lobby expiry (closes only if abandoned)
       let code, attempts = 0;
       while (attempts < 10) {
         code = generateCode();
@@ -313,17 +403,24 @@ export async function joinOrCreate(request, env, user) {
       }
       await env.DB.prepare(
         `INSERT INTO cah_rooms (code, host_name, souls_to_win, omens_enabled, lobby_expires_at)
-         VALUES (?, ?, ?, ?, datetime('now', '+5 minutes'))`
+         VALUES (?, ?, ?, ?, datetime('now', '+60 minutes'))`
       ).bind(code, displayName, soulsToWin, omensEnabled).run();
       room = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE code = ?`).bind(code).first();
     }
 
-    // Check if already in room
+    // Check if already in room (including inactive players who can rejoin mid-game)
     let existing = null;
     if (user) {
       existing = await env.DB.prepare(
         `SELECT * FROM cah_players WHERE room_id = ? AND user_id = ?`
       ).bind(room.id, user.userId).first();
+    }
+
+    // If player left mid-game and is rejoining, reactivate them
+    if (existing && existing.is_active === 0 && room.status === 'playing') {
+      await env.DB.prepare(`UPDATE cah_players SET is_active = 1 WHERE id = ?`).bind(existing.id).run();
+      existing = await env.DB.prepare(`SELECT * FROM cah_players WHERE id = ?`).bind(existing.id).first();
+      await systemMsg(env, room.id, `${existing.display_name} has returned to the circle.`);
     }
 
     if (!existing) {
@@ -365,7 +462,7 @@ export async function getRoom(request, env, user) {
     const since = parseInt(url.searchParams.get('since') || '0');
     const guestToken = url.searchParams.get('guest_token');
 
-    const room = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE code = ?`).bind(code).first();
+    let room = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE code = ?`).bind(code).first();
     if (!room) return errorResponse('Room not found', 404);
 
     if (room.status === 'lobby' && room.lobby_expires_at) {
@@ -375,6 +472,11 @@ export async function getRoom(request, env, user) {
         return errorResponse('Lobby expired — no game was started', 410);
       }
     }
+
+    // Auto-advance round timers (picking → judging, judging → complete)
+    await autoAdvanceCAH(env, room);
+    // Re-fetch room in case current_round_id changed
+    room = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE id = ?`).bind(room.id).first();
 
     const { results: players } = await env.DB.prepare(
       `SELECT * FROM cah_players WHERE room_id = ? ORDER BY joined_at ASC`
@@ -472,6 +574,7 @@ export async function getRoom(request, env, user) {
       souls: p.souls,
       is_host: p.is_host,
       is_bot: !!p.is_bot,
+      is_active: p.is_active !== 0,
       is_harbinger: round ? p.id === round.harbinger_player_id : false,
     }));
 
@@ -489,6 +592,8 @@ export async function getRoom(request, env, user) {
         harbinger_player_id: round.harbinger_player_id,
         status: round.status, omen: round.omen,
         winner_player_id: round.winner_player_id,
+        picking_ends_at: round.picking_ends_at || null,
+        judging_ends_at: round.judging_ends_at || null,
       } : null,
       submissions,
       myHand,
@@ -605,8 +710,8 @@ export async function submitCard(request, env, user) {
       `UPDATE cah_rooms SET last_activity = CURRENT_TIMESTAMP WHERE id = ?`
     ).bind(room.id).run();
 
-    // Check if all non-harbinger players have submitted
-    const nonHarb = (players || []).filter(p => p.id !== round.harbinger_player_id);
+    // Check if all active non-harbinger players have submitted
+    const nonHarb = (players || []).filter(p => p.id !== round.harbinger_player_id && p.is_active !== 0);
     const { results: subs } = await env.DB.prepare(
       `SELECT DISTINCT player_id FROM cah_submissions WHERE round_id = ?`
     ).bind(round.id).all();
@@ -615,7 +720,7 @@ export async function submitCard(request, env, user) {
     const allSubmitted = nonHarb.every(p => submittedSet.has(p.id));
     if (allSubmitted) {
       await env.DB.prepare(
-        `UPDATE cah_rounds SET status = 'judging' WHERE id = ?`
+        `UPDATE cah_rounds SET status = 'judging', judging_ends_at = datetime('now', '+45 seconds') WHERE id = ?`
       ).bind(round.id).run();
       const harb = (players || []).find(p => p.id === round.harbinger_player_id);
       await systemMsg(env, room.id, `All fates have been cast. ${harb?.display_name || 'The Harbinger'} must now choose.`);
@@ -676,9 +781,10 @@ export async function judgeWinner(request, env, user) {
     const won = await checkWin(env, updatedRoom, updatedPlayers || []);
     if (!won) {
       // Refill hands and start next round
-      const nonHarb = (updatedPlayers || []).filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
+      const activeUpdated = (updatedPlayers || []).filter(p => p.is_active !== 0);
+      const nonHarb = activeUpdated.filter(p => p.id !== round.harbinger_player_id).map(p => p.id);
       await refillHands(env, room.id, nonHarb);
-      await startNextRound(env, updatedRoom, updatedPlayers || []);
+      await startNextRound(env, updatedRoom, activeUpdated);
     }
 
     return jsonResponse({ ok: true });
@@ -792,18 +898,44 @@ export async function leaveRoom(request, env, user) {
     const me = identifyPlayer(user, guestToken, players || []);
     if (!me) return jsonResponse({ ok: true });
 
-    await env.DB.prepare(`DELETE FROM cah_players WHERE id = ?`).bind(me.id).run();
-    await env.DB.prepare(`DELETE FROM cah_hands WHERE player_id = ? AND room_id = ?`).bind(me.id, room.id).run();
+    if (room.status === 'lobby') {
+      // ── Lobby: remove player entirely ──────────────────────────────────
+      await env.DB.prepare(`DELETE FROM cah_players WHERE id = ?`).bind(me.id).run();
+      await env.DB.prepare(`DELETE FROM cah_hands WHERE player_id = ? AND room_id = ?`).bind(me.id, room.id).run();
 
-    const remaining = (players || []).filter(p => p.id !== me.id);
-    if (remaining.length === 0) {
-      await env.DB.prepare(`DELETE FROM cah_rooms WHERE id = ?`).bind(room.id).run();
-    } else if (me.is_host) {
-      await env.DB.prepare(
-        `UPDATE cah_players SET is_host = 1 WHERE id = ?`
-      ).bind(remaining[0].id).run();
-      await systemMsg(env, room.id, `${remaining[0].display_name} is now the host.`);
+      const remaining = (players || []).filter(p => p.id !== me.id && !p.is_bot);
+      const allRemaining = (players || []).filter(p => p.id !== me.id);
+      if (allRemaining.length === 0) {
+        await env.DB.prepare(`DELETE FROM cah_rooms WHERE id = ?`).bind(room.id).run();
+      } else {
+        // Transfer host if needed
+        if (me.is_host) {
+          const nextHuman = allRemaining.find(p => !p.is_bot) || allRemaining[0];
+          if (nextHuman) {
+            await env.DB.prepare(`UPDATE cah_players SET is_host = 1 WHERE id = ?`).bind(nextHuman.id).run();
+            await systemMsg(env, room.id, `${nextHuman.display_name} is now the host.`);
+          }
+        }
+        // If no human players remain, delete the lobby
+        if (remaining.length === 0) {
+          await env.DB.prepare(`DELETE FROM cah_rooms WHERE id = ?`).bind(room.id).run();
+        }
+      }
+    } else if (room.status === 'playing') {
+      // ── In-game: mark inactive, end if no humans remain active ─────────
+      await env.DB.prepare(`UPDATE cah_players SET is_active = 0 WHERE id = ?`).bind(me.id).run();
+      await systemMsg(env, room.id, `${me.display_name} has left the game.`);
+
+      const humanActive = (players || []).filter(p => p.id !== me.id && !p.is_bot && p.is_active !== 0);
+      if (humanActive.length === 0) {
+        // All humans gone — end the game
+        await env.DB.prepare(
+          `UPDATE cah_rooms SET status = 'ended', winner_name = NULL, last_activity = CURRENT_TIMESTAMP WHERE id = ?`
+        ).bind(room.id).run();
+        await systemMsg(env, room.id, 'All players have left. The ritual dissolves into silence.');
+      }
     }
+    // ended rooms: just return ok
 
     return jsonResponse({ ok: true });
   } catch (e) {

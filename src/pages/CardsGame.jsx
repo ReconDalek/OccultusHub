@@ -41,6 +41,41 @@ export default function CardsGame() {
     return h
   }, [])
 
+  // Auto-rejoin if we have a saved session (handles page reload mid-game)
+  useEffect(() => {
+    const saved = localStorage.getItem('cah_game')
+    if (!saved) return
+    try {
+      const { code, playerId: pid, guestToken: savedToken } = JSON.parse(saved)
+      if (!code) return
+      const tryRejoin = async () => {
+        const params = new URLSearchParams({ since: '0' })
+        if (savedToken) params.set('guest_token', savedToken)
+        const res = await fetch(`${API_BASE_URL}/api/cards/rooms/${code}?${params}`, {
+          headers: authHeaders(),
+        })
+        if (res.status === 410 || res.status === 404) { localStorage.removeItem('cah_game'); return }
+        if (!res.ok) return
+        const data = await res.json()
+        // Check if we're still a player in the room
+        const meInRoom = pid && data.players?.some(p => p.id === pid)
+        const mePlaying = data.myPlayerId === pid
+        if (!meInRoom && !mePlaying) { localStorage.removeItem('cah_game'); return }
+        // Resume session
+        setRoomCode(code)
+        setMyPlayerId(pid)
+        if (savedToken) setGuestToken(savedToken)
+        if (data.messages?.length) lastMsgId.current = data.messages[data.messages.length - 1].id
+        setGameData(data)
+        clearInterval(previewRef.current)
+        const status = data.room?.status
+        setScreen(status === 'ended' ? 'ended' : status === 'playing' ? 'game' : 'lobby')
+        pollRef.current = setInterval(() => {}, 0) // will be replaced by next useEffect
+      }
+      tryRejoin()
+    } catch (_) { localStorage.removeItem('cah_game') }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Poll landing preview
   useEffect(() => {
     if (screen !== 'landing') return
@@ -85,6 +120,7 @@ export default function CardsGame() {
       if (data.room.status === 'ended' && screen !== 'ended') {
         setScreen('ended')
         clearInterval(pollRef.current)
+        localStorage.removeItem('cah_game')
       } else if (data.room.status === 'playing' && screen === 'lobby') {
         setScreen('game')
       }
@@ -134,6 +170,7 @@ export default function CardsGame() {
       setMyPlayerId(data.playerId)
       if (data.guestToken) setGuestToken(data.guestToken)
       lastMsgId.current = 0
+      localStorage.setItem('cah_game', JSON.stringify({ code: data.code, playerId: data.playerId, guestToken: data.guestToken || null }))
       setScreen('lobby')
     } finally {
       setJoining(false)
@@ -153,6 +190,7 @@ export default function CardsGame() {
   }
 
   async function handleLeave() {
+    localStorage.removeItem('cah_game')
     if (roomCode) {
       try {
         await fetch(`${API_BASE_URL}/api/cards/rooms/${roomCode}/leave`, {

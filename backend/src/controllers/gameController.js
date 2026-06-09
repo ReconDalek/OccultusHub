@@ -162,30 +162,57 @@ export async function leaveRoom(request, env, user) {
     const code = new URL(request.url).pathname.split('/')[4].toUpperCase();
     const body = await request.json().catch(() => ({}));
 
-    const room = await env.DB.prepare('SELECT id, status FROM game_rooms WHERE code = ?').bind(code).first();
+    const room = await env.DB.prepare('SELECT * FROM game_rooms WHERE code = ?').bind(code).first();
     if (!room) return errorResponse('Room not found', 404);
-    if (room.status !== 'lobby') return errorResponse('Cannot leave after game starts', 400);
 
-    if (user) {
-      await env.DB.prepare('DELETE FROM game_players WHERE room_id = ? AND user_id = ?').bind(room.id, user.userId).run();
-    } else if (body.guest_token) {
-      await env.DB.prepare('DELETE FROM game_players WHERE room_id = ? AND guest_token = ?').bind(room.id, body.guest_token).run();
-    }
+    if (room.status === 'lobby') {
+      // ── Lobby leave: remove player entirely ──────────────────────────
+      if (user) {
+        await env.DB.prepare('DELETE FROM game_players WHERE room_id = ? AND user_id = ?').bind(room.id, user.userId).run();
+      } else if (body.guest_token) {
+        await env.DB.prepare('DELETE FROM game_players WHERE room_id = ? AND guest_token = ?').bind(room.id, body.guest_token).run();
+      }
 
-    const remaining = await env.DB.prepare('SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ?').bind(room.id).first();
-    if (remaining.cnt === 0) {
-      await env.DB.prepare('DELETE FROM game_rooms WHERE id = ?').bind(room.id).run();
-    } else {
-      const stillHost = await env.DB.prepare(
-        'SELECT id FROM game_players WHERE room_id = ? AND is_host = 1'
+      const remaining = await env.DB.prepare('SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ?').bind(room.id).first();
+      if (remaining.cnt === 0) {
+        await env.DB.prepare('DELETE FROM game_rooms WHERE id = ?').bind(room.id).run();
+      } else {
+        const stillHost = await env.DB.prepare('SELECT id FROM game_players WHERE room_id = ? AND is_host = 1').bind(room.id).first();
+        if (!stillHost) {
+          const next = await env.DB.prepare('SELECT id FROM game_players WHERE room_id = ? ORDER BY joined_at ASC LIMIT 1').bind(room.id).first();
+          if (next) await env.DB.prepare('UPDATE game_players SET is_host = 1 WHERE id = ?').bind(next.id).run();
+        }
+      }
+
+    } else if (['day', 'night'].includes(room.status)) {
+      // ── In-game abandon: mark the player as dead (spectator) ─────────
+      let player;
+      if (user) {
+        player = await env.DB.prepare('SELECT id, display_name, is_alive FROM game_players WHERE room_id = ? AND user_id = ?').bind(room.id, user.userId).first();
+      } else if (body.guest_token) {
+        player = await env.DB.prepare('SELECT id, display_name, is_alive FROM game_players WHERE room_id = ? AND guest_token = ?').bind(room.id, body.guest_token).run();
+      }
+
+      if (player && player.is_alive) {
+        await env.DB.prepare('UPDATE game_players SET is_alive = 0 WHERE id = ?').bind(player.id).run();
+        await oracleMessage(env, room.id, room.phase, `${player.display_name} has abandoned the circle.`);
+      }
+
+      // If no human players remain alive, end the game
+      const humanAlive = await env.DB.prepare(
+        'SELECT COUNT(*) as cnt FROM game_players WHERE room_id = ? AND is_alive = 1 AND is_bot = 0'
       ).bind(room.id).first();
-      if (!stillHost) {
-        const next = await env.DB.prepare(
-          'SELECT id FROM game_players WHERE room_id = ? ORDER BY joined_at ASC LIMIT 1'
-        ).bind(room.id).first();
-        if (next) await env.DB.prepare('UPDATE game_players SET is_host = 1 WHERE id = ?').bind(next.id).run();
+
+      if (humanAlive.cnt === 0) {
+        await endGame(env, room, 'abandoned');
+      } else {
+        // Still check normal win condition (player removal may have changed balance)
+        const allPlayers = await env.DB.prepare('SELECT role, is_alive FROM game_players WHERE room_id = ?').bind(room.id).all();
+        const winner = checkWinCondition(allPlayers.results);
+        if (winner) await endGame(env, room, winner);
       }
     }
+    // Ended games: just return success (client already redirecting)
 
     return jsonResponse({ left: true });
   } catch (err) {
@@ -965,6 +992,8 @@ async function endGame(env, room, winner) {
     ? 'The Congregation has prevailed! All Cabal agents have been banished. The circle is purified. The Rite is complete.'
     : winner === 'apostate'
     ? 'The Apostate has claimed their dark victory. Banished willingly into the void, they have won. The circle\'s judgment fell upon the wrong soul.'
+    : winner === 'abandoned'
+    ? 'The circle has been abandoned. All mortals have fled. The shadows claim the empty ground.'
     : 'The Cabal has claimed dominion. They now outnumber the Congregation. The shadows have won. The Rite is forfeit.';
   await oracleMessage(env, room.id, room.phase, winMsg);
 }

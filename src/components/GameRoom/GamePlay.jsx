@@ -709,7 +709,18 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
           }}>
             {isNight ? '🌑 Witching Hour' : '☀️ Reckoning'} · P{room?.phase}
           </span>
-          <PhaseRing isNight={isNight} timerPct={timerPct} isUrgent={timeLeft !== null && timeLeft <= 30} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+            <PhaseRing isNight={isNight} timerPct={timerPct} isUrgent={timeLeft !== null && timeLeft <= 30} />
+            {timeLeft !== null && (
+              <span style={{
+                fontSize: 11, fontVariantNumeric: 'tabular-nums', fontWeight: 600,
+                color: timeLeft <= 30 ? '#fb7185' : isNight ? '#a78bfa' : '#eab308',
+                minWidth: 32, letterSpacing: '0.5px',
+              }}>
+                {String(Math.floor(timeLeft / 60)).padStart(2,'0')}:{String(timeLeft % 60).padStart(2,'0')}
+              </span>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={onShowRulebook} style={iconBtn} title="Codex">📜</button>
@@ -717,9 +728,9 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — position:relative + zIndex:1 ensures it renders ABOVE the absolute PhaseBackground (z:0) */}
       {isMobile ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', zIndex: 1 }}>
           {mobileTab === 'circle' ? (
             <div style={{ flex: 1, overflowY: 'auto' }}>{circlePanel}</div>
           ) : chatPanel}
@@ -733,7 +744,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
           <div style={{
             width: 220, flexShrink: 0,
             borderRight: `1px solid ${isNight ? 'rgba(109,40,217,0.2)' : 'rgba(255,255,255,0.07)'}`,

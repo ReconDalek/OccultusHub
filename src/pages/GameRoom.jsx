@@ -32,6 +32,37 @@ export default function GameRoom() {
     return h
   }, [])
 
+  // Auto-rejoin if we have a saved session (handles page reload mid-game)
+  useEffect(() => {
+    const saved = localStorage.getItem('rite_game')
+    if (!saved) return
+    try {
+      const { code, guestToken: savedToken } = JSON.parse(saved)
+      if (!code) return
+      const tryRejoin = async () => {
+        const params = new URLSearchParams({ since: '0' })
+        if (savedToken) params.set('guest_token', savedToken)
+        const res = await fetch(`${API_BASE_URL}/api/game/rooms/${code}?${params}`, {
+          headers: authHeaders(),
+        })
+        if (res.status === 410 || res.status === 404) { localStorage.removeItem('rite_game'); return }
+        if (!res.ok) return
+        const data = await res.json()
+        if (!data.my_player) { localStorage.removeItem('rite_game'); return }
+        // Player is still in the game — resume
+        setRoomCode(code)
+        if (savedToken) setGuestToken(savedToken)
+        if (data.messages?.length) lastMessageId.current = data.messages[data.messages.length - 1].id
+        setGameState({ ...data, messages: data.messages || [] })
+        const s = data.room.status
+        setScreen(s === 'ended' ? 'ended' : s === 'lobby' ? 'lobby' : 'game')
+        clearInterval(previewRef.current)
+        startPolling(code, savedToken)
+      }
+      tryRejoin()
+    } catch (_) { localStorage.removeItem('rite_game') }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Poll landing preview every 4s (no auth needed)
   useEffect(() => {
     if (screen !== 'landing') return
@@ -80,6 +111,7 @@ export default function GameRoom() {
       if (data.room.status === 'ended') {
         setScreen('ended')
         clearInterval(pollRef.current)
+        localStorage.removeItem('rite_game')
       } else if (data.room.status === 'lobby') {
         setScreen('lobby')
       } else {
@@ -113,6 +145,7 @@ export default function GameRoom() {
       setRoomCode(data.code)
       lastMessageId.current = 0
       setGameState(null)
+      localStorage.setItem('rite_game', JSON.stringify({ code: data.code, guestToken: token }))
       clearInterval(previewRef.current)
       startPolling(data.code, token)
     } catch (_) {
@@ -124,6 +157,7 @@ export default function GameRoom() {
 
   const handleLeave = async () => {
     clearInterval(pollRef.current)
+    localStorage.removeItem('rite_game')
     try {
       const body = guestToken ? { guest_token: guestToken } : {}
       await fetch(`${API_BASE_URL}/api/game/rooms/${roomCode}/leave`, {
@@ -135,6 +169,7 @@ export default function GameRoom() {
     setScreen('landing')
     setGameState(null)
     setRoomCode('')
+    setGuestToken(null)
     lastMessageId.current = 0
   }
 
