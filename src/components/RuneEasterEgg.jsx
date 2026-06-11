@@ -69,7 +69,12 @@ export default function RuneEasterEgg() {
     return () => window.removeEventListener('openRuneLeaderboard', handler)
   }, [])
 
-  if (!props) return null
+  if (!props) return (
+    <>
+      <RuneCastingGame open={gameOpen} onClose={() => { setGameOpen(false); scheduleNext() }} />
+      <RuneLeaderboard open={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
+    </>
+  )
 
   const { goRight, symbol, color, size, topPct, duration, rotate, key } = props
   const animName = goRight ? `runeDriftR_${key}` : `runeDriftL_${key}`

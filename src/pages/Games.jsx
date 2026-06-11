@@ -18,6 +18,22 @@ const GAMES = [
     cta: 'Enter the Circle',
   },
   {
+    to: '/sanctum',
+    title: 'The Sanctum',
+    symbol: '✦',
+    symbolColor: '#f59e0b',
+    accentColor: '#b3123f',
+    gradientFrom: 'rgba(179,18,63,0.10)',
+    gradientTo:   'rgba(245,158,11,0.05)',
+    border:       'rgba(179,18,63,0.25)',
+    tag: 'Idle RPG',
+    tagColor: '#f59e0b',
+    players: 'Single Player',
+    description:
+      'Awaken as a Sorcerer and build your power over time. Invoke the darkness, raise altars, bind familiars, and tap ley lines. Your Sanctum grows even while you are away — check back to claim your essence and unlock the deeper mysteries.',
+    cta: 'Enter the Sanctum',
+  },
+  {
     to: '/cards',
     title: 'Cards Against Occultus',
     symbol: '◈',

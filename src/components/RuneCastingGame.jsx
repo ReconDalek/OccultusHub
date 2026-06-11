@@ -82,7 +82,7 @@ function formatCountdown(ms) {
 function RuneStone({ rune, revealed, delay }) {
   const rc = rune ? RARITY_COLORS[rune.rarity] : null
   return (
-    <div style={{
+    <div className="rune-stone" style={{
       width: '90px', height: '120px',
       perspective: '600px',
       flexShrink: 0,
@@ -250,6 +250,14 @@ export default function RuneCastingGame({ open, onClose }) {
             0%,100% { box-shadow: 0 0 20px rgba(109,40,217,0.3); }
             50%      { box-shadow: 0 0 40px rgba(109,40,217,0.6), 0 0 60px rgba(179,18,63,0.2); }
           }
+          @media (max-width: 400px) {
+            .rune-stone       { width: 70px !important; height: 96px !important; }
+            .rune-stones-row  { gap: 8px !important; }
+            .rune-cast-btn    { padding: 11px 24px !important; width: 100%; }
+          }
+          @media (max-width: 480px) {
+            .rune-cast-btn    { padding: 11px 28px !important; }
+          }
         `}</style>
 
         <div style={{ width: '100%', maxWidth: '520px' }}>
@@ -305,7 +313,7 @@ export default function RuneCastingGame({ open, onClose }) {
               }} />
 
               {/* Rune stones row */}
-              <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <div className="rune-stones-row" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {[0,1,2].map(i => (
                   <RuneStone
                     key={i}
@@ -373,7 +381,7 @@ export default function RuneCastingGame({ open, onClose }) {
               )}
 
               {state === 'idle' && user && (
-                <button onClick={castRunes} style={{
+                <button className="rune-cast-btn" onClick={castRunes} style={{
                   padding: '12px 40px', borderRadius: '12px', fontWeight: 800,
                   fontSize: '14px', cursor: 'pointer', letterSpacing: '0.08em',
                   background: 'linear-gradient(145deg, rgba(109,40,217,0.5), rgba(179,18,63,0.35))',
@@ -385,7 +393,7 @@ export default function RuneCastingGame({ open, onClose }) {
               )}
 
               {state === 'result' && (
-                <button onClick={reset} style={{
+                <button className="rune-cast-btn" onClick={reset} style={{
                   padding: '12px 40px', borderRadius: '12px', fontWeight: 700,
                   fontSize: '14px', cursor: 'pointer',
                   background: 'linear-gradient(145deg, rgba(109,40,217,0.35), rgba(179,18,63,0.25))',

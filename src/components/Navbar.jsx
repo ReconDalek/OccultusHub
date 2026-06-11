@@ -29,11 +29,9 @@ function buildNavLinks(user, pages) {
     { label: 'Games', to: '/games' },
   ]
   if (user?.isFactionMember) {
+    links.push({ label: 'Forums', to: '/forums' })
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
     if (pages.companies) links.push({ label: 'Companies', to: '/companies' })
-  }
-  if (user?.isLeader && pages.leadership) {
-    links.push({ label: 'Leadership', to: '/leadership' })
   }
   return links
 }
@@ -86,7 +84,7 @@ export default function Navbar() {
   const factionLabel = OCCULTUS_CONFIG.factionNames[Number(user?.factionId)] || 'Visitor'
   const navLinks = buildNavLinks(user, pages)
 
-  const GAME_PATHS = ['/games', '/rite', '/cards']
+  const GAME_PATHS = ['/games', '/rite', '/cards', '/sanctum']
   const linkStyle = (to) => {
     const isActive = to === '/games'
       ? GAME_PATHS.includes(location.pathname)
@@ -215,6 +213,16 @@ export default function Navbar() {
                     </div>
 
                     <div className="mt-4 flex flex-col gap-2">
+                      {user.isLeader && pages.leadership && (
+                        <Link
+                          to="/leadership"
+                          className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80 block text-center no-underline"
+                          style={{ background: 'rgba(109,40,217,0.2)' }}
+                          onClick={() => setDropdown(false)}
+                        >
+                          Leadership
+                        </Link>
+                      )}
                       {user.isAdmin && (
                         <Link
                           to="/admin"

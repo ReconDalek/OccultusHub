@@ -312,6 +312,11 @@ export default function FishingGame({ open, onClose }) {
             0%,100% { box-shadow: 0 0 20px rgba(251,191,36,0.4); }
             50%      { box-shadow: 0 0 55px rgba(251,191,36,0.9), 0 0 90px rgba(251,191,36,0.3); }
           }
+          @media (max-width: 480px) {
+            .fishing-scene   { height: 220px !important; }
+            .fishing-btn     { padding: 11px 24px !important; width: 100%; }
+            .fishing-btn-big { padding: 13px 24px !important; width: 100%; font-size: 15px !important; }
+          }
         `}</style>
 
         <div style={{
@@ -327,7 +332,7 @@ export default function FishingGame({ open, onClose }) {
           </div>
 
           {/* Abyss scene */}
-          <div style={{
+          <div className="fishing-scene" style={{
             position: 'relative', height: '340px',
             borderRadius: '16px 16px 0 0', overflow: 'hidden',
             background: 'linear-gradient(rgba(8,4,24,0.99) 0%, rgba(14,5,36,0.99) 30%, rgba(18,4,50,0.98) 55%, rgba(10,2,28,1) 75%, rgba(4,1,14,1) 100%)',
@@ -457,7 +462,7 @@ export default function FishingGame({ open, onClose }) {
             )}
 
             {state === 'idle' && (
-              <button onClick={lowerMirror} style={{
+              <button className="fishing-btn" onClick={lowerMirror} style={{
                 padding: '12px 40px', borderRadius: '12px', fontWeight: 800,
                 fontSize: '14px', cursor: 'pointer', letterSpacing: '0.08em',
                 background: 'linear-gradient(145deg, rgba(109,40,217,0.6), rgba(179,18,63,0.4))',
@@ -469,7 +474,7 @@ export default function FishingGame({ open, onClose }) {
             )}
 
             {state === 'bite' && (
-              <button onClick={bindEntity} style={{
+              <button className="fishing-btn-big" onClick={bindEntity} style={{
                 padding: '14px 48px', borderRadius: '12px', fontWeight: 900,
                 fontSize: '16px', cursor: 'pointer', letterSpacing: '0.1em',
                 background: 'linear-gradient(145deg, #7c0d0d, #b91c1c)',
@@ -481,7 +486,7 @@ export default function FishingGame({ open, onClose }) {
             )}
 
             {(state === 'caught' || state === 'escaped') && (
-              <button onClick={reset} style={{
+              <button className="fishing-btn" onClick={reset} style={{
                 padding: '12px 40px', borderRadius: '12px', fontWeight: 700,
                 fontSize: '14px', cursor: 'pointer',
                 background: 'linear-gradient(145deg, rgba(109,40,217,0.4), rgba(179,18,63,0.3))',

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import ShadowCard from './ShadowCard'
 import FateCard from './FateCard'
@@ -19,6 +19,8 @@ export default function CardsPlay({
   const [submitting, setSubmitting] = useState(false)
   const [judging, setJudging] = useState(false)
   const [chatMsg, setChatMsg] = useState('')
+  // Locked judging display order — set once when judging starts, never reshuffled on poll
+  const judgingOrderRef = useRef(null) // { roundId, playerIds } or { roundId, cardIds } for blood moon
   const [sendingChat, setSendingChat] = useState(false)
   const [error, setError] = useState('')
   const [timeLeft, setTimeLeft] = useState(null)
@@ -94,14 +96,18 @@ export default function CardsPlay({
     }
   }, [selectedIds, effectivePicks, myHand, customTexts, code, authHeaders, guestToken])
 
-  const handleJudge = useCallback(async (winnerPlayerId) => {
+  // winnerPlayerId: for normal judging; winnerCardId: for blood moon judging
+  const handleJudge = useCallback(async (winnerPlayerId, winnerCardId = null) => {
     setJudging(true)
     setError('')
     try {
+      const body = winnerCardId
+        ? { winner_card_id: winnerCardId, guest_token: guestToken }
+        : { winner_player_id: winnerPlayerId, guest_token: guestToken }
       const res = await fetch(`${API_BASE_URL}/api/cards/rooms/${code}/judge`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ winner_player_id: winnerPlayerId, guest_token: guestToken }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -308,60 +314,132 @@ export default function CardsPlay({
           )}
 
           {/* Judging phase */}
-          {round?.status === 'judging' && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
-                  {isHarbinger ? 'CHOOSE THE WINNER — TAP A CARD TO CROWN IT' : `Waiting for ${harbinger?.display_name} to judge…`}
-                </div>
-                {timeLeft !== null && (
-                  <div style={{
-                    fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 600,
-                    color: timeLeft <= 10 ? '#fb7185' : timeLeft <= 20 ? '#fbbf24' : '#a78bfa',
-                    padding: '2px 8px', borderRadius: 6,
-                    background: timeLeft <= 10 ? 'rgba(179,18,63,0.12)' : 'rgba(109,40,217,0.1)',
-                    border: `1px solid ${timeLeft <= 10 ? 'rgba(179,18,63,0.3)' : 'rgba(109,40,217,0.3)'}`,
-                  }}>
-                    {String(Math.floor(timeLeft / 60)).padStart(2,'0')}:{String(timeLeft % 60).padStart(2,'0')}
-                  </div>
-                )}
+          {round?.status === 'judging' && (() => {
+            const isBloodMoon = round.omen === 'blood_moon'
+
+            // Lock display order once when judging starts for this round — never reshuffle on poll
+            if (!judgingOrderRef.current || judgingOrderRef.current.roundId !== round.id) {
+              if (submissions.length > 0) {
+                if (isBloodMoon) {
+                  // Blood moon: shuffle individual card_ids
+                  const allCards = submissions.flatMap(s => (s.cards || []).map(c => ({ card_id: c.card_id, text: c.text, player_id: s.player_id })))
+                  const shuffled = [...allCards].sort(() => Math.random() - 0.5)
+                  judgingOrderRef.current = { roundId: round.id, isBloodMoon: true, cards: shuffled }
+                } else {
+                  // Normal: shuffle player order
+                  const shuffled = [...submissions].sort(() => Math.random() - 0.5)
+                  judgingOrderRef.current = { roundId: round.id, isBloodMoon: false, playerIds: shuffled.map(s => s.player_id) }
+                }
+              }
+            }
+
+            const timerEl = timeLeft !== null && (
+              <div style={{
+                fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 600,
+                color: timeLeft <= 10 ? '#fb7185' : timeLeft <= 20 ? '#fbbf24' : '#a78bfa',
+                padding: '2px 8px', borderRadius: 6,
+                background: timeLeft <= 10 ? 'rgba(179,18,63,0.12)' : 'rgba(109,40,217,0.1)',
+                border: `1px solid ${timeLeft <= 10 ? 'rgba(179,18,63,0.3)' : 'rgba(109,40,217,0.3)'}`,
+              }}>
+                {String(Math.floor(timeLeft / 60)).padStart(2,'0')}:{String(timeLeft % 60).padStart(2,'0')}
               </div>
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                {submissions.map((sub, idx) => (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-                    {/* Multi-card submission stacked */}
-                    {(sub.cards || []).map((c, ci) => (
-                      <FateCard
-                        key={ci}
-                        card={{ id: `${idx}-${ci}`, text: c.text, is_blank: false }}
-                        faceDown={round.omen === 'the_veil'}
-                        onSelect={isHarbinger ? () => handleJudge(sub.player_id) : null}
-                        disabled={judging || !isHarbinger}
-                        small
-                      />
+            )
+
+            if (isBloodMoon) {
+              // ── Blood Moon: show all cards individually — pick one card as winner ──
+              const displayCards = judgingOrderRef.current?.isBloodMoon ? judgingOrderRef.current.cards
+                : submissions.flatMap(s => (s.cards || []).map(c => ({ card_id: c.card_id, text: c.text, player_id: s.player_id })))
+              return (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                      {isHarbinger ? 'BLOOD MOON — CROWN ONE CARD TO CLAIM A SOUL' : `Waiting for ${harbinger?.display_name} to judge…`}
+                    </div>
+                    {timerEl}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#ff6b6b', marginBottom: 12, letterSpacing: '0.5px' }}>
+                    🌑 Each player submitted two cards — one card claims the soul
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                    {displayCards.map((c, idx) => (
+                      <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                        <FateCard
+                          card={{ id: `bm-${c.card_id}`, text: c.text, is_blank: false }}
+                          faceDown={round.omen === 'the_veil'}
+                          onSelect={isHarbinger ? () => handleJudge(null, c.card_id) : null}
+                          disabled={judging || !isHarbinger}
+                          small
+                        />
+                        {isHarbinger && (
+                          <button
+                            onClick={() => handleJudge(null, c.card_id)}
+                            disabled={judging}
+                            style={{
+                              padding: '5px 14px', borderRadius: 8,
+                              border: '1px solid rgba(179,18,63,0.5)',
+                              background: 'rgba(179,18,63,0.15)',
+                              color: '#f4a0b0', fontSize: 11, cursor: 'pointer',
+                            }}
+                          >
+                            Crown ✦
+                          </button>
+                        )}
+                      </div>
                     ))}
-                    {isHarbinger && (
-                      <button
-                        onClick={() => handleJudge(sub.player_id)}
-                        disabled={judging}
-                        style={{
-                          padding: '5px 14px',
-                          borderRadius: 8,
-                          border: '1px solid rgba(179,18,63,0.5)',
-                          background: 'rgba(179,18,63,0.15)',
-                          color: '#f4a0b0',
-                          fontSize: 11,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Crown ✦
-                      </button>
-                    )}
                   </div>
-                ))}
+                </div>
+              )
+            }
+
+            // ── Normal judging: show grouped player submissions ──
+            const displaySubs = judgingOrderRef.current && !judgingOrderRef.current.isBloodMoon
+              ? [...submissions].sort((a, b) =>
+                  (judgingOrderRef.current.playerIds || []).indexOf(a.player_id) -
+                  (judgingOrderRef.current.playerIds || []).indexOf(b.player_id)
+                )
+              : submissions
+
+            return (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                    {isHarbinger ? 'CHOOSE THE WINNER — TAP A CARD TO CROWN IT' : `Waiting for ${harbinger?.display_name} to judge…`}
+                  </div>
+                  {timerEl}
+                </div>
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                  {displaySubs.map((sub, idx) => (
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                      {(sub.cards || []).map((c, ci) => (
+                        <FateCard
+                          key={ci}
+                          card={{ id: `${idx}-${ci}`, text: c.text, is_blank: false }}
+                          faceDown={round.omen === 'the_veil'}
+                          onSelect={isHarbinger ? () => handleJudge(sub.player_id) : null}
+                          disabled={judging || !isHarbinger}
+                          small
+                        />
+                      ))}
+                      {isHarbinger && (
+                        <button
+                          onClick={() => handleJudge(sub.player_id)}
+                          disabled={judging}
+                          style={{
+                            padding: '5px 14px', borderRadius: 8,
+                            border: '1px solid rgba(179,18,63,0.5)',
+                            background: 'rgba(179,18,63,0.15)',
+                            color: '#f4a0b0', fontSize: 11, cursor: 'pointer',
+                          }}
+                        >
+                          Crown ✦
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Complete phase — show winner cards with countdown */}
           {round?.status === 'complete' && (

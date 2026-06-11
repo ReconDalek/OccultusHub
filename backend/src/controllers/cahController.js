@@ -315,14 +315,23 @@ async function botActForCAH(env, room, round, players) {
 }
 
 async function botJudge(env, room, round, players) {
-  // Pick a random non-harbinger player who submitted as winner
+  // Fetch all submissions for this round (with card_id for blood moon)
   const { results: subs } = await env.DB.prepare(
-    `SELECT DISTINCT player_id FROM cah_submissions WHERE round_id = ?`
+    `SELECT player_id, card_id FROM cah_submissions WHERE round_id = ?`
   ).bind(round.id).all();
-  const candidates = (subs || []).map(s => s.player_id).filter(id => id !== round.harbinger_player_id);
-  if (!candidates.length) return;
+  const eligible = (subs || []).filter(s => s.player_id !== round.harbinger_player_id);
+  if (!eligible.length) return;
 
-  const winnerPlayerId = candidates[Math.floor(Math.random() * candidates.length)];
+  let winnerPlayerId;
+  if (round.omen === 'blood_moon') {
+    // Blood moon: pick a random individual card — the submitter wins
+    const picked = eligible[Math.floor(Math.random() * eligible.length)];
+    winnerPlayerId = picked.player_id;
+  } else {
+    // Normal: pick a random unique submitting player
+    const uniquePlayerIds = [...new Set(eligible.map(s => s.player_id))];
+    winnerPlayerId = uniquePlayerIds[Math.floor(Math.random() * uniquePlayerIds.length)];
+  }
   const winner = players.find(p => p.id === winnerPlayerId);
   if (!winner) return;
 
@@ -568,44 +577,40 @@ export async function getRoom(request, env, user) {
         const submittedSet = new Set((subs || []).map(s => s.player_id));
         submissions = nonHarb.map(p => ({ player_id: p.id, submitted: submittedSet.has(p.id) }));
       } else {
-        // Judging or complete: group submissions by player, include card text
+        // Judging or complete: group submissions by player, include card_id for blood moon judging
         const { results: subs } = await env.DB.prepare(
-          `SELECT s.player_id, s.pick_order, s.custom_text, fc.text as card_text, fc.is_blank
+          `SELECT s.player_id, s.card_id, s.pick_order, s.custom_text, fc.text as card_text, fc.is_blank
            FROM cah_submissions s
            JOIN cah_fate_cards fc ON fc.id = s.card_id
            WHERE s.round_id = ?
            ORDER BY s.player_id, s.pick_order`
         ).bind(round.id).all();
 
-        // Group by player
+        // Group by player — stable order (sorted by player_id)
         const grouped = {};
         for (const s of subs || []) {
           if (!grouped[s.player_id]) grouped[s.player_id] = [];
           grouped[s.player_id].push({
+            card_id: s.card_id,
             text: s.is_blank ? s.custom_text || '(blank)' : s.card_text,
             pick_order: s.pick_order,
           });
         }
 
-        // Shuffle for judging anonymity, reveal names when complete
-        const entries = Object.entries(grouped).map(([pid, cards]) => {
-          const numPid = parseInt(pid);
-          const p = (players || []).find(pl => pl.id === numPid);
-          return {
-            player_id: numPid,
-            display_name: round.status === 'complete' ? p?.display_name : null,
-            cards,
-            is_winner: round.winner_player_id === numPid,
-          };
-        });
+        // Build entries in stable player_id order — the frontend shuffles once on judging start
+        const entries = Object.entries(grouped)
+          .sort(([a], [b]) => parseInt(a) - parseInt(b))
+          .map(([pid, cards]) => {
+            const numPid = parseInt(pid);
+            const p = (players || []).find(pl => pl.id === numPid);
+            return {
+              player_id: numPid,
+              display_name: round.status === 'complete' ? p?.display_name : null,
+              cards,
+              is_winner: round.winner_player_id === numPid,
+            };
+          });
 
-        // Shuffle order for judging
-        if (round.status === 'judging') {
-          for (let i = entries.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [entries[i], entries[j]] = [entries[j], entries[i]];
-          }
-        }
         submissions = entries;
       }
     }
@@ -794,7 +799,6 @@ export async function judgeWinner(request, env, user) {
     const code = url.pathname.split('/').slice(-2)[0];
     const body = await request.json().catch(() => ({}));
     const guestToken = body.guest_token;
-    const winnerPlayerId = parseInt(body.winner_player_id);
 
     const room = await env.DB.prepare(`SELECT * FROM cah_rooms WHERE code = ?`).bind(code).first();
     if (!room || room.status !== 'playing') return errorResponse('Game not active', 400);
@@ -807,6 +811,18 @@ export async function judgeWinner(request, env, user) {
     ).bind(room.id).all();
     const me = identifyPlayer(user, guestToken, players || []);
     if (!me || me.id !== round.harbinger_player_id) return errorResponse('Only the Harbinger may judge', 403);
+
+    // Blood moon: winner determined by which individual card was chosen
+    // Normal: winner determined by player_id directly
+    let winnerPlayerId = parseInt(body.winner_player_id) || 0;
+    if (!winnerPlayerId && body.winner_card_id) {
+      const sub = await env.DB.prepare(
+        `SELECT player_id FROM cah_submissions WHERE round_id = ? AND card_id = ?`
+      ).bind(round.id, parseInt(body.winner_card_id)).first();
+      if (!sub) return errorResponse('Card not found in round', 400);
+      winnerPlayerId = sub.player_id;
+    }
+    if (!winnerPlayerId) return errorResponse('No winner specified', 400);
 
     const winner = (players || []).find(p => p.id === winnerPlayerId);
     if (!winner) return errorResponse('Winner not found', 400);

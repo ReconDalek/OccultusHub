@@ -26,12 +26,14 @@ import Respect    from './pages/Respect'
 import Admin          from './pages/Admin'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy  from './pages/PrivacyPolicy'
+import Forums         from './pages/Forums'
 import Games          from './pages/Games'
 import GameRoom       from './pages/GameRoom'
 import CardsGame      from './pages/CardsGame'
+import Sanctum        from './pages/Sanctum'
 import NotFound       from './pages/NotFound'
 
-const GAME_ROUTES = ['/rite', '/cards'] // active gameplay routes — suppress easter egg overlays
+const GAME_ROUTES = ['/rite', '/cards', '/sanctum'] // active gameplay routes — suppress easter egg overlays
 
 function Layout({ children }) {
   const { pathname } = useLocation()
@@ -173,9 +175,21 @@ function AppRoutes() {
         }
       />
 
+      <Route
+        path="/forums"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="member">
+              <Forums />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
+
       <Route path="/games" element={<Layout><Games /></Layout>} />
       <Route path="/rite" element={<Layout><GameRoom /></Layout>} />
       <Route path="/cards" element={<Layout><CardsGame /></Layout>} />
+      <Route path="/sanctum" element={<Layout><Sanctum /></Layout>} />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
       <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />

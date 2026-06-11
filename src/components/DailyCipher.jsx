@@ -198,6 +198,12 @@ export default function DailyCipher({ guest = false }) {
           {/* Input + submit */}
           {!alreadySolved && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <style>{`
+                @media (max-width: 480px) {
+                  .cipher-submit-row { flex-direction: column !important; }
+                  .cipher-submit-row .cipher-submit-btn { width: 100%; }
+                }
+              `}</style>
               {guest && (
                 <input
                   type="text"
@@ -218,7 +224,7 @@ export default function DailyCipher({ guest = false }) {
                   }}
                 />
               )}
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div className="cipher-submit-row" style={{ display: 'flex', gap: 10 }}>
                 <input
                   type="text"
                   value={answer}
@@ -227,6 +233,7 @@ export default function DailyCipher({ guest = false }) {
                   placeholder="Enter your answer..."
                   style={{
                     flex: 1,
+                    minWidth: 0,
                     background: 'rgba(255,255,255,0.04)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: 10,
@@ -238,6 +245,7 @@ export default function DailyCipher({ guest = false }) {
                   }}
                 />
                 <button
+                  className="cipher-submit-btn"
                   onClick={handleSubmit}
                   disabled={!answer.trim() || submitting || (guest && !guestName.trim())}
                   style={{
@@ -252,6 +260,7 @@ export default function DailyCipher({ guest = false }) {
                     padding: '10px 20px',
                     cursor: answer.trim() && !submitting && (!guest || guestName.trim()) ? 'pointer' : 'not-allowed',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     transition: 'background 0.2s',
                   }}
                 >

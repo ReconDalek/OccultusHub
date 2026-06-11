@@ -22,7 +22,7 @@ export async function startCast(request, env, user) {
     const status = getCooldownStatus(userData?.last_fished_at);
 
     if (!status.canFish) {
-      return jsonResponse({ ok: false, nextCastAt: status.nextCastAt, msRemaining: status.msRemaining }, 429);
+      return jsonResponse({ ok: false, nextCastAt: status.nextCastAt, msRemaining: status.msRemaining });
     }
 
     await env.DB.prepare(

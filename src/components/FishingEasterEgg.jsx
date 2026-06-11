@@ -151,7 +151,12 @@ export default function FishingEasterEgg() {
     return () => window.removeEventListener('openFishingLeaderboard', handler)
   }, [])
 
-  if (!entityProps) return null
+  if (!entityProps) return (
+    <>
+      <FishingGame open={gameOpen} onClose={() => { setGameOpen(false); scheduleNext() }} />
+      <FishingLeaderboard open={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
+    </>
+  )
 
   const { goRight, variantIdx, colorIdx, sizeW, sizeH, topPct, duration, key } = entityProps
   const EntityShape = ENTITY_SHAPES[variantIdx]

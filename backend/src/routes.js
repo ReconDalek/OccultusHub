@@ -15,6 +15,8 @@ import * as warController from './controllers/warController.js';
 import * as customHitsController from './controllers/customHitsController.js';
 import * as gameController from './controllers/gameController.js';
 import * as cahController from './controllers/cahController.js';
+import * as forumsController from './controllers/forumsController.js';
+import * as sanctumController from './controllers/sanctumController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -164,6 +166,26 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/admin/wars/backfill' && method === 'POST') {
       return warController.backfillHistoricWars(request, env);
     }
+  }
+
+  // Forums endpoints (member auth required)
+  if (pathname === '/api/forums/posts' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return forumsController.listPosts(request, env, user);
+  }
+
+  if (pathname === '/api/forums/posts' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return forumsController.createPost(request, env, user);
+  }
+
+  const forumsPostMatch = pathname.match(/^\/api\/forums\/posts\/(\d+)$/);
+  if (forumsPostMatch) {
+    const postId = parseInt(forumsPostMatch[1]);
+    if (!user) return errorResponse('Authentication required', 401);
+    if (method === 'GET') return forumsController.getPost(request, env, user, postId);
+    if (method === 'PUT') return forumsController.updatePost(request, env, user, postId);
+    if (method === 'DELETE') return forumsController.deletePost(request, env, user, postId);
   }
 
   // Fishing endpoints
@@ -434,6 +456,27 @@ export async function handleRequest(request, env) {
     if (pathname.match(/^\/api\/admin\/cards\/(shadow|fate)\/\d+$/) && method === 'DELETE') {
       return cahController.adminDeleteCard(request, env);
     }
+  }
+
+  // The Sanctum — idle RPG (auth required)
+  if (pathname === '/api/sanctum/state' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return sanctumController.getState(request, env, user);
+  }
+  if (pathname === '/api/sanctum/click' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return sanctumController.click(request, env, user);
+  }
+  if (pathname === '/api/sanctum/upgrade' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return sanctumController.buyUpgrade(request, env, user);
+  }
+  if (pathname === '/api/sanctum/sync' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return sanctumController.sync(request, env, user);
+  }
+  if (pathname === '/api/sanctum/leaderboard' && method === 'GET') {
+    return sanctumController.getLeaderboard(request, env);
   }
 
   // 404 - Not found
