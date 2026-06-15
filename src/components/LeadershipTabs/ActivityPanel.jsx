@@ -263,9 +263,10 @@ export default function EnergyActivityPanel() {
   const [customFrom, setCustomFrom] = useState(tsToDate(monthStart(now.getUTCFullYear(), now.getUTCMonth())))
   const [customTo,   setCustomTo]   = useState(tsToDate(Math.floor(Date.now() / 1000)))
 
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState(null)
+  const [data,     setData]    = useState(null)
+  const [loading,  setLoading] = useState(false)
+  const [error,    setError]   = useState(null)
+  const [rawDebug, setRawDebug] = useState(null)
 
   const buildParams = useCallback(() => {
     if (mode === 'month') {
@@ -295,14 +296,18 @@ export default function EnergyActivityPanel() {
       .then((res) => res.json().then((json) => ({ res, json })))
       .then(({ res, json }) => {
         console.log('[Energy] response status:', res.status, 'body:', json)
+        setRawDebug(json)
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
       })
       .catch((e) => {
         console.error('[Energy] fetch error:', e.name, e.message)
-        if (e.name !== 'AbortError') setError(`${e.message} (check console for details)`)
+        if (e.name !== 'AbortError') {
+          setError(e.message)
+          setRawDebug({ fetchError: e.name, message: e.message })
+        }
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return controller
   }, [buildParams])
 
@@ -335,6 +340,20 @@ export default function EnergyActivityPanel() {
         customTo={customTo} setCustomTo={setCustomTo}
         onApply={load}
       />
+
+      {/* Temporary debug: shows raw API response */}
+      {rawDebug && (
+        <details style={{ marginBottom: '16px' }}>
+          <summary style={{ color: '#a1a1aa', fontSize: '12px', cursor: 'pointer' }}>Raw API response (debug)</summary>
+          <pre style={{
+            background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '8px', padding: '12px', fontSize: '11px', color: '#71717a',
+            overflowX: 'auto', maxHeight: '200px', marginTop: '8px',
+          }}>
+            {JSON.stringify(rawDebug, null, 2)}
+          </pre>
+        </details>
+      )}
 
       {loading && (
         <div style={{ padding: '48px', textAlign: 'center', color: '#a1a1aa', fontSize: '14px' }}>
