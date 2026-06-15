@@ -3,6 +3,7 @@ import { getRandomUserApiKey } from '../services/tornApiService.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com';
+const TORN_COMMENT = '&comment=OccHub';
 const MIN_CHAIN_LENGTH = 1000; // Only store chains >= this many hits
 
 // Factions allowed for manual chain import — includes current factions plus
@@ -27,7 +28,7 @@ export async function fetchAndCacheChains(env) {
 
   for (const factionId of FACTION_IDS) {
     try {
-      const url = `${TORN_API_BASE}/v2/faction/${factionId}/chains?limit=100&sort=DESC`;
+      const url = `${TORN_API_BASE}/v2/faction/${factionId}/chains?limit=100&sort=DESC${TORN_COMMENT}`;
       const res = await fetch(url, {
         headers: { Authorization: `ApiKey ${apiKey}` },
       });
@@ -139,7 +140,7 @@ export async function getChainReport(request, env) {
       return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
     }
 
-    const res = await fetch(`${TORN_API_BASE}/v2/faction/${chainId}/chainreport`, {
+    const res = await fetch(`${TORN_API_BASE}/v2/faction/${chainId}/chainreport?comment=OccHub`, {
       headers: { Authorization: `ApiKey ${apiKey}` },
     });
 

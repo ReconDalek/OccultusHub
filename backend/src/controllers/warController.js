@@ -3,6 +3,7 @@ import { getRandomApiKeyForFaction } from '../services/tornApiService.js';
 
 const FACTION_IDS   = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com';
+const TORN_COMMENT = '&comment=OccHub';
 const MAX_COMPLETED_WARS_WITH_ATTACKS = 5; // keep raw attack rows for N most-recent wars per faction
 
 // ── Text parsing helpers ──────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ async function summariseAndCleanWar(env, warId, factionId) {
 
 async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
   const res = await fetch(
-    `${TORN_API_BASE}/v2/faction/rankedwars?limit=20&sort=DESC`,
+    `${TORN_API_BASE}/v2/faction/rankedwars?limit=20&sort=DESC${TORN_COMMENT}`,
     { headers: { Authorization: `ApiKey ${apiKey}` } }
   );
   if (!res.ok) return null;
@@ -227,7 +228,7 @@ export async function checkWarMatches(env) {
       if (!apiKey) { results.push({ factionId, error: 'no API key' }); continue; }
 
       const res = await fetch(
-        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar`,
+        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar${TORN_COMMENT}`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -309,7 +310,7 @@ export async function trackActiveWars(env) {
 
       // ── 2. Check rankedWar news for state changes ───────────────────────────
       const newsRes = await fetch(
-        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar`,
+        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar${TORN_COMMENT}`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
 
@@ -366,7 +367,7 @@ export async function trackActiveWars(env) {
 
       // ── 3. Armory usage ─────────────────────────────────────────────────────
       const armoryRes = await fetch(
-        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction`,
+        `${TORN_API_BASE}/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction${TORN_COMMENT}`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
       if (armoryRes.ok) {
@@ -401,7 +402,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   // Pagination: follow _metadata.links.prev "to" timestamp until we've gone past war start
   // INSERT OR IGNORE handles any page-boundary overlaps automatically
 
-  let nextUrl     = `${TORN_API_BASE}/v2/faction/attacks?limit=100&sort=DESC`;
+  let nextUrl     = `${TORN_API_BASE}/v2/faction/attacks?limit=100&sort=DESC${TORN_COMMENT}`;
   let maxId       = lastAttackId;
   let totalNew    = 0;
   const MAX_PAGES = 20;
@@ -457,7 +458,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
     if (!prevUrl) break;
 
     // Extract `to` timestamp from the prev URL for the next fetch
-    nextUrl = `${TORN_API_BASE}/v2/faction/attacks?limit=100&sort=DESC` +
+    nextUrl = `${TORN_API_BASE}/v2/faction/attacks?limit=100&sort=DESC${TORN_COMMENT}` +
               `&to=${new URL(prevUrl).searchParams.get('to')}`;
   }
 
@@ -769,7 +770,7 @@ export async function backfillHistoricWars(request, env) {
       if (!apiKey) { summary.push({ factionId, error: 'no API key' }); continue; }
 
       const res = await fetch(
-        `${TORN_API_BASE}/v2/faction/rankedwars?limit=10&sort=DESC`,
+        `${TORN_API_BASE}/v2/faction/rankedwars?limit=10&sort=DESC${TORN_COMMENT}`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -105,7 +105,7 @@ export async function importTornEvents(request, env, user) {
 
     const apiKey = atob(userData.api_key);
 
-    const tornRes = await fetch('https://api.torn.com/v2/torn/calendar', {
+    const tornRes = await fetch('https://api.torn.com/v2/torn/calendar?comment=OccHub', {
       headers: { Authorization: `ApiKey ${apiKey}` },
     });
     if (!tornRes.ok) return errorResponse('Failed to fetch Torn calendar', 502);
@@ -207,7 +207,7 @@ export async function createFactionSchedule(request, env, user) {
         const apiKey = await getRandomUserApiKey(env);
         if (apiKey) {
           const tornRes = await fetch(
-            `https://api.torn.com/v2/faction/${opponent_faction_id}/basic`,
+            `https://api.torn.com/v2/faction/${opponent_faction_id}/basic?comment=OccHub`,
             { headers: { Authorization: `ApiKey ${apiKey}` } }
           );
           if (tornRes.ok) {
@@ -257,7 +257,7 @@ export async function advanceFactionSchedule(request, env, user) {
         const apiKey = await getRandomUserApiKey(env);
         if (apiKey) {
           const tornRes = await fetch(
-            `https://api.torn.com/v2/faction/${opponent_faction_id}/basic`,
+            `https://api.torn.com/v2/faction/${opponent_faction_id}/basic?comment=OccHub`,
             { headers: { Authorization: `ApiKey ${apiKey}` } }
           );
           if (tornRes.ok) {

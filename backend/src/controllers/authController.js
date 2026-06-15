@@ -2,6 +2,7 @@ import { generateToken } from '../middleware/auth.js';
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const TORN_API_URL = 'https://api.torn.com';
+const TORN_COMMENT = '&comment=OccHub';
 
 export async function login(request, env) {
   try {
@@ -15,7 +16,7 @@ export async function login(request, env) {
     let tornUser;
     try {
       const response = await fetch(
-        `${TORN_API_URL}/user?selections=profile&key=${apiKey}`
+        `${TORN_API_URL}/user?selections=profile&key=${apiKey}${TORN_COMMENT}`
       );
       if (!response.ok) {
         return errorResponse('Invalid API key', 401);
@@ -30,7 +31,7 @@ export async function login(request, env) {
     let calendarStartTime = null;
     try {
       const calRes = await fetch(
-        `${TORN_API_URL}/v2/user/calendar`,
+        `${TORN_API_URL}/v2/user/calendar?comment=OccHub`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
       if (calRes.ok) {

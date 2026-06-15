@@ -1,4 +1,5 @@
 const TORN_API_URL = 'https://api.torn.com';
+const TORN_COMMENT = '&comment=OccHub';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 
@@ -84,7 +85,7 @@ export async function fetchAndCacheFactions(env, factionIds, apiKey) {
 
   for (const factionId of factionIds) {
     try {
-      const url = `${TORN_API_URL}/faction/?id=${factionId}&selections=basic,members&key=${apiKey}`;
+      const url = `${TORN_API_URL}/faction/?id=${factionId}&selections=basic,members&key=${apiKey}${TORN_COMMENT}`;
       const data = await fetchWithRetry(url);
 
       await env.DB.prepare(
@@ -126,7 +127,7 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKey) {
 
   for (const companyId of companyIds) {
     try {
-      const url = `${TORN_API_URL}/v2/company?selections=profile,employees&id=${companyId}&key=${apiKey}`;
+      const url = `${TORN_API_URL}/v2/company?selections=profile,employees&id=${companyId}&key=${apiKey}${TORN_COMMENT}`;
       const data = await fetchWithRetry(url);
 
       // v2 API returns { profile: {...}, employees: [...] } — store as-is
