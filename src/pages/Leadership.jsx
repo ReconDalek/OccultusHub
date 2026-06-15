@@ -13,7 +13,7 @@ const tabs = [
   { id: 'chains',  label: 'Chain & War' },
   { id: 'ranks',   label: 'Member Ranks' },
   { id: 'cipher',  label: 'Cipher Review' },
-  { id: 'tools',   label: 'Leader Tools' },
+  { id: 'tools',   label: 'Tools' },
 ]
 
 export default function Leadership() {

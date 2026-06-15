@@ -1,155 +1,161 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import Respect from '../../pages/Respect'
 
-const tools = [
+// ─── Sub-tab bar ──────────────────────────────────────────────────────────────
+
+function SubTabs({ options, active, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      {options.map((opt) => {
+        const isActive = active === opt.value
+        const disabled = opt.disabled
+        return (
+          <button
+            key={opt.value}
+            onClick={() => !disabled && onChange(opt.value)}
+            disabled={disabled}
+            style={{
+              padding: '7px 18px',
+              borderRadius: '8px',
+              border: `1px solid ${isActive ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: isActive ? 'rgba(179,18,63,0.15)' : 'transparent',
+              color: disabled ? '#52525b' : isActive ? '#f4f4f5' : '#a1a1aa',
+              fontSize: '13px',
+              fontWeight: isActive ? '600' : '400',
+              cursor: disabled ? 'default' : 'pointer',
+              transition: 'all 0.15s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+            onMouseEnter={(e) => { if (!isActive && !disabled) e.currentTarget.style.color = '#f4f4f5' }}
+            onMouseLeave={(e) => { if (!isActive && !disabled) e.currentTarget.style.color = '#a1a1aa' }}
+          >
+            {opt.label}
+            {opt.badge && (
+              <span style={{
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '10px',
+                background: opt.badgeColor ?? 'rgba(255,255,255,0.06)',
+                color: opt.badgeText ?? '#a1a1aa',
+                fontWeight: '600',
+                letterSpacing: '0.4px',
+              }}>
+                {opt.badge}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Respect Tracker panel ────────────────────────────────────────────────────
+
+function RespectPanel() {
+  return (
+    <div style={{
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: '12px',
+      background: 'rgba(22,22,32,0.82)',
+      overflow: 'auto',
+      maxHeight: '800px',
+    }}>
+      <Respect />
+    </div>
+  )
+}
+
+// ─── Recruitment panel ────────────────────────────────────────────────────────
+
+function RecruitmentPanel() {
+  return (
+    <iframe
+      src="https://faction-recon.pages.dev/"
+      style={{
+        width: '100%',
+        height: '800px',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: '12px',
+        background: '#07070a',
+        display: 'block',
+      }}
+      title="Faction Recruitment"
+    />
+  )
+}
+
+// ─── Coming soon panel ────────────────────────────────────────────────────────
+
+function ComingSoonPanel({ label }) {
+  return (
+    <div style={{
+      padding: '60px 40px',
+      textAlign: 'center',
+      background: 'rgba(255,255,255,0.02)',
+      borderRadius: '12px',
+      border: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      <p style={{ color: '#52525b', fontSize: '14px', margin: 0 }}>{label} — coming soon.</p>
+    </div>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+const TOOLS = [
   {
-    id: 'respect',
+    value: 'respect',
     label: 'Respect Tracker',
-    description: 'Track and monitor faction respect gains over time.',
-    badge: 'Active',
-    badgeColor: 'rgba(109,40,217,0.3)',
-    badgeText: '#9f67ff',
-    action: { type: 'embed', id: 'respect', label: 'Open Tracker' },
+    badge: null,
   },
   {
-    id: 'recruitment',
-    label: 'Faction Recruitment',
-    description: 'Faction recruitment dashboard.',
-    badge: 'Active',
-    badgeColor: 'rgba(109,40,217,0.3)',
-    badgeText: '#9f67ff',
-    action: { type: 'embed', id: 'recruitment', label: 'Open Panel' },
+    value: 'recruitment',
+    label: 'Recruitment',
+    badge: null,
   },
   {
-    id: 'activity',
+    value: 'activity',
     label: 'Member Activity',
-    description: 'View login frequency, participation, and engagement across all three factions.',
-    badge: 'Coming soon',
+    badge: 'Soon',
     badgeColor: 'rgba(255,255,255,0.06)',
-    badgeText: '#a1a1aa',
-    action: null,
+    badgeText: '#52525b',
+    disabled: true,
   },
 ]
 
 export default function LeaderToolsTab() {
-  const [openEmbed, setOpenEmbed] = useState(null)
+  const [activeTool, setActiveTool] = useState('respect')
 
   return (
     <div>
-      {!openEmbed ? (
-        <>
-          <h2 className="font-cinzel mb-2" style={{ fontSize: '22px', color: '#f4f4f5' }}>
-            Leader Tools
-          </h2>
-          <p style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '28px' }}>
-            Command-level resources for managing the order.
-          </p>
+      {/* Header */}
+      <div style={{ marginBottom: '20px' }}>
+        <h2
+          style={{
+            fontFamily: 'Cinzel, serif',
+            color: '#f4f4f5',
+            fontSize: '20px',
+            letterSpacing: '1px',
+            marginBottom: '4px',
+          }}
+        >
+          Tools
+        </h2>
+        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+          Command-level resources for managing the order.
+        </p>
+      </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '560px' }}>
-            {tools.map((tool) => (
-              <div
-                key={tool.id}
-                style={{
-                  padding: '20px 24px',
-                  borderRadius: '14px',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '16px',
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: 600, fontSize: '15px' }}>{tool.label}</span>
-                    <span style={{
-                      fontSize: '11px',
-                      padding: '2px 10px',
-                      borderRadius: '20px',
-                      background: tool.badgeColor,
-                      color: tool.badgeText,
-                      fontWeight: 600,
-                      letterSpacing: '0.5px',
-                    }}>
-                      {tool.badge}
-                    </span>
-                  </div>
-                  <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
-                    {tool.description}
-                  </p>
-                </div>
+      {/* Tool sub-tabs */}
+      <SubTabs options={TOOLS} active={activeTool} onChange={setActiveTool} />
 
-                {tool.action?.type === 'embed' && (
-                  <button
-                    onClick={() => setOpenEmbed(tool.action.id)}
-                    className="no-underline"
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
-                      color: '#f4f4f5',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {tool.action.label}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-            <button
-              onClick={() => setOpenEmbed(null)}
-              style={{
-                background: 'none',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 8,
-                color: '#a1a1aa',
-                fontSize: 13,
-                padding: '6px 14px',
-                cursor: 'pointer',
-              }}
-            >
-              ← Back
-            </button>
-            <h2 className="font-cinzel" style={{ fontSize: 22, color: '#f4f4f5', margin: 0 }}>
-              {tools.find(t => t.action?.id === openEmbed)?.label}
-            </h2>
-          </div>
-          {openEmbed === 'respect' ? (
-            <div style={{
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 14,
-              background: 'rgba(22,22,32,0.82)',
-              overflow: 'auto',
-              maxHeight: '800px'
-            }}>
-              <Respect />
-            </div>
-          ) : (
-            <iframe
-              src="https://faction-recon.pages.dev/"
-              style={{
-                width: '100%',
-                height: '800px',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 14,
-                background: '#07070a',
-              }}
-              title="Faction Recruitment"
-            />
-          )}
-        </>
-      )}
+      {/* Panel */}
+      {activeTool === 'respect'    && <RespectPanel />}
+      {activeTool === 'recruitment' && <RecruitmentPanel />}
+      {activeTool === 'activity'   && <ComingSoonPanel label="Member Activity" />}
     </div>
   )
 }
