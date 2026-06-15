@@ -30,18 +30,21 @@ export async function getEnergyActivity(request, env) {
     // Days in range for avg/day calculation
     const days = Math.max(1, (toTs - fromTs) / 86400);
 
+    console.log('[energy] period from:', fromTs, 'to:', toTs, 'days:', days.toFixed(1));
+
     // For each faction: get a random key then make two separate timestamp calls
     const factionResults = await Promise.allSettled(
       FACTION_IDS.map(async (factionId) => {
         const apiKey = await getRandomApiKeyForFaction(env, factionId);
         if (!apiKey) throw new Error(`No API key for faction ${factionId}`);
+        console.log('[energy] faction', factionId, 'key found, fetching...');
 
-        // Two separate calls — one for start of period, one for end of period
         const [atStart, atEnd] = await Promise.all([
           fetchGymEnergyAt(apiKey, fromTs),
           fetchGymEnergyAt(apiKey, toTs),
         ]);
 
+        console.log('[energy] faction', factionId, 'atStart:', atStart.length, 'atEnd:', atEnd.length);
         return { factionId, atStart, atEnd };
       })
     );

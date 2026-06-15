@@ -287,16 +287,21 @@ export default function EnergyActivityPanel() {
     setLoading(true)
     setError(null)
     const { from, to } = buildParams()
+    console.log('[Energy] fetching from:', from, 'to:', to)
     fetch(
       `${API_BASE_URL}/api/leadership/energy?from=${from}&to=${to}`,
       { headers: authHeaders(), signal: controller.signal }
     )
       .then((res) => res.json().then((json) => ({ res, json })))
       .then(({ res, json }) => {
-        if (!res.ok) throw new Error(json.error || 'Failed to load energy data')
+        console.log('[Energy] response status:', res.status, 'body:', json)
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
       })
-      .catch((e) => { if (e.name !== 'AbortError') setError(e.message) })
+      .catch((e) => {
+        console.error('[Energy] fetch error:', e.name, e.message)
+        if (e.name !== 'AbortError') setError(`${e.message} (check console for details)`)
+      })
       .finally(() => setLoading(false))
     return controller
   }, [buildParams])
