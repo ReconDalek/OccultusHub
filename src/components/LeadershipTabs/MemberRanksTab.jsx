@@ -361,7 +361,7 @@ function FactionPanel({ factionId, mismatchOnly }) {
   const [error,   setError]   = useState(null)
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
     setMembers(null)
@@ -369,17 +369,17 @@ function FactionPanel({ factionId, mismatchOnly }) {
     const token = localStorage.getItem('occultusSession')
     fetch(`${API_BASE_URL}/api/leadership/members?faction_id=${factionId}`, {
       headers: { Authorization: token },
+      signal: controller.signal,
     })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return
         if (data.error) setError(data.error)
         else setMembers(data.members || [])
       })
-      .catch((err) => { if (!cancelled) setError(err.message) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .catch((err) => { if (err.name !== 'AbortError') setError(err.message) })
+      .finally(() => setLoading(false))
 
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [factionId])
 
   return <RanksView members={members} loading={loading} error={error} showFaction={false} mismatchOnly={mismatchOnly} />
@@ -393,7 +393,7 @@ function AllFactionsPanel({ mismatchOnly }) {
   const [error,   setError]   = useState(null)
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
     setMembers(null)
@@ -404,25 +404,22 @@ function AllFactionsPanel({ mismatchOnly }) {
       FACTIONS.map((f) =>
         fetch(`${API_BASE_URL}/api/leadership/members?faction_id=${f.id}`, {
           headers: { Authorization: token },
+          signal: controller.signal,
         }).then((r) => r.json())
       )
     )
       .then((results) => {
-        if (cancelled) return
         const allErr = results.find((r) => r.error)
         if (allErr) { setError(allErr.error); return }
-
-        // Merge all 3 factions and sort by total_hits DESC
         const combined = results
           .flatMap((r) => r.members || [])
           .sort((a, b) => memberTotal(b) - memberTotal(a))
-
         setMembers(combined)
       })
-      .catch((err) => { if (!cancelled) setError(err.message) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .catch((err) => { if (err.name !== 'AbortError') setError(err.message) })
+      .finally(() => setLoading(false))
 
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [])
 
   return <RanksView members={members} loading={loading} error={error} showFaction={true} mismatchOnly={mismatchOnly} />

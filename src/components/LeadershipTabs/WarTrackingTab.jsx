@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -272,7 +272,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
   const [saveMsg,     setSaveMsg]     = useState(null)
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, { headers: authHeaders() })
+    const controller = new AbortController()
+    fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, { headers: authHeaders(), signal: controller.signal })
       .then(r => r.json())
       .then(d => {
         setHitsSaved(!!d.is_paid && !!initialHitsSaved)
@@ -286,7 +287,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         }
         if (p.paid) setPaidSet(new Set(Object.keys(p.paid).map(Number)))
       })
-      .catch(() => {})
+      .catch((e) => { if (e.name !== 'AbortError') console.error('payout fetch failed', e) })
+    return () => controller.abort()
   }, [warId])
 
   const settings = { warPct, outsidePct, assistPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare }
@@ -546,14 +548,18 @@ function WarDetail({ warId, onPayoutSaved }) {
   const [activeSection, setActiveSection] = useState('stats')
 
   useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
     setLoading(true)
     Promise.all([
-      fetch(`${API_BASE_URL}/api/leadership/war/${warId}`,         { headers: authHeaders() }).then((r) => r.json()),
-      fetch(`${API_BASE_URL}/api/leadership/war/${warId}/armory`,  { headers: authHeaders() }).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/api/leadership/war/${warId}`,        { headers: authHeaders(), signal }).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/api/leadership/war/${warId}/armory`, { headers: authHeaders(), signal }).then((r) => r.json()),
     ]).then(([detail, arm]) => {
       setData(detail)
       setArmory(arm.armory || [])
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch((e) => { if (e.name !== 'AbortError') console.error('war detail fetch failed', e) })
+      .finally(() => setLoading(false))
+    return () => controller.abort()
   }, [warId])
 
 
@@ -819,17 +825,17 @@ function FactionWars({ factionId }) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
 
-  const load = useCallback(() => {
+  useEffect(() => {
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
-    fetch(`${API_BASE_URL}/api/leadership/wars?faction_id=${factionId}`, { headers: authHeaders() })
+    fetch(`${API_BASE_URL}/api/leadership/wars?faction_id=${factionId}`, { headers: authHeaders(), signal: controller.signal })
       .then((r) => r.json())
       .then((d) => setWars(d.wars || []))
-      .catch(() => setError('Failed to load wars'))
+      .catch((e) => { if (e.name !== 'AbortError') setError('Failed to load wars') })
       .finally(() => setLoading(false))
+    return () => controller.abort()
   }, [factionId])
-
-  useEffect(() => { load() }, [load])
 
   if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading wars…</p>
   if (error)   return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>{error}</p>

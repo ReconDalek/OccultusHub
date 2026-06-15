@@ -282,27 +282,30 @@ export default function EnergyActivityPanel() {
     }
   }, [mode, selectedMonth, customFrom, customTo])
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
-    try {
-      const { from, to } = buildParams()
-      const res = await fetch(
-        `${API_BASE_URL}/api/leadership/energy?from=${from}&to=${to}`,
-        { headers: authHeaders() }
-      )
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to load energy data')
-      setData(json)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+    const { from, to } = buildParams()
+    fetch(
+      `${API_BASE_URL}/api/leadership/energy?from=${from}&to=${to}`,
+      { headers: authHeaders(), signal: controller.signal }
+    )
+      .then((res) => res.json().then((json) => ({ res, json })))
+      .then(({ res, json }) => {
+        if (!res.ok) throw new Error(json.error || 'Failed to load energy data')
+        setData(json)
+      })
+      .catch((e) => { if (e.name !== 'AbortError') setError(e.message) })
+      .finally(() => setLoading(false))
+    return controller
   }, [buildParams])
 
-  // Load on mount with defaults
-  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Load on mount with defaults; cancel request if component unmounts
+  useEffect(() => {
+    const controller = load()
+    return () => controller.abort()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const periodLabel = () => {
     if (mode === 'month') return monthLabel(selectedMonth.year, selectedMonth.month)

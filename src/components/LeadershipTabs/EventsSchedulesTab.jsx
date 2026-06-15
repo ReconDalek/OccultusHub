@@ -39,13 +39,18 @@ function EventsSection({ token }) {
   const [error, setError] = useState('')
 
   const fetchEvents = () => {
-    fetch(`${API_BASE_URL}/api/events`, { headers: { Authorization: token } })
+    const controller = new AbortController()
+    fetch(`${API_BASE_URL}/api/events`, { headers: { Authorization: token }, signal: controller.signal })
       .then((r) => r.json())
       .then((data) => { setEvents(data.events || []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .catch((e) => { if (e.name !== 'AbortError') setLoading(false) })
+    return controller
   }
 
-  useEffect(fetchEvents, [])
+  useEffect(() => {
+    const controller = fetchEvents()
+    return () => controller.abort()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyPreset = (preset) => {
     setForm(f => ({ ...f, category: preset.category, title: preset.title }))
@@ -443,13 +448,18 @@ function SchedulesSection({ token }) {
   const isActive = form.stage === 'active'
 
   const fetchSchedules = () => {
-    fetch(`${API_BASE_URL}/api/faction-schedules`, { headers: { Authorization: token } })
+    const controller = new AbortController()
+    fetch(`${API_BASE_URL}/api/faction-schedules`, { headers: { Authorization: token }, signal: controller.signal })
       .then((r) => r.json())
       .then((data) => { setSchedules(data.schedules || []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .catch((e) => { if (e.name !== 'AbortError') setLoading(false) })
+    return controller
   }
 
-  useEffect(fetchSchedules, [])
+  useEffect(() => {
+    const controller = fetchSchedules()
+    return () => controller.abort()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = async (e) => {
     e.preventDefault()

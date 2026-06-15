@@ -902,7 +902,7 @@ function FactionChains({ factionId }) {
   const [error,   setError]   = useState(null)
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
     setChains(null)
@@ -910,17 +910,17 @@ function FactionChains({ factionId }) {
     const token = localStorage.getItem('occultusSession')
     fetch(`${API_BASE_URL}/api/leadership/chains?faction_id=${factionId}`, {
       headers: { Authorization: token },
+      signal: controller.signal,
     })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return
         if (data.error) setError(data.error)
         else setChains(data.chains || [])
       })
-      .catch((err) => { if (!cancelled) setError(err.message) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .catch((err) => { if (err.name !== 'AbortError') setError(err.message) })
+      .finally(() => setLoading(false))
 
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [factionId])
 
   if (loading) {
