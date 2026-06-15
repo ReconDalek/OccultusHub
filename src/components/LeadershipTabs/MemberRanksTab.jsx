@@ -281,7 +281,7 @@ function SummaryBar({ members }) {
 
 // ─── Ranks view (used by both faction and all-factions panels) ────────────────
 
-function RanksView({ members, loading, error, showFaction }) {
+function RanksView({ members, loading, error, showFaction, mismatchOnly = false }) {
   if (loading) {
     return (
       <div style={{ padding: '40px 0', textAlign: 'center' }}>
@@ -310,9 +310,24 @@ function RanksView({ members, loading, error, showFaction }) {
     )
   }
 
+  const displayMembers = mismatchOnly
+    ? members.filter((m) => isMismatch(m.faction_position, getDerivedRank(memberTotal(m))))
+    : members
+
+  if (mismatchOnly && displayMembers.length === 0) {
+    return (
+      <div style={{ marginTop: '16px' }}>
+        <SummaryBar members={members} />
+        <div style={{ padding: '40px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', marginTop: '16px' }}>
+          <p style={{ color: '#a1a1aa', fontSize: '14px', margin: 0 }}>No rank mismatches found.</p>
+        </div>
+      </div>
+    )
+  }
+
   // Group by derived rank, maintaining sort order within each group (already sorted by hits DESC from API)
   const grouped = Object.fromEntries(RANK_TIERS.map((t) => [t.name, []]))
-  for (const m of members) {
+  for (const m of displayMembers) {
     grouped[getDerivedRank(memberTotal(m))].push(m)
   }
 
@@ -340,7 +355,7 @@ function RanksView({ members, loading, error, showFaction }) {
 
 // ─── Single-faction panel ─────────────────────────────────────────────────────
 
-function FactionPanel({ factionId }) {
+function FactionPanel({ factionId, mismatchOnly }) {
   const [members, setMembers] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
@@ -367,12 +382,12 @@ function FactionPanel({ factionId }) {
     return () => { cancelled = true }
   }, [factionId])
 
-  return <RanksView members={members} loading={loading} error={error} showFaction={false} />
+  return <RanksView members={members} loading={loading} error={error} showFaction={false} mismatchOnly={mismatchOnly} />
 }
 
 // ─── All-factions panel ───────────────────────────────────────────────────────
 
-function AllFactionsPanel() {
+function AllFactionsPanel({ mismatchOnly }) {
   const [members, setMembers] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
@@ -410,7 +425,7 @@ function AllFactionsPanel() {
     return () => { cancelled = true }
   }, [])
 
-  return <RanksView members={members} loading={loading} error={error} showFaction={true} />
+  return <RanksView members={members} loading={loading} error={error} showFaction={true} mismatchOnly={mismatchOnly} />
 }
 
 // ─── Custom hits modal ────────────────────────────────────────────────────────
@@ -562,27 +577,37 @@ function CustomHitsModal({ onClose, onSaved }) {
 function SubTabs({ options, active, onChange }) {
   return (
     <div style={{ display: 'flex', gap: '4px', marginBottom: '4px', flexWrap: 'wrap' }}>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          style={{
-            padding: '7px 18px',
-            borderRadius: '8px',
-            border: `1px solid ${active === opt.value ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
-            background: active === opt.value ? 'rgba(179,18,63,0.15)' : 'transparent',
-            color: active === opt.value ? '#f4f4f5' : '#a1a1aa',
-            fontSize: '13px',
-            fontWeight: active === opt.value ? '600' : '400',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#f4f4f5' }}
-          onMouseLeave={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#a1a1aa' }}
-        >
-          {opt.label}
-        </button>
-      ))}
+      {options.map((opt) => {
+        const isMismatchTab = opt.value === 'mismatches'
+        const isActive = active === opt.value
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: '7px 18px',
+              borderRadius: '8px',
+              border: isActive
+                ? `1px solid ${isMismatchTab ? 'rgba(251,191,36,0.5)' : 'rgba(179,18,63,0.5)'}`
+                : '1px solid rgba(255,255,255,0.08)',
+              background: isActive
+                ? isMismatchTab ? 'rgba(251,191,36,0.12)' : 'rgba(179,18,63,0.15)'
+                : 'transparent',
+              color: isActive
+                ? isMismatchTab ? '#fbbf24' : '#f4f4f5'
+                : '#a1a1aa',
+              fontSize: '13px',
+              fontWeight: isActive ? '600' : '400',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = '#f4f4f5' }}
+            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = '#a1a1aa' }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -594,9 +619,13 @@ export default function MemberRanksTab() {
   const [showCustom,  setShowCustom]  = useState(false)
   const [reloadKey,   setReloadKey]   = useState(0)
 
+  const mismatchOnly = activeTab === 'mismatches'
+  const factionTab   = mismatchOnly ? 'all' : activeTab
+
   const tabs = [
-    { value: 'all',   label: 'All Factions' },
+    { value: 'all',        label: 'All Factions' },
     ...FACTIONS.map((f) => ({ value: String(f.id), label: f.name })),
+    { value: 'mismatches', label: '⚠ Mismatches' },
   ]
 
   return (
@@ -661,9 +690,9 @@ export default function MemberRanksTab() {
       <SubTabs options={tabs} active={activeTab} onChange={setActiveTab} />
 
       {/* Panel — keyed so switching tabs OR saving remounts and re-fetches */}
-      {activeTab === 'all'
-        ? <AllFactionsPanel key={`all-${reloadKey}`} />
-        : <FactionPanel key={`${activeTab}-${reloadKey}`} factionId={Number(activeTab)} />
+      {factionTab === 'all'
+        ? <AllFactionsPanel key={`all-${reloadKey}`} mismatchOnly={mismatchOnly} />
+        : <FactionPanel key={`${factionTab}-${reloadKey}`} factionId={Number(factionTab)} mismatchOnly={mismatchOnly} />
       }
     </div>
   )
