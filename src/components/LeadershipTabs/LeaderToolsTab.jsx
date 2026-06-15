@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Respect from '../../pages/Respect'
+import EnergyActivityPanel from './ActivityPanel'
 
 // ─── Sub-tab bar ──────────────────────────────────────────────────────────────
 
@@ -87,21 +88,6 @@ function RecruitmentPanel() {
   )
 }
 
-// ─── Coming soon panel ────────────────────────────────────────────────────────
-
-function ComingSoonPanel({ label }) {
-  return (
-    <div style={{
-      padding: '60px 40px',
-      textAlign: 'center',
-      background: 'rgba(255,255,255,0.02)',
-      borderRadius: '12px',
-      border: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <p style={{ color: '#52525b', fontSize: '14px', margin: 0 }}>{label} — coming soon.</p>
-    </div>
-  )
-}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -119,15 +105,11 @@ const TOOLS = [
   {
     value: 'activity',
     label: 'Member Activity',
-    badge: 'Soon',
-    badgeColor: 'rgba(255,255,255,0.06)',
-    badgeText: '#52525b',
-    disabled: true,
   },
 ]
 
 export default function LeaderToolsTab() {
-  const [activeTool, setActiveTool] = useState('respect')
+  const [activeTool, setActiveTool] = useState('activity')
 
   return (
     <div>
@@ -155,7 +137,7 @@ export default function LeaderToolsTab() {
       {/* Panel */}
       {activeTool === 'respect'    && <RespectPanel />}
       {activeTool === 'recruitment' && <RecruitmentPanel />}
-      {activeTool === 'activity'   && <ComingSoonPanel label="Member Activity" />}
+      {activeTool === 'activity'   && <EnergyActivityPanel />}
     </div>
   )
 }

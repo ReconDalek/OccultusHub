@@ -17,6 +17,7 @@ import * as gameController from './controllers/gameController.js';
 import * as cahController from './controllers/cahController.js';
 import * as forumsController from './controllers/forumsController.js';
 import * as sanctumController from './controllers/sanctumController.js';
+import * as activityController from './controllers/activityController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -166,6 +167,13 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/admin/wars/backfill' && method === 'POST') {
       return warController.backfillHistoricWars(request, env);
     }
+  }
+
+  // Activity endpoints (leadership)
+  if (pathname === '/api/leadership/energy' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!user.isLeader && !user.isAdmin) return errorResponse('Leadership access required', 403);
+    return activityController.getEnergyActivity(request, env);
   }
 
   // Forums endpoints (member auth required)
