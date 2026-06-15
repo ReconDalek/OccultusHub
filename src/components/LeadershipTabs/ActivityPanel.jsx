@@ -48,6 +48,32 @@ function buildMonthOptions() {
   return options
 }
 
+// ─── Generating loader ────────────────────────────────────────────────────────
+
+function GeneratingLoader() {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 500)
+    return () => clearInterval(id)
+  }, [])
+  const dots = '.'.repeat((tick % 3) + 1).padEnd(3, ' ')
+
+  return (
+    <div style={{
+      padding: '48px 24px', textAlign: 'center',
+      background: 'rgba(255,255,255,0.02)', borderRadius: '12px',
+      border: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      <p style={{ color: '#a78bfa', fontSize: '15px', fontWeight: '600', margin: '0 0 8px 0', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
+        Generating{dots}
+      </p>
+      <p style={{ color: '#52525b', fontSize: '12px', margin: 0 }}>
+        Querying Torn API across all factions — this takes about 30 seconds
+      </p>
+    </div>
+  )
+}
+
 // ─── Period picker ─────────────────────────────────────────────────────────────
 
 function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFrom, setCustomFrom, customTo, setCustomTo, onApply }) {
@@ -355,11 +381,7 @@ export default function EnergyActivityPanel() {
         </details>
       )}
 
-      {loading && (
-        <div style={{ padding: '48px', textAlign: 'center', color: '#a1a1aa', fontSize: '14px' }}>
-          Fetching energy data from Torn API…
-        </div>
-      )}
+      {loading && <GeneratingLoader />}
 
       {error && (
         <div style={{
