@@ -6,14 +6,15 @@ const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
 const FACTION_IDS = [33097, 9728, 9171]
 
 export default function CacheTab() {
-  const [cacheStatus,  setCacheStatus]  = useState(null)
-  const [chainStatus,  setChainStatus]  = useState(null)
-  const [memberStatus, setMemberStatus] = useState(null)
-  const [analytics,    setAnalytics]    = useState(null)
-  const [loading,      setLoading]      = useState(true)
-  const [refreshing,   setRefreshing]   = useState(null) // 'all' | 'factions' | 'companies' | 'chains' | 'members'
-  const [lastResult,   setLastResult]   = useState(null)
-  const [error,        setError]        = useState(null)
+  const [cacheStatus,         setCacheStatus]         = useState(null)
+  const [chainStatus,         setChainStatus]         = useState(null)
+  const [memberStatus,        setMemberStatus]        = useState(null)
+  const [analytics,           setAnalytics]           = useState(null)
+  const [personalStatsStatus, setPersonalStatsStatus] = useState(null)
+  const [loading,             setLoading]             = useState(true)
+  const [refreshing,          setRefreshing]          = useState(null)
+  const [lastResult,          setLastResult]          = useState(null)
+  const [error,               setError]               = useState(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -29,6 +30,8 @@ export default function CacheTab() {
         .then((r) => r.json()).then((d) => setChainStatus(d.status)).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/members/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then(setMemberStatus).catch(console.error),
+      fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
+        .then((r) => r.json()).then(setPersonalStatsStatus).catch(console.error),
     ])
     setLoading(false)
   }
@@ -46,7 +49,6 @@ export default function CacheTab() {
       const data = await res.json()
       if (res.ok) {
         setLastResult(data)
-        // Re-fetch chain status to update counts
         fetch(`${API_BASE_URL}/api/admin/chains/status`, { headers: { Authorization: token } })
           .then((r) => r.json())
           .then((d) => setChainStatus(d.status))
@@ -99,11 +101,35 @@ export default function CacheTab() {
       const data = await res.json()
       if (res.ok) {
         setLastResult(data)
-        // Re-fetch cache status to update counts
         fetch(`${API_BASE_URL}/api/admin/cache/status`, { headers: { Authorization: token } })
           .then((r) => r.json())
           .then(setCacheStatus)
           .catch(console.error)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
+  const runPersonalStatsSnapshot = async () => {
+    try {
+      setRefreshing('personal-stats')
+      setError(null)
+      setLastResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/personal-stats/snapshot`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult(data)
+        fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
+          .then((r) => r.json()).then(setPersonalStatsStatus).catch(console.error)
       } else {
         setError(data.error || `Error ${res.status}`)
       }
@@ -235,7 +261,7 @@ export default function CacheTab() {
             {refreshing === 'chains' ? 'Refreshing…' : 'Refresh Chain Cache'}
           </button>
           <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
-            Auto-refreshes every Monday 09:00 UTC — only new chains are added.
+            Auto-refreshes every Tuesday 01:00 UTC — only new chains are added.
           </p>
         </div>
       </div>
@@ -307,24 +333,53 @@ export default function CacheTab() {
         </div>
       </div>
 
-      {/* Refresh all */}
+      {/* Personal stats snapshots */}
       <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '12px' }}>Refresh All</h3>
-        <button
-          onClick={() => refreshCache('all')}
-          disabled={!!refreshing}
-          className="px-6 py-3 rounded border-none cursor-pointer transition-all hover:opacity-80 font-medium"
-          style={{
-            background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
-            color: '#f4f4f5',
-            opacity: refreshing ? 0.5 : 1,
-          }}
-        >
-          {refreshing === 'all' ? 'Refreshing...' : 'Refresh All Caches'}
-        </button>
-        <p style={{ color: '#a1a1aa', marginTop: '8px', fontSize: '13px' }}>
-          Force refresh all faction and company data from the Torn API.
-        </p>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>📊 Personal Stats Snapshots</h3>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          {[
+            { label: 'Members Tracked', value: personalStatsStatus?.members ?? '—', color: '#f4f4f5' },
+            { label: 'Days of History',  value: personalStatsStatus?.days    ?? '—', color: '#22d3ee' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="p-4 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color, fontSize: '24px', fontWeight: 'bold' }}>{value}</p>
+            </div>
+          ))}
+          {personalStatsStatus?.earliest && (
+            <div className="p-4 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Date Range</p>
+              <p style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600', lineHeight: '1.6' }}>
+                {personalStatsStatus.earliest}<br />
+                <span style={{ color: '#a1a1aa' }}>to</span> {personalStatsStatus.latest}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={runPersonalStatsSnapshot}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'personal-stats' ? 'Running snapshot…' : 'Run Snapshot Now'}
+          </button>
+          <div>
+            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+              Auto-runs daily at 01:00 UTC after the energy snapshot. ~200 API calls — may take 3–5 minutes.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Last result */}
@@ -336,9 +391,11 @@ export default function CacheTab() {
           <p style={{ color: '#9f67ff', fontSize: '13px', marginBottom: '4px', fontWeight: 'bold' }}>
             {lastResult.message}
           </p>
-          <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
-            {formatUTC(lastResult.refreshedAt)}
-          </p>
+          {lastResult.refreshedAt && (
+            <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
+              {formatUTC(lastResult.refreshedAt)}
+            </p>
+          )}
         </div>
       )}
 

@@ -154,6 +154,14 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/admin/logs' && method === 'GET') {
       return logsController.getLogs(request, env);
     }
+
+    // Personal stats snapshot admin
+    if (pathname === '/api/admin/personal-stats/status' && method === 'GET') {
+      return activityController.getPersonalStatsSnapshotStatus(request, env);
+    }
+    if (pathname === '/api/admin/personal-stats/snapshot' && method === 'POST') {
+      return activityController.triggerPersonalStatsSnapshotAdmin(request, env);
+    }
   }
 
   // Activity endpoints (leadership)

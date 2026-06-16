@@ -26,13 +26,25 @@ function buildMonthOptions() {
 
 // ─── Period picker ─────────────────────────────────────────────────────────────
 
-function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFrom, setCustomFrom, customTo, setCustomTo, onApply }) {
+const dateInputStyle = {
+  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: '8px', color: '#f4f4f5', padding: '6px 10px', fontSize: '13px',
+}
+
+function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFrom, setCustomFrom, customTo, setCustomTo, customDay, setCustomDay, onApply, minDate }) {
   const months = buildMonthOptions()
   const now = new Date()
 
+  // A month is before data if its last day is before minDate
+  const isMonthBeforeData = (year, month) => {
+    if (!minDate) return false
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
+    return lastDay < minDate
+  }
+
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
-      {['month', 'custom'].map(m => (
+      {[['month', 'By Month'], ['day', 'Per Day'], ['custom', 'Custom Range']].map(([m, label]) => (
         <button
           key={m}
           onClick={() => setMode(m)}
@@ -47,7 +59,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
             cursor: 'pointer',
           }}
         >
-          {m === 'month' ? 'By Month' : 'Custom Range'}
+          {label}
         </button>
       ))}
 
@@ -65,13 +77,32 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
         >
           {months.map(({ year, month }) => {
             const isCurrent = year === now.getUTCFullYear() && month === now.getUTCMonth()
+            const noData = isMonthBeforeData(year, month)
             return (
-              <option key={`${year}-${month}`} value={`${year}-${month}`}>
-                {monthLabel(year, month)}{isCurrent ? ' (current)' : ''}
+              <option
+                key={`${year}-${month}`}
+                value={`${year}-${month}`}
+                disabled={noData}
+                style={{ color: noData ? '#52525b' : '#f4f4f5' }}
+              >
+                {monthLabel(year, month)}{isCurrent ? ' (current)' : ''}{noData ? ' — no data' : ''}
               </option>
             )
           })}
         </select>
+      )}
+
+      {mode === 'day' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <label style={{ color: '#71717a', fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Date (UTC)</label>
+          <input
+            type="date"
+            value={customDay}
+            min={minDate}
+            onChange={e => setCustomDay(e.target.value)}
+            style={dateInputStyle}
+          />
+        </div>
       )}
 
       {mode === 'custom' && (
@@ -81,11 +112,9 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
             <input
               type="date"
               value={customFrom}
+              min={minDate}
               onChange={e => setCustomFrom(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px', color: '#f4f4f5', padding: '6px 10px', fontSize: '13px',
-              }}
+              style={dateInputStyle}
             />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -93,11 +122,9 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
             <input
               type="date"
               value={customTo}
+              min={minDate}
               onChange={e => setCustomTo(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px', color: '#f4f4f5', padding: '6px 10px', fontSize: '13px',
-              }}
+              style={dateInputStyle}
             />
           </div>
         </>
@@ -219,10 +246,13 @@ export default function EnergyActivityPanel() {
   const firstOfMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
   const [customFrom, setCustomFrom] = useState(firstOfMonth)
   const [customTo,   setCustomTo]   = useState(todayStr)
+  const [customDay,  setCustomDay]  = useState(todayStr)
 
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
+
+  const minDate = data?.coverage?.earliest || todayStr
 
   const buildParams = useCallback(() => {
     if (mode === 'month') {
@@ -234,8 +264,9 @@ export default function EnergyActivityPanel() {
         : new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
       return { from: fromStr, to: toStr }
     }
+    if (mode === 'day') return { from: customDay, to: customDay }
     return { from: customFrom, to: customTo }
-  }, [mode, selectedMonth, customFrom, customTo])
+  }, [mode, selectedMonth, customFrom, customTo, customDay])
 
   const load = useCallback(() => {
     const controller = new AbortController()
@@ -263,10 +294,11 @@ export default function EnergyActivityPanel() {
     return () => controller.abort()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const periodLabel = () =>
-    mode === 'month'
-      ? monthLabel(selectedMonth.year, selectedMonth.month)
-      : `${customFrom} to ${customTo} UTC`
+  const periodLabel = () => {
+    if (mode === 'month') return monthLabel(selectedMonth.year, selectedMonth.month)
+    if (mode === 'day')   return `${customDay} UTC`
+    return `${customFrom} to ${customTo} UTC`
+  }
 
   return (
     <div>
@@ -284,7 +316,9 @@ export default function EnergyActivityPanel() {
         selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth}
         customFrom={customFrom} setCustomFrom={setCustomFrom}
         customTo={customTo} setCustomTo={setCustomTo}
+        customDay={customDay} setCustomDay={setCustomDay}
         onApply={load}
+        minDate={minDate}
       />
 
       {loading && (

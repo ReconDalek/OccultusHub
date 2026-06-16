@@ -32,8 +32,9 @@ function buildMonthOptions() {
   return options
 }
 
-function buildParams(mode, selectedMonth, customFrom, customTo) {
+function buildParams(mode, selectedMonth, customFrom, customTo, customDay) {
   if (mode === 'custom') return { from: customFrom, to: customTo }
+  if (mode === 'day')    return { from: customDay, to: customDay }
   const { year, month } = selectedMonth
   const now = new Date()
   const isCurrentMonth = year === now.getUTCFullYear() && month === now.getUTCMonth()
@@ -60,13 +61,24 @@ const SERIES_COLORS  = ['#f43f5e', '#8b5cf6', '#22d3ee', '#f97316']
 
 // ─── Period picker ─────────────────────────────────────────────────────────────
 
-function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFrom, setCustomFrom, customTo, setCustomTo, onApply }) {
+const psDateInput = {
+  padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
+  background: '#18181b', color: '#f4f4f5', fontSize: '13px',
+}
+
+function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFrom, setCustomFrom, customTo, setCustomTo, customDay, setCustomDay, onApply, minDate }) {
   const months = buildMonthOptions()
   const now = new Date()
 
+  const isMonthBeforeData = (year, month) => {
+    if (!minDate) return false
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
+    return lastDay < minDate
+  }
+
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
-      {['month', 'custom'].map(m => (
+      {[['month', 'By Month'], ['day', 'Per Day'], ['custom', 'Custom Range']].map(([m, label]) => (
         <button key={m} onClick={() => setMode(m)} style={{
           padding: '7px 16px', borderRadius: '8px',
           border: `1px solid ${mode === m ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
@@ -74,7 +86,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
           color: mode === m ? '#f4f4f5' : '#a1a1aa', fontSize: '13px',
           fontWeight: mode === m ? '600' : '400', cursor: 'pointer',
         }}>
-          {m === 'month' ? 'By Month' : 'Custom Range'}
+          {label}
         </button>
       ))}
 
@@ -84,12 +96,23 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
           onChange={e => { const [y, mo] = e.target.value.split('-').map(Number); setSelectedMonth({ year: y, month: mo }) }}
           style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#18181b', color: '#f4f4f5', fontSize: '13px', cursor: 'pointer' }}
         >
-          {months.map(({ year, month }) => (
-            <option key={`${year}-${month}`} value={`${year}-${month}`}>
-              {monthLabel(year, month)}{year === now.getUTCFullYear() && month === now.getUTCMonth() ? ' (this month)' : ''}
-            </option>
-          ))}
+          {months.map(({ year, month }) => {
+            const isCurrent = year === now.getUTCFullYear() && month === now.getUTCMonth()
+            const noData = isMonthBeforeData(year, month)
+            return (
+              <option key={`${year}-${month}`} value={`${year}-${month}`} disabled={noData} style={{ color: noData ? '#52525b' : '#f4f4f5' }}>
+                {monthLabel(year, month)}{isCurrent ? ' (this month)' : ''}{noData ? ' — no data' : ''}
+              </option>
+            )
+          })}
         </select>
+      )}
+
+      {mode === 'day' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <label style={{ color: '#a1a1aa', fontSize: '12px' }}>Date (UTC)</label>
+          <input type="date" value={customDay} min={minDate} onChange={e => setCustomDay(e.target.value)} style={psDateInput} />
+        </div>
       )}
 
       {mode === 'custom' && (
@@ -97,16 +120,16 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
           {[['From', customFrom, setCustomFrom], ['To', customTo, setCustomTo]].map(([lbl, val, setter]) => (
             <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <label style={{ color: '#a1a1aa', fontSize: '12px' }}>{lbl}</label>
-              <input type="date" value={val} onChange={e => setter(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#18181b', color: '#f4f4f5', fontSize: '13px' }} />
+              <input type="date" value={val} min={minDate} onChange={e => setter(e.target.value)} style={psDateInput} />
             </div>
           ))}
-          <button onClick={onApply} style={{
-            padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(179,18,63,0.4)',
-            background: 'rgba(179,18,63,0.15)', color: '#f4f4f5', fontSize: '13px', cursor: 'pointer',
-          }}>Apply</button>
         </>
       )}
+
+      <button onClick={onApply} style={{
+        padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(179,18,63,0.4)',
+        background: 'rgba(179,18,63,0.15)', color: '#f4f4f5', fontSize: '13px', cursor: 'pointer',
+      }}>Apply</button>
     </div>
   )
 }
@@ -440,12 +463,14 @@ function LineChart({ series, statLabel }) {
 
 // ─── Compare panel ─────────────────────────────────────────────────────────────
 
-function ComparePanel({ allMembers, allFields }) {
+function ComparePanel({ allMembers, allFields, minDate }) {
   const now = new Date()
+  const todayStr = now.toISOString().slice(0, 10)
   const [mode, setMode]                   = useState('month')
   const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
   const [customFrom, setCustomFrom]       = useState('')
   const [customTo, setCustomTo]           = useState('')
+  const [customDay, setCustomDay]         = useState(todayStr)
   const [selectedStat, setSelectedStat]   = useState('war_hits')
   const [pickedMembers, setPickedMembers] = useState([])
   const [search, setSearch]               = useState('')
@@ -492,13 +517,13 @@ function ComparePanel({ allMembers, allFields }) {
   }, [pickedMembers, selectedStat])
 
   function handleApply() {
-    const params = buildParams(mode, selectedMonth, customFrom, customTo)
+    const params = buildParams(mode, selectedMonth, customFrom, customTo, customDay)
     if (params.from && params.to) fetchCompare(params)
   }
 
   useEffect(() => {
     if (pickedMembers.length >= 2) {
-      const params = buildParams(mode, selectedMonth, customFrom, customTo)
+      const params = buildParams(mode, selectedMonth, customFrom, customTo, customDay)
       if (params.from && params.to) fetchCompare(params)
     } else {
       setChartData(null)
@@ -607,7 +632,9 @@ function ComparePanel({ allMembers, allFields }) {
             selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth}
             customFrom={customFrom} setCustomFrom={setCustomFrom}
             customTo={customTo} setCustomTo={setCustomTo}
+            customDay={customDay} setCustomDay={setCustomDay}
             onApply={handleApply}
+            minDate={minDate}
           />
         </div>
       </div>
@@ -645,10 +672,12 @@ function ComparePanel({ allMembers, allFields }) {
 
 export default function PersonalStatsPanel() {
   const now = new Date()
+  const todayStr = now.toISOString().slice(0, 10)
   const [mode, setMode]                   = useState('month')
   const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
   const [customFrom, setCustomFrom]       = useState('')
   const [customTo, setCustomTo]           = useState('')
+  const [customDay, setCustomDay]         = useState(todayStr)
   const [factionFilter, setFactionFilter] = useState('all')
   const [category, setCategory]           = useState('attacking')
   const [sortKey, setSortKey]             = useState('war_hits')
@@ -659,6 +688,8 @@ export default function PersonalStatsPanel() {
   const [error, setError]       = useState(null)
   const [data, setData]         = useState(null)
   const abortRef = useRef(null)
+
+  const minDate = data?.coverage?.earliest || todayStr
 
   const fetchData = useCallback(async (params) => {
     if (abortRef.current) abortRef.current.abort()
@@ -677,7 +708,7 @@ export default function PersonalStatsPanel() {
   }, [])
 
   useEffect(() => {
-    const params = buildParams(mode, selectedMonth, customFrom, customTo)
+    const params = buildParams(mode, selectedMonth, customFrom, customTo, customDay)
     if (params.from && params.to) fetchData(params)
     return () => abortRef.current?.abort()
   }, [mode, selectedMonth, fetchData])
@@ -688,7 +719,7 @@ export default function PersonalStatsPanel() {
   }, [category])
 
   const handleApply = () => {
-    const params = buildParams('custom', selectedMonth, customFrom, customTo)
+    const params = buildParams(mode, selectedMonth, customFrom, customTo, customDay)
     if (params.from && params.to) fetchData(params)
   }
 
@@ -706,7 +737,9 @@ export default function PersonalStatsPanel() {
         selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth}
         customFrom={customFrom} setCustomFrom={setCustomFrom}
         customTo={customTo} setCustomTo={setCustomTo}
+        customDay={customDay} setCustomDay={setCustomDay}
         onApply={handleApply}
+        minDate={minDate}
       />
 
       <FactionFilter value={factionFilter} onChange={setFactionFilter} />
@@ -771,7 +804,7 @@ export default function PersonalStatsPanel() {
 
               {showCompare && (
                 <div style={{ marginTop: '16px' }}>
-                  <ComparePanel allMembers={data.members ?? []} allFields={data.fields ?? []} />
+                  <ComparePanel allMembers={data.members ?? []} allFields={data.fields ?? []} minDate={minDate} />
                 </div>
               )}
             </>

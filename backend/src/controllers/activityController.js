@@ -286,27 +286,39 @@ export async function getPersonalStats(request, env) {
     const toDate   = url.searchParams.get('to')   || defaultTo;
 
     // For each member: earliest snapshot in range = start baseline, latest = end value
-    const startRows = await env.DB.prepare(`
-      SELECT p.torn_user_id, p.username, p.faction_id, p.stats
-      FROM personal_stats_snapshots p
-      INNER JOIN (
-        SELECT torn_user_id, MIN(snapshot_date) AS min_date
-        FROM personal_stats_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ?
-        GROUP BY torn_user_id
-      ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
-    `).bind(fromDate, toDate).all();
-
-    const endRows = await env.DB.prepare(`
-      SELECT p.torn_user_id, p.stats
-      FROM personal_stats_snapshots p
-      INNER JOIN (
-        SELECT torn_user_id, MAX(snapshot_date) AS max_date
-        FROM personal_stats_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ?
-        GROUP BY torn_user_id
-      ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
-    `).bind(fromDate, toDate).all();
+    let startRows, endRows;
+    try {
+      [startRows, endRows] = await Promise.all([
+        env.DB.prepare(`
+          SELECT p.torn_user_id, p.username, p.faction_id, p.stats
+          FROM personal_stats_snapshots p
+          INNER JOIN (
+            SELECT torn_user_id, MIN(snapshot_date) AS min_date
+            FROM personal_stats_snapshots
+            WHERE snapshot_date >= ? AND snapshot_date <= ?
+            GROUP BY torn_user_id
+          ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+        `).bind(fromDate, toDate).all(),
+        env.DB.prepare(`
+          SELECT p.torn_user_id, p.stats
+          FROM personal_stats_snapshots p
+          INNER JOIN (
+            SELECT torn_user_id, MAX(snapshot_date) AS max_date
+            FROM personal_stats_snapshots
+            WHERE snapshot_date >= ? AND snapshot_date <= ?
+            GROUP BY torn_user_id
+          ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+        `).bind(fromDate, toDate).all(),
+      ]);
+    } catch (dbErr) {
+      console.error('getPersonalStats DB error:', dbErr);
+      return jsonResponse({
+        members: [],
+        fields: PERSONAL_STAT_FIELDS.map(f => ({ key: f.key, label: f.label, category: f.category })),
+        period: { from: fromDate, to: toDate, days: 0 },
+        coverage: { earliest: null, latest: null, days_covered: 0 },
+      });
+    }
 
     // Index end rows by user id for fast lookup
     const endMap = new Map();
@@ -423,5 +435,30 @@ export async function getPersonalStatsCompare(request, env) {
   } catch (error) {
     console.error('getPersonalStatsCompare error:', error);
     return errorResponse('Failed to fetch comparison data', 500);
+  }
+}
+
+// ── Admin: manually trigger personal stats snapshot ───────────────────────────
+export async function triggerPersonalStatsSnapshotAdmin(request, env) {
+  try {
+    const result = await takePersonalStatsSnapshot(env);
+    return jsonResponse({ message: `Snapshot complete: ${result.stored} members stored, ${result.skipped} skipped`, result });
+  } catch (error) {
+    console.error('triggerPersonalStatsSnapshotAdmin error:', error);
+    return errorResponse('Snapshot failed: ' + error.message, 500);
+  }
+}
+
+// ── Admin: personal stats snapshot status ────────────────────────────────────
+export async function getPersonalStatsSnapshotStatus(request, env) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT torn_user_id) AS members, COUNT(DISTINCT snapshot_date) AS days,
+              MIN(snapshot_date) AS earliest, MAX(snapshot_date) AS latest
+       FROM personal_stats_snapshots`
+    ).first().catch(() => null);
+    return jsonResponse(row || { members: 0, days: 0, earliest: null, latest: null });
+  } catch (error) {
+    return jsonResponse({ members: 0, days: 0, earliest: null, latest: null });
   }
 }

@@ -2,14 +2,9 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 export async function getEvents(request, env) {
   try {
-    const today = new Date().toISOString().substring(0, 10);
-    // Include events that end today or later (or single-day events today or later)
     const result = await env.DB.prepare(
-      `SELECT * FROM events
-       WHERE (end_date IS NOT NULL AND end_date >= ?)
-          OR (end_date IS NULL AND start_date >= ?)
-       ORDER BY start_date ASC LIMIT 100`
-    ).bind(today, today).all();
+      `SELECT * FROM events ORDER BY start_date ASC LIMIT 200`
+    ).all();
     return jsonResponse({ events: result.results || [] });
   } catch (error) {
     console.error('getEvents error:', error);
