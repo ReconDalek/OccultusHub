@@ -1,12 +1,13 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomApiKeyForFaction } from '../services/tornApiService.js';
+import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
-const TORN_API_URL = 'https://api.torn.com';
+const TORN_API_BASE = 'https://api.torn.com/v2';
 
 // Fetch current gym energy contributors for a faction (cat=current = active members only).
 async function fetchGymEnergy(apiKey) {
-  const url = `${TORN_API_URL}/v2/faction/contributors?stat=gymenergy&cat=current&comment=OccHub`;
+  const url = `${TORN_API_BASE}/faction/contributors?stat=gymenergy&cat=current&comment=OccHub`;
   const res = await fetch(url, { headers: { Authorization: `ApiKey ${apiKey}` } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
@@ -21,10 +22,10 @@ export async function takeEnergySnapshot(env) {
 
   const results = await Promise.allSettled(
     FACTION_IDS.map(async (factionId) => {
-      const apiKey = await getRandomApiKeyForFaction(env, factionId);
-      if (!apiKey) throw new Error(`No API key for faction ${factionId}`);
+      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
+      if (!apiKeyObj?.key) throw new Error(`No API key for faction ${factionId}`);
 
-      const contributors = await fetchGymEnergy(apiKey);
+      const contributors = await fetchGymEnergy(apiKeyObj.key);
       console.log(`[energy snapshot] faction ${factionId}: ${contributors.length} members`);
 
       // Upsert each member — if a snapshot already exists for today, update it.
@@ -53,6 +54,17 @@ export async function takeEnergySnapshot(env) {
   const summary = results.map(r =>
     r.status === 'fulfilled' ? r.value : { error: r.reason?.message }
   );
+  const errors = results.filter(r => r.status === 'rejected').map(r => r.reason?.message);
+  const totalSaved = results.filter(r => r.status === 'fulfilled').reduce((s, r) => s + r.value.count, 0);
+
+  await logInfo(env, {
+    category: 'cron', event: 'energy_snapshot',
+    message: `Energy snapshot complete: ${totalSaved} members saved across ${FACTION_IDS.length} factions`,
+    meta: { summary, errors: errors.length ? errors : undefined },
+  });
+  if (errors.length) {
+    await logWarn(env, { category: 'cron', event: 'energy_snapshot_partial', message: `Energy snapshot errors: ${errors.join(', ')}`, meta: { errors } });
+  }
   console.log('[energy snapshot] complete:', JSON.stringify(summary));
   return summary;
 }

@@ -18,6 +18,7 @@ import * as cahController from './controllers/cahController.js';
 import * as forumsController from './controllers/forumsController.js';
 import * as sanctumController from './controllers/sanctumController.js';
 import * as activityController from './controllers/activityController.js';
+import * as logsController from './controllers/logsController.js';
 
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
@@ -103,15 +104,6 @@ export async function handleRequest(request, env) {
       return adminController.revokeAdmin(request, env, user);
     }
 
-    // Page visibility endpoints
-    if (pathname === '/api/admin/pages' && method === 'GET') {
-      return adminController.getPages(request, env, user);
-    }
-
-    if (pathname.match(/^\/api\/admin\/pages\/[a-z]+\/toggle$/) && method === 'POST') {
-      return adminController.togglePage(request, env, user);
-    }
-
     // Cache endpoints
     if (pathname === '/api/admin/cache/status' && method === 'GET') {
       return adminController.getCacheStatus(request, env, user);
@@ -124,15 +116,6 @@ export async function handleRequest(request, env) {
     // Analytics endpoint
     if (pathname === '/api/admin/analytics' && method === 'GET') {
       return adminController.getAnalytics(request, env, user);
-    }
-
-    // Settings endpoints
-    if (pathname === '/api/admin/settings' && method === 'GET') {
-      return adminController.getSettings(request, env, user);
-    }
-
-    if (pathname.match(/^\/api\/admin\/settings\/[^/]+$/) && method === 'POST') {
-      return adminController.updateSetting(request, env, user);
     }
 
     if (pathname === '/api/admin/fishing/reset' && method === 'POST') {
@@ -166,6 +149,10 @@ export async function handleRequest(request, env) {
     }
     if (pathname === '/api/admin/wars/backfill' && method === 'POST') {
       return warController.backfillHistoricWars(request, env);
+    }
+
+    if (pathname === '/api/admin/logs' && method === 'GET') {
+      return logsController.getLogs(request, env);
     }
   }
 

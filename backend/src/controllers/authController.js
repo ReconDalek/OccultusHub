@@ -1,8 +1,8 @@
 import { generateToken } from '../middleware/auth.js';
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { logInfo, logWarn, logError } from '../services/logger.js';
 
-const TORN_API_URL = 'https://api.torn.com';
-const TORN_COMMENT = '&comment=OccHub';
+const TORN_API_BASE = 'https://api.torn.com/v2';
 
 export async function login(request, env) {
   try {
@@ -16,7 +16,8 @@ export async function login(request, env) {
     let tornUser;
     try {
       const response = await fetch(
-        `${TORN_API_URL}/user?selections=profile&key=${apiKey}${TORN_COMMENT}`
+        `${TORN_API_BASE}/user?selections=profile&comment=OccHub`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
       if (!response.ok) {
         return errorResponse('Invalid API key', 401);
@@ -24,6 +25,7 @@ export async function login(request, env) {
       tornUser = await response.json();
     } catch (err) {
       console.error('Torn API error:', err);
+      await logError(env, { category: 'api_error', event: 'torn_auth_failed', message: `Torn API auth failed: ${err.message}` });
       return errorResponse('Invalid API key', 401);
     }
 
@@ -31,7 +33,7 @@ export async function login(request, env) {
     let calendarStartTime = null;
     try {
       const calRes = await fetch(
-        `${TORN_API_URL}/v2/user/calendar?comment=OccHub`,
+        `${TORN_API_BASE}/user/calendar?comment=OccHub`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
       if (calRes.ok) {
@@ -138,6 +140,13 @@ export async function login(request, env) {
     )
       .bind(user.id ?? null, ipAddress, userAgent)
       .run();
+
+    await logInfo(env, {
+      category: 'auth', event: 'login',
+      message: `${user.username} logged in`,
+      torn_user_id: user.torn_user_id, username: user.username, faction_id: user.faction_id,
+      meta: { ip: request.headers.get('cf-connecting-ip'), isNew: !existingUser },
+    });
 
     // Generate JWT token
     const token = await generateToken(user, env);

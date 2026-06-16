@@ -248,25 +248,35 @@ export async function getCacheStatus(request, env, user) {
 export async function refreshCache(request, env, user) {
   try {
     const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('../services/tornApiService.js');
+    const { logInfo, logError } = await import('../services/logger.js');
     const scope = new URL(request.url).searchParams.get('scope') ?? 'all';
 
-    const apiKey = await getRandomUserApiKey(env);
-    if (!apiKey) {
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) {
+      await logError(env, { category: 'api_error', event: 'cache_refresh_no_key', message: 'Manual cache refresh failed: no API key available', meta: { scope, triggeredBy: user?.username } });
       return errorResponse('No user API keys available for cache refresh', 400);
     }
 
     const factionIds = [33097, 9171, 9728];
     const companyIds = [112941, 120244, 121745, 122254, 120502, 124650];
+    const trigger = 'manual';
 
     let factionResult = null;
     let companyResult = null;
 
     if (scope === 'all' || scope === 'factions') {
-      factionResult = await fetchAndCacheFactions(env, factionIds, apiKey);
+      factionResult = await fetchAndCacheFactions(env, factionIds, apiKeyObj, trigger);
     }
     if (scope === 'all' || scope === 'companies') {
-      companyResult = await fetchAndCacheCompanies(env, companyIds, apiKey);
+      companyResult = await fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger);
     }
+
+    await logInfo(env, {
+      category: 'admin', event: 'cache_refresh',
+      message: `Manual cache refresh (${scope}) by ${user?.username ?? 'unknown'}`,
+      torn_user_id: user?.tornUserId, username: user?.username,
+      meta: { scope, factions: factionResult, companies: companyResult },
+    });
 
     return jsonResponse({
       message: `Cache refresh completed (${scope})`,

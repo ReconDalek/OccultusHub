@@ -204,11 +204,11 @@ export async function createFactionSchedule(request, env, user) {
     if (opponent_faction_id && resolvedStage === 'active') {
       try {
         const { getRandomUserApiKey } = await import('../services/tornApiService.js');
-        const apiKey = await getRandomUserApiKey(env);
-        if (apiKey) {
+        const apiKeyObj = await getRandomUserApiKey(env);
+        if (apiKeyObj?.key) {
           const tornRes = await fetch(
             `https://api.torn.com/v2/faction/${opponent_faction_id}/basic?comment=OccHub`,
-            { headers: { Authorization: `ApiKey ${apiKey}` } }
+            { headers: { Authorization: `ApiKey ${apiKeyObj.key}` } }
           );
           if (tornRes.ok) {
             const tornData = await tornRes.json();
@@ -254,11 +254,11 @@ export async function advanceFactionSchedule(request, env, user) {
     if (opponent_faction_id) {
       try {
         const { getRandomUserApiKey } = await import('../services/tornApiService.js');
-        const apiKey = await getRandomUserApiKey(env);
-        if (apiKey) {
+        const apiKeyObj = await getRandomUserApiKey(env);
+        if (apiKeyObj?.key) {
           const tornRes = await fetch(
             `https://api.torn.com/v2/faction/${opponent_faction_id}/basic?comment=OccHub`,
-            { headers: { Authorization: `ApiKey ${apiKey}` } }
+            { headers: { Authorization: `ApiKey ${apiKeyObj.key}` } }
           );
           if (tornRes.ok) {
             const tornData = await tornRes.json();

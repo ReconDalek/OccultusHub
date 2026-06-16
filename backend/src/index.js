@@ -108,8 +108,8 @@ export default {
       const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');
       const { syncMembersFromCache } = await import('./controllers/memberController.js');
 
-      const apiKey = await getRandomUserApiKey(env);
-      if (!apiKey) {
+      const apiKeyObj = await getRandomUserApiKey(env);
+      if (!apiKeyObj?.key) {
         console.warn('No user API keys available for scheduled cache refresh');
         return;
       }
@@ -121,8 +121,8 @@ export default {
 
       ctx.waitUntil(
         Promise.all([
-          fetchAndCacheFactions(env, factionIds, apiKey),
-          fetchAndCacheCompanies(env, companyIds, apiKey),
+          fetchAndCacheFactions(env, factionIds, apiKeyObj, 'cron'),
+          fetchAndCacheCompanies(env, companyIds, apiKeyObj, 'cron'),
         ]).then(async ([factionResult, companyResult]) => {
           console.log(`Cache refresh complete: ${factionResult.fetched} factions, ${companyResult.fetched} companies`);
 

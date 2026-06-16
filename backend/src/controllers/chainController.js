@@ -1,9 +1,10 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomUserApiKey } from '../services/tornApiService.js';
+import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
-const TORN_API_BASE = 'https://api.torn.com';
-const TORN_COMMENT = '&comment=OccHub';
+const TORN_API_BASE = 'https://api.torn.com/v2';
+
 const MIN_CHAIN_LENGTH = 1000; // Only store chains >= this many hits
 
 // Factions allowed for manual chain import — includes current factions plus
@@ -15,20 +16,22 @@ const ALLOWED_IMPORT_FACTION_IDS = [33097, 9728, 9171, 355];
 // that meet the minimum hit threshold.
 // Called by the weekly cron AND admin force-refresh.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function fetchAndCacheChains(env) {
-  const apiKey = await getRandomUserApiKey(env);
-  if (!apiKey) {
+export async function fetchAndCacheChains(env, trigger = 'cron') {
+  const apiKeyObj = await getRandomUserApiKey(env);
+  if (!apiKeyObj?.key) {
     console.error('fetchAndCacheChains: no API key available');
+    await logError(env, { category: 'api_error', event: 'chain_cache_no_key', message: 'Chain cache refresh failed: no API key available', meta: { trigger } });
     return { added: 0, skipped: 0, errors: ['No API key available'] };
   }
+  const { key: apiKey, tornUserId, username } = apiKeyObj;
 
   let totalAdded   = 0;
   let totalSkipped = 0;
   const errors     = [];
 
   for (const factionId of FACTION_IDS) {
+    const url = `${TORN_API_BASE}/faction/${factionId}/chains?limit=100&sort=DESC&comment=OccHub`;
     try {
-      const url = `${TORN_API_BASE}/v2/faction/${factionId}/chains?limit=100&sort=DESC${TORN_COMMENT}`;
       const res = await fetch(url, {
         headers: { Authorization: `ApiKey ${apiKey}` },
       });
@@ -72,10 +75,30 @@ export async function fetchAndCacheChains(env) {
       console.log(
         `fetchAndCacheChains: faction ${factionId} — ${added} new, ${skipped} below ${MIN_CHAIN_LENGTH} hits (${chains.length} fetched)`
       );
+      await logInfo(env, {
+        category: 'api_call', event: 'chain_cache_success',
+        message: `Chain cache refreshed for faction ${factionId}: ${added} new, ${chains.length} fetched`,
+        torn_user_id: tornUserId, username,
+        faction_id: factionId,
+        meta: { trigger, added, skipped, fetched: chains.length, endpoint: url },
+      });
     } catch (err) {
       console.error(`fetchAndCacheChains: faction ${factionId} error:`, err);
       errors.push(`Faction ${factionId}: ${err.message}`);
+      await logError(env, {
+        category: 'api_error', event: 'chain_cache_failed',
+        message: `Chain cache failed for faction ${factionId}: ${err.message}`,
+        torn_user_id: tornUserId, username,
+        faction_id: factionId,
+        meta: { trigger, endpoint: url, error: err.message },
+      });
     }
+  }
+
+  if (errors.length) {
+    await logWarn(env, { category: 'cron', event: 'chain_cache_partial', message: `Chain cache completed with errors: ${errors.join(', ')}`, meta: { trigger, errors } });
+  } else {
+    await logInfo(env, { category: 'cron', event: 'chain_cache_complete', message: `Chain cache refresh complete: ${totalAdded} new chains added`, meta: { trigger, totalAdded, totalSkipped } });
   }
 
   return { added: totalAdded, skipped: totalSkipped, errors };
@@ -135,13 +158,13 @@ export async function getChainReport(request, env) {
       return errorResponse('Missing chain_id', 400);
     }
 
-    const apiKey = await getRandomUserApiKey(env);
-    if (!apiKey) {
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) {
       return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
     }
 
-    const res = await fetch(`${TORN_API_BASE}/v2/faction/${chainId}/chainreport?comment=OccHub`, {
-      headers: { Authorization: `ApiKey ${apiKey}` },
+    const res = await fetch(`${TORN_API_BASE}/faction/${chainId}/chainreport?comment=OccHub`, {
+      headers: { Authorization: `ApiKey ${apiKeyObj.key}` },
     });
 
     if (!res.ok) {
@@ -387,7 +410,8 @@ export async function getChainCacheStatus(request, env) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function refreshChainsAdmin(request, env, user) {
   try {
-    const result = await fetchAndCacheChains(env);
+    await logInfo(env, { category: 'admin', event: 'chain_cache_manual_start', message: `Manual chain cache refresh triggered by ${user?.username ?? 'unknown'}`, torn_user_id: user?.tornUserId, username: user?.username });
+    const result = await fetchAndCacheChains(env, 'manual');
 
     const parts = [`${result.added} new chain${result.added !== 1 ? 's' : ''} added`];
     if (result.skipped > 0) parts.push(`${result.skipped} below ${MIN_CHAIN_LENGTH} hits skipped`);
