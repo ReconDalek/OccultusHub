@@ -16,7 +16,7 @@ export default {
     }
 
     try {
-      const response = await handleRequest(request, env);
+      const response = await handleRequest(request, env, ctx);
       const headers = new Headers(response.headers);
       for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v);
 

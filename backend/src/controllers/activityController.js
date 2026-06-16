@@ -227,27 +227,48 @@ export async function takePersonalStatsSnapshot(env) {
   const errorDetails = [];
 
   for (const member of members) {
-    const keyObj = await pool.getKey();
-    try {
-      const url = `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`;
-      const res = await fetch(url, { headers: { Authorization: `ApiKey ${keyObj.key}` } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
+    let lastError = null;
+    let saved = false;
 
-      await env.DB.prepare(`
-        INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
-          stats      = excluded.stats,
-          username   = excluded.username,
-          faction_id = excluded.faction_id
-      `).bind(member.torn_user_id, member.username, member.faction_id, today, JSON.stringify(data.personalstats), now).run();
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      const keyObj = await pool.getKey();
+      try {
+        const url = `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`;
+        const res = await fetch(url, { headers: { Authorization: `ApiKey ${keyObj.key}` } });
+        if (!res.ok) {
+          lastError = `HTTP ${res.status}`;
+          // Only retry on transient errors
+          if (res.status === 504 || res.status === 503 || res.status === 502) {
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          throw new Error(lastError);
+        }
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
 
+        await env.DB.prepare(`
+          INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
+            stats      = excluded.stats,
+            username   = excluded.username,
+            faction_id = excluded.faction_id
+        `).bind(member.torn_user_id, member.username, member.faction_id, today, JSON.stringify(data.personalstats), now).run();
+
+        saved = true;
+        break;
+      } catch (e) {
+        lastError = e.message;
+        break; // Non-transient error, don't retry
+      }
+    }
+
+    if (saved) {
       success++;
-    } catch (e) {
+    } else {
       errors++;
-      errorDetails.push({ id: member.torn_user_id, user: member.username, error: e.message });
+      errorDetails.push({ id: member.torn_user_id, user: member.username, error: lastError });
     }
   }
 
@@ -272,6 +293,7 @@ export async function takePersonalStatsSnapshot(env) {
   }
 
   console.log(`[personal stats] complete: ${success} saved, ${errors} errors`);
+  return { stored: success, skipped: errors, total: members.length };
 }
 
 // ── Personal stats query ──────────────────────────────────────────────────────
@@ -452,13 +474,23 @@ export async function triggerPersonalStatsSnapshotAdmin(request, env) {
 // ── Admin: personal stats snapshot status ────────────────────────────────────
 export async function getPersonalStatsSnapshotStatus(request, env) {
   try {
-    const row = await env.DB.prepare(
-      `SELECT COUNT(DISTINCT torn_user_id) AS members, COUNT(DISTINCT snapshot_date) AS days,
-              MIN(snapshot_date) AS earliest, MAX(snapshot_date) AS latest
-       FROM personal_stats_snapshots`
-    ).first().catch(() => null);
-    return jsonResponse(row || { members: 0, days: 0, earliest: null, latest: null });
+    const today = new Date().toISOString().slice(0, 10);
+    const [overall, todayRow] = await Promise.all([
+      env.DB.prepare(
+        `SELECT COUNT(DISTINCT torn_user_id) AS members, COUNT(DISTINCT snapshot_date) AS days,
+                MIN(snapshot_date) AS earliest, MAX(snapshot_date) AS latest
+         FROM personal_stats_snapshots`
+      ).first(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS count FROM personal_stats_snapshots WHERE snapshot_date = ?`
+      ).bind(today).first(),
+    ]);
+    return jsonResponse({
+      ...(overall || { members: 0, days: 0, earliest: null, latest: null }),
+      today: todayRow?.count ?? 0,
+      today_date: today,
+    });
   } catch (error) {
-    return jsonResponse({ members: 0, days: 0, earliest: null, latest: null });
+    return jsonResponse({ members: 0, days: 0, earliest: null, latest: null, today: 0 });
   }
 }

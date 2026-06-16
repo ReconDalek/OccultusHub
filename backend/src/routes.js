@@ -20,7 +20,7 @@ import * as sanctumController from './controllers/sanctumController.js';
 import * as activityController from './controllers/activityController.js';
 import * as logsController from './controllers/logsController.js';
 
-export async function handleRequest(request, env) {
+export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const method = request.method;
@@ -160,7 +160,10 @@ export async function handleRequest(request, env) {
       return activityController.getPersonalStatsSnapshotStatus(request, env);
     }
     if (pathname === '/api/admin/personal-stats/snapshot' && method === 'POST') {
-      return activityController.triggerPersonalStatsSnapshotAdmin(request, env);
+      ctx.waitUntil(activityController.takePersonalStatsSnapshot(env)
+        .then(r => console.log('[admin] personal stats snapshot complete:', JSON.stringify(r)))
+        .catch(e => console.error('[admin] personal stats snapshot failed:', e)));
+      return jsonResponse({ message: 'Snapshot started in background — check logs for result.' });
     }
   }
 

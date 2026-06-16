@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import { timeAgo, formatUTC } from '../../lib/dates'
 
@@ -15,8 +15,34 @@ export default function CacheTab() {
   const [refreshing,          setRefreshing]          = useState(null)
   const [lastResult,          setLastResult]          = useState(null)
   const [error,               setError]               = useState(null)
+  const [snapshotRunning,     setSnapshotRunning]     = useState(false)
+  const pollRef = useRef(null)
 
   useEffect(() => { fetchAll() }, [])
+
+  // Poll personal stats status every 4s while snapshot is running
+  useEffect(() => {
+    if (!snapshotRunning) { clearInterval(pollRef.current); return }
+    const token = localStorage.getItem('occultusSession')
+    let prevCount = personalStatsStatus?.today ?? 0
+    let stableFor = 0
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
+        const data = await res.json()
+        setPersonalStatsStatus(data)
+        if (data.today === prevCount) {
+          stableFor++
+          // Count hasn't moved for 20s (5 polls × 4s) — assume finished
+          if (stableFor >= 5) setSnapshotRunning(false)
+        } else {
+          stableFor = 0
+          prevCount = data.today
+        }
+      } catch { /* ignore */ }
+    }, 4000)
+    return () => clearInterval(pollRef.current)
+  }, [snapshotRunning])
 
   const fetchAll = async () => {
     setLoading(true)
@@ -128,8 +154,7 @@ export default function CacheTab() {
       const data = await res.json()
       if (res.ok) {
         setLastResult(data)
-        fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
-          .then((r) => r.json()).then(setPersonalStatsStatus).catch(console.error)
+        setSnapshotRunning(true)
       } else {
         setError(data.error || `Error ${res.status}`)
       }
@@ -361,23 +386,51 @@ export default function CacheTab() {
           )}
         </div>
 
+        {/* Live progress bar while snapshot is running */}
+        {snapshotRunning && personalStatsStatus && (
+          <div style={{ marginTop: '14px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#22d3ee', fontSize: '13px', fontWeight: 600 }}>Snapshot running…</span>
+              <span style={{ color: '#22d3ee', fontSize: '13px' }}>
+                {personalStatsStatus.today} / {personalStatsStatus.members || '?'} members today
+              </span>
+            </div>
+            <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: personalStatsStatus.members
+                  ? `${Math.min(100, Math.round((personalStatsStatus.today / personalStatsStatus.members) * 100))}%`
+                  : '0%',
+                background: 'linear-gradient(90deg, #22d3ee, #6d28d9)',
+                borderRadius: '2px',
+                transition: 'width 0.6s ease',
+              }} />
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <button
             onClick={runPersonalStatsSnapshot}
-            disabled={!!refreshing}
+            disabled={!!refreshing || snapshotRunning}
             className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
             style={{
               background: 'rgba(179,18,63,0.2)',
               color: '#ff2f6d',
-              opacity: refreshing ? 0.5 : 1,
+              opacity: (refreshing || snapshotRunning) ? 0.5 : 1,
             }}
           >
-            {refreshing === 'personal-stats' ? 'Running snapshot…' : 'Run Snapshot Now'}
+            {refreshing === 'personal-stats' ? 'Starting…' : snapshotRunning ? 'Running in background…' : 'Run Snapshot Now'}
           </button>
           <div>
             <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
               Auto-runs daily at 01:00 UTC after the energy snapshot. ~200 API calls — may take 3–5 minutes.
             </p>
+            {personalStatsStatus?.today > 0 && !snapshotRunning && (
+              <p style={{ color: '#a1a1aa', fontSize: '11px', margin: '2px 0 0 0' }}>
+                {personalStatsStatus.today} members snapshotted for {personalStatsStatus.today_date}
+              </p>
+            )}
           </div>
         </div>
       </div>
