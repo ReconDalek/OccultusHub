@@ -34,71 +34,57 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // "0 1 * * *" — daily 01:00 UTC: energy snapshot
+    // "0 1 * * *" — daily 01:00 UTC: energy snapshot + personal stats snapshot
     if (event.cron === '0 1 * * *') {
       try {
-        const { takeEnergySnapshot } = await import('./controllers/activityController.js');
+        const { takeEnergySnapshot, takePersonalStatsSnapshot } = await import('./controllers/activityController.js');
         ctx.waitUntil(
-          takeEnergySnapshot(env).then(r => console.log('[cron] energy snapshot:', JSON.stringify(r)))
+          takeEnergySnapshot(env)
+            .then(r => console.log('[cron] energy snapshot:', JSON.stringify(r)))
             .catch(e => console.error('[cron] energy snapshot failed:', e))
+            .then(() => takePersonalStatsSnapshot(env))
+            .catch(e => console.error('[cron] personal stats snapshot failed:', e))
         );
       } catch (e) {
-        console.error('[cron] energy snapshot handler error:', e);
+        console.error('[cron] daily snapshot handler error:', e);
       }
       return;
     }
 
-    // "0 1 * * 2" — Tuesday 01:00 UTC: check for ranked war matches
+    // "0 1 * * 2" — Tuesday 01:00 UTC: ranked war match check + weekly chain history fetch
     if (event.cron === '0 1 * * 2') {
       try {
         const { checkWarMatches } = await import('./controllers/warController.js');
-        console.log('Starting ranked war match check...');
+        const { fetchAndCacheChains } = await import('./controllers/chainController.js');
         ctx.waitUntil(
-          checkWarMatches(env).then((results) => {
-            console.log(`War match check complete:`, JSON.stringify(results));
-          }).catch((err) => {
-            console.error('War match check failed:', err);
-          })
+          checkWarMatches(env)
+            .then(r => console.log('[cron] war match check complete:', JSON.stringify(r)))
+            .catch(e => console.error('[cron] war match check failed:', e))
+            .then(() => fetchAndCacheChains(env))
+            .then(r => {
+              console.log(`[cron] chain cache refresh complete: ${r.added} new chains added`);
+              if (r.errors?.length) console.warn('[cron] chain refresh errors:', r.errors);
+            })
+            .catch(e => console.error('[cron] chain cache refresh failed:', e))
         );
       } catch (error) {
-        console.error('War match check handler error:', error);
+        console.error('[cron] Tuesday handler error:', error);
       }
       return;
     }
 
     // "*/30 * * * *" — every 30 minutes: track active/matched wars
+    // Exits immediately (one DB query) if no wars are currently matched or active.
     if (event.cron === '*/30 * * * *') {
       try {
         const { trackActiveWars } = await import('./controllers/warController.js');
-        console.log('Starting active war tracking...');
         ctx.waitUntil(
-          trackActiveWars(env).then((result) => {
-            console.log(`War tracking complete: ${result.checked} wars checked`);
-          }).catch((err) => {
-            console.error('War tracking failed:', err);
-          })
+          trackActiveWars(env)
+            .then(r => { if (r.checked > 0) console.log(`[cron] war tracking: ${r.checked} wars checked`); })
+            .catch(e => console.error('[cron] war tracking failed:', e))
         );
       } catch (error) {
-        console.error('War tracking handler error:', error);
-      }
-      return;
-    }
-
-    // "0 9 * * 1" — weekly chain history refresh (Monday 09:00 UTC)
-    if (event.cron === '0 9 * * 1') {
-      try {
-        const { fetchAndCacheChains } = await import('./controllers/chainController.js');
-        console.log('Starting scheduled chain cache refresh...');
-        ctx.waitUntil(
-          fetchAndCacheChains(env).then((result) => {
-            console.log(`Chain cache refresh complete: ${result.added} new chains added`);
-            if (result.errors.length) console.warn('Chain refresh errors:', result.errors);
-          }).catch((err) => {
-            console.error('Scheduled chain refresh failed:', err);
-          })
-        );
-      } catch (error) {
-        console.error('Chain scheduled event handler error:', error);
+        console.error('[cron] war tracking handler error:', error);
       }
       return;
     }

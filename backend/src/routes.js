@@ -318,6 +318,17 @@ export async function handleRequest(request, env) {
     if (pathname === '/api/leadership/custom-hits' && method === 'POST') {
       return customHitsController.saveCustomHits(request, env, user);
     }
+
+    // Activity tracking
+    if (pathname === '/api/leadership/energy' && method === 'GET') {
+      return activityController.getEnergyActivity(request, env);
+    }
+    if (pathname === '/api/leadership/personal-stats' && method === 'GET') {
+      return activityController.getPersonalStats(request, env);
+    }
+    if (pathname === '/api/leadership/personal-stats/compare' && method === 'GET') {
+      return activityController.getPersonalStatsCompare(request, env);
+    }
   }
 
   // Discord endpoints
