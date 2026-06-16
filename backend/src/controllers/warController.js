@@ -326,6 +326,7 @@ export async function trackActiveWars(env) {
             const tornWarId    = parseWarId(item.text);
             const weWon        = item.text.match(new RegExp(`ID=${factionId}[^>]*>[^<]+<\\/a> defeated`));
             const result       = weWon ? 'won' : 'lost';
+            const warEndedAt   = item.timestamp;
             let rankChange     = null;
             let bonusRespect   = null;
             let rewardsJson = null;
@@ -339,12 +340,16 @@ export async function trackActiveWars(env) {
             }
             await env.DB.prepare(
               `UPDATE ranked_wars SET status='completed', ended_at=?, torn_war_id=?, result=?, rank_change=?, bonus_respect=?, rewards_json=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status!='completed'`
-            ).bind(item.timestamp, tornWarId, result, rankChange, bonusRespect, rewardsJson, warId).run();
+            ).bind(warEndedAt, tornWarId, result, rankChange, bonusRespect, rewardsJson, warId).run();
+
+            // Final attack fetch capped at war end — captures any attacks that
+            // occurred since the last cron run up to the exact war end timestamp.
+            await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, warEndedAt);
 
             await summariseAndCleanWar(env, warId, factionId);
             console.log(`trackActiveWars: war ${warId} ended (news) — ${result}`);
             checked++;
-            break;
+            continue; // skip armory + regular attack fetch — war is over
           }
 
           // War started — "has begun"
@@ -366,6 +371,8 @@ export async function trackActiveWars(env) {
       }
 
       // ── 3. Armory usage ─────────────────────────────────────────────────────
+      const currentWar = await env.DB.prepare(`SELECT status, ended_at FROM ranked_wars WHERE id=?`).bind(warId).first();
+      const armoryEndCap = currentWar?.ended_at ?? now; // don't attribute post-war armory to this war
       const armoryRes = await fetch(
         `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
@@ -373,6 +380,7 @@ export async function trackActiveWars(env) {
       if (armoryRes.ok) {
         for (const item of (await armoryRes.json()).news || []) {
           if (item.timestamp < fourDaysAgo) break;
+          if (item.timestamp > armoryEndCap) continue; // skip post-war armory usage
           const parsed = parseArmoryEntry(item.text);
           if (!parsed) continue;
           await env.DB.prepare(
@@ -383,9 +391,8 @@ export async function trackActiveWars(env) {
       }
 
       // ── 4. Fetch attacks (active wars only, isolated to this faction) ───────
-      const currentStatus = await env.DB.prepare(`SELECT status FROM ranked_wars WHERE id=?`).bind(warId).first();
-      if (currentStatus?.status === 'active') {
-        await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey);
+      if (currentWar?.status === 'active') {
+        await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, null);
       }
 
       await env.DB.prepare(`UPDATE ranked_wars SET last_checked_at=CURRENT_TIMESTAMP WHERE id=?`).bind(warId).run();
@@ -397,8 +404,9 @@ export async function trackActiveWars(env) {
   return { checked };
 }
 
-async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, warStartedAt, lastAttackId, apiKey) {
+async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, warStartedAt, lastAttackId, apiKey, warEndedAt = null) {
   // lastAttackId: highest torn attack ID already stored — stop when we see IDs <= this
+  // warEndedAt: when set, attacks after this timestamp are ignored (final-fetch on war end)
   // Pagination: follow _metadata.links.prev "to" timestamp until we've gone past war start
   // INSERT OR IGNORE handles any page-boundary overlaps automatically
 
@@ -425,6 +433,9 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
 
       // Track max ID seen this run
       if (attack.id > maxId) maxId = attack.id;
+
+      // Skip attacks that occurred after the war ended
+      if (warEndedAt && attack.started > warEndedAt) continue;
 
       // If this attack started during the war window, mark page as relevant
       if (attack.started >= warStartedAt) allOlderThanWar = false;
