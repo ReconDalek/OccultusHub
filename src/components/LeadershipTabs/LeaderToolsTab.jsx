@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Respect from '../../pages/Respect'
 import EnergyActivityPanel from './ActivityPanel'
+import PersonalStatsPanel from './PersonalStatsPanel'
 
 // ─── Sub-tab bar ──────────────────────────────────────────────────────────────
 
@@ -92,20 +93,10 @@ function RecruitmentPanel() {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const TOOLS = [
-  {
-    value: 'respect',
-    label: 'Respect Tracker',
-    badge: null,
-  },
-  {
-    value: 'recruitment',
-    label: 'Recruitment',
-    badge: null,
-  },
-  {
-    value: 'activity',
-    label: 'Member Activity',
-  },
+  { value: 'activity',       label: 'Gym Energy' },
+  { value: 'personal_stats', label: 'Personal Stats' },
+  { value: 'respect',        label: 'Respect Tracker' },
+  { value: 'recruitment',    label: 'Recruitment' },
 ]
 
 export default function LeaderToolsTab() {
@@ -135,9 +126,10 @@ export default function LeaderToolsTab() {
       <SubTabs options={TOOLS} active={activeTool} onChange={setActiveTool} />
 
       {/* Panel */}
-      {activeTool === 'respect'    && <RespectPanel />}
-      {activeTool === 'recruitment' && <RecruitmentPanel />}
-      {activeTool === 'activity'   && <EnergyActivityPanel />}
+      {activeTool === 'activity'        && <EnergyActivityPanel />}
+      {activeTool === 'personal_stats'  && <PersonalStatsPanel />}
+      {activeTool === 'respect'         && <RespectPanel />}
+      {activeTool === 'recruitment'     && <RecruitmentPanel />}
     </div>
   )
 }
