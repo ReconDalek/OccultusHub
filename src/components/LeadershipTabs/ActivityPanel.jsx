@@ -10,34 +10,10 @@ function fmt(n) {
   return Number(n || 0).toLocaleString('en-GB')
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-// Start of month UTC → Unix timestamp
-function monthStart(year, month) {
-  return Math.floor(Date.UTC(year, month, 1) / 1000)
-}
-
-// End of month UTC → Unix timestamp (last second of last day)
-function monthEnd(year, month) {
-  return Math.floor(Date.UTC(year, month + 1, 1) / 1000) - 1
-}
-
-// "YYYY-MM-DD" local string → midnight UTC Unix timestamp
-function dateToTs(str) {
-  const [y, m, d] = str.split('-').map(Number)
-  return Math.floor(Date.UTC(y, m - 1, d) / 1000)
-}
-
-function tsToDate(ts) {
-  const d = new Date(ts * 1000)
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-}
-
 function monthLabel(year, month) {
   return new Date(Date.UTC(year, month, 1)).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
 
-// Build a list of past months (up to 18 months back)
 function buildMonthOptions() {
   const now = new Date()
   const options = []
@@ -48,32 +24,6 @@ function buildMonthOptions() {
   return options
 }
 
-// ─── Generating loader ────────────────────────────────────────────────────────
-
-function GeneratingLoader() {
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 500)
-    return () => clearInterval(id)
-  }, [])
-  const dots = '.'.repeat((tick % 3) + 1).padEnd(3, ' ')
-
-  return (
-    <div style={{
-      padding: '48px 24px', textAlign: 'center',
-      background: 'rgba(255,255,255,0.02)', borderRadius: '12px',
-      border: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <p style={{ color: '#a78bfa', fontSize: '15px', fontWeight: '600', margin: '0 0 8px 0', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
-        Generating{dots}
-      </p>
-      <p style={{ color: '#52525b', fontSize: '12px', margin: 0 }}>
-        Querying Torn API across all factions — this takes about 30 seconds
-      </p>
-    </div>
-  )
-}
-
 // ─── Period picker ─────────────────────────────────────────────────────────────
 
 function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFrom, setCustomFrom, customTo, setCustomTo, onApply }) {
@@ -82,7 +32,6 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
 
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
-      {/* Mode buttons */}
       {['month', 'custom'].map(m => (
         <button
           key={m}
@@ -177,7 +126,6 @@ function EnergyTable({ members }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <div style={{ minWidth: '540px' }}>
-        {/* Header */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: '30px 1fr 140px 110px',
@@ -208,36 +156,21 @@ function EnergyTable({ members }) {
                 border: '1px solid transparent',
               }}
             >
-              {/* Rank */}
-              <span style={{ color: '#52525b', fontSize: '12px', textAlign: 'right' }}>
-                {i + 1}
-              </span>
-
-              {/* Member name + bar */}
+              <span style={{ color: '#52525b', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '3px' }}>
                   {m.username}
                 </span>
                 <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
                   <div style={{
-                    height: '100%',
-                    width: `${barPct}%`,
+                    height: '100%', width: `${barPct}%`,
                     background: 'linear-gradient(90deg, #6d28d9, #b3123f)',
-                    borderRadius: '2px',
-                    transition: 'width 0.4s ease',
+                    borderRadius: '2px', transition: 'width 0.4s ease',
                   }} />
                 </div>
               </div>
-
-              {/* Energy used */}
-              <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>
-                {fmt(m.energy)}
-              </span>
-
-              {/* Avg / day */}
-              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
-                {fmt(m.avg_day)} / day
-              </span>
+              <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.energy)}</span>
+              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{fmt(m.avg_day)} / day</span>
             </div>
           )
         })}
@@ -249,28 +182,24 @@ function EnergyTable({ members }) {
 // ─── Summary bar ──────────────────────────────────────────────────────────────
 
 function SummaryBar({ members, days }) {
-  const total   = members.reduce((s, m) => s + m.energy, 0)
-  const avgDay  = days > 0 ? Math.round(total / days) : 0
-  const active  = members.length
+  const total  = members.reduce((s, m) => s + m.energy, 0)
+  const avgDay = days > 0 ? Math.round(total / days) : 0
 
   return (
     <div style={{
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-      gap: '8px',
-      marginBottom: '20px',
+      gap: '8px', marginBottom: '20px',
     }}>
       {[
-        { label: 'Active Members', value: active,       color: '#f4f4f5' },
-        { label: 'Total Energy',   value: fmt(total),   color: '#a78bfa' },
-        { label: 'Avg / Day',      value: fmt(avgDay),  color: '#ff2f6d' },
+        { label: 'Active Members', value: members.length, color: '#f4f4f5' },
+        { label: 'Total Energy',   value: fmt(total),     color: '#a78bfa' },
+        { label: 'Avg / Day',      value: fmt(avgDay),    color: '#ff2f6d' },
         { label: 'Days Tracked',   value: Math.ceil(days), color: '#f4f4f5' },
       ].map(({ label, value, color }) => (
         <div key={label} style={{
-          padding: '10px 14px',
-          borderRadius: '8px',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(255,255,255,0.07)',
+          padding: '10px 14px', borderRadius: '8px',
+          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
         }}>
           <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>{label}</p>
           <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
@@ -286,27 +215,26 @@ export default function EnergyActivityPanel() {
   const now = new Date()
   const [mode, setMode] = useState('month')
   const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
-  const [customFrom, setCustomFrom] = useState(tsToDate(monthStart(now.getUTCFullYear(), now.getUTCMonth())))
-  const [customTo,   setCustomTo]   = useState(tsToDate(Math.floor(Date.now() / 1000)))
+  const todayStr = now.toISOString().slice(0, 10)
+  const firstOfMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
+  const [customFrom, setCustomFrom] = useState(firstOfMonth)
+  const [customTo,   setCustomTo]   = useState(todayStr)
 
-  const [data,     setData]    = useState(null)
-  const [loading,  setLoading] = useState(false)
-  const [error,    setError]   = useState(null)
-  const [rawDebug, setRawDebug] = useState(null)
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState(null)
 
   const buildParams = useCallback(() => {
     if (mode === 'month') {
       const { year, month } = selectedMonth
+      const fromStr = `${year}-${String(month + 1).padStart(2, '0')}-01`
       const isCurrentMonth = year === now.getUTCFullYear() && month === now.getUTCMonth()
-      const from = monthStart(year, month)
-      const to   = isCurrentMonth ? Math.floor(Date.now() / 1000) : monthEnd(year, month)
-      return { from, to }
-    } else {
-      return {
-        from: dateToTs(customFrom),
-        to:   dateToTs(customTo) + 86399, // end of that day UTC
-      }
+      const toStr = isCurrentMonth
+        ? now.toISOString().slice(0, 10)
+        : new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
+      return { from: fromStr, to: toStr }
     }
+    return { from: customFrom, to: customTo }
   }, [mode, selectedMonth, customFrom, customTo])
 
   const load = useCallback(() => {
@@ -314,39 +242,31 @@ export default function EnergyActivityPanel() {
     setLoading(true)
     setError(null)
     const { from, to } = buildParams()
-    console.log('[Energy] fetching from:', from, 'to:', to)
     fetch(
       `${API_BASE_URL}/api/leadership/energy?from=${from}&to=${to}`,
       { headers: authHeaders(), signal: controller.signal }
     )
-      .then((res) => res.json().then((json) => ({ res, json })))
+      .then(res => res.json().then(json => ({ res, json })))
       .then(({ res, json }) => {
-        console.log('[Energy] response status:', res.status, 'body:', json)
-        setRawDebug(json)
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
       })
-      .catch((e) => {
-        console.error('[Energy] fetch error:', e.name, e.message)
-        if (e.name !== 'AbortError') {
-          setError(e.message)
-          setRawDebug({ fetchError: e.name, message: e.message })
-        }
+      .catch(e => {
+        if (e.name !== 'AbortError') setError(e.message)
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return controller
   }, [buildParams])
 
-  // Load on mount with defaults; cancel request if component unmounts
   useEffect(() => {
     const controller = load()
     return () => controller.abort()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const periodLabel = () => {
-    if (mode === 'month') return monthLabel(selectedMonth.year, selectedMonth.month)
-    return `${customFrom} → ${customTo} UTC`
-  }
+  const periodLabel = () =>
+    mode === 'month'
+      ? monthLabel(selectedMonth.year, selectedMonth.month)
+      : `${customFrom} to ${customTo} UTC`
 
   return (
     <div>
@@ -355,7 +275,7 @@ export default function EnergyActivityPanel() {
           Gym Energy
         </h3>
         <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
-          Energy trained across all three factions, combined per member. Members with zero activity in the period are excluded.
+          Energy trained across all three factions. Snapshots taken daily — data available from tomorrow onwards.
         </p>
       </div>
 
@@ -367,21 +287,11 @@ export default function EnergyActivityPanel() {
         onApply={load}
       />
 
-      {/* Temporary debug: shows raw API response */}
-      {rawDebug && (
-        <details style={{ marginBottom: '16px' }}>
-          <summary style={{ color: '#a1a1aa', fontSize: '12px', cursor: 'pointer' }}>Raw API response (debug)</summary>
-          <pre style={{
-            background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '8px', padding: '12px', fontSize: '11px', color: '#71717a',
-            overflowX: 'auto', maxHeight: '200px', marginTop: '8px',
-          }}>
-            {JSON.stringify(rawDebug, null, 2)}
-          </pre>
-        </details>
+      {loading && (
+        <div style={{ padding: '48px', textAlign: 'center', color: '#a1a1aa', fontSize: '14px' }}>
+          Loading…
+        </div>
       )}
-
-      {loading && <GeneratingLoader />}
 
       {error && (
         <div style={{
@@ -394,14 +304,13 @@ export default function EnergyActivityPanel() {
 
       {!loading && data && (
         <>
-          {/* Partial errors (e.g. one faction key missing) */}
           {data.errors?.length > 0 && (
             <div style={{
               padding: '10px 14px', borderRadius: '8px',
               background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', marginBottom: '16px',
             }}>
               <p style={{ color: '#fbbf24', fontSize: '12px', margin: 0 }}>
-                ⚠ Some factions could not be fetched: {data.errors.join(' · ')}
+                Some factions could not be fetched: {data.errors.join(' · ')}
               </p>
             </div>
           )}
@@ -409,7 +318,9 @@ export default function EnergyActivityPanel() {
           <div style={{ marginBottom: '12px' }}>
             <span style={{ color: '#52525b', fontSize: '12px' }}>
               Period: <span style={{ color: '#a1a1aa' }}>{periodLabel()}</span>
-              {' · '}{data.period.days} days
+              {data.coverage?.days_covered > 0 && (
+                <> · <span style={{ color: '#a1a1aa' }}>{data.coverage.days_covered} snapshot{data.coverage.days_covered !== 1 ? 's' : ''} ({data.coverage.earliest} to {data.coverage.latest})</span></>
+              )}
             </span>
           </div>
 
@@ -418,7 +329,12 @@ export default function EnergyActivityPanel() {
               padding: '48px', textAlign: 'center',
               background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)',
             }}>
-              <p style={{ color: '#52525b', fontSize: '14px', margin: 0 }}>No energy activity recorded for this period.</p>
+              <p style={{ color: '#52525b', fontSize: '14px', margin: '0 0 6px 0' }}>No energy data for this period.</p>
+              {data.coverage?.days_covered === 0 && (
+                <p style={{ color: '#3f3f46', fontSize: '12px', margin: 0 }}>
+                  Snapshots are taken daily at 01:00 UTC — check back tomorrow.
+                </p>
+              )}
             </div>
           ) : (
             <>

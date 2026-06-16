@@ -34,6 +34,20 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    // "0 1 * * *" — daily 01:00 UTC: energy snapshot
+    if (event.cron === '0 1 * * *') {
+      try {
+        const { takeEnergySnapshot } = await import('./controllers/activityController.js');
+        ctx.waitUntil(
+          takeEnergySnapshot(env).then(r => console.log('[cron] energy snapshot:', JSON.stringify(r)))
+            .catch(e => console.error('[cron] energy snapshot failed:', e))
+        );
+      } catch (e) {
+        console.error('[cron] energy snapshot handler error:', e);
+      }
+      return;
+    }
+
     // "0 1 * * 2" — Tuesday 01:00 UTC: check for ranked war matches
     if (event.cron === '0 1 * * 2') {
       try {
