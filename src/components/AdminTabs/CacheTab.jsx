@@ -20,27 +20,17 @@ export default function CacheTab() {
 
   useEffect(() => { fetchAll() }, [])
 
-  // Poll personal stats status every 4s while snapshot is running
+  // Poll personal stats status every 3s while snapshot is running
   useEffect(() => {
     if (!snapshotRunning) { clearInterval(pollRef.current); return }
     const token = localStorage.getItem('occultusSession')
-    let prevCount = personalStatsStatus?.today ?? 0
-    let stableFor = 0
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
         const data = await res.json()
         setPersonalStatsStatus(data)
-        if (data.today === prevCount) {
-          stableFor++
-          // Count hasn't moved for 20s (5 polls × 4s) — assume finished
-          if (stableFor >= 5) setSnapshotRunning(false)
-        } else {
-          stableFor = 0
-          prevCount = data.today
-        }
       } catch { /* ignore */ }
-    }, 4000)
+    }, 3000)
     return () => clearInterval(pollRef.current)
   }, [snapshotRunning])
 
@@ -142,10 +132,10 @@ export default function CacheTab() {
   }
 
   const runPersonalStatsSnapshot = async () => {
+    setError(null)
+    setLastResult(null)
+    setSnapshotRunning(true) // start polling immediately — POST won't return until all members done
     try {
-      setRefreshing('personal-stats')
-      setError(null)
-      setLastResult(null)
       const token = localStorage.getItem('occultusSession')
       const res = await fetch(`${API_BASE_URL}/api/admin/personal-stats/snapshot`, {
         method: 'POST',
@@ -154,14 +144,16 @@ export default function CacheTab() {
       const data = await res.json()
       if (res.ok) {
         setLastResult(data)
-        setSnapshotRunning(true)
+        // Refresh status one final time to show accurate totals
+        fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
+          .then(r => r.json()).then(setPersonalStatsStatus).catch(console.error)
       } else {
         setError(data.error || `Error ${res.status}`)
       }
     } catch (err) {
       setError(err.message)
     } finally {
-      setRefreshing(null)
+      setSnapshotRunning(false)
     }
   }
 
@@ -390,7 +382,7 @@ export default function CacheTab() {
         {snapshotRunning && personalStatsStatus && (
           <div style={{ marginTop: '14px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ color: '#22d3ee', fontSize: '13px', fontWeight: 600 }}>Snapshot running…</span>
+              <span style={{ color: '#22d3ee', fontSize: '13px', fontWeight: 600 }}>Snapshot in progress…</span>
               <span style={{ color: '#22d3ee', fontSize: '13px' }}>
                 {personalStatsStatus.today} / {personalStatsStatus.members || '?'} members today
               </span>
@@ -412,15 +404,15 @@ export default function CacheTab() {
         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <button
             onClick={runPersonalStatsSnapshot}
-            disabled={!!refreshing || snapshotRunning}
+            disabled={snapshotRunning}
             className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
             style={{
               background: 'rgba(179,18,63,0.2)',
               color: '#ff2f6d',
-              opacity: (refreshing || snapshotRunning) ? 0.5 : 1,
+              opacity: snapshotRunning ? 0.5 : 1,
             }}
           >
-            {refreshing === 'personal-stats' ? 'Starting…' : snapshotRunning ? 'Running in background…' : 'Run Snapshot Now'}
+            {snapshotRunning ? 'Running…' : 'Run Snapshot Now'}
           </button>
           <div>
             <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>

@@ -160,10 +160,7 @@ export async function handleRequest(request, env, ctx) {
       return activityController.getPersonalStatsSnapshotStatus(request, env);
     }
     if (pathname === '/api/admin/personal-stats/snapshot' && method === 'POST') {
-      ctx.waitUntil(activityController.takePersonalStatsSnapshot(env)
-        .then(r => console.log('[admin] personal stats snapshot complete:', JSON.stringify(r)))
-        .catch(e => console.error('[admin] personal stats snapshot failed:', e)));
-      return jsonResponse({ message: 'Snapshot started in background — check logs for result.' });
+      return activityController.triggerPersonalStatsSnapshotAdmin(request, env);
     }
   }
 

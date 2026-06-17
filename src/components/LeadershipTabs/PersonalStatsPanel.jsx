@@ -1,6 +1,36 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
+function ScrollToTop() {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > 300)
+    window.addEventListener('scroll', onScroll)
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+  if (!visible) return null
+  return (
+    <button
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      style={{
+        position: 'fixed', bottom: '28px', right: '28px', zIndex: 999,
+        width: '40px', height: '40px', borderRadius: '50%',
+        background: 'rgba(20,20,30,0.85)', border: '1px solid rgba(255,255,255,0.12)',
+        color: '#a1a1aa', fontSize: '18px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        backdropFilter: 'blur(6px)',
+        transition: 'opacity 0.2s, color 0.2s',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.color = '#f4f4f5'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }}
+      onMouseLeave={e => { e.currentTarget.style.color = '#a1a1aa'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
+      title="Back to top"
+    >
+      ↑
+    </button>
+  )
+}
+
 function authHeaders() {
   const token = localStorage.getItem('occultusSession')
   return { Authorization: token }
@@ -33,6 +63,7 @@ function buildMonthOptions() {
 }
 
 function buildParams(mode, selectedMonth, customFrom, customTo, customDay) {
+  if (mode === 'latest') return { mode: 'latest' }
   if (mode === 'custom') return { from: customFrom, to: customTo }
   if (mode === 'day')    return { from: customDay, to: customDay }
   const { year, month } = selectedMonth
@@ -47,13 +78,66 @@ function buildParams(mode, selectedMonth, customFrom, customTo, customDay) {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
+// Categories with optional subcategories. Flat `keys` for simple cats, `subs` array for grouped ones.
 const CATEGORIES = [
-  { id: 'attacking', label: 'Attacking',  keys: ['atk_won','atk_lost','def_won','def_lost','war_hits','respect','raid_hits','wall_joins'] },
-  { id: 'support',   label: 'Support',    keys: ['revives','hosp','busts'] },
-  { id: 'crimes',    label: 'Crimes',     keys: ['crimes','oc'] },
-  { id: 'activity',  label: 'Activity',   keys: ['travel','active_time','drugs'] },
-  { id: 'other',     label: 'Other',      keys: ['bounties','networth'] },
+  { id: 'attacking',     label: 'Attacking',      subs: [
+    { id: 'atk_attacks', label: 'Attacks',         keys: ['atk_won','atk_lost','atk_stalemate','atk_assist','atk_stealth'] },
+    { id: 'atk_defends', label: 'Defends',         keys: ['def_won','def_lost','def_stalemate','def_total'] },
+    { id: 'atk_combat',  label: 'Combat',          keys: ['hits_success','hits_miss','hits_critical','hits_ohk','dmg_total','dmg_best','elo','unarmored_wins','highest_level','killstreak_best'] },
+    { id: 'atk_faction', label: 'Faction',         keys: ['war_hits','raid_hits','faction_respect','faction_retals','wall_joins','wall_clears','wall_time'] },
+    { id: 'atk_ammo',    label: 'Ammunition',      keys: ['ammo_total','ammo_special','ammo_hp','ammo_tracer','ammo_piercing','ammo_incendiary'] },
+    { id: 'atk_mug',     label: 'Mugging',         keys: ['money_mugged','largest_mug','items_looted'] },
+    { id: 'atk_esc',     label: 'Escapes',         keys: ['esc_player','esc_foes'] },
+  ]},
+  { id: 'jobs',          label: 'Jobs',             keys: ['job_points','trains_received'] },
+  { id: 'trading',       label: 'Trading',          subs: [
+    { id: 'trd_general', label: 'General',          keys: ['trades','items_sent','bought_market','bought_shops','points_bought','points_sold'] },
+    { id: 'trd_auctions',label: 'Auctions',         keys: ['auctions_won','auctions_sold'] },
+    { id: 'trd_bazaar',  label: 'Bazaar / IM',      keys: ['bazaar_customers','bazaar_sales','bazaar_profit','imarket_customers','imarket_sales','imarket_revenue'] },
+  ]},
+  { id: 'jail',          label: 'Jail',             keys: ['times_jailed','busts','bust_fails','bails','bail_fees'] },
+  { id: 'hospital',      label: 'Hospital',         keys: ['hosp','medical_items','blood_withdrawn','revives','revives_received'] },
+  { id: 'finishing',     label: 'Finishing Hits',   keys: ['fh_heavy_arty','fh_machine_guns','fh_rifles','fh_smg','fh_shotguns','fh_pistols','fh_temporary','fh_piercing','fh_slashing','fh_clubbing','fh_mechanical','fh_h2h'] },
+  { id: 'communication', label: 'Comms',            keys: ['mails_total','mails_friends','mails_faction','mails_colleagues','classified_ads'] },
+  { id: 'crimes',        label: 'Crimes',           subs: [
+    { id: 'crim_totals', label: 'Totals',           keys: ['crimes','oc'] },
+    { id: 'crim_types',  label: 'By Type',          keys: ['crime_vandalism','crime_fraud','crime_theft','crime_counterfeit','crime_illicit','crime_cyber','crime_extortion','crime_illprod'] },
+  ]},
+  { id: 'bounties',      label: 'Bounties',         keys: ['bounties_placed','bounty_val_placed','bounties_coll','bounty_val_coll','bounties_received'] },
+  { id: 'items',         label: 'Items',            subs: [
+    { id: 'itm_found',   label: 'Found / Coded',    keys: ['items_city','items_dump','items_trashed','viruses_coded'] },
+    { id: 'itm_used',    label: 'Used',             keys: ['books_used','boosters_used','consumables_used','candy_used','alcohol_used','energy_used'] },
+  ]},
+  { id: 'travel',        label: 'Travel',           subs: [
+    { id: 'trv_main',    label: 'Overview',         keys: ['travel','travel_time','travel_items','travel_atk_won','travel_def_lost'] },
+    { id: 'trv_dest',    label: 'Destinations',     keys: ['travel_argentina','travel_canada','travel_cayman','travel_china','travel_hawaii','travel_japan','travel_mexico','travel_uae','travel_uk','travel_sa','travel_swiss'] },
+  ]},
+  { id: 'drugs',         label: 'Drugs',            subs: [
+    { id: 'drg_totals',  label: 'Totals',           keys: ['drugs','drug_overdoses','drug_rehabs'] },
+    { id: 'drg_types',   label: 'By Type',          keys: ['drug_cannabis','drug_ecstasy','drug_ketamine','drug_lsd','drug_opium','drug_pcp','drug_shrooms','drug_speed','drug_vicodin','drug_xanax'] },
+  ]},
+  { id: 'missions',      label: 'Missions',         keys: ['missions','contracts','mission_credits'] },
+  { id: 'racing',        label: 'Racing',           keys: ['races_entered','races_won','racing_points'] },
+  { id: 'networth',      label: 'Networth',         keys: ['networth'] },
+  { id: 'other',         label: 'Other',            subs: [
+    { id: 'oth_activity',label: 'Activity',         keys: ['active_time','streak_current','streak_best','awards','donator_days'] },
+    { id: 'oth_misc',    label: 'Misc',             keys: ['refills_energy','refills_nerve','merits_bought','ranked_war_wins'] },
+  ]},
 ]
+
+// Returns the active key list given a category and subcategory id
+function getActiveKeys(catId, subId) {
+  const cat = CATEGORIES.find(c => c.id === catId)
+  if (!cat) return []
+  if (cat.subs) {
+    const sub = cat.subs.find(s => s.id === subId) ?? cat.subs[0]
+    return sub.keys
+  }
+  return cat.keys
+}
+
+// Time-formatted stat keys (seconds → human readable)
+const TIME_KEYS = new Set(['active_time', 'wall_time', 'travel_time'])
 
 const FACTION_NAMES  = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
 const FACTION_COLORS = { 33097: '#b3123f', 9728: '#6d28d9', 9171: '#0e7490' }
@@ -78,7 +162,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
 
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
-      {[['month', 'By Month'], ['day', 'Per Day'], ['custom', 'Custom Range']].map(([m, label]) => (
+      {[['latest', 'Latest'], ['month', 'By Month'], ['day', 'Per Day'], ['custom', 'Custom Range']].map(([m, label]) => (
         <button key={m} onClick={() => setMode(m)} style={{
           padding: '7px 16px', borderRadius: '8px',
           border: `1px solid ${mode === m ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
@@ -89,6 +173,12 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
           {label}
         </button>
       ))}
+
+      {mode === 'latest' && (
+        <span style={{ color: '#52525b', fontSize: '12px', alignSelf: 'center' }}>
+          Showing totals from each member's most recent snapshot
+        </span>
+      )}
 
       {mode === 'month' && (
         <select
@@ -126,10 +216,12 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
         </>
       )}
 
-      <button onClick={onApply} style={{
-        padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(179,18,63,0.4)',
-        background: 'rgba(179,18,63,0.15)', color: '#f4f4f5', fontSize: '13px', cursor: 'pointer',
-      }}>Apply</button>
+      {mode !== 'latest' && (
+        <button onClick={onApply} style={{
+          padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(179,18,63,0.4)',
+          background: 'rgba(179,18,63,0.15)', color: '#f4f4f5', fontSize: '13px', cursor: 'pointer',
+        }}>Apply</button>
+      )}
     </div>
   )
 }
@@ -153,18 +245,34 @@ function FactionFilter({ value, onChange }) {
 
 // ─── Category tabs ─────────────────────────────────────────────────────────────
 
-function CategoryTabs({ active, onChange }) {
+function CategoryTabs({ activeCat, onChangeCat, activeSub, onChangeSub }) {
+  const cat = CATEGORIES.find(c => c.id === activeCat)
   return (
-    <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', flexWrap: 'wrap' }}>
-      {CATEGORIES.map(c => (
-        <button key={c.id} onClick={() => onChange(c.id)} style={{
-          padding: '5px 14px', borderRadius: '8px',
-          border: `1px solid ${active === c.id ? 'rgba(109,40,217,0.5)' : 'rgba(255,255,255,0.08)'}`,
-          background: active === c.id ? 'rgba(109,40,217,0.15)' : 'transparent',
-          color: active === c.id ? '#f4f4f5' : '#a1a1aa', fontSize: '12px',
-          fontWeight: active === c.id ? '600' : '400', cursor: 'pointer',
-        }}>{c.label}</button>
-      ))}
+    <div>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: cat?.subs ? '8px' : '16px', flexWrap: 'wrap' }}>
+        {CATEGORIES.map(c => (
+          <button key={c.id} onClick={() => onChangeCat(c.id)} style={{
+            padding: '5px 12px', borderRadius: '8px',
+            border: `1px solid ${activeCat === c.id ? 'rgba(109,40,217,0.5)' : 'rgba(255,255,255,0.08)'}`,
+            background: activeCat === c.id ? 'rgba(109,40,217,0.15)' : 'transparent',
+            color: activeCat === c.id ? '#f4f4f5' : '#a1a1aa', fontSize: '12px',
+            fontWeight: activeCat === c.id ? '600' : '400', cursor: 'pointer',
+          }}>{c.label}</button>
+        ))}
+      </div>
+      {cat?.subs && (
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', flexWrap: 'wrap', paddingLeft: '4px' }}>
+          {cat.subs.map(s => (
+            <button key={s.id} onClick={() => onChangeSub(s.id)} style={{
+              padding: '3px 12px', borderRadius: '6px',
+              border: `1px solid ${activeSub === s.id ? 'rgba(34,211,238,0.4)' : 'rgba(255,255,255,0.06)'}`,
+              background: activeSub === s.id ? 'rgba(34,211,238,0.08)' : 'transparent',
+              color: activeSub === s.id ? '#22d3ee' : '#71717a', fontSize: '11px',
+              fontWeight: activeSub === s.id ? '600' : '400', cursor: 'pointer',
+            }}>{s.label}</button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -183,10 +291,6 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
     const av = a.stats[sortKey] ?? 0; const bv = b.stats[sortKey] ?? 0
     return sortDir === 'desc' ? bv - av : av - bv
   })
-
-  const maxVal = {}
-  for (const f of visibleFields) maxVal[f.key] = Math.max(1, ...members.map(m => m.stats[f.key] ?? 0))
-  const primaryKey = visibleFields[0]?.key
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -209,7 +313,6 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
         </thead>
         <tbody>
           {sorted.map((m, i) => {
-            const pct = primaryKey ? Math.round(((m.stats[primaryKey] ?? 0) / maxVal[primaryKey]) * 100) : 0
             return (
               <tr key={m.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
                 <td style={{ padding: '8px 12px', color: '#52525b', fontSize: '11px' }}>{i + 1}</td>
@@ -223,11 +326,6 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
                         </div>
                       )}
                     </div>
-                    {primaryKey && (
-                      <div style={{ flex: 1, maxWidth: '80px', height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg,#b3123f,#6d28d9)', borderRadius: '2px' }} />
-                      </div>
-                    )}
                   </div>
                 </td>
                 {visibleFields.map(f => (
@@ -236,7 +334,7 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
                     color: (m.stats[f.key] ?? 0) > 0 ? '#f4f4f5' : '#3f3f46',
                     fontWeight: sortKey === f.key ? '600' : '400',
                   }}>
-                    {f.key === 'active_time' ? fmtTime(m.stats[f.key] ?? 0) : fmt(m.stats[f.key] ?? 0)}
+                    {TIME_KEYS.has(f.key) ? fmtTime(m.stats[f.key] ?? 0) : fmt(m.stats[f.key] ?? 0)}
                   </td>
                 ))}
               </tr>
@@ -250,21 +348,23 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
 
 // ─── Summary bar ───────────────────────────────────────────────────────────────
 
-function SummaryBar({ members, coverage }) {
-  const activeCount    = members.filter(m => Object.values(m.stats).some(v => v > 0)).length
-  const totalWarHits   = members.reduce((s, m) => s + (m.stats.war_hits ?? 0), 0)
-  const totalRevives   = members.reduce((s, m) => s + (m.stats.revives ?? 0), 0)
-  const totalCrimes    = members.reduce((s, m) => s + (m.stats.crimes ?? 0), 0)
+function SummaryBar({ members, coverage, isLatest }) {
+  const activeCount  = members.filter(m => Object.values(m.stats).some(v => v > 0)).length
+  const totalWarHits = members.reduce((s, m) => s + (m.stats.war_hits ?? 0), 0)
+  const totalRevives = members.reduce((s, m) => s + (m.stats.revives ?? 0), 0)
+  const totalCrimes  = members.reduce((s, m) => s + (m.stats.crimes ?? 0), 0)
+
+  const tiles = [
+    ['Members',        activeCount],
+    [isLatest ? 'Total War Hits' : 'War Hits Gained', fmt(totalWarHits)],
+    [isLatest ? 'Total Revives'  : 'Revives Gained',  fmt(totalRevives)],
+    [isLatest ? 'Total Crimes'   : 'Crimes Gained',   fmt(totalCrimes)],
+    ['Days of History', coverage?.days_covered ?? 0],
+  ]
 
   return (
     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
-      {[
-        ['Active Members', activeCount],
-        ['Total War Hits', fmt(totalWarHits)],
-        ['Total Revives',  fmt(totalRevives)],
-        ['Total Crimes',   fmt(totalCrimes)],
-        ['Days Covered',   coverage?.days_covered ?? 0],
-      ].map(([l, v]) => (
+      {tiles.map(([l, v]) => (
         <div key={l} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 16px', minWidth: '110px' }}>
           <div style={{ color: '#a1a1aa', fontSize: '11px', marginBottom: '4px' }}>{l}</div>
           <div style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '600' }}>{v}</div>
@@ -616,7 +716,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
           >
             {CATEGORIES.map(cat => (
               <optgroup key={cat.id} label={cat.label}>
-                {allFields.filter(f => cat.keys.includes(f.key)).map(f => (
+                {allFields.filter(f => (cat.keys ?? cat.subs?.flatMap(s => s.keys) ?? []).includes(f.key)).map(f => (
                   <option key={f.key} value={f.key}>{f.label}</option>
                 ))}
               </optgroup>
@@ -673,14 +773,15 @@ function ComparePanel({ allMembers, allFields, minDate }) {
 export default function PersonalStatsPanel() {
   const now = new Date()
   const todayStr = now.toISOString().slice(0, 10)
-  const [mode, setMode]                   = useState('month')
+  const [mode, setMode]                   = useState('latest')
   const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
   const [customFrom, setCustomFrom]       = useState('')
   const [customTo, setCustomTo]           = useState('')
   const [customDay, setCustomDay]         = useState(todayStr)
   const [factionFilter, setFactionFilter] = useState('all')
-  const [category, setCategory]           = useState('attacking')
-  const [sortKey, setSortKey]             = useState('war_hits')
+  const [activeCat, setActiveCat]         = useState('attacking')
+  const [activeSub, setActiveSub]         = useState('atk_attacks')
+  const [sortKey, setSortKey]             = useState('atk_won')
   const [sortDir, setSortDir]             = useState('desc')
   const [showCompare, setShowCompare]     = useState(false)
 
@@ -709,14 +810,26 @@ export default function PersonalStatsPanel() {
 
   useEffect(() => {
     const params = buildParams(mode, selectedMonth, customFrom, customTo, customDay)
-    if (params.from && params.to) fetchData(params)
+    if (mode === 'latest' || (params.from && params.to)) fetchData(params)
     return () => abortRef.current?.abort()
   }, [mode, selectedMonth, fetchData])
 
-  useEffect(() => {
-    const cat = CATEGORIES.find(c => c.id === category)
-    if (cat) setSortKey(cat.keys[0])
-  }, [category])
+  // Reset subcategory and sort key when top-level category changes
+  function handleChangeCat(catId) {
+    const cat = CATEGORIES.find(c => c.id === catId)
+    const newSub = cat?.subs ? cat.subs[0].id : null
+    const newKeys = cat?.subs ? cat.subs[0].keys : (cat?.keys ?? [])
+    setActiveCat(catId)
+    setActiveSub(newSub)
+    setSortKey(newKeys[0] ?? 'atk_won')
+  }
+
+  function handleChangeSub(subId) {
+    const cat = CATEGORIES.find(c => c.id === activeCat)
+    const sub = cat?.subs?.find(s => s.id === subId)
+    setActiveSub(subId)
+    if (sub?.keys?.[0]) setSortKey(sub.keys[0])
+  }
 
   const handleApply = () => {
     const params = buildParams(mode, selectedMonth, customFrom, customTo, customDay)
@@ -726,8 +839,6 @@ export default function PersonalStatsPanel() {
   const members = (data?.members ?? []).filter(m =>
     factionFilter === 'all' || String(m.faction_id) === factionFilter
   )
-
-  const currentCat = CATEGORIES.find(c => c.id === category) ?? CATEGORIES[0]
 
   return (
     <div>
@@ -758,36 +869,26 @@ export default function PersonalStatsPanel() {
 
       {!loading && data && (
         <>
-          {data.coverage?.days_covered === 0 ? (
+          {(!data.members?.length) ? (
             <div style={{ padding: '32px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', background: 'rgba(22,22,32,0.6)' }}>
-              <div style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '8px' }}>No snapshot data for this period.</div>
+              <div style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '8px' }}>
+                {mode === 'latest' ? 'No snapshot data yet.' : 'No snapshot data for this period.'}
+              </div>
               <div style={{ color: '#52525b', fontSize: '12px' }}>Personal stats are snapshotted daily at 01:00 UTC. Data will appear from the next cron run.</div>
             </div>
           ) : (
             <>
-              <SummaryBar members={members} coverage={data.coverage} />
+              <SummaryBar members={members} coverage={data.coverage} isLatest={mode === 'latest'} />
               {data.coverage && (
                 <div style={{ color: '#52525b', fontSize: '11px', marginBottom: '12px' }}>
-                  Snapshots: {data.coverage.earliest} → {data.coverage.latest} ({data.coverage.days_covered} day{data.coverage.days_covered !== 1 ? 's' : ''})
+                  {mode === 'latest'
+                    ? `Latest snapshot: ${data.coverage.latest} — ${data.coverage.days_covered} day${data.coverage.days_covered !== 1 ? 's' : ''} of history`
+                    : `Snapshots: ${data.coverage.earliest} → ${data.coverage.latest} (${data.coverage.days_covered} day${data.coverage.days_covered !== 1 ? 's' : ''})`}
                 </div>
               )}
 
-              <CategoryTabs active={category} onChange={setCategory} />
-
-              {members.length === 0 ? (
-                <div style={{ color: '#a1a1aa', fontSize: '13px', padding: '24px 0', textAlign: 'center' }}>No members match the current filter.</div>
-              ) : (
-                <StatsTable
-                  members={members}
-                  fields={data.fields ?? []}
-                  categoryKeys={currentCat.keys}
-                  sortKey={sortKey} setSortKey={setSortKey}
-                  sortDir={sortDir} setSortDir={setSortDir}
-                />
-              )}
-
-              {/* Compare toggle */}
-              <div style={{ marginTop: '28px' }}>
+              {/* Compare — sits above the stats table */}
+              <div style={{ marginBottom: '20px' }}>
                 <button
                   onClick={() => setShowCompare(v => !v)}
                   style={{
@@ -800,17 +901,35 @@ export default function PersonalStatsPanel() {
                 >
                   {showCompare ? '▲ Hide Compare' : '⟺ Compare Members'}
                 </button>
+
+                {showCompare && (
+                  <div style={{ marginTop: '16px' }}>
+                    <ComparePanel allMembers={data.members ?? []} allFields={data.fields ?? []} minDate={minDate} />
+                  </div>
+                )}
               </div>
 
-              {showCompare && (
-                <div style={{ marginTop: '16px' }}>
-                  <ComparePanel allMembers={data.members ?? []} allFields={data.fields ?? []} minDate={minDate} />
-                </div>
+              <CategoryTabs
+                activeCat={activeCat} onChangeCat={handleChangeCat}
+                activeSub={activeSub} onChangeSub={handleChangeSub}
+              />
+
+              {members.length === 0 ? (
+                <div style={{ color: '#a1a1aa', fontSize: '13px', padding: '24px 0', textAlign: 'center' }}>No members match the current filter.</div>
+              ) : (
+                <StatsTable
+                  members={members}
+                  fields={data.fields ?? []}
+                  categoryKeys={getActiveKeys(activeCat, activeSub)}
+                  sortKey={sortKey} setSortKey={setSortKey}
+                  sortDir={sortDir} setSortDir={setSortDir}
+                />
               )}
             </>
           )}
         </>
       )}
+      <ScrollToTop />
     </div>
   )
 }
