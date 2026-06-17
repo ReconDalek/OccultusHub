@@ -12,43 +12,45 @@ export async function login(request, env) {
       return errorResponse('API key is required', 400);
     }
 
-    // Validate API key with Torn.com
-    let tornUser;
+    // Validate API key and fetch all needed data in two parallel requests
+    let tornProfile, tornFactionData, calendarStartTime = null;
     try {
-      const response = await fetch(
-        `${TORN_API_BASE}/user?selections=profile&comment=OccHub`,
-        { headers: { Authorization: `ApiKey ${apiKey}` } }
-      );
-      if (!response.ok) {
+      const headers = { Authorization: `ApiKey ${apiKey}` };
+      const [userRes, keyRes] = await Promise.all([
+        fetch(`${TORN_API_BASE}/user?selections=profile,faction,calendar&comment=OccHub`, { headers }),
+        fetch(`${TORN_API_BASE}/key/info?comment=OccHub`, { headers }),
+      ]);
+
+      if (!userRes.ok) {
         return errorResponse('Invalid API key', 401);
       }
-      tornUser = await response.json();
+      const userRaw = await userRes.json();
+      if (userRaw.error) {
+        return errorResponse('Invalid API key', 401);
+      }
+      tornProfile = userRaw.profile;
+      tornFactionData = userRaw.faction ?? null;
+      const rawTime = userRaw.calendar?.start_time ?? null;
+      if (rawTime) calendarStartTime = rawTime.replace(/\s*TCT$/i, '').trim();
+
+      if (keyRes.ok) {
+        const keyRaw = await keyRes.json();
+        const level = keyRaw?.info?.access?.level ?? 0;
+        if (level < 3) {
+          return errorResponse('Your API key must be Limited Access (level 3) or higher to use this site', 403);
+        }
+      }
     } catch (err) {
-      console.error('Torn API error:', err);
+      console.error('Torn API fetch error:', err);
       await logError(env, { category: 'api_error', event: 'torn_auth_failed', message: `Torn API auth failed: ${err.message}` });
       return errorResponse('Invalid API key', 401);
     }
 
-    // Fetch user's calendar start time preference (non-blocking)
-    let calendarStartTime = null;
-    try {
-      const calRes = await fetch(
-        `${TORN_API_BASE}/user/calendar?comment=OccHub`,
-        { headers: { Authorization: `ApiKey ${apiKey}` } }
-      );
-      if (calRes.ok) {
-        const calData = await calRes.json();
-        const raw = calData?.calendar?.start_time ?? null;
-        if (raw) {
-          // Normalise "10:00 TCT" → "10:00"
-          calendarStartTime = raw.replace(/\s*TCT$/i, '').trim();
-        }
-      }
-    } catch (e) {
-      console.warn('Could not fetch user calendar start time:', e);
-    }
-
-    console.log('Torn user data:', JSON.stringify(tornUser));
+    const tornUserId = tornProfile.id;
+    const tornUsername = tornProfile.name;
+    const tornFactionId = tornFactionData?.id ?? tornProfile.faction_id ?? null;
+    const tornFactionPosition = tornFactionData?.position ?? null;
+    const tornImage = tornProfile.image ?? null;
 
     // Encrypt API key (base64 encoding)
     const encryptedApiKey = btoa(apiKey);
@@ -57,13 +59,12 @@ export async function login(request, env) {
     const existingUser = await env.DB.prepare(
       'SELECT * FROM users WHERE torn_user_id = ?'
     )
-      .bind(tornUser.player_id ?? null)
+      .bind(tornUserId)
       .first();
 
     let user;
     if (existingUser) {
       user = existingUser;
-      // Update user details if they've changed, plus update last_login and api_key
       await env.DB.prepare(
         `UPDATE users
          SET username = ?,
@@ -75,47 +76,17 @@ export async function login(request, env) {
              last_login = CURRENT_TIMESTAMP
          WHERE id = ?`
       )
-        .bind(
-          tornUser.name ?? user.username,
-          tornUser.faction?.faction_id ?? user.faction_id,
-          tornUser.faction?.position ?? user.faction_position,
-          tornUser.profile_image ?? user.image_url,
-          encryptedApiKey,
-          calendarStartTime,
-          user.id
-        )
+        .bind(tornUsername, tornFactionId, tornFactionPosition, tornImage, encryptedApiKey, calendarStartTime, user.id)
         .run();
-      // Fetch updated user
-      user = await env.DB.prepare('SELECT * FROM users WHERE id = ?')
-        .bind(user.id)
-        .first();
+      user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(user.id).first();
     } else {
-      // Create new user
-      console.log('Creating new user with:', {
-        torn_user_id: tornUser.player_id ?? null,
-        username: tornUser.name ?? null,
-        faction_id: tornUser.faction?.faction_id ?? null,
-        faction_position: tornUser.faction?.position ?? null,
-        image_url: tornUser.profile_image ?? null,
-      });
-
       const result = await env.DB.prepare(
         `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url, api_key, calendar_start_time)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          RETURNING *`
       )
-        .bind(
-          tornUser.player_id ?? null,
-          tornUser.name ?? null,
-          tornUser.faction?.faction_id ?? null,
-          tornUser.faction?.position ?? null,
-          tornUser.profile_image ?? null,
-          encryptedApiKey,
-          calendarStartTime
-        )
+        .bind(tornUserId, tornUsername, tornFactionId, tornFactionPosition, tornImage, encryptedApiKey, calendarStartTime)
         .first();
-
-      console.log('Insert result:', JSON.stringify(result));
 
       if (!result) {
         return errorResponse('Failed to create user', 500);
@@ -123,17 +94,8 @@ export async function login(request, env) {
       user = result;
     }
 
-    console.log('User object before login history:', JSON.stringify(user));
-
-    // Log login
     const ipAddress = request.headers.get('cf-connecting-ip') ?? '';
     const userAgent = request.headers.get('user-agent') ?? '';
-
-    console.log('Logging login with:', {
-      user_id: user.id,
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
 
     await env.DB.prepare(
       'INSERT INTO login_history (user_id, ip_address, user_agent) VALUES (?, ?, ?)'
@@ -168,7 +130,8 @@ export async function login(request, env) {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', error?.message ?? error, error?.stack ?? '');
+    await logError(env, { category: 'auth', event: 'login_error', message: `Login threw: ${error?.message ?? String(error)}` }).catch(() => {});
     return errorResponse('Internal server error', 500);
   }
 }

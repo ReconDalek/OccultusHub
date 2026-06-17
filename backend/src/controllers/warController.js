@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomApiKeyForFaction } from '../services/tornApiService.js';
+import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS   = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -255,6 +256,7 @@ export async function checkWarMatches(env) {
           ).bind(factionId, opponentId, opponentName, scheduledStart).run();
           results.push({ factionId, opponentId, opponentName, scheduledStart, action: 'created' });
           console.log(`checkWarMatches: faction ${factionId} vs ${opponentId} scheduled ${new Date(scheduledStart * 1000).toISOString()}`);
+          await logInfo(env, { category: 'war_cron', event: 'war_matched', message: `Faction ${factionId} matched vs ${opponentName} (${opponentId}), starts ${new Date(scheduledStart * 1000).toISOString()}`, meta: { factionId, opponentId, opponentName, scheduledStart } }).catch(() => {});
         } else {
           results.push({ factionId, opponentId, action: 'exists' });
         }
@@ -270,8 +272,8 @@ export async function checkWarMatches(env) {
 // ── Cron: track matched/active wars (every 30 minutes) ───────────────────────
 
 export async function trackActiveWars(env) {
-  const now         = Math.floor(Date.now() / 1000);
-  const fourDaysAgo = now - 4 * 24 * 3600;
+  const now          = Math.floor(Date.now() / 1000);
+  const fourDaysAgo  = now - 7 * 24 * 3600; // 7 days covers 3-day match window + 3-day war + buffer
 
   const { results: wars } = await env.DB.prepare(
     `SELECT * FROM ranked_wars WHERE status IN ('matched', 'active')`
@@ -303,8 +305,9 @@ export async function trackActiveWars(env) {
 
           await summariseAndCleanWar(env, warId, factionId);
           console.log(`trackActiveWars: war ${warId} ended (scores API) — ${result}`);
+          await logInfo(env, { category: 'war_cron', event: 'war_ended', message: `War ${warId} ended (scores API): ${result}`, meta: { warId, factionId, result } }).catch(() => {});
           checked++;
-          continue; // no need to fetch attacks for a completed war
+          continue;
         }
       }
 
@@ -348,8 +351,9 @@ export async function trackActiveWars(env) {
 
             await summariseAndCleanWar(env, warId, factionId);
             console.log(`trackActiveWars: war ${warId} ended (news) — ${result}`);
+            await logInfo(env, { category: 'war_cron', event: 'war_ended', message: `War ${warId} ended (news): ${result}`, meta: { warId, factionId, result } }).catch(() => {});
             checked++;
-            continue; // skip armory + regular attack fetch — war is over
+            continue;
           }
 
           // War started — "has begun"
@@ -358,6 +362,7 @@ export async function trackActiveWars(env) {
               `UPDATE ranked_wars SET status='active', started_at=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status='matched'`
             ).bind(item.timestamp, warId).run();
             console.log(`trackActiveWars: war ${warId} now ACTIVE`);
+            await logInfo(env, { category: 'war_cron', event: 'war_started', message: `War ${warId} (faction ${factionId} vs ${opponentId}) now ACTIVE`, meta: { warId, factionId, opponentId } }).catch(() => {});
             break;
           }
         }
@@ -372,33 +377,51 @@ export async function trackActiveWars(env) {
 
       // ── 3. Armory usage ─────────────────────────────────────────────────────
       const currentWar = await env.DB.prepare(`SELECT status, ended_at FROM ranked_wars WHERE id=?`).bind(warId).first();
-      const armoryEndCap = currentWar?.ended_at ?? now; // don't attribute post-war armory to this war
+      const armoryEndCap   = currentWar?.ended_at ?? now;
+      const armoryStartCap = scheduled_start ? Math.min(scheduled_start, warStartedAt || scheduled_start) : (warStartedAt || fourDaysAgo);
       const armoryRes = await fetch(
         `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
       );
+      let newArmory = 0;
       if (armoryRes.ok) {
         for (const item of (await armoryRes.json()).news || []) {
           if (item.timestamp < fourDaysAgo) break;
-          if (item.timestamp > armoryEndCap) continue; // skip post-war armory usage
+          if (item.timestamp > armoryEndCap) continue;
+          if (item.timestamp < armoryStartCap) continue;
           const parsed = parseArmoryEntry(item.text);
           if (!parsed) continue;
-          await env.DB.prepare(
+          const { meta } = await env.DB.prepare(
             `INSERT OR IGNORE INTO war_armory_usage (ranked_war_id, faction_id, torn_news_id, torn_user_id, username, item_name, used_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)`
           ).bind(warId, factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
+          if (meta?.changes > 0) newArmory++;
         }
       }
 
       // ── 4. Fetch attacks (active wars only, isolated to this faction) ───────
+      let newAttacks = 0;
       if (currentWar?.status === 'active') {
-        await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, null);
+        newAttacks = await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, null);
       }
 
       await env.DB.prepare(`UPDATE ranked_wars SET last_checked_at=CURRENT_TIMESTAMP WHERE id=?`).bind(warId).run();
+
+      await logInfo(env, {
+        category: 'war_cron',
+        event: 'war_poll',
+        message: `War ${warId} (faction ${factionId} vs ${opponentId}): status=${currentWar?.status ?? status}, +${newAttacks} attacks, +${newArmory} armory`,
+        meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, newAttacks, newArmory },
+      }).catch(() => {});
+
       checked++;
     } catch (err) {
       console.error(`trackActiveWars: war ${warId}:`, err.message);
+      await logError(env, {
+        category: 'war_cron',
+        event: 'war_poll_error',
+        message: `War ${warId} (faction ${factionId}): ${err.message}`,
+      }).catch(() => {});
     }
   }
   return { checked };

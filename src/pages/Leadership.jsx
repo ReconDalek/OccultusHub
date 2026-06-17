@@ -6,14 +6,16 @@ import LeaderToolsTab from '../components/LeadershipTabs/LeaderToolsTab'
 import CipherReviewTab from '../components/LeadershipTabs/CipherReviewTab'
 import ChainTrackingTab from '../components/LeadershipTabs/ChainTrackingTab'
 import MemberRanksTab from '../components/LeadershipTabs/MemberRanksTab'
+import AccountingTab from '../components/LeadershipTabs/AccountingTab'
 
 const tabs = [
-  { id: 'notices', label: 'Internal Notices' },
-  { id: 'events',  label: 'Events & Schedules' },
-  { id: 'chains',  label: 'Chain & War' },
-  { id: 'ranks',   label: 'Member Ranks' },
-  { id: 'cipher',  label: 'Cipher Review' },
-  { id: 'tools',   label: 'Tools' },
+  { id: 'notices',    label: 'Notices' },
+  { id: 'events',     label: 'Events & Schedules' },
+  { id: 'chains',     label: 'Chain & War' },
+  { id: 'ranks',      label: 'Ranks' },
+  { id: 'accounting', label: 'Accounting' },
+  { id: 'tools',      label: 'Tools' },
+  { id: 'cipher',     label: 'Cipher Review' },
 ]
 
 export default function Leadership() {
@@ -103,6 +105,7 @@ export default function Leadership() {
               {activeTab === 'tools'   && <LeaderToolsTab />}
               {activeTab === 'chains'  && <ChainTrackingTab />}
               {activeTab === 'ranks'   && <MemberRanksTab />}
+              {activeTab === 'accounting' && <AccountingTab />}
               {activeTab === 'cipher'  && <CipherReviewTab />}
             </div>
           </>

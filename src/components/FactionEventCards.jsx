@@ -83,13 +83,17 @@ function FactionCard({ faction, schedules }) {
   const now = Date.now()
 
   // Pick the most relevant event for this faction:
-  // Prefer enlisting wars first, then soonest scheduled
+  // Active wars with a future scheduled_at take priority over enlisting; then sort by soonest date
   const relevant = schedules
     .filter((s) => s.faction_id === faction.id)
-    .filter((s) => s.stage === 'enlisting' || (s.scheduled_at && new Date(s.scheduled_at) > now))
+    .filter((s) => s.stage === 'active' || s.stage === 'enlisting' || (s.scheduled_at && new Date(s.scheduled_at) > now))
     .sort((a, b) => {
-      if (a.stage === 'enlisting' && b.stage !== 'enlisting') return -1
-      if (b.stage === 'enlisting' && a.stage !== 'enlisting') return 1
+      const aActive = a.stage === 'active' && a.scheduled_at && new Date(a.scheduled_at) > now
+      const bActive = b.stage === 'active' && b.scheduled_at && new Date(b.scheduled_at) > now
+      if (aActive && !bActive) return -1
+      if (bActive && !aActive) return 1
+      if (a.stage === 'enlisting' && b.stage !== 'enlisting' && !bActive) return -1
+      if (b.stage === 'enlisting' && a.stage !== 'enlisting' && !aActive) return 1
       return new Date(a.scheduled_at) - new Date(b.scheduled_at)
     })
 

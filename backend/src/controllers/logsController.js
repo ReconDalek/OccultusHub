@@ -48,6 +48,17 @@ export async function getLogs(request, env) {
   }
 }
 
+export async function deleteLog(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').pop(), 10);
+    if (!id) return errorResponse('Invalid log ID', 400);
+    await env.DB.prepare('DELETE FROM system_logs WHERE id = ?').bind(id).run();
+    return jsonResponse({ ok: true });
+  } catch (error) {
+    return errorResponse('Failed to delete log', 500);
+  }
+}
+
 export async function clearOldLogs(env, olderThanDays = 90) {
   const cutoff = Math.floor(Date.now() / 1000) - (olderThanDays * 86400);
   const result = await env.DB.prepare(

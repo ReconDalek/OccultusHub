@@ -73,13 +73,15 @@ export default {
       return;
     }
 
-    // "*/30 * * * *" — every 30 minutes: track active/matched wars
-    // Exits immediately (one DB query) if no wars are currently matched or active.
+    // "*/30 * * * *" — every 30 minutes: check for new war matches + track active/matched wars
     if (event.cron === '*/30 * * * *') {
       try {
-        const { trackActiveWars } = await import('./controllers/warController.js');
+        const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
         ctx.waitUntil(
-          trackActiveWars(env)
+          checkWarMatches(env)
+            .then(r => { if (r.length) console.log('[cron] war match check:', JSON.stringify(r)); })
+            .catch(e => console.error('[cron] war match check failed:', e))
+            .then(() => trackActiveWars(env))
             .then(r => { if (r.checked > 0) console.log(`[cron] war tracking: ${r.checked} wars checked`); })
             .catch(e => console.error('[cron] war tracking failed:', e))
         );

@@ -28,8 +28,9 @@ function formatDate(unix) {
 
 function ScoreBoard({ war, ourFactionName }) {
   const { our_score = 0, opponent_score = 0, target = 0, our_chain = 0, opponent_chain = 0,
-          opponent_faction_name, started_at } = war
+          opponent_faction_name, started_at, status, scheduled_start } = war
 
+  const isMatched = status === 'matched'
   const weWinning = our_score >= opponent_score
   const ourPct    = target > 0 ? Math.min((our_score  / target) * 100, 100) : 0
   const oppPct    = target > 0 ? Math.min((opponent_score / target) * 100, 100) : 0
@@ -40,13 +41,16 @@ function ScoreBoard({ war, ourFactionName }) {
 
   const scoreStyle = (winning) => ({
     fontSize: '24px', fontWeight: '800', fontFamily: 'Cinzel, serif',
-    color: winning ? '#22c55e' : '#f4f4f5',
-    textShadow: winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
+    color: isMatched ? '#52525b' : (winning ? '#22c55e' : '#f4f4f5'),
+    textShadow: !isMatched && winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
     lineHeight: 1,
   })
 
+  const borderColor = isMatched ? 'rgba(234,179,8,0.12)' : 'rgba(34,197,94,0.12)'
+  const bgColor     = isMatched ? 'rgba(234,179,8,0.02)'  : 'rgba(34,197,94,0.03)'
+
   return (
-    <div style={{ padding: '14px 16px 16px', borderTop: '1px solid rgba(34,197,94,0.12)', background: 'rgba(34,197,94,0.03)' }}>
+    <div style={{ padding: '14px 16px 16px', borderTop: `1px solid ${borderColor}`, background: bgColor }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
         <div style={{ textAlign: 'left' }}>
           <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
@@ -58,9 +62,14 @@ function ScoreBoard({ war, ourFactionName }) {
         <div style={{ textAlign: 'center', padding: '0 8px' }}>
           <p style={{ color: '#71717a', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
           <p style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: '600', margin: 0 }}>
-            {target > 0 ? target.toLocaleString('en-GB') : '—'}
+            {isMatched ? '—' : (target > 0 ? target.toLocaleString('en-GB') : '—')}
           </p>
-          {elapsed > 0 && (
+          {isMatched && scheduled_start && (
+            <p style={{ color: '#eab308', fontSize: '9px', margin: '4px 0 0 0' }}>
+              starts {new Date(scheduled_start * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}
+            </p>
+          )}
+          {!isMatched && elapsed > 0 && (
             <p style={{ color: '#52525b', fontSize: '9px', margin: '4px 0 0 0' }}>{elH}h {elM}m elapsed</p>
           )}
         </div>
@@ -73,7 +82,7 @@ function ScoreBoard({ war, ourFactionName }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '12px', opacity: isMatched ? 0.25 : 1 }}>
         <div style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px 0 0 4px', overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ width: `${oppPct}%`, height: '100%', borderRadius: '4px 0 0 4px', background: !weWinning ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.5)', transition: 'width 0.6s ease' }} />
         </div>
@@ -83,7 +92,7 @@ function ScoreBoard({ war, ourFactionName }) {
         </div>
       </div>
 
-      {(our_score + opponent_score) > 0 && (
+      {!isMatched && (our_score + opponent_score) > 0 && (
         <p style={{ textAlign: 'center', color: '#52525b', fontSize: '10px', margin: '6px 0 0 0' }}>
           {weWinning
             ? `+${(our_score - opponent_score).toLocaleString('en-GB')} lead — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more`
@@ -227,8 +236,8 @@ function WarCard({ war, factionName }) {
         </div>
       </button>
 
-      {/* Scoreboard — always visible for active wars */}
-      {isActive && <ScoreBoard war={war} ourFactionName={factionName} />}
+      {/* Scoreboard — always visible for active and matched wars */}
+      <ScoreBoard war={war} ourFactionName={factionName} />
 
       {/* Expanded member stats */}
       {expanded && (
@@ -252,7 +261,6 @@ function WarCard({ war, factionName }) {
 export default function WarSummary() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeId, setActiveId] = useState(33097)
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/wars/summary`)
@@ -264,18 +272,24 @@ export default function WarSummary() {
 
   if (loading || !summary) return null
 
-  // Filter each faction to only active/matched
-  const filtered = {}
+  // Collect all active/matched wars across all factions, preserving faction name
+  const allWars = []
   for (const f of FACTIONS) {
-    filtered[f.id] = (summary[f.id] || []).filter(w => w.status === 'active' || w.status === 'matched')
+    for (const w of (summary[f.id] || [])) {
+      if (w.status === 'active' || w.status === 'matched') {
+        allWars.push({ war: w, faction: f })
+      }
+    }
   }
 
-  // If no faction has any active/matched wars, hide the widget entirely
-  const hasAny = FACTIONS.some(f => filtered[f.id].length > 0)
-  if (!hasAny) return null
+  if (!allWars.length) return null
 
-  const currentFactionName = FACTIONS.find(f => f.id === activeId)?.name || 'Us'
-  const currentWars = filtered[activeId] || []
+  // Sort: active first, then matched; within each group by scheduled_start
+  allWars.sort((a, b) => {
+    if (a.war.status === 'active' && b.war.status !== 'active') return -1
+    if (b.war.status === 'active' && a.war.status !== 'active') return 1
+    return (a.war.scheduled_start || 0) - (b.war.scheduled_start || 0)
+  })
 
   return (
     <div
@@ -286,37 +300,11 @@ export default function WarSummary() {
         ACTIVE WARS
       </h2>
 
-      {/* Faction tabs — only show factions that have active/matched wars */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
-        {FACTIONS.filter(f => filtered[f.id].length > 0).map((f) => (
-          <button key={f.id} onClick={() => setActiveId(f.id)}
-            style={{
-              padding: '5px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.15s',
-              border: `1px solid ${activeId === f.id ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
-              background: activeId === f.id ? 'rgba(179,18,63,0.15)' : 'transparent',
-              color: activeId === f.id ? '#f4f4f5' : '#a1a1aa',
-              fontWeight: activeId === f.id ? '600' : '400',
-            }}
-            onMouseEnter={(e) => { if (activeId !== f.id) e.currentTarget.style.color = '#f4f4f5' }}
-            onMouseLeave={(e) => { if (activeId !== f.id) e.currentTarget.style.color = '#a1a1aa' }}
-          >
-            {f.name}
-            {filtered[f.id].some(w => w.status === 'active') && (
-              <span style={{ marginLeft: '6px', width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', display: 'inline-block', verticalAlign: 'middle', boxShadow: '0 0 6px rgba(34,197,94,0.6)' }} />
-            )}
-          </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {allWars.map(({ war, faction }) => (
+          <WarCard key={war.id} war={war} factionName={faction.name} />
         ))}
       </div>
-
-      {currentWars.length === 0 ? (
-        <p style={{ color: '#71717a', fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No active wars for this faction.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {currentWars.map((war) => (
-            <WarCard key={war.id} war={war} factionName={currentFactionName} />
-          ))}
-        </div>
-      )}
     </div>
   )
 }

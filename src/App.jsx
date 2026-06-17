@@ -49,7 +49,7 @@ function Layout({ children }) {
       </div>
       <QuoteBox />
       <Footer />
-      <DiscordWidget />
+      {/* <DiscordWidget /> */}
       {!isGameRoute && <FishingEasterEgg />}
       {!isGameRoute && <RuneEasterEgg />}
       {!isGameRoute && <WatchingEye />}

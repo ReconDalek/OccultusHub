@@ -19,6 +19,7 @@ import * as forumsController from './controllers/forumsController.js';
 import * as sanctumController from './controllers/sanctumController.js';
 import * as activityController from './controllers/activityController.js';
 import * as logsController from './controllers/logsController.js';
+import * as accountingController from './controllers/accountingController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -153,6 +154,9 @@ export async function handleRequest(request, env, ctx) {
 
     if (pathname === '/api/admin/logs' && method === 'GET') {
       return logsController.getLogs(request, env);
+    }
+    if (pathname.match(/^\/api\/admin\/logs\/\d+$/) && method === 'DELETE') {
+      return logsController.deleteLog(request, env);
     }
 
     // Personal stats snapshot admin
@@ -325,6 +329,43 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/custom-hits' && method === 'POST') {
       return customHitsController.saveCustomHits(request, env, user);
+    }
+
+    // Accounting — investments
+    if (pathname === '/api/leadership/accounting/summary' && method === 'GET') {
+      return accountingController.getSummary(request, env);
+    }
+    if (pathname === '/api/leadership/accounting/investments' && method === 'GET') {
+      return accountingController.getInvestments(request, env);
+    }
+    if (pathname === '/api/leadership/accounting/investments' && method === 'POST') {
+      return accountingController.createInvestment(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/investments\/\d+$/) && method === 'PUT') {
+      return accountingController.updateInvestment(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/investments\/\d+$/) && method === 'DELETE') {
+      return accountingController.deleteInvestment(request, env);
+    }
+
+    // Accounting — stocks
+    if (pathname === '/api/leadership/accounting/stocks' && method === 'GET') {
+      return accountingController.getStocks(request, env);
+    }
+    if (pathname === '/api/leadership/accounting/stocks' && method === 'POST') {
+      return accountingController.createStock(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/stocks\/\d+$/) && method === 'PUT') {
+      return accountingController.updateStock(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/stocks\/\d+$/) && method === 'DELETE') {
+      return accountingController.deleteStock(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/stocks\/\d+\/collect$/) && method === 'POST') {
+      return accountingController.logCollection(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/collections\/\d+$/) && method === 'DELETE') {
+      return accountingController.deleteCollection(request, env);
     }
 
     // Activity tracking

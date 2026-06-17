@@ -41,15 +41,31 @@ function MetaBlock({ meta }) {
   )
 }
 
-function LogRow({ log }) {
+function LogRow({ log, onDelete }) {
   const [expanded, setExpanded] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const lc = LEVEL_COLORS[log.level] || LEVEL_COLORS.info
   const hasDetail = log.torn_user_id || log.faction_id || log.meta
+
+  async function handleDelete(e) {
+    e.stopPropagation()
+    setDeleting(true)
+    try {
+      await fetch(`${API_BASE_URL}/api/admin/logs/${log.id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+      onDelete(log.id)
+    } catch {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div
       onClick={() => hasDetail && setExpanded(e => !e)}
       style={{
+        position: 'relative',
         padding: '10px 14px',
         borderRadius: '8px',
         border: `1px solid ${expanded ? lc.border : 'rgba(255,255,255,0.05)'}`,
@@ -57,10 +73,28 @@ function LogRow({ log }) {
         cursor: hasDetail ? 'pointer' : 'default',
         marginBottom: '4px',
         transition: 'border-color 0.15s, background 0.15s',
+        opacity: deleting ? 0.4 : 1,
       }}
     >
+      {/* Delete button */}
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        title="Delete log"
+        style={{
+          position: 'absolute', top: '6px', right: '8px',
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#52525b', fontSize: '14px', lineHeight: 1, padding: '2px 4px',
+          borderRadius: '4px', zIndex: 1,
+        }}
+        onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
+        onMouseLeave={e => e.currentTarget.style.color = '#52525b'}
+      >
+        ✕
+      </button>
+
       {/* Main row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '160px 90px 110px 1fr auto', gap: '10px', alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '160px 90px 110px 1fr auto', gap: '10px', alignItems: 'center', paddingRight: '20px' }}>
         <span style={{ color: '#52525b', fontSize: '11px', fontFamily: 'monospace' }}>{ts(log.created_at)}</span>
 
         <span style={{
@@ -256,7 +290,7 @@ export default function LogsTab() {
         <div style={{ padding: '48px', textAlign: 'center', color: '#52525b', fontSize: '14px' }}>No logs found.</div>
       )}
 
-      {logs.map(log => <LogRow key={log.id} log={log} />)}
+      {logs.map(log => <LogRow key={log.id} log={log} onDelete={id => setLogs(prev => prev.filter(l => l.id !== id))} />)}
 
       {hasMore && (
         <div style={{ textAlign: 'center', marginTop: '16px' }}>
