@@ -1,23 +1,37 @@
 import { useState, useEffect, useCallback } from 'react'
 import { API_BASE_URL } from '../../../config/api'
 
-const FREQ_OPTIONS = ['4-weekly', 'monthly']
-
 const FACTION_OPTIONS = [
   { id: 33097, label: 'Occultus' },
   { id: 9728,  label: 'Occul2us' },
   { id: 9171,  label: 'Occul3us' },
 ]
 
+const TORN_STOCKS = [
+  'AAB', 'ACC', 'BAM', 'BCRX', 'BFG', 'CAP', 'CNC', 'EWM', 'FAN',
+  'GRN', 'HRG', 'IIL', 'LSC', 'MCAM', 'MCS', 'MSG', 'MWM', 'OMX',
+  'PRN', 'SHD', 'TCSE', 'TCTE', 'TORN', 'TRN', 'WLT', 'YAZ',
+]
+
+const TIER_OPTIONS = [1, 2, 3]
+const FREQ_OPTIONS = [
+  { value: '7-day',  label: '7 days' },
+  { value: '28-day', label: '28 days' },
+]
+
 const EMPTY_FORM = {
-  torn_user_id: '', username: '', faction_id: 33097, stock_acronym: '', stock_name: '',
-  tier: '', payout_item: '', payout_frequency: '4-weekly',
-  item_value: '', member_portion_pct: '100', notes: '',
+  torn_user_id: '', discord_id: '', faction_id: 33097,
+  stock_acronym: 'TORN', tier: 1, payout_frequency: '28-day',
+  member_keeps_amount: '', notes: '',
 }
 
 function currentPeriodLabel() {
   const now = new Date()
   return now.toLocaleString('en-GB', { month: 'long', year: 'numeric' })
+}
+
+function payoutsPerMonth(freq) {
+  return freq === '7-day' ? (28 / 7) : 1
 }
 
 export default function StocksSubTab({ factionId }) {
@@ -30,7 +44,7 @@ export default function StocksSubTab({ factionId }) {
   const [editForm, setEditForm] = useState({})
   const [expandedId, setExpandedId] = useState(null)
   const [collectingId, setCollectingId] = useState(null)
-  const [collectForm, setCollectForm] = useState({ period_label: currentPeriodLabel(), amount_paid: '', notes: '' })
+  const [collectForm, setCollectForm] = useState({ period_label: '', amount_paid: '', notes: '' })
 
   const token = localStorage.getItem('occultusSession')
 
@@ -49,7 +63,6 @@ export default function StocksSubTab({ factionId }) {
     fetchStocks()
     setShowForm(false)
     setEditingId(null)
-    setExpandedId(null)
   }, [fetchStocks])
 
   async function handleCreate(e) {
@@ -92,12 +105,11 @@ export default function StocksSubTab({ factionId }) {
       body: JSON.stringify(collectForm),
     })
     setCollectingId(null)
-    setCollectForm({ period_label: currentPeriodLabel(), amount_paid: '', notes: '' })
     fetchStocks()
   }
 
   async function handleDeleteCollection(collId) {
-    if (!confirm('Remove this collection record?')) return
+    if (!confirm('Delete this collection record?')) return
     await fetch(`${API_BASE_URL}/api/leadership/accounting/collections/${collId}`, {
       method: 'DELETE',
       headers: { Authorization: token },
@@ -106,29 +118,18 @@ export default function StocksSubTab({ factionId }) {
   }
 
   const inputStyle = {
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.12)',
-    color: '#f4f4f5',
-    borderRadius: '6px',
-    padding: '6px 10px',
-    fontSize: '13px',
-    width: '100%',
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+    color: '#f4f4f5', borderRadius: '6px', padding: '6px 10px', fontSize: '13px', width: '100%',
   }
-
-  function factionPaymentPreview() {
-    const val = parseFloat(form.item_value || 0)
-    const pct = parseFloat(form.member_portion_pct || 100)
-    const fp = val * ((100 - pct) / 100)
-    return fp > 0 ? `$${fp.toLocaleString(undefined, { maximumFractionDigits: 0 })} / period to faction` : null
-  }
+  const labelStyle = { color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Stock Scheme</h3>
           <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
-            Members hold Torn stocks on behalf of the faction. Track their stock, tier, payout details, and log periodic payments.
+            Track members in the stock scheme and log faction payments.
           </p>
         </div>
         <button
@@ -143,13 +144,12 @@ export default function StocksSubTab({ factionId }) {
         </button>
       </div>
 
-      {/* Add form */}
       {showForm && (
         <form onSubmit={handleCreate} style={{
           background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: '10px', padding: '16px', marginBottom: '20px',
         }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px', marginBottom: '12px' }}>
             {factionId == null && (
               <div>
                 <label style={labelStyle}>Faction *</label>
@@ -160,51 +160,40 @@ export default function StocksSubTab({ factionId }) {
               </div>
             )}
             <div>
-              <label style={labelStyle}>User ID *</label>
-              <input style={inputStyle} type="number" required placeholder="Torn ID" value={form.torn_user_id}
+              <label style={labelStyle}>Torn ID *</label>
+              <input style={inputStyle} type="number" required placeholder="e.g. 123456" value={form.torn_user_id}
                 onChange={e => setForm(f => ({ ...f, torn_user_id: e.target.value }))} />
             </div>
             <div>
-              <label style={labelStyle}>Username</label>
-              <input style={inputStyle} placeholder="Display name" value={form.username}
-                onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
+              <label style={labelStyle}>Discord ID</label>
+              <input style={inputStyle} placeholder="Optional" value={form.discord_id}
+                onChange={e => setForm(f => ({ ...f, discord_id: e.target.value }))} />
             </div>
             <div>
               <label style={labelStyle}>Stock *</label>
-              <input style={inputStyle} placeholder="e.g. TCI" value={form.stock_acronym}
-                onChange={e => setForm(f => ({ ...f, stock_acronym: e.target.value }))} required />
-            </div>
-            <div>
-              <label style={labelStyle}>Full Name</label>
-              <input style={inputStyle} placeholder="e.g. Torn City Investments" value={form.stock_name}
-                onChange={e => setForm(f => ({ ...f, stock_name: e.target.value }))} />
-            </div>
-            <div>
-              <label style={labelStyle}>Tier</label>
-              <input style={inputStyle} type="number" min="1" max="10" placeholder="1–10" value={form.tier}
-                onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} />
-            </div>
-            <div>
-              <label style={labelStyle}>Payout Item</label>
-              <input style={inputStyle} placeholder="Item name" value={form.payout_item}
-                onChange={e => setForm(f => ({ ...f, payout_item: e.target.value }))} />
-            </div>
-            <div>
-              <label style={labelStyle}>Frequency</label>
-              <select style={inputStyle} value={form.payout_frequency}
-                onChange={e => setForm(f => ({ ...f, payout_frequency: e.target.value }))}>
-                {FREQ_OPTIONS.map(o => <option key={o} value={o} style={{ background: '#1a1a2e' }}>{o}</option>)}
+              <select style={inputStyle} value={form.stock_acronym}
+                onChange={e => setForm(f => ({ ...f, stock_acronym: e.target.value }))}>
+                {TORN_STOCKS.map(s => <option key={s} value={s} style={{ background: '#1a1a2e' }}>{s}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Item Value ($)</label>
-              <input style={inputStyle} type="number" step="0.01" placeholder="0" value={form.item_value}
-                onChange={e => setForm(f => ({ ...f, item_value: e.target.value }))} />
+              <label style={labelStyle}>Tier *</label>
+              <select style={inputStyle} value={form.tier}
+                onChange={e => setForm(f => ({ ...f, tier: parseInt(e.target.value) }))}>
+                {TIER_OPTIONS.map(t => <option key={t} value={t} style={{ background: '#1a1a2e' }}>Tier {t}</option>)}
+              </select>
             </div>
             <div>
-              <label style={labelStyle}>Member Keeps (%)</label>
-              <input style={inputStyle} type="number" min="0" max="100" step="0.01" placeholder="100" value={form.member_portion_pct}
-                onChange={e => setForm(f => ({ ...f, member_portion_pct: e.target.value }))} />
+              <label style={labelStyle}>Payout Frequency *</label>
+              <select style={inputStyle} value={form.payout_frequency}
+                onChange={e => setForm(f => ({ ...f, payout_frequency: e.target.value }))}>
+                {FREQ_OPTIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Member Keeps ($)</label>
+              <input style={inputStyle} type="number" step="0.01" min="0" placeholder="0" value={form.member_keeps_amount}
+                onChange={e => setForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
             </div>
             <div>
               <label style={labelStyle}>Notes</label>
@@ -212,63 +201,58 @@ export default function StocksSubTab({ factionId }) {
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
           </div>
-          {factionPaymentPreview() && (
-            <p style={{ color: '#9f67ff', fontSize: '12px', marginBottom: '10px' }}>
-              Faction receives: {factionPaymentPreview()}
-            </p>
-          )}
-          <button type="submit" disabled={saving} style={{
-            background: 'linear-gradient(135deg, #b3123f, #6d28d9)', border: 'none',
-            borderRadius: '8px', color: '#f4f4f5', padding: '8px 20px',
-            fontSize: '13px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
-          }}>
-            {saving ? 'Saving…' : 'Save Entry'}
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="submit" disabled={saving} style={{
+              background: 'linear-gradient(135deg, #b3123f, #6d28d9)', border: 'none',
+              borderRadius: '8px', color: '#f4f4f5', padding: '8px 20px',
+              fontSize: '13px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+            }}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </form>
       )}
 
-      {/* Stock entries */}
       {loading ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
       ) : stocks.length === 0 ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No stock scheme members recorded.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {stocks.map(s => {
-            const isEditing = editingId === s.id
             const isExpanded = expandedId === s.id
+            const isEditing = editingId === s.id
             const isCollecting = collectingId === s.id
+            const perMonth = payoutsPerMonth(s.payout_frequency)
+            const keepPerMonth = (s.member_keeps_amount || 0) * perMonth
             const lastColl = s.collections?.[0]
 
             return (
               <div key={s.id} style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: '10px', overflow: 'hidden',
               }}>
-                {/* Main row */}
+                {/* Row */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 80px 80px 110px 110px 100px auto',
-                  gap: '8px', alignItems: 'center',
-                  padding: '12px 16px',
+                  gridTemplateColumns: '1fr 70px 60px 90px 110px 110px auto',
+                  alignItems: 'center', gap: '8px', padding: '10px 14px',
                 }}>
                   {/* Member */}
                   <div>
                     {isEditing ? (
-                      <input style={{ ...inputStyle, width: '120px' }} value={editForm.username ?? s.username ?? ''}
-                        onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))} />
+                      <input style={{ ...inputStyle, width: '100px' }} placeholder="Discord ID"
+                        value={editForm.discord_id ?? s.discord_id ?? ''}
+                        onChange={e => setEditForm(f => ({ ...f, discord_id: e.target.value }))} />
                     ) : (
                       <>
-                        <div style={{ color: '#f4f4f5', fontWeight: '500', fontSize: '13px' }}>{s.username || '—'}</div>
-                        <div style={{ color: '#a1a1aa', fontSize: '11px' }}>
-                          #{s.torn_user_id}
-                          {factionId == null && s.faction_id && (
-                            <span style={{ marginLeft: '6px', color: '#6d28d9', fontSize: '10px' }}>
-                              {FACTION_OPTIONS.find(f => f.id === s.faction_id)?.label ?? `#${s.faction_id}`}
-                            </span>
-                          )}
-                        </div>
+                        <div style={{ color: '#f4f4f5', fontWeight: '500', fontSize: '13px' }}>#{s.torn_user_id}</div>
+                        {s.discord_id && <div style={{ fontSize: '11px', color: '#71717a' }}>{s.discord_id}</div>}
+                        {factionId == null && s.faction_id && (
+                          <span style={{ color: '#6d28d9', fontSize: '10px' }}>
+                            {FACTION_OPTIONS.find(f => f.id === s.faction_id)?.label ?? `#${s.faction_id}`}
+                          </span>
+                        )}
                       </>
                     )}
                   </div>
@@ -276,57 +260,74 @@ export default function StocksSubTab({ factionId }) {
                   {/* Stock */}
                   <div>
                     {isEditing ? (
-                      <input style={{ ...inputStyle, width: '70px' }} value={editForm.stock_acronym ?? s.stock_acronym}
-                        onChange={e => setEditForm(f => ({ ...f, stock_acronym: e.target.value }))} />
+                      <select style={{ ...inputStyle, width: '70px' }}
+                        value={editForm.stock_acronym ?? s.stock_acronym}
+                        onChange={e => setEditForm(f => ({ ...f, stock_acronym: e.target.value }))}>
+                        {TORN_STOCKS.map(st => <option key={st} value={st} style={{ background: '#1a1a2e' }}>{st}</option>)}
+                      </select>
                     ) : (
-                      <>
-                        <div style={{ color: '#9f67ff', fontWeight: '600', fontSize: '13px' }}>{s.stock_acronym}</div>
-                        {s.tier && <div style={{ color: '#a1a1aa', fontSize: '11px' }}>Tier {s.tier}</div>}
-                      </>
+                      <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{s.stock_acronym}</span>
                     )}
                   </div>
 
-                  {/* Payout item */}
-                  <div style={{ color: '#a1a1aa', fontSize: '12px' }}>
-                    {isEditing ? (
-                      <input style={{ ...inputStyle, width: '80px' }} value={editForm.payout_item ?? s.payout_item ?? ''}
-                        onChange={e => setEditForm(f => ({ ...f, payout_item: e.target.value }))} />
-                    ) : (s.payout_item || '—')}
-                  </div>
-
-                  {/* Item value */}
-                  <div style={{ fontSize: '12px' }}>
-                    {isEditing ? (
-                      <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01" value={editForm.item_value ?? s.item_value}
-                        onChange={e => setEditForm(f => ({ ...f, item_value: e.target.value }))} />
-                    ) : (
-                      <>
-                        <div style={{ color: '#f4f4f5' }}>${s.item_value.toLocaleString()}</div>
-                        <div style={{ color: '#a1a1aa' }}>{s.member_portion_pct}% kept</div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Faction payment */}
+                  {/* Tier */}
                   <div>
-                    <div style={{ color: '#22c55e', fontSize: '13px', fontWeight: '600' }}>
-                      ${Math.round(s.faction_payment).toLocaleString()}
-                    </div>
-                    <div style={{ color: '#a1a1aa', fontSize: '11px' }}>/ {s.payout_frequency}</div>
+                    {isEditing ? (
+                      <select style={{ ...inputStyle, width: '60px' }}
+                        value={editForm.tier ?? s.tier}
+                        onChange={e => setEditForm(f => ({ ...f, tier: parseInt(e.target.value) }))}>
+                        {TIER_OPTIONS.map(t => <option key={t} value={t} style={{ background: '#1a1a2e' }}>T{t}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{ color: '#a1a1aa', fontSize: '12px' }}>T{s.tier}</span>
+                    )}
                   </div>
 
-                  {/* Last collected */}
-                  <div style={{ fontSize: '11px', color: '#a1a1aa' }}>
+                  {/* Frequency */}
+                  <div>
+                    {isEditing ? (
+                      <select style={{ ...inputStyle, width: '90px' }}
+                        value={editForm.payout_frequency ?? s.payout_frequency}
+                        onChange={e => setEditForm(f => ({ ...f, payout_frequency: e.target.value }))}>
+                        {FREQ_OPTIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{s.payout_frequency}</span>
+                    )}
+                  </div>
+
+                  {/* Member keeps */}
+                  <div>
+                    {isEditing ? (
+                      <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01" min="0"
+                        value={editForm.member_keeps_amount ?? s.member_keeps_amount}
+                        onChange={e => setEditForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
+                    ) : (
+                      <>
+                        <div style={{ color: '#f4f4f5', fontSize: '12px' }}>
+                          ${(s.member_keeps_amount || 0).toLocaleString()} / payout
+                        </div>
+                        <div style={{ color: '#52525b', fontSize: '11px' }}>
+                          ~${Math.round(keepPerMonth).toLocaleString()} / mo
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Last collection */}
+                  <div>
                     {lastColl ? (
                       <>
-                        <div>Last: {lastColl.period_label}</div>
-                        <div>${lastColl.amount_paid.toLocaleString()}</div>
+                        <div style={{ color: '#a1a1aa', fontSize: '11px' }}>{lastColl.period_label}</div>
+                        <div style={{ color: '#22c55e', fontSize: '12px' }}>${parseFloat(lastColl.amount_paid).toLocaleString()}</div>
                       </>
-                    ) : <div>No payments</div>}
+                    ) : (
+                      <span style={{ color: '#3f3f46', fontSize: '12px' }}>No collections</span>
+                    )}
                   </div>
 
                   {/* Actions */}
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap' }}>
+                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                     {isEditing ? (
                       <>
                         <ActionBtn onClick={() => handleSaveEdit(s.id)} color="#22c55e">✓</ActionBtn>
@@ -334,11 +335,12 @@ export default function StocksSubTab({ factionId }) {
                       </>
                     ) : (
                       <>
-                        <ActionBtn onClick={() => setExpandedId(isExpanded ? null : s.id)} color="#60a5fa">
-                          {isExpanded ? '▲' : '▼'}
-                        </ActionBtn>
-                        <ActionBtn onClick={() => { setCollectingId(isCollecting ? null : s.id); setCollectForm({ period_label: currentPeriodLabel(), amount_paid: String(Math.round(s.faction_payment)), notes: '' }) }} color="#22c55e">$</ActionBtn>
+                        <ActionBtn onClick={() => {
+                          setCollectingId(isCollecting ? null : s.id)
+                          setCollectForm({ period_label: currentPeriodLabel(), amount_paid: '', notes: '' })
+                        }} color="#22c55e">$</ActionBtn>
                         <ActionBtn onClick={() => { setEditingId(s.id); setEditForm({}) }} color="#6d28d9">✎</ActionBtn>
+                        <ActionBtn onClick={() => setExpandedId(isExpanded ? null : s.id)} color="#a1a1aa">{isExpanded ? '▲' : '▼'}</ActionBtn>
                         <ActionBtn onClick={() => handleArchive(s.id)} color="#b3123f">✕</ActionBtn>
                       </>
                     )}
@@ -347,70 +349,58 @@ export default function StocksSubTab({ factionId }) {
 
                 {/* Log collection form */}
                 {isCollecting && (
-                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '12px 16px', background: 'rgba(34,197,94,0.05)' }}>
-                    <p style={{ color: '#22c55e', fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>Log Payment Collection</p>
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                      <div>
-                        <label style={labelStyle}>Period</label>
-                        <input style={{ ...inputStyle, width: '130px' }} value={collectForm.period_label}
-                          onChange={e => setCollectForm(f => ({ ...f, period_label: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Amount Paid ($)</label>
-                        <input style={{ ...inputStyle, width: '100px' }} type="number" step="0.01" value={collectForm.amount_paid}
-                          onChange={e => setCollectForm(f => ({ ...f, amount_paid: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Notes</label>
-                        <input style={{ ...inputStyle, width: '150px' }} value={collectForm.notes}
-                          onChange={e => setCollectForm(f => ({ ...f, notes: e.target.value }))} />
-                      </div>
-                      <button onClick={() => handleLogCollection(s.id)} style={{
-                        background: '#22c55e22', border: '1px solid #22c55e44', borderRadius: '6px',
-                        color: '#22c55e', padding: '6px 14px', fontSize: '12px', cursor: 'pointer',
-                      }}>Record</button>
-                      <button onClick={() => setCollectingId(null)} style={{
-                        background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px',
-                        color: '#a1a1aa', padding: '6px 10px', fontSize: '12px', cursor: 'pointer',
-                      }}>Cancel</button>
+                  <div style={{
+                    padding: '12px 14px', borderTop: '1px solid rgba(255,255,255,0.06)',
+                    background: 'rgba(34,197,94,0.04)',
+                    display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end',
+                  }}>
+                    <div>
+                      <label style={labelStyle}>Period</label>
+                      <input style={{ ...inputStyle, width: '130px' }} value={collectForm.period_label}
+                        onChange={e => setCollectForm(f => ({ ...f, period_label: e.target.value }))} />
                     </div>
+                    <div>
+                      <label style={labelStyle}>Amount Paid to Faction ($)</label>
+                      <input style={{ ...inputStyle, width: '130px' }} type="number" step="0.01" min="0"
+                        placeholder="0" value={collectForm.amount_paid}
+                        onChange={e => setCollectForm(f => ({ ...f, amount_paid: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Notes</label>
+                      <input style={{ ...inputStyle, width: '130px' }} placeholder="Optional" value={collectForm.notes}
+                        onChange={e => setCollectForm(f => ({ ...f, notes: e.target.value }))} />
+                    </div>
+                    <button onClick={() => handleLogCollection(s.id)} style={{
+                      background: 'linear-gradient(135deg, #166534, #14532d)', border: 'none',
+                      borderRadius: '6px', color: '#f4f4f5', padding: '6px 14px', fontSize: '12px', cursor: 'pointer',
+                    }}>Log</button>
+                    <button onClick={() => setCollectingId(null)} style={{
+                      background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '6px', color: '#a1a1aa', padding: '6px 10px', fontSize: '12px', cursor: 'pointer',
+                    }}>Cancel</button>
                   </div>
                 )}
 
-                {/* Collections history */}
+                {/* Expanded history */}
                 {isExpanded && (
-                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '12px 16px' }}>
-                    <p style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
-                      Payment History
-                    </p>
-                    {s.stock_name && (
-                      <p style={{ color: '#6d28d9', fontSize: '12px', marginBottom: '8px' }}>{s.stock_name}</p>
-                    )}
+                  <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                     {s.notes && (
-                      <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '8px', fontStyle: 'italic' }}>{s.notes}</p>
+                      <p style={{ color: '#71717a', fontSize: '12px', marginBottom: '10px' }}>{s.notes}</p>
                     )}
                     {s.collections.length === 0 ? (
-                      <p style={{ color: '#a1a1aa', fontSize: '12px' }}>No payments logged yet.</p>
+                      <p style={{ color: '#3f3f46', fontSize: '12px' }}>No collections logged.</p>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {s.collections.map(c => (
                           <div key={c.id} style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                            background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '6px 10px',
+                            padding: '5px 8px', background: 'rgba(255,255,255,0.02)', borderRadius: '5px',
+                            fontSize: '12px',
                           }}>
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{c.period_label}</span>
-                              <span style={{ color: '#22c55e', fontSize: '13px' }}>${parseFloat(c.amount_paid).toLocaleString()}</span>
-                              {c.notes && <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{c.notes}</span>}
-                            </div>
-                            <button onClick={() => handleDeleteCollection(c.id)} style={{
-                              background: 'transparent', border: 'none', color: '#a1a1aa',
-                              cursor: 'pointer', fontSize: '12px', padding: '2px 6px',
-                              borderRadius: '4px', transition: 'color 0.15s',
-                            }}
-                              onMouseEnter={e => e.currentTarget.style.color = '#ff6b8a'}
-                              onMouseLeave={e => e.currentTarget.style.color = '#a1a1aa'}
-                            >✕</button>
+                            <span style={{ color: '#a1a1aa' }}>{c.period_label}</span>
+                            <span style={{ color: '#22c55e' }}>${parseFloat(c.amount_paid).toLocaleString()}</span>
+                            {c.notes && <span style={{ color: '#52525b' }}>{c.notes}</span>}
+                            <ActionBtn onClick={() => handleDeleteCollection(c.id)} color="#b3123f">✕</ActionBtn>
                           </div>
                         ))}
                       </div>
@@ -426,14 +416,12 @@ export default function StocksSubTab({ factionId }) {
   )
 }
 
-const labelStyle = { color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }
-
 function ActionBtn({ onClick, color, children }) {
   return (
     <button onClick={onClick} style={{
       background: 'transparent', border: `1px solid ${color}44`,
-      borderRadius: '5px', color, padding: '3px 7px', fontSize: '12px',
-      cursor: 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap',
+      borderRadius: '5px', color, padding: '3px 8px', fontSize: '12px',
+      cursor: 'pointer', transition: 'background 0.15s',
     }}
       onMouseEnter={e => e.currentTarget.style.background = color + '22'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}

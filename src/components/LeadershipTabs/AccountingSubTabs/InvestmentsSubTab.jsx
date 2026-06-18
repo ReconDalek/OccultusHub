@@ -3,6 +3,18 @@ import { API_BASE_URL } from '../../../config/api'
 
 const DURATION_OPTIONS = [1, 2, 3]
 
+const FACTION_OPTIONS = [
+  { id: 33097, label: 'Occultus' },
+  { id: 9728,  label: 'Occul2us' },
+  { id: 9171,  label: 'Occul3us' },
+]
+
+const EMPTY_FORM = {
+  torn_user_id: '', discord_id: '', faction_id: 33097,
+  amount: '', rate: '', duration_months: 1, member_profit_pct: '100',
+  start_date: '', notes: '',
+}
+
 function daysLabel(days) {
   if (days < 0) return { text: 'Ended', color: '#a1a1aa' }
   if (days === 0) return { text: 'Ends today', color: '#ff6b8a' }
@@ -10,13 +22,14 @@ function daysLabel(days) {
   return { text: `${days}d left`, color: '#a1a1aa' }
 }
 
-const FACTION_OPTIONS = [
-  { id: 33097, label: 'Occultus' },
-  { id: 9728,  label: 'Occul2us' },
-  { id: 9171,  label: 'Occul3us' },
-]
+function calcProfit(amount, rate, durationMonths) {
+  return parseFloat(amount || 0) * (parseFloat(rate || 0) / 100) * (parseInt(durationMonths || 1) / 12)
+}
 
-const EMPTY_FORM = { torn_user_id: '', username: '', faction_id: 33097, amount: '', duration_months: 1, start_date: '', notes: '' }
+function fmt(n) {
+  if (!n && n !== 0) return '—'
+  return `$${Math.round(n).toLocaleString()}`
+}
 
 export default function InvestmentsSubTab({ factionId }) {
   const [investments, setInvestments] = useState([])
@@ -89,7 +102,6 @@ export default function InvestmentsSubTab({ factionId }) {
     fetchInvestments()
   }
 
-  // Sort: TCI window first, then by days remaining
   const sorted = [...investments].sort((a, b) => {
     if (a.tci_window_open !== b.tci_window_open) return b.tci_window_open - a.tci_window_open
     return a.days_until_end - b.days_until_end
@@ -98,12 +110,14 @@ export default function InvestmentsSubTab({ factionId }) {
   const inputStyle = {
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid rgba(255,255,255,0.12)',
-    color: '#f4f4f5',
-    borderRadius: '6px',
-    padding: '6px 10px',
-    fontSize: '13px',
-    width: '100%',
+    color: '#f4f4f5', borderRadius: '6px',
+    padding: '6px 10px', fontSize: '13px', width: '100%',
   }
+
+  // Live profit preview in form
+  const formProfit = calcProfit(form.amount, form.rate, form.duration_months)
+  const formMemberKeeps = formProfit * (parseFloat(form.member_profit_pct || 0) / 100)
+  const formFactionIncome = formProfit - formMemberKeeps
 
   return (
     <div>
@@ -111,7 +125,7 @@ export default function InvestmentsSubTab({ factionId }) {
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Bank Investments</h3>
           <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
-            Track member investments. TCI should be purchased 7 days before the investment ends to maximise payout.
+            Track member investments. TCI should be purchased 7 days before the investment ends.
           </p>
         </div>
         <button
@@ -126,60 +140,83 @@ export default function InvestmentsSubTab({ factionId }) {
         </button>
       </div>
 
-      {/* Add form */}
       {showForm && (
         <form onSubmit={handleCreate} style={{
           background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: '10px', padding: '16px', marginBottom: '20px',
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px',
         }}>
-          {factionId == null && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+            {factionId == null && (
+              <div>
+                <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Faction *</label>
+                <select style={inputStyle} value={form.faction_id}
+                  onChange={e => setForm(f => ({ ...f, faction_id: parseInt(e.target.value) }))}>
+                  {FACTION_OPTIONS.map(o => <option key={o.id} value={o.id} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Faction *</label>
-              <select style={inputStyle} value={form.faction_id}
-                onChange={e => setForm(f => ({ ...f, faction_id: parseInt(e.target.value) }))}>
-                {FACTION_OPTIONS.map(o => <option key={o.id} value={o.id} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Torn ID *</label>
+              <input style={inputStyle} type="number" required placeholder="e.g. 123456" value={form.torn_user_id}
+                onChange={e => setForm(f => ({ ...f, torn_user_id: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Discord ID</label>
+              <input style={inputStyle} placeholder="Optional" value={form.discord_id}
+                onChange={e => setForm(f => ({ ...f, discord_id: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Principal ($) *</label>
+              <input style={inputStyle} type="number" step="0.01" required placeholder="0" value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Annual Rate (%) *</label>
+              <input style={inputStyle} type="number" step="0.01" required placeholder="e.g. 10.5" value={form.rate}
+                onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Duration *</label>
+              <select style={inputStyle} value={form.duration_months}
+                onChange={e => setForm(f => ({ ...f, duration_months: parseInt(e.target.value) }))}>
+                {DURATION_OPTIONS.map(d => <option key={d} value={d} style={{ background: '#1a1a2e' }}>{d} month{d > 1 ? 's' : ''}</option>)}
               </select>
             </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Member Keeps (%) *</label>
+              <input style={inputStyle} type="number" step="0.01" min="0" max="100" required placeholder="100" value={form.member_profit_pct}
+                onChange={e => setForm(f => ({ ...f, member_profit_pct: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Start Date *</label>
+              <input style={inputStyle} type="date" required value={form.start_date}
+                onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Notes</label>
+              <input style={inputStyle} placeholder="Optional" value={form.notes}
+                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Profit preview */}
+          {form.amount && form.rate && (
+            <div style={{
+              display: 'flex', gap: '16px', flexWrap: 'wrap',
+              background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 14px',
+              marginBottom: '12px', fontSize: '12px',
+            }}>
+              <span style={{ color: '#a1a1aa' }}>Est. Profit: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formProfit)}</span></span>
+              <span style={{ color: '#a1a1aa' }}>Member keeps: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formMemberKeeps)}</span></span>
+              <span style={{ color: '#a1a1aa' }}>Faction income: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formFactionIncome)}</span></span>
+            </div>
           )}
-          <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>User ID *</label>
-            <input style={inputStyle} type="number" required placeholder="Torn ID" value={form.torn_user_id}
-              onChange={e => setForm(f => ({ ...f, torn_user_id: e.target.value }))} />
-          </div>
-          <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Username</label>
-            <input style={inputStyle} placeholder="Display name" value={form.username}
-              onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
-          </div>
-          <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Amount ($) *</label>
-            <input style={inputStyle} type="number" step="0.01" required placeholder="0" value={form.amount}
-              onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
-          </div>
-          <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Duration *</label>
-            <select style={inputStyle} value={form.duration_months}
-              onChange={e => setForm(f => ({ ...f, duration_months: parseInt(e.target.value) }))}>
-              {DURATION_OPTIONS.map(d => <option key={d} value={d} style={{ background: '#1a1a2e' }}>{d} month{d > 1 ? 's' : ''}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Start Date *</label>
-            <input style={inputStyle} type="date" required value={form.start_date}
-              onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
-          </div>
-          <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Notes</label>
-            <input style={inputStyle} placeholder="Optional" value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button type="submit" disabled={saving} style={{
               background: 'linear-gradient(135deg, #b3123f, #6d28d9)', border: 'none',
-              borderRadius: '8px', color: '#f4f4f5', padding: '8px 16px',
+              borderRadius: '8px', color: '#f4f4f5', padding: '8px 20px',
               fontSize: '13px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
-              width: '100%',
             }}>
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -187,17 +224,16 @@ export default function InvestmentsSubTab({ factionId }) {
         </form>
       )}
 
-      {/* Table */}
       {loading ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
       ) : sorted.length === 0 ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No active investments recorded.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>
-                {['Member', 'Amount', 'Duration', 'Start', 'End', 'Days Left', 'TCI Purchased', 'TCI Received', ''].map(h => (
+                {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'End', 'Days Left', 'TCI Purchased', 'TCI Received', ''].map(h => (
                   <th key={h} style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.06)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -211,64 +247,94 @@ export default function InvestmentsSubTab({ factionId }) {
                     borderBottom: '1px solid rgba(255,255,255,0.04)',
                     background: inv.tci_window_open && !inv.tci_purchased ? 'rgba(249,115,22,0.06)' : 'transparent',
                   }}>
+                    {/* Member */}
                     <td style={{ padding: '10px', color: '#f4f4f5', fontSize: '13px' }}>
                       {isEditing ? (
-                        <input style={{ ...inputStyle, width: '100px' }} value={editForm.username ?? inv.username ?? ''}
-                          onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))} />
+                        <input style={{ ...inputStyle, width: '100px' }} placeholder="Discord ID"
+                          value={editForm.discord_id ?? inv.discord_id ?? ''}
+                          onChange={e => setEditForm(f => ({ ...f, discord_id: e.target.value }))} />
                       ) : (
                         <>
-                          <div style={{ fontWeight: '500' }}>{inv.username || '—'}</div>
-                          <div style={{ color: '#a1a1aa', fontSize: '11px' }}>
-                            #{inv.torn_user_id}
-                            {factionId == null && inv.faction_id && (
-                              <span style={{ marginLeft: '6px', color: '#6d28d9', fontSize: '10px' }}>
-                                {FACTION_OPTIONS.find(f => f.id === inv.faction_id)?.label ?? `#${inv.faction_id}`}
-                              </span>
-                            )}
-                          </div>
+                          <div style={{ fontWeight: '500', color: '#a1a1aa', fontSize: '11px' }}>#{inv.torn_user_id}</div>
+                          {inv.discord_id && <div style={{ fontSize: '11px', color: '#71717a' }}>{inv.discord_id}</div>}
+                          {factionId == null && inv.faction_id && (
+                            <div style={{ color: '#6d28d9', fontSize: '10px', marginTop: '2px' }}>
+                              {FACTION_OPTIONS.find(f => f.id === inv.faction_id)?.label ?? `#${inv.faction_id}`}
+                            </div>
+                          )}
                         </>
                       )}
                     </td>
+                    {/* Principal */}
                     <td style={{ padding: '10px', color: '#f4f4f5', fontSize: '13px' }}>
                       {isEditing ? (
-                        <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01" value={editForm.amount ?? inv.amount}
+                        <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01"
+                          value={editForm.amount ?? inv.amount}
                           onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} />
-                      ) : `$${inv.amount.toLocaleString()}`}
+                      ) : fmt(inv.amount)}
                     </td>
+                    {/* Rate */}
+                    <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      {isEditing ? (
+                        <input style={{ ...inputStyle, width: '70px' }} type="number" step="0.01"
+                          value={editForm.rate ?? inv.rate}
+                          onChange={e => setEditForm(f => ({ ...f, rate: e.target.value }))} />
+                      ) : `${inv.rate}%`}
+                    </td>
+                    {/* Duration */}
                     <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px' }}>
                       {isEditing ? (
-                        <select style={{ ...inputStyle, width: '90px' }} value={editForm.duration_months ?? inv.duration_months}
+                        <select style={{ ...inputStyle, width: '80px' }}
+                          value={editForm.duration_months ?? inv.duration_months}
                           onChange={e => setEditForm(f => ({ ...f, duration_months: parseInt(e.target.value) }))}>
                           {DURATION_OPTIONS.map(d => <option key={d} value={d} style={{ background: '#1a1a2e' }}>{d}mo</option>)}
                         </select>
-                      ) : `${inv.duration_months} month${inv.duration_months > 1 ? 's' : ''}`}
+                      ) : `${inv.duration_months}mo`}
                     </td>
+                    {/* Profit */}
+                    <td style={{ padding: '10px', color: '#f4f4f5', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      {fmt(inv.profit)}
+                    </td>
+                    {/* Member keeps */}
+                    <td style={{ padding: '10px', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      {isEditing ? (
+                        <input style={{ ...inputStyle, width: '60px' }} type="number" step="0.01" min="0" max="100"
+                          value={editForm.member_profit_pct ?? inv.member_profit_pct}
+                          onChange={e => setEditForm(f => ({ ...f, member_profit_pct: e.target.value }))} />
+                      ) : (
+                        <span style={{ color: '#f4f4f5' }}>
+                          {fmt(inv.member_keeps)}
+                          <span style={{ color: '#52525b', fontSize: '10px', marginLeft: '4px' }}>{inv.member_profit_pct}%</span>
+                        </span>
+                      )}
+                    </td>
+                    {/* Faction income */}
+                    <td style={{ padding: '10px', color: '#f4f4f5', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      {fmt(inv.faction_income)}
+                    </td>
+                    {/* End */}
                     <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {isEditing ? (
-                        <input style={{ ...inputStyle, width: '120px' }} type="date" value={editForm.start_date ?? inv.start_date}
+                        <input style={{ ...inputStyle, width: '120px' }} type="date"
+                          value={editForm.start_date ?? inv.start_date}
                           onChange={e => setEditForm(f => ({ ...f, start_date: e.target.value }))} />
-                      ) : inv.start_date}
+                      ) : inv.end_date}
                     </td>
-                    <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px', whiteSpace: 'nowrap' }}>{inv.end_date}</td>
+                    {/* Days left */}
                     <td style={{ padding: '10px', fontSize: '13px', whiteSpace: 'nowrap' }}>
                       <span style={{ color: dl.color, fontWeight: inv.days_until_end <= 7 && inv.days_until_end >= 0 ? '600' : '400' }}>{dl.text}</span>
                     </td>
+                    {/* TCI purchased */}
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <Checkbox
-                        checked={!!inv.tci_purchased}
-                        onChange={() => handleToggle(inv, 'tci_purchased')}
-                        color="#f97316"
-                        title={inv.tci_purchased && inv.tci_purchased_at ? `Purchased ${inv.tci_purchased_at}` : 'Mark TCI as purchased'}
-                      />
+                      <Checkbox checked={!!inv.tci_purchased} onChange={() => handleToggle(inv, 'tci_purchased')} color="#f97316"
+                        title={inv.tci_purchased && inv.tci_purchased_at ? `Purchased ${inv.tci_purchased_at}` : 'Mark TCI as purchased'} />
                     </td>
+                    {/* TCI received */}
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <Checkbox
-                        checked={!!inv.tci_received}
-                        onChange={() => handleToggle(inv, 'tci_received')}
-                        color="#22c55e"
-                        title="Mark TCI as received by member"
-                      />
+                      <Checkbox checked={!!inv.tci_received} onChange={() => handleToggle(inv, 'tci_received')} color="#22c55e"
+                        title="Mark TCI as received by member" />
                     </td>
+                    {/* Actions */}
                     <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
                       {isEditing ? (
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -295,17 +361,13 @@ export default function InvestmentsSubTab({ factionId }) {
 
 function Checkbox({ checked, onChange, color, title }) {
   return (
-    <button
-      onClick={onChange}
-      title={title}
-      style={{
-        width: '22px', height: '22px', borderRadius: '4px',
-        border: `2px solid ${checked ? color : 'rgba(255,255,255,0.2)'}`,
-        background: checked ? color + '33' : 'transparent',
-        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'all 0.15s',
-      }}
-    >
+    <button onClick={onChange} title={title} style={{
+      width: '22px', height: '22px', borderRadius: '4px',
+      border: `2px solid ${checked ? color : 'rgba(255,255,255,0.2)'}`,
+      background: checked ? color + '33' : 'transparent',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'all 0.15s',
+    }}>
       {checked && <span style={{ color, fontSize: '12px', lineHeight: 1 }}>✓</span>}
     </button>
   )

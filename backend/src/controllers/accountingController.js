@@ -14,6 +14,45 @@ function daysUntil(dateStr) {
   return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export async function getAccountingSettings(request, env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT key, value FROM system_settings WHERE key IN ('accounting_respect_value', 'accounting_points_value')`
+    ).all();
+
+    const map = {};
+    for (const row of results) map[row.key] = parseFloat(row.value) || 0;
+
+    return jsonResponse({
+      respect_value: map['accounting_respect_value'] ?? 0,
+      points_value: map['accounting_points_value'] ?? 0,
+    });
+  } catch (e) {
+    return errorResponse('Failed to fetch accounting settings: ' + e.message, 500);
+  }
+}
+
+export async function updateAccountingSetting(request, env) {
+  try {
+    const body = await request.json();
+    const { key, value } = body;
+
+    const allowed = ['accounting_respect_value', 'accounting_points_value'];
+    if (!allowed.includes(key)) return errorResponse('Invalid setting key', 400);
+
+    await env.DB.prepare(
+      `INSERT INTO system_settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+    ).bind(key, String(parseFloat(value) || 0)).run();
+
+    return jsonResponse({ success: true });
+  } catch (e) {
+    return errorResponse('Failed to update accounting setting: ' + e.message, 500);
+  }
+}
+
 // ── Investments ───────────────────────────────────────────────────────────────
 
 export async function getInvestments(request, env) {
@@ -31,11 +70,19 @@ export async function getInvestments(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    const enriched = results.map(row => ({
-      ...row,
-      days_until_end: daysUntil(row.end_date),
-      tci_window_open: daysUntil(row.end_date) <= 7 && daysUntil(row.end_date) >= 0,
-    }));
+    const enriched = results.map(row => {
+      const profit = row.amount * (row.rate / 100) * (row.duration_months / 12);
+      const memberKeeps = profit * (row.member_profit_pct / 100);
+      const factionIncome = profit - memberKeeps;
+      return {
+        ...row,
+        profit,
+        member_keeps: memberKeeps,
+        faction_income: factionIncome,
+        days_until_end: daysUntil(row.end_date),
+        tci_window_open: daysUntil(row.end_date) <= 7 && daysUntil(row.end_date) >= 0,
+      };
+    });
 
     return jsonResponse({ investments: enriched });
   } catch (e) {
@@ -46,7 +93,7 @@ export async function getInvestments(request, env) {
 export async function createInvestment(request, env, user) {
   try {
     const body = await request.json();
-    const { torn_user_id, username, faction_id, amount, duration_months, start_date, notes } = body;
+    const { torn_user_id, discord_id, faction_id, amount, rate, duration_months, member_profit_pct, start_date, notes } = body;
 
     if (!torn_user_id || !faction_id || !amount || !duration_months || !start_date) {
       return errorResponse('Missing required fields', 400);
@@ -56,11 +103,12 @@ export async function createInvestment(request, env, user) {
 
     await env.DB.prepare(`
       INSERT INTO accounting_investments
-        (torn_user_id, username, faction_id, amount, duration_months, start_date, end_date, notes, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (torn_user_id, discord_id, faction_id, amount, rate, duration_months, member_profit_pct, start_date, end_date, notes, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      parseInt(torn_user_id), username || null, parseInt(faction_id),
-      parseFloat(amount), parseInt(duration_months), start_date, end_date,
+      parseInt(torn_user_id), discord_id || null, parseInt(faction_id),
+      parseFloat(amount), parseFloat(rate || 0), parseInt(duration_months),
+      parseFloat(member_profit_pct ?? 100), start_date, end_date,
       notes || null, user.userId
     ).run();
 
@@ -76,7 +124,7 @@ export async function updateInvestment(request, env, user) {
     const id = parseInt(url.pathname.split('/').pop());
     const body = await request.json();
 
-    const allowed = ['username', 'amount', 'duration_months', 'start_date', 'tci_purchased', 'tci_received', 'notes', 'is_active'];
+    const allowed = ['discord_id', 'amount', 'rate', 'duration_months', 'member_profit_pct', 'start_date', 'tci_purchased', 'tci_received', 'notes', 'is_active'];
     const sets = [];
     const params = [];
 
@@ -103,7 +151,6 @@ export async function updateInvestment(request, env, user) {
       params.push(newEnd);
     }
 
-    // Set tci_purchased_at when marking purchased
     if ('tci_purchased' in body && body.tci_purchased) {
       sets.push(`tci_purchased_at = ?`);
       params.push(new Date().toISOString().slice(0, 10));
@@ -152,7 +199,7 @@ export async function getStocks(request, env) {
       query += ` AND s.faction_id = ?`;
       params.push(parseInt(factionId));
     }
-    query += ` ORDER BY s.username ASC`;
+    query += ` ORDER BY s.torn_user_id ASC`;
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
@@ -170,26 +217,22 @@ export async function getStocks(request, env) {
 export async function createStock(request, env, user) {
   try {
     const body = await request.json();
-    const { torn_user_id, username, faction_id, stock_acronym, stock_name, tier, payout_item, payout_frequency, item_value, member_portion_pct, notes } = body;
+    const { torn_user_id, discord_id, faction_id, stock_acronym, tier, payout_frequency, member_keeps_amount, notes } = body;
 
     if (!torn_user_id || !faction_id || !stock_acronym) {
       return errorResponse('Missing required fields', 400);
     }
 
-    const portionPct = parseFloat(member_portion_pct ?? 100);
-    const itemVal = parseFloat(item_value ?? 0);
-    const factionPayment = itemVal * ((100 - portionPct) / 100);
+    const tierVal = Math.min(3, Math.max(1, parseInt(tier || 1)));
 
     await env.DB.prepare(`
       INSERT INTO accounting_stocks
-        (torn_user_id, username, faction_id, stock_acronym, stock_name, tier, payout_item,
-         payout_frequency, item_value, member_portion_pct, faction_payment, notes, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (torn_user_id, discord_id, faction_id, stock_acronym, tier, payout_frequency, member_keeps_amount, notes, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      parseInt(torn_user_id), username || null, parseInt(faction_id),
-      stock_acronym.toUpperCase(), stock_name || null, tier ? parseInt(tier) : null,
-      payout_item || null, payout_frequency || '4-weekly',
-      itemVal, portionPct, factionPayment,
+      parseInt(torn_user_id), discord_id || null, parseInt(faction_id),
+      stock_acronym.toUpperCase(), tierVal,
+      payout_frequency || '28-day', parseFloat(member_keeps_amount || 0),
       notes || null, user.userId
     ).run();
 
@@ -205,7 +248,7 @@ export async function updateStock(request, env, user) {
     const id = parseInt(url.pathname.split('/').pop());
     const body = await request.json();
 
-    const allowed = ['username', 'stock_acronym', 'stock_name', 'tier', 'payout_item', 'payout_frequency', 'item_value', 'member_portion_pct', 'notes', 'is_active'];
+    const allowed = ['discord_id', 'stock_acronym', 'tier', 'payout_frequency', 'member_keeps_amount', 'notes', 'is_active'];
     const sets = [];
     const params = [];
 
@@ -213,22 +256,13 @@ export async function updateStock(request, env, user) {
       if (key in body) {
         let val = body[key];
         if (key === 'stock_acronym') val = val.toUpperCase();
+        if (key === 'tier') val = Math.min(3, Math.max(1, parseInt(val)));
         sets.push(`${key} = ?`);
         params.push(val);
       }
     }
 
     if (sets.length === 0) return errorResponse('No fields to update', 400);
-
-    // Recompute faction_payment if value or portion changed
-    if ('item_value' in body || 'member_portion_pct' in body) {
-      const existing = await env.DB.prepare(`SELECT item_value, member_portion_pct FROM accounting_stocks WHERE id = ?`).bind(id).first();
-      const itemVal = parseFloat(body.item_value ?? existing.item_value);
-      const pct = parseFloat(body.member_portion_pct ?? existing.member_portion_pct);
-      const fp = itemVal * ((100 - pct) / 100);
-      sets.push(`faction_payment = ?`);
-      params.push(fp);
-    }
 
     sets.push(`updated_at = CURRENT_TIMESTAMP`);
     params.push(id);
@@ -288,45 +322,6 @@ export async function deleteCollection(request, env) {
   }
 }
 
-// ── Settings ──────────────────────────────────────────────────────────────────
-
-export async function getAccountingSettings(request, env) {
-  try {
-    const { results } = await env.DB.prepare(
-      `SELECT key, value FROM system_settings WHERE key IN ('accounting_respect_value', 'accounting_points_value')`
-    ).all();
-
-    const map = {};
-    for (const row of results) map[row.key] = parseFloat(row.value) || 0;
-
-    return jsonResponse({
-      respect_value: map['accounting_respect_value'] ?? 0,
-      points_value: map['accounting_points_value'] ?? 0,
-    });
-  } catch (e) {
-    return errorResponse('Failed to fetch accounting settings: ' + e.message, 500);
-  }
-}
-
-export async function updateAccountingSetting(request, env) {
-  try {
-    const body = await request.json();
-    const { key, value } = body;
-
-    const allowed = ['accounting_respect_value', 'accounting_points_value'];
-    if (!allowed.includes(key)) return errorResponse('Invalid setting key', 400);
-
-    await env.DB.prepare(
-      `INSERT INTO system_settings (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
-    ).bind(key, String(parseFloat(value) || 0)).run();
-
-    return jsonResponse({ success: true });
-  } catch (e) {
-    return errorResponse('Failed to update accounting setting: ' + e.message, 500);
-  }
-}
-
 // ── Summary ───────────────────────────────────────────────────────────────────
 
 export async function getSummary(request, env) {
@@ -339,7 +334,7 @@ export async function getSummary(request, env) {
 
     const [invRow, stockRow] = await Promise.all([
       env.DB.prepare(`SELECT COUNT(*) as total, SUM(amount) as total_amount FROM accounting_investments ${invWhere}`).bind(...invParams).first(),
-      env.DB.prepare(`SELECT COUNT(*) as total, SUM(faction_payment) as monthly_income FROM accounting_stocks ${invWhere.replace('faction_id', 'faction_id')}`).bind(...invParams).first(),
+      env.DB.prepare(`SELECT COUNT(*) as total FROM accounting_stocks ${invWhere}`).bind(...invParams).first(),
     ]);
 
     const tciDue = await env.DB.prepare(`
@@ -357,7 +352,7 @@ export async function getSummary(request, env) {
       },
       stocks: {
         total: stockRow?.total ?? 0,
-        monthly_income: stockRow?.monthly_income ?? 0,
+        monthly_income: 0,
       },
     });
   } catch (e) {
