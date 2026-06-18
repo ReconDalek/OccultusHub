@@ -229,8 +229,8 @@ export default function StocksSubTab({ factionId }) {
                 onChange={e => setForm(f => ({ ...f, stock_cost: e.target.value }))} />
             </div>
             <div>
-              <label style={labelStyle}>Member Keeps ($)</label>
-              <input style={inputStyle} type="number" step="0.01" min="0" placeholder="Per payout" value={form.member_keeps_amount}
+              <label style={labelStyle}>Member Payment ($)</label>
+              <input style={inputStyle} type="number" step="0.01" min="0" placeholder="Paid to faction/payout" value={form.member_keeps_amount}
                 onChange={e => setForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
             </div>
             <div>
@@ -262,10 +262,8 @@ export default function StocksSubTab({ factionId }) {
             const isEditing = editingId === s.id
             const isCollecting = collectingId === s.id
             const perMonth = payoutsPerMonth(s.payout_frequency)
-            const keepPerPayout = s.member_keeps_amount || 0
-            const keepPerMonth = keepPerPayout * perMonth
-            const factionIncomePerPayout = (s.stock_cost || 0) - keepPerPayout
-            const factionIncomePerMonth = factionIncomePerPayout * perMonth
+            const memberPaymentPerPayout = s.member_keeps_amount || 0
+            const factionIncomePerMonth = memberPaymentPerPayout * perMonth
             const lastColl = s.collections?.[0]
 
             return (
@@ -351,7 +349,7 @@ export default function StocksSubTab({ factionId }) {
                     )}
                   </div>
 
-                  {/* Member keeps */}
+                  {/* Member payment (= faction income per payout) */}
                   <div>
                     {isEditing ? (
                       <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01" min="0"
@@ -362,20 +360,14 @@ export default function StocksSubTab({ factionId }) {
                         <div style={{ color: '#f4f4f5', fontSize: '12px' }}>
                           ${(s.member_keeps_amount || 0).toLocaleString()} / payout
                         </div>
-                        <div style={{ color: '#52525b', fontSize: '11px' }}>
-                          ~${Math.round(keepPerMonth).toLocaleString()} / mo
-                        </div>
                       </>
                     )}
                   </div>
 
-                  {/* Faction income */}
+                  {/* Faction income per month */}
                   <div>
-                    <div style={{ color: factionIncomePerPayout >= 0 ? '#22c55e' : '#f87171', fontSize: '12px' }}>
-                      ${Math.round(factionIncomePerPayout).toLocaleString()} / payout
-                    </div>
-                    <div style={{ color: '#52525b', fontSize: '11px' }}>
-                      ~${Math.round(factionIncomePerMonth).toLocaleString()} / mo
+                    <div style={{ color: '#22c55e', fontSize: '12px' }}>
+                      ${Math.round(factionIncomePerMonth).toLocaleString()} / mo
                     </div>
                   </div>
 

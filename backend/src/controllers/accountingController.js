@@ -340,11 +340,12 @@ export async function getSummary(request, env) {
       env.DB.prepare(`SELECT payout_frequency, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
     ]);
 
-    // monthly faction income: (stock_cost - member_keeps_amount) × payouts_per_month
+    // monthly faction income: member_payment × payouts_per_month
+    // member_keeps_amount is the amount the member pays back to the faction per payout
     let stockMonthlyIncome = 0;
     for (const row of (stockRows.results || [])) {
       const payoutsPerMonth = row.payout_frequency === '7-day' ? 4 : 1;
-      stockMonthlyIncome += ((row.stock_cost || 0) - (row.member_keeps_amount || 0)) * payoutsPerMonth;
+      stockMonthlyIncome += (row.member_keeps_amount || 0) * payoutsPerMonth;
     }
     const stockRow = { total: (stockRows.results || []).length };
 
