@@ -419,22 +419,20 @@ function FactionNetworthCard({ faction, settings, summary }) {
       {!collapsed && <div style={{ padding: '0 4px' }}>
         {rows.map((row, i) => (
           <div key={row.label} style={{
-            display: 'grid', gridTemplateColumns: '160px 1fr auto',
-            alignItems: 'center', gap: '12px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
             padding: '10px 16px',
             borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
             background: row.derived ? 'rgba(255,255,255,0.015)' : 'transparent',
           }}>
-            <div>
+            <div style={{ flex: '1 1 0', minWidth: 0 }}>
               <div style={{ color: row.derived ? '#71717a' : '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
               {row.sub && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '1px' }}>{row.sub}</div>}
             </div>
-            <div />
             <div style={{
               color: row.placeholder ? '#3f3f46' : (row.color || '#f4f4f5'),
               fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
               fontStyle: row.placeholder ? 'italic' : 'normal',
-              textAlign: 'right',
+              textAlign: 'right', flexShrink: 0,
             }}>
               {row.placeholder ? '—' : fmt(row.value)}
             </div>

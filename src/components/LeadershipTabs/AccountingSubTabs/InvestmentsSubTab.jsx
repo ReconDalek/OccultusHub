@@ -290,7 +290,7 @@ export default function InvestmentsSubTab({ factionId }) {
       ) : sorted.length === 0 ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No active investments recorded.</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>

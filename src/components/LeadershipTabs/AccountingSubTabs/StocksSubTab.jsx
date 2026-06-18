@@ -89,6 +89,13 @@ export default function StocksSubTab({ factionId }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [collectingId, setCollectingId] = useState(null)
   const [collectForm, setCollectForm] = useState({ period_label: '', amount_paid: '', notes: '' })
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
   const token = localStorage.getItem('occultusSession')
 
@@ -425,148 +432,267 @@ export default function StocksSubTab({ factionId }) {
                       <div key={s.id} style={{
                         borderBottom: idx < group.entries.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
                       }}>
-                        {/* Stock row */}
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: '80px 50px 90px 110px 110px 120px 110px auto',
-                          alignItems: 'center', gap: '8px', padding: '10px 14px',
-                        }}>
-                          {/* Stock */}
-                          <div>
-                            {isEditing ? (
-                              <select style={{ ...inputStyle, padding: '4px 6px' }}
-                                value={editForm.stock_acronym}
-                                onChange={e => setEditForm(f => ({ ...f, stock_acronym: e.target.value }))}>
-                                {TORN_STOCKS.map(st => (
-                                  <option key={st.acronym} value={st.acronym} style={{ background: '#1a1a2e' }}>
-                                    {st.acronym}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{s.stock_acronym}</span>
-                            )}
-                          </div>
-
-                          {/* Tier */}
-                          <div>
-                            {isEditing ? (
-                              <select style={{ ...inputStyle, padding: '4px 6px' }}
-                                value={editForm.tier}
-                                onChange={e => setEditForm(f => ({ ...f, tier: parseInt(e.target.value) }))}>
-                                {TIER_OPTIONS.map(t => (
-                                  <option key={t} value={t} style={{ background: '#1a1a2e' }}>T{t}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>T{s.tier}</span>
-                            )}
-                          </div>
-
-                          {/* Frequency */}
-                          <div>
-                            {isEditing ? (
-                              <select style={{ ...inputStyle, padding: '4px 6px' }}
-                                value={editForm.payout_frequency}
-                                onChange={e => setEditForm(f => ({ ...f, payout_frequency: e.target.value }))}>
-                                {FREQ_OPTIONS.map(o => (
-                                  <option key={o.value} value={o.value} style={{ background: '#1a1a2e' }}>{o.label}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ color: '#71717a', fontSize: '12px' }}>{s.payout_frequency}</span>
-                            )}
-                          </div>
-
-                          {/* Stock cost */}
-                          <div>
-                            {isEditing ? (
-                              <input style={{ ...inputStyle, padding: '4px 6px' }} type="number" step="0.01" min="0"
-                                placeholder="Stock cost"
-                                value={editForm.stock_cost}
-                                onChange={e => setEditForm(f => ({ ...f, stock_cost: e.target.value }))} />
-                            ) : (
-                              <div style={{ color: '#71717a', fontSize: '12px' }}>
-                                {s.stock_cost ? fmt(s.stock_cost) : <span style={{ color: '#3f3f46' }}>—</span>}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Member payment (base T1) */}
-                          <div>
-                            {isEditing ? (
-                              <input style={{ ...inputStyle, padding: '4px 6px' }} type="number" step="0.01" min="0"
-                                placeholder="T1 base payment"
-                                value={editForm.member_keeps_amount}
-                                onChange={e => setEditForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
-                            ) : (
-                              <div>
-                                {hasPayment ? (
-                                  <div style={{ color: '#f4f4f5', fontSize: '12px' }}>
-                                    {fmt(s.member_keeps_amount)}
-                                    {s.tier > 1 && <span style={{ color: '#52525b', fontSize: '10px' }}> ×T{s.tier}</span>}
-                                  </div>
+                        {isMobile ? (
+                          /* ── Mobile card layout ── */
+                          <div style={{ padding: '10px 12px' }}>
+                            {/* Row 1: stock identity + action buttons */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, padding: '4px 6px', width: 'auto' }}
+                                    value={editForm.stock_acronym}
+                                    onChange={e => setEditForm(f => ({ ...f, stock_acronym: e.target.value }))}>
+                                    {TORN_STOCKS.map(st => (
+                                      <option key={st.acronym} value={st.acronym} style={{ background: '#1a1a2e' }}>{st.acronym}</option>
+                                    ))}
+                                  </select>
                                 ) : (
-                                  <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>item value</span>
+                                  <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '700' }}>{s.stock_acronym}</span>
+                                )}
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, padding: '4px 6px', width: 'auto' }}
+                                    value={editForm.tier}
+                                    onChange={e => setEditForm(f => ({ ...f, tier: parseInt(e.target.value) }))}>
+                                    {TIER_OPTIONS.map(t => <option key={t} value={t} style={{ background: '#1a1a2e' }}>T{t}</option>)}
+                                  </select>
+                                ) : (
+                                  <span style={{ color: '#a1a1aa', fontSize: '12px' }}>T{s.tier}</span>
+                                )}
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, padding: '4px 6px', width: 'auto' }}
+                                    value={editForm.payout_frequency}
+                                    onChange={e => setEditForm(f => ({ ...f, payout_frequency: e.target.value }))}>
+                                    {FREQ_OPTIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+                                  </select>
+                                ) : (
+                                  <span style={{ color: '#71717a', fontSize: '12px' }}>{s.payout_frequency}</span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                {isEditing ? (
+                                  <>
+                                    <ActionBtn onClick={() => handleSaveEdit(s.id)} color="#22c55e">✓</ActionBtn>
+                                    <ActionBtn onClick={() => { setEditingId(null); setEditForm({}) }} color="#a1a1aa">✕</ActionBtn>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ActionBtn onClick={() => {
+                                      setCollectingId(isCollecting ? null : s.id)
+                                      setCollectForm({ period_label: currentPeriodLabel(), amount_paid: '', notes: '' })
+                                    }} color="#22c55e">$</ActionBtn>
+                                    <ActionBtn onClick={() => startEdit(s)} color="#6d28d9">✎</ActionBtn>
+                                    <ActionBtn onClick={() => toggleExpand(`coll-${s.id}`)} color="#a1a1aa">
+                                      {isExpanded ? '▲' : '▼'}
+                                    </ActionBtn>
+                                    <ActionBtn onClick={() => handleArchive(s.id)} color="#b3123f">✕</ActionBtn>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Row 2: amounts (edit or display) */}
+                            {isEditing ? (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px' }}>
+                                <div>
+                                  <div style={{ color: '#52525b', fontSize: '10px', marginBottom: '3px' }}>Stock Cost ($)</div>
+                                  <input style={{ ...inputStyle, padding: '4px 8px' }} type="number" step="0.01" min="0"
+                                    placeholder="Cost" value={editForm.stock_cost}
+                                    onChange={e => setEditForm(f => ({ ...f, stock_cost: e.target.value }))} />
+                                </div>
+                                <div>
+                                  <div style={{ color: '#52525b', fontSize: '10px', marginBottom: '3px' }}>T1 Payment ($)</div>
+                                  <input style={{ ...inputStyle, padding: '4px 8px' }} type="number" step="0.01" min="0"
+                                    placeholder="T1 payment" value={editForm.member_keeps_amount}
+                                    onChange={e => setEditForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
+                                </div>
+                                <div style={{ gridColumn: '1 / -1' }}>
+                                  <div style={{ color: '#52525b', fontSize: '10px', marginBottom: '3px' }}>Notes</div>
+                                  <input style={{ ...inputStyle, padding: '4px 8px' }} placeholder="Notes"
+                                    value={editForm.notes}
+                                    onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontSize: '12px' }}>
+                                <span>
+                                  <span style={{ color: '#52525b' }}>Cost: </span>
+                                  <span style={{ color: '#71717a' }}>{s.stock_cost ? fmt(s.stock_cost) : '—'}</span>
+                                </span>
+                                <span>
+                                  <span style={{ color: '#52525b' }}>Pay/payout: </span>
+                                  {hasPayment
+                                    ? <span style={{ color: '#f4f4f5' }}>{fmt(s.member_keeps_amount)}{s.tier > 1 && <span style={{ color: '#52525b' }}> ×T{s.tier}</span>}</span>
+                                    : <span style={{ color: '#3f3f46', fontStyle: 'italic' }}>item value</span>
+                                  }
+                                </span>
+                                {hasPayment && (
+                                  <span>
+                                    <span style={{ color: '#52525b' }}>Income: </span>
+                                    <span style={{ color: '#22c55e' }}>{fmt(factionIncomePerPayout)}/payout · {fmt(factionIncomePerMonth)}/mo</span>
+                                  </span>
+                                )}
+                                {!hasPayment && (
+                                  <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>pending armory value</span>
                                 )}
                               </div>
                             )}
-                          </div>
 
-                          {/* Faction income per payout + month */}
-                          <div>
-                            {hasPayment ? (
-                              <>
-                                <div style={{ color: '#22c55e', fontSize: '12px' }}>{fmt(factionIncomePerPayout)} / payout</div>
-                                <div style={{ color: '#52525b', fontSize: '11px' }}>{fmt(factionIncomePerMonth)} / mo</div>
-                              </>
-                            ) : (
-                              <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>pending armory</span>
+                            {/* Last collection */}
+                            {!isEditing && lastColl && (
+                              <div style={{ marginTop: '4px', fontSize: '11px', color: '#a1a1aa' }}>
+                                Last: {lastColl.period_label} · <span style={{ color: '#22c55e' }}>{fmt(lastColl.amount_paid)}</span>
+                              </div>
+                            )}
+                            {!isEditing && !lastColl && (
+                              <div style={{ marginTop: '4px', fontSize: '11px', color: '#3f3f46' }}>No collections yet</div>
                             )}
                           </div>
+                        ) : (
+                          /* ── Desktop grid layout ── */
+                          <>
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: '80px 50px 90px 110px 110px 120px 110px auto',
+                              alignItems: 'center', gap: '8px', padding: '10px 14px',
+                            }}>
+                              {/* Stock */}
+                              <div>
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, padding: '4px 6px' }}
+                                    value={editForm.stock_acronym}
+                                    onChange={e => setEditForm(f => ({ ...f, stock_acronym: e.target.value }))}>
+                                    {TORN_STOCKS.map(st => (
+                                      <option key={st.acronym} value={st.acronym} style={{ background: '#1a1a2e' }}>
+                                        {st.acronym}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{s.stock_acronym}</span>
+                                )}
+                              </div>
 
-                          {/* Last collection */}
-                          <div>
-                            {lastColl ? (
-                              <>
-                                <div style={{ color: '#a1a1aa', fontSize: '11px' }}>{lastColl.period_label}</div>
-                                <div style={{ color: '#22c55e', fontSize: '12px' }}>{fmt(lastColl.amount_paid)}</div>
-                              </>
-                            ) : (
-                              <span style={{ color: '#3f3f46', fontSize: '11px' }}>No collections</span>
+                              {/* Tier */}
+                              <div>
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, padding: '4px 6px' }}
+                                    value={editForm.tier}
+                                    onChange={e => setEditForm(f => ({ ...f, tier: parseInt(e.target.value) }))}>
+                                    {TIER_OPTIONS.map(t => (
+                                      <option key={t} value={t} style={{ background: '#1a1a2e' }}>T{t}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span style={{ color: '#a1a1aa', fontSize: '12px' }}>T{s.tier}</span>
+                                )}
+                              </div>
+
+                              {/* Frequency */}
+                              <div>
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, padding: '4px 6px' }}
+                                    value={editForm.payout_frequency}
+                                    onChange={e => setEditForm(f => ({ ...f, payout_frequency: e.target.value }))}>
+                                    {FREQ_OPTIONS.map(o => (
+                                      <option key={o.value} value={o.value} style={{ background: '#1a1a2e' }}>{o.label}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span style={{ color: '#71717a', fontSize: '12px' }}>{s.payout_frequency}</span>
+                                )}
+                              </div>
+
+                              {/* Stock cost */}
+                              <div>
+                                {isEditing ? (
+                                  <input style={{ ...inputStyle, padding: '4px 6px' }} type="number" step="0.01" min="0"
+                                    placeholder="Stock cost"
+                                    value={editForm.stock_cost}
+                                    onChange={e => setEditForm(f => ({ ...f, stock_cost: e.target.value }))} />
+                                ) : (
+                                  <div style={{ color: '#71717a', fontSize: '12px' }}>
+                                    {s.stock_cost ? fmt(s.stock_cost) : <span style={{ color: '#3f3f46' }}>—</span>}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Member payment (base T1) */}
+                              <div>
+                                {isEditing ? (
+                                  <input style={{ ...inputStyle, padding: '4px 6px' }} type="number" step="0.01" min="0"
+                                    placeholder="T1 base payment"
+                                    value={editForm.member_keeps_amount}
+                                    onChange={e => setEditForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
+                                ) : (
+                                  <div>
+                                    {hasPayment ? (
+                                      <div style={{ color: '#f4f4f5', fontSize: '12px' }}>
+                                        {fmt(s.member_keeps_amount)}
+                                        {s.tier > 1 && <span style={{ color: '#52525b', fontSize: '10px' }}> ×T{s.tier}</span>}
+                                      </div>
+                                    ) : (
+                                      <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>item value</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Faction income per payout + month */}
+                              <div>
+                                {hasPayment ? (
+                                  <>
+                                    <div style={{ color: '#22c55e', fontSize: '12px' }}>{fmt(factionIncomePerPayout)} / payout</div>
+                                    <div style={{ color: '#52525b', fontSize: '11px' }}>{fmt(factionIncomePerMonth)} / mo</div>
+                                  </>
+                                ) : (
+                                  <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>pending armory</span>
+                                )}
+                              </div>
+
+                              {/* Last collection */}
+                              <div>
+                                {lastColl ? (
+                                  <>
+                                    <div style={{ color: '#a1a1aa', fontSize: '11px' }}>{lastColl.period_label}</div>
+                                    <div style={{ color: '#22c55e', fontSize: '12px' }}>{fmt(lastColl.amount_paid)}</div>
+                                  </>
+                                ) : (
+                                  <span style={{ color: '#3f3f46', fontSize: '11px' }}>No collections</span>
+                                )}
+                              </div>
+
+                              {/* Actions */}
+                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                {isEditing ? (
+                                  <>
+                                    <ActionBtn onClick={() => handleSaveEdit(s.id)} color="#22c55e">✓</ActionBtn>
+                                    <ActionBtn onClick={() => { setEditingId(null); setEditForm({}) }} color="#a1a1aa">✕</ActionBtn>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ActionBtn onClick={() => {
+                                      setCollectingId(isCollecting ? null : s.id)
+                                      setCollectForm({ period_label: currentPeriodLabel(), amount_paid: '', notes: '' })
+                                    }} color="#22c55e">$</ActionBtn>
+                                    <ActionBtn onClick={() => startEdit(s)} color="#6d28d9">✎</ActionBtn>
+                                    <ActionBtn onClick={() => toggleExpand(`coll-${s.id}`)} color="#a1a1aa">
+                                      {isExpanded ? '▲' : '▼'}
+                                    </ActionBtn>
+                                    <ActionBtn onClick={() => handleArchive(s.id)} color="#b3123f">✕</ActionBtn>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Notes in edit mode */}
+                            {isEditing && (
+                              <div style={{ padding: '0 14px 10px' }}>
+                                <input style={{ ...inputStyle, padding: '4px 8px' }} placeholder="Notes"
+                                  value={editForm.notes}
+                                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
+                              </div>
                             )}
-                          </div>
-
-                          {/* Actions */}
-                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                            {isEditing ? (
-                              <>
-                                <ActionBtn onClick={() => handleSaveEdit(s.id)} color="#22c55e">✓</ActionBtn>
-                                <ActionBtn onClick={() => { setEditingId(null); setEditForm({}) }} color="#a1a1aa">✕</ActionBtn>
-                              </>
-                            ) : (
-                              <>
-                                <ActionBtn onClick={() => {
-                                  setCollectingId(isCollecting ? null : s.id)
-                                  setCollectForm({ period_label: currentPeriodLabel(), amount_paid: '', notes: '' })
-                                }} color="#22c55e">$</ActionBtn>
-                                <ActionBtn onClick={() => startEdit(s)} color="#6d28d9">✎</ActionBtn>
-                                <ActionBtn onClick={() => toggleExpand(`coll-${s.id}`)} color="#a1a1aa">
-                                  {isExpanded ? '▲' : '▼'}
-                                </ActionBtn>
-                                <ActionBtn onClick={() => handleArchive(s.id)} color="#b3123f">✕</ActionBtn>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Notes in edit mode */}
-                        {isEditing && (
-                          <div style={{ padding: '0 14px 10px' }}>
-                            <input style={{ ...inputStyle, padding: '4px 8px' }} placeholder="Notes"
-                              value={editForm.notes}
-                              onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
-                          </div>
+                          </>
                         )}
 
                         {/* Log collection form */}

@@ -165,7 +165,7 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
               <div style={{ color: '#555' }}>Loading history...</div>
             ) : (
               <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <div style={{ flex: '1 1 300px', minWidth: 260 }}>
+                <div style={{ flex: '1 1 260px', minWidth: 0 }}>
                   <div style={{ color: '#888', fontSize: 11, marginBottom: 8, fontWeight: 600, letterSpacing: 1 }}>PRICE HISTORY</div>
                   <FullChart history={history} width={500} height={160} />
                   <div style={{ color: '#444', fontSize: 10, marginTop: 4 }}>Hourly snapshots — up to 90 days stored</div>
@@ -321,7 +321,7 @@ export default function Stocks() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search stocks..."
-          style={{ background: '#0d0d18', border: '1px solid #2a2a3a', borderRadius: 6, padding: '8px 12px', color: '#f4f4f5', fontSize: 13, width: 200 }}
+          style={{ background: '#0d0d18', border: '1px solid #2a2a3a', borderRadius: 6, padding: '8px 12px', color: '#f4f4f5', fontSize: 13, width: '100%', maxWidth: 220 }}
         />
       </div>
 
