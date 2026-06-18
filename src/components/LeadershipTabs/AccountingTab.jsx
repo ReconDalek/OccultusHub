@@ -277,18 +277,18 @@ function OverviewSubTab({ factionId, onNavigate }) {
                 overflow: 'hidden',
               }}>
                 <div style={{
-                  padding: '14px 20px',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '14px 16px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px',
                 }}>
-                  <div>
+                  <div style={{ flex: '1 1 0', minWidth: 0 }}>
                     <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Combined Networth</span>
-                    <div style={{ color: '#71717a', fontSize: '11px', marginTop: '2px' }}>
+                    <div style={{ color: '#71717a', fontSize: '11px', marginTop: '3px', overflowWrap: 'break-word' }}>
                       {displayFactions.map(f => f.basic?.name).join(' + ')}
                     </div>
+                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>excl. armory & racket estimates</div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedTotal)}</div>
-                    <div style={{ color: '#52525b', fontSize: '11px' }}>excl. armory & racket estimates</div>
+                  <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                    <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700', whiteSpace: 'nowrap' }}>{fmt(combinedTotal)}</div>
                   </div>
                 </div>
                 <div style={{ borderTop: '1px solid rgba(109,40,217,0.15)', padding: '8px 20px 12px' }}>
@@ -401,16 +401,19 @@ function FactionNetworthCard({ faction, settings, summary }) {
       <div
         onClick={() => setCollapsed(v => !v)}
         style={{
-          padding: '14px 20px',
+          padding: '12px 16px',
           background: 'rgba(255,255,255,0.02)',
           borderBottom: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          cursor: 'pointer', userSelect: 'none',
+          cursor: 'pointer', userSelect: 'none', gap: '8px',
         }}
       >
-        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>{basic.name}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ color: '#a1a1aa', fontSize: '12px' }}>ID: {basic.id}</span>
+        <span className="font-cinzel" style={{
+          color: '#f4f4f5', fontSize: '15px', fontWeight: '600',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 0', minWidth: 0,
+        }}>{basic.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <span style={{ color: '#a1a1aa', fontSize: '12px', whiteSpace: 'nowrap' }}>ID: {basic.id}</span>
           <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
         </div>
       </div>
@@ -424,15 +427,20 @@ function FactionNetworthCard({ faction, settings, summary }) {
             borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
             background: row.derived ? 'rgba(255,255,255,0.015)' : 'transparent',
           }}>
-            <div style={{ flex: '1 1 0', minWidth: 0 }}>
+            <div style={{ flex: '1 1 0', minWidth: 0, paddingRight: '8px' }}>
               <div style={{ color: row.derived ? '#71717a' : '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
-              {row.sub && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '1px' }}>{row.sub}</div>}
+              {row.sub && (
+                <div style={{
+                  color: '#52525b', fontSize: '11px', marginTop: '2px',
+                  overflowWrap: 'break-word', wordBreak: 'break-word',
+                }}>{row.sub}</div>
+              )}
             </div>
             <div style={{
               color: row.placeholder ? '#3f3f46' : (row.color || '#f4f4f5'),
               fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
               fontStyle: row.placeholder ? 'italic' : 'normal',
-              textAlign: 'right', flexShrink: 0,
+              textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap',
             }}>
               {row.placeholder ? '—' : fmt(row.value)}
             </div>
@@ -442,16 +450,16 @@ function FactionNetworthCard({ faction, settings, summary }) {
 
       {/* Total */}
       <div style={{
-        padding: '14px 20px',
+        padding: '12px 16px',
         background: 'rgba(255,255,255,0.02)',
         borderTop: '1px solid rgba(255,255,255,0.08)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
       }}>
-        <div>
-          <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</span>
-          {!collapsed && <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>excl. armory & racket estimates</span>}
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+          <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</div>
+          {!collapsed && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>excl. armory & racket estimates</div>}
         </div>
-        <span style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700' }}>{fmt(totalNetworth)}</span>
+        <span style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700', flexShrink: 0, whiteSpace: 'nowrap' }}>{fmt(totalNetworth)}</span>
       </div>
     </div>
   )

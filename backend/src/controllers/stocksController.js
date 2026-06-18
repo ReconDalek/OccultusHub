@@ -1,5 +1,14 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getStockListFromCache, getStockDetailFromCache, getStockHistory } from '../services/stocksService.js';
+import { getStockListFromCache, getStockDetailFromCache, getStockHistory, fetchAndCacheStockDetail } from '../services/stocksService.js';
+
+export async function refreshStockHistory(request, env) {
+  try {
+    const result = await fetchAndCacheStockDetail(env);
+    return jsonResponse({ success: true, ...result });
+  } catch (e) {
+    return errorResponse('Refresh failed: ' + e.message, 500);
+  }
+}
 
 export async function getStocksList(request, env) {
   try {
@@ -17,11 +26,11 @@ export async function getStockDetail(request, env) {
     const stockId = parseInt(url.pathname.split('/').pop());
     if (!stockId || stockId < 1 || stockId > 35) return errorResponse('Invalid stock ID', 400);
 
-    // Prefer detail cache (has performance data); fall back to list cache
     const detailCached = await getStockDetailFromCache(env, stockId);
     let stock = detailCached?.stock;
 
     if (!stock) {
+      // Fall back to list cache (no chart data, but at least has price)
       const listCached = await getStockListFromCache(env);
       if (!listCached) return errorResponse('Stock data not yet cached', 503);
       const arr = Array.isArray(listCached.stocks) ? listCached.stocks : Object.values(listCached.stocks || {});
@@ -30,9 +39,10 @@ export async function getStockDetail(request, env) {
 
     if (!stock) return errorResponse('Stock not found', 404);
 
-    const history = await getStockHistory(env, stockId);
+    // Our own long-term hourly history (builds up over days/weeks)
+    const storedHistory = await getStockHistory(env, stockId);
 
-    return jsonResponse({ stock, history });
+    return jsonResponse({ stock, history: storedHistory });
   } catch (e) {
     return errorResponse('Failed to fetch stock detail: ' + e.message, 500);
   }

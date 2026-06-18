@@ -526,6 +526,12 @@ export async function handleRequest(request, env, ctx) {
     }
   }
 
+  // Refresh stock history — leadership only
+  if (pathname === '/api/leadership/stocks/refresh' && method === 'POST') {
+    if (!requireLeadership(user)) return errorResponse('Leadership access required', 403);
+    return stocksController.refreshStockHistory(request, env);
+  }
+
   // Torn Stock Market — member-auth required
   if (pathname === '/api/stocks' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);

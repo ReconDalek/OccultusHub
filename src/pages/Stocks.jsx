@@ -68,11 +68,14 @@ function FullChart({ history, width = 500, height = 160 }) {
 
   // Y-axis labels
   const yLabels = [min, min + range * 0.25, min + range * 0.5, min + range * 0.75, max]
-  // X-axis labels — first, mid, last
-  const xLabels = [0, Math.floor(prices.length / 2), prices.length - 1].map(i => ({
-    i,
-    label: history[i]?.recorded_at ? new Date(history[i].recorded_at).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '',
-  }))
+  // X-axis labels — first, mid, last. Handle both Torn {timestamp} and our {recorded_at}
+  const xLabels = [0, Math.floor(prices.length / 2), prices.length - 1].map(i => {
+    const h = history[i]
+    const d = h?.recorded_at ? new Date(h.recorded_at)
+            : h?.timestamp   ? new Date(h.timestamp * 1000)
+            : null
+    return { i, label: d ? d.toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '' }
+  })
 
   return (
     <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>
@@ -118,17 +121,27 @@ function computeSignal(history, perf) {
   const prices = history.map(h => h.price)
   const recent = prices.slice(-5)
   const trend = recent[recent.length - 1] - recent[0]
-  const dayPct = perf?.last_day ?? 0
+  // perf.last_day is an object { change_percentage, ... }
+  const dayPct = perf?.last_day?.change_percentage ?? perf?.last_day ?? 0
   if (dayPct > 1.5 && trend > 0) return 'BUY'
   if (dayPct < -1.5 && trend < 0) return 'SELL'
   return 'HOLD'
 }
 
 function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoading }) {
-  const perf = apiStock?.chart?.performance
-  const history = detail?.history || []
-  const price = apiStock?.market?.price ?? 0
-  const signal = computeSignal(history, perf)
+  const detailStock = detail?.stock
+  const perf = detailStock?.chart?.performance ?? apiStock?.chart?.performance
+  const price = detailStock?.market?.price ?? apiStock?.market?.price ?? 0
+
+  // Torn's chart.history: newest-first [{timestamp, price, change}] — reverse for chronological
+  const tornHistory = (detailStock?.chart?.history || []).slice().reverse()
+  // Our stored long-term hourly history [{price, recorded_at}]
+  const storedHistory = detail?.history || []
+  // Sparkline: prefer Torn's 1-min data (richer); chart: prefer stored multi-day data
+  const sparkHistory = tornHistory.length > 0 ? tornHistory : storedHistory
+  const chartHistory = storedHistory.length >= 5 ? storedHistory : tornHistory
+
+  const signal = computeSignal(sparkHistory, perf)
 
   return (
     <>
@@ -146,15 +159,20 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
           </div>
         </td>
         <td style={{ padding: '10px 12px', color: '#f4f4f5', fontFamily: 'monospace', fontSize: 13 }}>{fmt(price)}</td>
-        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_hour), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_hour)}</td>
-        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_day), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_day)}</td>
-        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_week), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_week)}</td>
-        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_month), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_month)}</td>
+        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_hour?.change_percentage), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_hour?.change_percentage)}</td>
+        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_day?.change_percentage), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_day?.change_percentage)}</td>
+        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_week?.change_percentage), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_week?.change_percentage)}</td>
+        <td style={{ padding: '10px 12px', color: pctColor(perf?.last_month?.change_percentage), fontFamily: 'monospace', fontSize: 12 }}>{pct(perf?.last_month?.change_percentage)}</td>
         <td style={{ padding: '10px 12px' }}>
-          <SparkLine history={history} />
+          <SparkLine history={sparkHistory} />
         </td>
         <td style={{ padding: '10px 12px' }}><SignalBadge signal={signal} /></td>
-        <td style={{ padding: '10px 12px', color: '#555', fontSize: 11 }}>{apiStock?.bonus?.requirement?.toLocaleString() ?? '—'} shares</td>
+        <td style={{ padding: '10px 12px' }}>
+          <div style={{ color: '#555', fontSize: 11 }}>{apiStock?.bonus?.requirement?.toLocaleString() ?? '—'} shares</div>
+          {apiStock?.bonus?.requirement && price > 0 && (
+            <div style={{ color: '#444', fontSize: 10, marginTop: 2 }}>{fmt(apiStock.bonus.requirement * price)}</div>
+          )}
+        </td>
         <td style={{ padding: '10px 12px', color: '#888', fontSize: 11 }}>{localStock?.frequency === 7 ? '7-day' : '31-day'}</td>
         <td style={{ padding: '10px 12px', color: '#555', fontSize: 18 }}>{expanded ? '▲' : '▼'}</td>
       </tr>
@@ -167,8 +185,10 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
               <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <div style={{ flex: '1 1 260px', minWidth: 0 }}>
                   <div style={{ color: '#888', fontSize: 11, marginBottom: 8, fontWeight: 600, letterSpacing: 1 }}>PRICE HISTORY</div>
-                  <FullChart history={history} width={500} height={160} />
-                  <div style={{ color: '#444', fontSize: 10, marginTop: 4 }}>Hourly snapshots — up to 90 days stored</div>
+                  <FullChart history={chartHistory} width={500} height={160} />
+                  <div style={{ color: '#444', fontSize: 10, marginTop: 4 }}>
+                    {storedHistory.length >= 5 ? `${storedHistory.length} hourly snapshots stored` : 'Showing last 60 min · hourly history builds over time'}
+                  </div>
                 </div>
                 <div style={{ flex: '0 0 200px' }}>
                   <div style={{ color: '#888', fontSize: 11, marginBottom: 8, fontWeight: 600, letterSpacing: 1 }}>PERFORMANCE</div>
@@ -179,19 +199,22 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
                     ['1 Month', perf?.last_month],
                     ['1 Year', perf?.last_year],
                     ['All Time', perf?.all_time],
-                  ].map(([label, val]) => (
-                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a2e', fontSize: 12 }}>
-                      <span style={{ color: '#777' }}>{label}</span>
-                      <span style={{ color: pctColor(val), fontFamily: 'monospace' }}>{pct(val)}</span>
-                    </div>
-                  ))}
+                  ].map(([label, val]) => {
+                    const cp = val?.change_percentage ?? val
+                    return (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a2e', fontSize: 12 }}>
+                        <span style={{ color: '#777' }}>{label}</span>
+                        <span style={{ color: pctColor(cp), fontFamily: 'monospace' }}>{pct(cp)}</span>
+                      </div>
+                    )
+                  })}
                 </div>
                 <div style={{ flex: '0 0 220px' }}>
                   <div style={{ color: '#888', fontSize: 11, marginBottom: 8, fontWeight: 600, letterSpacing: 1 }}>BONUS</div>
                   <div style={{ fontSize: 12, color: '#aaa', lineHeight: 1.6 }}>
-                    <div><span style={{ color: '#666' }}>Requires:</span> {apiStock?.bonus?.requirement?.toLocaleString() ?? '—'} shares</div>
+                    <div><span style={{ color: '#666' }}>Requires:</span> {(detailStock?.bonus?.requirement ?? apiStock?.bonus?.requirement)?.toLocaleString() ?? '—'} shares</div>
                     <div><span style={{ color: '#666' }}>Frequency:</span> {localStock?.frequency === 7 ? 'Weekly' : 'Monthly'}</div>
-                    <div style={{ marginTop: 6, color: '#888' }}>{apiStock?.bonus?.description || '—'}</div>
+                    <div style={{ marginTop: 6, color: '#888' }}>{detailStock?.bonus?.description ?? apiStock?.bonus?.description ?? '—'}</div>
                   </div>
                   <div style={{ marginTop: 16, padding: '10px 12px', background: '#0a0a14', border: '1px solid #1e1e2e', borderRadius: 6 }}>
                     <div style={{ color: '#888', fontSize: 11, marginBottom: 4, fontWeight: 600, letterSpacing: 1 }}>SIGNAL</div>
@@ -233,6 +256,17 @@ export default function Stocks() {
         const arr = Array.isArray(data.stocks) ? data.stocks : Object.values(data.stocks || {})
         setStocks(arr)
         setFetchedAt(data.fetched_at)
+
+        // Pre-load all detail caches in parallel — each is a fast D1 read
+        // This populates chart.performance for all table rows immediately
+        setDetailLoading(arr.reduce((acc, s) => ({ ...acc, [s.id]: true }), {}))
+        await Promise.all(arr.map(s =>
+          fetch(`${API_BASE_URL}/api/stocks/${s.id}`, { headers: { Authorization: token() } })
+            .then(r => r.json())
+            .then(d => setDetails(prev => ({ ...prev, [s.id]: d })))
+            .catch(() => {})
+        ))
+        setDetailLoading({})
       } catch (e) {
         setError(e.message)
       } finally {

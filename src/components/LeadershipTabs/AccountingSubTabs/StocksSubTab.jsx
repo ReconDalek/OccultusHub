@@ -384,27 +384,32 @@ export default function StocksSubTab({ factionId }) {
               }}>
                 {/* Group header */}
                 <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
                   padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  background: 'rgba(255,255,255,0.02)',
+                  background: 'rgba(255,255,255,0.02)', gap: '8px',
                 }}>
-                  <div>
-                    <span style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px' }}>
+                  <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                    <div style={{
+                      color: '#f4f4f5', fontWeight: '600', fontSize: '14px',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
                       {memberLabel(group.torn_user_id)}
-                    </span>
-                    {factionId == null && (
-                      <span style={{ color: '#6d28d9', fontSize: '10px', marginLeft: '10px' }}>
-                        {FACTION_OPTIONS.find(f => f.id === group.faction_id)?.label}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
+                      {factionId == null && (
+                        <span style={{ color: '#6d28d9', fontSize: '10px' }}>
+                          {FACTION_OPTIONS.find(f => f.id === group.faction_id)?.label}
+                        </span>
+                      )}
+                      <span style={{ color: '#52525b', fontSize: '11px' }}>
+                        {group.entries.length} stock{group.entries.length > 1 ? 's' : ''}
                       </span>
-                    )}
-                    <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '10px' }}>
-                      {group.entries.length} stock{group.entries.length > 1 ? 's' : ''}
-                    </span>
+                      <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '600' }}>
+                        {fmt(groupMonthlyTotal)} / mo
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ color: '#22c55e', fontSize: '13px', fontWeight: '600' }}>
-                      {fmt(groupMonthlyTotal)} / mo
-                    </span>
+                  <div style={{ flexShrink: 0, paddingTop: '2px' }}>
                     <ActionBtn onClick={() => toggleExpand(`group-${group.torn_user_id}`)} color="#a1a1aa">
                       {isGroupExpanded ? '▲' : '▼'}
                     </ActionBtn>
