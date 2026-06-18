@@ -103,18 +103,24 @@ export default function StocksSubTab({ factionId }) {
       .catch(() => setLoading(false))
   }, [factionId, token])
 
-  // Load member name lookup once
+  // Load member name lookup from all three factions
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/leadership/members`, { headers: { Authorization: token } })
-      .then(r => r.json())
-      .then(d => {
-        const map = {}
-        for (const m of (d.members || [])) {
+    const FACTION_IDS = [33097, 9728, 9171]
+    Promise.all(
+      FACTION_IDS.map(id =>
+        fetch(`${API_BASE_URL}/api/leadership/members?faction_id=${id}`, { headers: { Authorization: token } })
+          .then(r => r.ok ? r.json() : { members: [] })
+          .catch(() => ({ members: [] }))
+      )
+    ).then(results => {
+      const map = {}
+      for (const data of results) {
+        for (const m of (data.members || [])) {
           map[String(m.torn_user_id)] = m.username
         }
-        setMemberNames(map)
-      })
-      .catch(() => {})
+      }
+      setMemberNames(map)
+    })
   }, [token])
 
   useEffect(() => {
