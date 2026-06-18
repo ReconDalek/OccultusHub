@@ -196,7 +196,8 @@ export default function Factions() {
     })()
   }, [])
 
-  const displayFactions = factions.slice().reverse()
+  const FACTION_ORDER = [33097, 9728, 9171]
+  const displayFactions = factions.slice().sort((a, b) => FACTION_ORDER.indexOf(a.basic?.id) - FACTION_ORDER.indexOf(b.basic?.id))
 
   return (
     <>

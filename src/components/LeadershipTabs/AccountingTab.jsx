@@ -173,9 +173,10 @@ function OverviewSubTab({ factionId, onNavigate }) {
     setSaving(false)
   }
 
-  const displayFactions = factionData.filter(f =>
-    factionId == null || f.basic?.id === factionId
-  )
+  const FACTION_ORDER = [33097, 9728, 9171]
+  const displayFactions = factionData
+    .filter(f => factionId == null || f.basic?.id === factionId)
+    .sort((a, b) => FACTION_ORDER.indexOf(a.basic?.id) - FACTION_ORDER.indexOf(b.basic?.id))
 
   const inputStyle = {
     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
@@ -294,7 +295,6 @@ function FactionNetworthCard({ faction, settings, summary }) {
       label: 'Respect',
       sub: `${respect.toLocaleString()} × $${(settings.respect_value || 0).toLocaleString()}/pt`,
       value: respectEst,
-      color: '#a78bfa',
     },
     { label: 'Armory', sub: 'Coming soon', value: null, placeholder: true },
     {
@@ -307,14 +307,12 @@ function FactionNetworthCard({ faction, settings, summary }) {
       label: 'Points',
       sub: `${points.toLocaleString()} × $${(settings.points_value || 0).toLocaleString()}/pt`,
       value: pointsEst,
-      color: '#60a5fa',
     },
-    { label: 'Vault Balance', value: vaultMoney, color: '#f4f4f5' },
+    { label: 'Vault Balance', value: vaultMoney },
     {
       label: 'Member Balance',
       sub: `${balanceMembers.length} members`,
       value: memberTotal,
-      color: '#f4f4f5',
     },
     {
       label: 'Faction Balance',
@@ -327,13 +325,11 @@ function FactionNetworthCard({ faction, settings, summary }) {
       label: 'Investments',
       sub: `${summary?.investments?.total || 0} active`,
       value: investmentTotal,
-      color: '#f97316',
     },
     {
       label: 'Stocks',
       sub: 'est. income / period',
       value: stockIncome,
-      color: '#22c55e',
     },
   ]
 
@@ -400,7 +396,7 @@ function FactionNetworthCard({ faction, settings, summary }) {
           <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</span>
           {!collapsed && <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>excl. armory & racket estimates</span>}
         </div>
-        <span style={{ color: '#b3123f', fontSize: '18px', fontWeight: '700' }}>{fmt(totalNetworth)}</span>
+        <span style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700' }}>{fmt(totalNetworth)}</span>
       </div>
     </div>
   )
