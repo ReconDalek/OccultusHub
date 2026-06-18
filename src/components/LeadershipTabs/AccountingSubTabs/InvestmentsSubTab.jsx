@@ -378,7 +378,7 @@ export default function InvestmentsSubTab({ factionId }) {
                     </td>
                     {/* TCI purchased */}
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <Checkbox checked={!!inv.tci_purchased} onChange={() => handleToggle(inv, 'tci_purchased')} color="#f97316"
+                      <Checkbox checked={!!inv.tci_purchased} onChange={() => handleToggle(inv, 'tci_purchased')} color="#22c55e"
                         title={inv.tci_purchased && inv.tci_purchased_at ? `Purchased ${inv.tci_purchased_at}` : 'Mark TCI as purchased'} />
                     </td>
                     {/* Actions */}
