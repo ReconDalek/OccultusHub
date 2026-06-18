@@ -79,7 +79,7 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
   const { key, tornUserId, username } = apiKeyObj;
 
   for (const factionId of factionIds) {
-    const url = `${TORN_API_BASE}/faction?selections=basic,members&id=${factionId}&comment=OccHub`;
+    const url = `${TORN_API_BASE}/faction?selections=basic,members,balance,rackets&id=${factionId}&cat=all&comment=OccHub`;
 
     try {
       const data = await fetchWithRetry(url, authHeader(key));

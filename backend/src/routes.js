@@ -335,6 +335,14 @@ export async function handleRequest(request, env, ctx) {
       return customHitsController.saveCustomHits(request, env, user);
     }
 
+    // Accounting — settings
+    if (pathname === '/api/leadership/accounting/settings' && method === 'GET') {
+      return accountingController.getAccountingSettings(request, env);
+    }
+    if (pathname === '/api/leadership/accounting/settings' && method === 'PUT') {
+      return accountingController.updateAccountingSetting(request, env);
+    }
+
     // Accounting — investments
     if (pathname === '/api/leadership/accounting/summary' && method === 'GET') {
       return accountingController.getSummary(request, env);

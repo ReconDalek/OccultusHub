@@ -65,6 +65,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
   // Live data card
   const basic   = faction.basic   || {}
   const members = faction.members || []
+  const rackets = (faction.rackets || []).filter(r => r.faction_id === basic.id)
 
   return (
     <div
@@ -86,10 +87,6 @@ function FactionCard({ faction, membershipTier, isLive }) {
         {basic.name}
       </h3>
 
-      <p style={{ fontWeight: 'bold', color: basic.is_enlisted ? 'green' : 'red', marginBottom: '12px' }}>
-        {basic.is_enlisted ? 'Enlisted' : 'Not Enlisted'}
-      </p>
-
       {[
         ['Members', `${basic.members} / ${basic.capacity}`],
         ['Rank',    basic.rank?.name || 'Unknown'],
@@ -99,6 +96,37 @@ function FactionCard({ faction, membershipTier, isLive }) {
           {label}: {val}
         </div>
       ))}
+
+      {/* Rackets (always visible if any) */}
+      {rackets.length > 0 && (
+        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ color: '#a1a1aa', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
+            Rackets ({rackets.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {rackets.map((r, i) => (
+              <div key={i} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                background: 'rgba(255,255,255,0.03)', borderRadius: '8px',
+                padding: '8px 12px', fontSize: '13px',
+              }}>
+                <div>
+                  <span style={{ color: '#f4f4f5', fontWeight: '500' }}>{r.name}</span>
+                  <span style={{ color: '#a1a1aa', marginLeft: '8px', fontSize: '12px' }}>{r.territory}</span>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span style={{ color: '#9f67ff', fontSize: '12px' }}>Lv {r.level}</span>
+                  {r.reward && (
+                    <span style={{ color: '#22c55e', fontSize: '12px' }}>
+                      {r.reward.quantity}× {r.reward.type}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Expanded member list */}
       {expanded && (

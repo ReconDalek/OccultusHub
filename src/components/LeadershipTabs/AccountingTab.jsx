@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useSession } from '../../hooks/useSession'
 import { API_BASE_URL } from '../../config/api'
 import InvestmentsSubTab from './AccountingSubTabs/InvestmentsSubTab'
 import StocksSubTab from './AccountingSubTabs/StocksSubTab'
 
 const FACTION_OPTIONS = [
+  { id: null,  label: 'All Factions' },
   { id: 33097, label: 'Occultus' },
   { id: 9728,  label: 'Occul2us' },
   { id: 9171,  label: 'Occul3us' },
@@ -17,20 +17,8 @@ const SUB_TABS = [
 ]
 
 export default function AccountingTab() {
-  const { user } = useSession()
   const [activeSubTab, setActiveSubTab] = useState('overview')
-  const [factionId, setFactionId] = useState(33097)
-  const [summary, setSummary] = useState(null)
-
-  useEffect(() => {
-    const token = localStorage.getItem('occultusSession')
-    fetch(`${API_BASE_URL}/api/leadership/accounting/summary?faction_id=${factionId}`, {
-      headers: { Authorization: token },
-    })
-      .then(r => r.json())
-      .then(data => setSummary(data))
-      .catch(() => {})
-  }, [factionId])
+  const [factionId, setFactionId] = useState(null)
 
   const subTabStyle = (id) => ({
     padding: '8px 16px',
@@ -57,24 +45,34 @@ export default function AccountingTab() {
             Track investments and stock scheme payouts across the faction
           </p>
         </div>
-        {/* Faction selector */}
-        <select
-          value={factionId}
-          onChange={e => setFactionId(parseInt(e.target.value))}
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            color: '#f4f4f5',
-            borderRadius: '8px',
-            padding: '6px 12px',
-            fontSize: '13px',
-            cursor: 'pointer',
-          }}
-        >
-          {FACTION_OPTIONS.map(f => (
-            <option key={f.id} value={f.id} style={{ background: '#1a1a2e' }}>{f.label}</option>
-          ))}
-        </select>
+
+        {/* Faction filter pills */}
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {FACTION_OPTIONS.map(f => {
+            const active = factionId === f.id
+            return (
+              <button
+                key={String(f.id)}
+                onClick={() => setFactionId(f.id)}
+                style={{
+                  padding: '5px 14px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: active ? '600' : '400',
+                  cursor: 'pointer',
+                  border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
+                  color: active ? '#f4f4f5' : '#a1a1aa',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { if (!active) { e.currentTarget.style.color = '#f4f4f5'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' } }}
+                onMouseLeave={e => { if (!active) { e.currentTarget.style.color = '#a1a1aa'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' } }}
+              >
+                {f.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Sub-tab nav */}
@@ -95,111 +93,334 @@ export default function AccountingTab() {
       </div>
 
       {/* Sub-tab content */}
-      {activeSubTab === 'overview'    && <OverviewSubTab summary={summary} factionId={factionId} onNavigate={setActiveSubTab} />}
+      {activeSubTab === 'overview'    && <OverviewSubTab factionId={factionId} onNavigate={setActiveSubTab} />}
       {activeSubTab === 'investments' && <InvestmentsSubTab factionId={factionId} />}
       {activeSubTab === 'stocks'      && <StocksSubTab factionId={factionId} />}
     </div>
   )
 }
 
-function OverviewSubTab({ summary, factionId, onNavigate }) {
-  const inv = summary?.investments
-  const stk = summary?.stocks
+const OUR_FACTION_IDS = [33097, 9728, 9171]
+
+function fmt(n) {
+  if (n == null || isNaN(n)) return '—'
+  return `£${Math.round(n).toLocaleString()}`
+}
+
+function OverviewSubTab({ factionId, onNavigate }) {
+  const [factionData, setFactionData] = useState([])
+  const [settings, setSettings] = useState({ respect_value: 0, points_value: 0 })
+  const [editSettings, setEditSettings] = useState(false)
+  const [settingsForm, setSettingsForm] = useState({ respect_value: '', points_value: '' })
+  const [summaries, setSummaries] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const token = localStorage.getItem('occultusSession')
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [cacheRes, settingsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/faction-cache`),
+          fetch(`${API_BASE_URL}/api/leadership/accounting/settings`, { headers: { Authorization: token } }),
+        ])
+        const cacheJson = await cacheRes.json()
+        const settingsJson = await settingsRes.json()
+
+        const factions = (cacheJson.data || []).filter(f => OUR_FACTION_IDS.includes(f.basic?.id))
+        setFactionData(factions)
+        setSettings(settingsJson)
+        setSettingsForm({ respect_value: settingsJson.respect_value, points_value: settingsJson.points_value })
+
+        const ids = factionId != null ? [factionId] : OUR_FACTION_IDS
+        const results = await Promise.all(
+          ids.map(id =>
+            fetch(`${API_BASE_URL}/api/leadership/accounting/summary?faction_id=${id}`, {
+              headers: { Authorization: token },
+            }).then(r => r.json())
+          )
+        )
+        const map = {}
+        ids.forEach((id, i) => { map[id] = results[i] })
+        setSummaries(map)
+      } catch (e) {
+        console.error(e)
+      }
+      setLoading(false)
+    }
+    load()
+  }, [factionId, token])
+
+  async function handleSaveSettings(e) {
+    e.preventDefault()
+    setSaving(true)
+    await Promise.all([
+      fetch(`${API_BASE_URL}/api/leadership/accounting/settings`, {
+        method: 'PUT',
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'accounting_respect_value', value: settingsForm.respect_value }),
+      }),
+      fetch(`${API_BASE_URL}/api/leadership/accounting/settings`, {
+        method: 'PUT',
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'accounting_points_value', value: settingsForm.points_value }),
+      }),
+    ])
+    const updated = { respect_value: parseFloat(settingsForm.respect_value) || 0, points_value: parseFloat(settingsForm.points_value) || 0 }
+    setSettings(updated)
+    setEditSettings(false)
+    setSaving(false)
+  }
+
+  const displayFactions = factionData.filter(f =>
+    factionId == null || f.basic?.id === factionId
+  )
+
+  const inputStyle = {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+    color: '#f4f4f5', borderRadius: '6px', padding: '5px 10px', fontSize: '13px', width: '120px',
+  }
 
   return (
     <div>
-      <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '4px' }}>Accounting Overview</h3>
-      <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '24px' }}>
-        A first-glance summary of all accounting activity for the selected faction.
-      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', margin: 0, marginBottom: '2px' }}>Faction Networth Overview</h3>
+          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            Per-faction financial snapshot. Armory and racket values are placeholders pending configuration.
+          </p>
+        </div>
 
-      {!summary ? (
+        {/* Global value settings */}
+        {!editSettings ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
+              Respect: £{(settings.respect_value || 0).toLocaleString()}/pt
+              &nbsp;·&nbsp;
+              Points: £{(settings.points_value || 0).toLocaleString()}/pt
+            </span>
+            <button
+              onClick={() => setEditSettings(true)}
+              style={{
+                background: 'transparent', border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '6px', color: '#a1a1aa', padding: '5px 12px',
+                fontSize: '12px', cursor: 'pointer',
+              }}
+            >
+              Set Values
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSaveSettings} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>£ per Respect</label>
+              <input
+                style={inputStyle} type="number" step="0.01" min="0"
+                value={settingsForm.respect_value}
+                onChange={e => setSettingsForm(f => ({ ...f, respect_value: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>£ per Point</label>
+              <input
+                style={inputStyle} type="number" step="0.01" min="0"
+                value={settingsForm.points_value}
+                onChange={e => setSettingsForm(f => ({ ...f, points_value: e.target.value }))}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', paddingBottom: '1px' }}>
+              <button type="submit" disabled={saving} style={{
+                background: 'linear-gradient(135deg, #b3123f, #6d28d9)', border: 'none',
+                borderRadius: '6px', color: '#f4f4f5', padding: '6px 14px', fontSize: '12px',
+                cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+              }}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" onClick={() => setEditSettings(false)} style={{
+                background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '6px', color: '#a1a1aa', padding: '6px 12px', fontSize: '12px', cursor: 'pointer',
+              }}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {loading ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Investments overview */}
-          <OverviewSection
-            title="Bank Investments"
-            onNavigate={() => onNavigate('investments')}
-            stats={[
-              { label: 'Active Investments', value: inv.total },
-              { label: 'Total Capital', value: inv.total_amount > 0 ? `£${inv.total_amount.toLocaleString()}` : '—' },
-              { label: 'TCI Purchases Due', value: inv.tci_action_required, highlight: inv.tci_action_required > 0 },
-            ]}
-            note={
-              inv.tci_action_required > 0
-                ? `${inv.tci_action_required} investment${inv.tci_action_required > 1 ? 's have' : ' has'} a TCI purchase window open — action required.`
-                : inv.total > 0
-                ? 'All investments are within their holding period. No TCI action needed.'
-                : 'No active investments recorded.'
-            }
-            noteHighlight={inv.tci_action_required > 0}
-          />
-
-          {/* Stocks overview */}
-          <OverviewSection
-            title="Stock Scheme"
-            onNavigate={() => onNavigate('stocks')}
-            stats={[
-              { label: 'Members in Scheme', value: stk.total },
-              { label: 'Est. Income / Period', value: stk.monthly_income > 0 ? `£${Math.round(stk.monthly_income).toLocaleString()}` : '—' },
-            ]}
-            note={
-              stk.total > 0
-                ? `${stk.total} member${stk.total > 1 ? 's are' : ' is'} contributing to the stock scheme.`
-                : 'No stock scheme members recorded.'
-            }
-          />
+          {displayFactions.map(faction => (
+            <FactionNetworthCard
+              key={faction.basic?.id}
+              faction={faction}
+              settings={settings}
+              summary={summaries[faction.basic?.id]}
+              onNavigate={onNavigate}
+            />
+          ))}
+          {displayFactions.length === 0 && (
+            <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No faction data available. The 12-hour cache may not have run yet.</p>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function OverviewSection({ title, stats, note, noteHighlight, onNavigate }) {
+function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
+  const basic = faction.basic || {}
+  const balanceFaction = faction.balance?.faction || {}
+  const balanceMembers = faction.balance?.members || []
+  const rackets = (faction.rackets || []).filter(r => r.faction_id === basic.id)
+
+  const respect = basic.respect || 0
+  const vaultMoney = balanceFaction.money || 0
+  const points = balanceFaction.points || 0
+  const memberTotal = balanceMembers.reduce((sum, m) => sum + (m.money || 0), 0)
+  const factionNet = vaultMoney - memberTotal
+
+  const respectEst = respect * (settings.respect_value || 0)
+  const pointsEst = points * (settings.points_value || 0)
+  const investmentTotal = summary?.investments?.total_amount || 0
+  const stockIncome = summary?.stocks?.monthly_income || 0
+
+  const totalNetworth = respectEst + pointsEst + vaultMoney + memberTotal + investmentTotal + stockIncome
+
+  const rows = [
+    {
+      label: 'Respect',
+      sub: `${respect.toLocaleString()} × £${(settings.respect_value || 0).toLocaleString()}/pt`,
+      value: respectEst,
+      color: '#a78bfa',
+    },
+    { label: 'Armory', sub: 'Coming soon', value: null, placeholder: true },
+    {
+      label: 'Rackets',
+      sub: rackets.length > 0 ? `${rackets.length} owned — daily value TBD` : 'None owned',
+      value: null,
+      placeholder: true,
+    },
+    {
+      label: 'Points',
+      sub: `${points.toLocaleString()} × £${(settings.points_value || 0).toLocaleString()}/pt`,
+      value: pointsEst,
+      color: '#60a5fa',
+    },
+    { label: 'Vault Balance', value: vaultMoney, color: '#f4f4f5' },
+    {
+      label: 'Member Balance',
+      sub: `${balanceMembers.length} members`,
+      value: memberTotal,
+      color: '#f4f4f5',
+    },
+    {
+      label: 'Faction Balance',
+      sub: 'vault − member total',
+      value: factionNet,
+      color: factionNet >= 0 ? '#22c55e' : '#ff6b8a',
+      derived: true,
+    },
+    {
+      label: 'Investments',
+      sub: `${summary?.investments?.total || 0} active`,
+      value: investmentTotal,
+      color: '#f97316',
+    },
+    {
+      label: 'Stocks',
+      sub: 'est. income / period',
+      value: stockIncome,
+      color: '#22c55e',
+    },
+  ]
+
   return (
     <div style={{
       background: 'rgba(255,255,255,0.03)',
       border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: '12px',
-      padding: '18px 20px',
+      borderRadius: '14px',
+      overflow: 'hidden',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-        <h4 style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600', margin: 0 }}>{title}</h4>
-        <button onClick={onNavigate} style={{
-          background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: '6px', color: '#a1a1aa', padding: '4px 12px',
-          fontSize: '11px', cursor: 'pointer', transition: 'color 0.15s, border-color 0.15s',
-        }}
-          onMouseEnter={e => { e.currentTarget.style.color = '#f4f4f5'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = '#a1a1aa'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
-        >
-          View
-        </button>
+      {/* Header */}
+      <div style={{
+        padding: '14px 20px',
+        background: 'rgba(255,255,255,0.02)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>{basic.name}</span>
+        <span style={{ color: '#a1a1aa', fontSize: '12px' }}>ID: {basic.id}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
-        {stats.map(s => (
-          <div key={s.label} style={{
-            flex: '1 1 120px',
-            background: s.highlight ? 'rgba(179,18,63,0.10)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${s.highlight ? 'rgba(179,18,63,0.35)' : 'rgba(255,255,255,0.07)'}`,
-            borderRadius: '8px', padding: '10px 14px',
+      {/* Rows */}
+      <div style={{ padding: '0 4px' }}>
+        {rows.map((row, i) => (
+          <div key={row.label} style={{
+            display: 'grid', gridTemplateColumns: '160px 1fr auto',
+            alignItems: 'center', gap: '12px',
+            padding: '10px 16px',
+            borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+            background: row.derived ? 'rgba(255,255,255,0.015)' : 'transparent',
           }}>
-            <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '4px' }}>{s.label}</div>
-            <div style={{ color: s.highlight ? '#ff6b8a' : '#f4f4f5', fontSize: '22px', fontWeight: '700', lineHeight: 1 }}>{s.value}</div>
+            <div>
+              <div style={{ color: row.derived ? '#71717a' : '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
+              {row.sub && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '1px' }}>{row.sub}</div>}
+            </div>
+            <div />
+            <div style={{
+              color: row.placeholder ? '#3f3f46' : (row.color || '#f4f4f5'),
+              fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
+              fontStyle: row.placeholder ? 'italic' : 'normal',
+              textAlign: 'right',
+            }}>
+              {row.placeholder ? '—' : fmt(row.value)}
+            </div>
           </div>
         ))}
       </div>
 
-      {note && (
-        <p style={{
-          margin: 0, fontSize: '12px',
-          color: noteHighlight ? '#fca5a5' : '#a1a1aa',
-          background: noteHighlight ? 'rgba(179,18,63,0.06)' : 'transparent',
-          borderRadius: '6px', padding: noteHighlight ? '6px 10px' : '0',
-        }}>{note}</p>
-      )}
+      {/* Total */}
+      <div style={{
+        padding: '14px 20px',
+        background: 'rgba(255,255,255,0.02)',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <div>
+          <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</span>
+          <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>excl. armory & racket estimates</span>
+        </div>
+        <span style={{ color: '#b3123f', fontSize: '18px', fontWeight: '700' }}>{fmt(totalNetworth)}</span>
+      </div>
+
+      {/* Quick links */}
+      <div style={{ padding: '10px 20px', display: 'flex', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+        {summary?.investments?.tci_action_required > 0 && (
+          <div style={{
+            background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)',
+            borderRadius: '6px', padding: '4px 10px', fontSize: '11px', color: '#f97316',
+          }}>
+            {summary.investments.tci_action_required} TCI purchase{summary.investments.tci_action_required > 1 ? 's' : ''} due
+          </div>
+        )}
+        <button onClick={() => onNavigate('investments')} style={{
+          background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: '6px', color: '#71717a', padding: '4px 10px',
+          fontSize: '11px', cursor: 'pointer',
+        }}>
+          Investments
+        </button>
+        <button onClick={() => onNavigate('stocks')} style={{
+          background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: '6px', color: '#71717a', padding: '4px 10px',
+          fontSize: '11px', cursor: 'pointer',
+        }}>
+          Stocks
+        </button>
+      </div>
     </div>
   )
 }

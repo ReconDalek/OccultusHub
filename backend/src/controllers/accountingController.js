@@ -288,6 +288,45 @@ export async function deleteCollection(request, env) {
   }
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export async function getAccountingSettings(request, env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT key, value FROM system_settings WHERE key IN ('accounting_respect_value', 'accounting_points_value')`
+    ).all();
+
+    const map = {};
+    for (const row of results) map[row.key] = parseFloat(row.value) || 0;
+
+    return jsonResponse({
+      respect_value: map['accounting_respect_value'] ?? 0,
+      points_value: map['accounting_points_value'] ?? 0,
+    });
+  } catch (e) {
+    return errorResponse('Failed to fetch accounting settings: ' + e.message, 500);
+  }
+}
+
+export async function updateAccountingSetting(request, env) {
+  try {
+    const body = await request.json();
+    const { key, value } = body;
+
+    const allowed = ['accounting_respect_value', 'accounting_points_value'];
+    if (!allowed.includes(key)) return errorResponse('Invalid setting key', 400);
+
+    await env.DB.prepare(
+      `INSERT INTO system_settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+    ).bind(key, String(parseFloat(value) || 0)).run();
+
+    return jsonResponse({ success: true });
+  } catch (e) {
+    return errorResponse('Failed to update accounting setting: ' + e.message, 500);
+  }
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 
 export async function getSummary(request, env) {
