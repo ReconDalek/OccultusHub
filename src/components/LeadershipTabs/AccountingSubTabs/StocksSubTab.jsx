@@ -125,7 +125,7 @@ export default function StocksSubTab({ factionId }) {
 
   function memberLabel(tornId) {
     const name = memberNames[String(tornId)]
-    return name || `#${tornId}`
+    return name ? `${name} (#${tornId})` : `#${tornId}`
   }
 
   async function handleCreate(e) {
@@ -320,6 +320,37 @@ export default function StocksSubTab({ factionId }) {
         </form>
       )}
 
+      {!loading && grouped.length > 0 && (() => {
+        const totalMembers = grouped.length
+        const totalStockCost = stocks.reduce((sum, s) => sum + (s.stock_cost || 0), 0)
+        const totalMonthlyProfit = grouped.reduce((sum, group) => {
+          return sum + group.entries.reduce((s2, s) => {
+            return s2 + calcFactionIncome(s.member_keeps_amount, s.tier) * payoutsPerMonth(s.payout_frequency)
+          }, 0)
+        }, 0)
+
+        return (
+          <div style={{
+            display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px',
+          }}>
+            {[
+              { label: 'Members', value: totalMembers, isNum: false },
+              { label: 'Total Invested', value: fmt(totalStockCost), isNum: false },
+              { label: 'Faction Profit / mo', value: fmt(totalMonthlyProfit), highlight: true },
+            ].map(({ label, value, highlight }) => (
+              <div key={label} style={{
+                flex: '1 1 140px',
+                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: '8px', padding: '10px 14px',
+              }}>
+                <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '4px' }}>{label}</div>
+                <div style={{ color: highlight ? '#22c55e' : '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {loading ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
       ) : grouped.length === 0 ? (
@@ -348,16 +379,13 @@ export default function StocksSubTab({ factionId }) {
                     <span style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px' }}>
                       {memberLabel(group.torn_user_id)}
                     </span>
-                    {group.discord_id && (
-                      <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>{group.discord_id}</span>
-                    )}
                     {factionId == null && (
-                      <span style={{ color: '#6d28d9', fontSize: '10px', marginLeft: '8px' }}>
+                      <span style={{ color: '#6d28d9', fontSize: '10px', marginLeft: '10px' }}>
                         {FACTION_OPTIONS.find(f => f.id === group.faction_id)?.label}
                       </span>
                     )}
-                    <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>
-                      #{group.torn_user_id} · {group.entries.length} stock{group.entries.length > 1 ? 's' : ''}
+                    <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '10px' }}>
+                      {group.entries.length} stock{group.entries.length > 1 ? 's' : ''}
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -371,7 +399,7 @@ export default function StocksSubTab({ factionId }) {
                 </div>
 
                 {/* Stock entries */}
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {!isGroupExpanded && <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {group.entries.map((s, idx) => {
                     const isEditing = editingId === s.id
                     const isCollecting = collectingId === s.id
@@ -598,7 +626,7 @@ export default function StocksSubTab({ factionId }) {
                       </div>
                     )
                   })}
-                </div>
+                </div>}
               </div>
             )
           })}
