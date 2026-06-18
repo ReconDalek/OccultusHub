@@ -81,7 +81,7 @@ export default function FishingTab() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
         <div>
           <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
-            ◈ Void Scrying Leaderboard
+            Void Scrying Leaderboard
           </h3>
           <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>Manage the Scrying the Abyss leaderboard</p>
         </div>
@@ -97,7 +97,7 @@ export default function FishingTab() {
               cursor: toggling ? 'not-allowed' : 'pointer', opacity: toggling ? 0.6 : 1,
             }}
           >
-            {toggling ? '...' : enabled ? '◈ Enabled' : '◈ Disabled'}
+            {toggling ? '...' : enabled ? 'Enabled' : 'Disabled'}
           </button>
           <button
             onClick={resetLeaderboard}
@@ -108,7 +108,7 @@ export default function FishingTab() {
               color: '#f87171', cursor: resetting ? 'not-allowed' : 'pointer', opacity: resetting ? 0.6 : 1,
             }}
           >
-            {resetting ? 'Resetting...' : '🗑 Reset Leaderboard'}
+            {resetting ? 'Resetting...' : 'Reset Leaderboard'}
           </button>
         </div>
       </div>

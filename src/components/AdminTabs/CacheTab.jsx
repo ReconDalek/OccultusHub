@@ -185,11 +185,11 @@ export default function CacheTab() {
 
       {/* Cache status */}
       <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Cache Status</h3>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>General</h3>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
           {[
-            { key: 'factions',  label: 'Factions',  icon: '⚔️' },
-            { key: 'companies', label: 'Companies', icon: '🏢' },
+            { key: 'factions',  label: 'Factions',  icon: '' },
+            { key: 'companies', label: 'Companies', icon: '' },
           ].map(({ key, label, icon }) => {
             const info = cacheStatus?.[key]
             return (
@@ -231,11 +231,14 @@ export default function CacheTab() {
             )
           })}
         </div>
+        <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            Auto-refreshes daily at 00:00 and 12:00 UTC/TCT.
+          </p>
       </div>
 
       {/* Chain cache status */}
       <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>⛓ Chain History Cache</h3>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Chains</h3>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           {FACTION_IDS.map((fid) => {
             const info = chainStatus?.[fid]
@@ -246,7 +249,7 @@ export default function CacheTab() {
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <span style={{ fontSize: '18px' }}>⛓</span>
+                  <span style={{ fontSize: '18px' }}></span>
                   <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
                 </div>
                 <div className="flex justify-between mb-1">
@@ -278,14 +281,14 @@ export default function CacheTab() {
             {refreshing === 'chains' ? 'Refreshing…' : 'Refresh Chain Cache'}
           </button>
           <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
-            Auto-refreshes every Tuesday 01:00 UTC — only new chains are added.
+            Auto-refreshes every Tuesday 01:00 UTC/TCT.
           </p>
         </div>
       </div>
 
       {/* Member database status */}
       <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>⚔️ Member Database</h3>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Members</h3>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           {[
             { label: 'Total Members',   value: memberStatus?.totalMembers  ?? '—', color: '#f4f4f5' },
@@ -351,8 +354,8 @@ export default function CacheTab() {
       </div>
 
       {/* Personal stats snapshots */}
-      <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>📊 Personal Stats Snapshots</h3>
+      {/*<div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Personal Stats</h3>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           {[
             { label: 'Members Tracked', value: personalStatsStatus?.members ?? '—', color: '#f4f4f5' },
@@ -377,8 +380,9 @@ export default function CacheTab() {
             </div>
           )}
         </div>
-
+/*}
         {/* Live progress bar while snapshot is running */}
+        {/*
         {snapshotRunning && personalStatsStatus && (
           <div style={{ marginTop: '14px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -416,7 +420,7 @@ export default function CacheTab() {
           </button>
           <div>
             <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
-              Auto-runs daily at 01:00 UTC after the energy snapshot. ~200 API calls — may take 3–5 minutes.
+              Auto-runs daily at 01:00 UTC/TCT — may take 3–5 minutes.
             </p>
             {personalStatsStatus?.today > 0 && !snapshotRunning && (
               <p style={{ color: '#a1a1aa', fontSize: '11px', margin: '2px 0 0 0' }}>
@@ -426,6 +430,7 @@ export default function CacheTab() {
           </div>
         </div>
       </div>
+      /*}
 
       {/* Last result */}
       {lastResult && (

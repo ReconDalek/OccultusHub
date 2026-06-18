@@ -72,7 +72,7 @@ export default function SeasonalEventsTab() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
         <div>
           <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
-            🌕 Seasonal Events
+            Seasonal Events
           </h3>
           <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>
             Toggle global event effects. Use <strong style={{ color: '#a78bfa' }}>Test Preview</strong> to see an effect locally — only visible on this browser.

@@ -11,8 +11,9 @@ const FACTION_OPTIONS = [
 ]
 
 const SUB_TABS = [
-  { id: 'investments', label: '⚑ Investments' },
-  { id: 'stocks',      label: '◈ Stocks' },
+  { id: 'overview',    label: 'Overview' },
+  { id: 'investments', label: 'Investments' },
+  { id: 'stocks',      label: 'Stocks' },
 ]
 
 export default function AccountingTab() {

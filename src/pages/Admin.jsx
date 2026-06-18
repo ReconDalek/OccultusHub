@@ -13,11 +13,11 @@ export default function Admin() {
   const tabs = [
     { id: 'users', label: 'Users' },
     { id: 'cache', label: 'Cache' },
-    { id: 'fishing',  label: '◈ Void Scrying' },
-    { id: 'runes',    label: 'ᚠ Rune Casting' },
-    { id: 'events',   label: '🌕 Events' },
-    { id: 'cards',    label: '◼ Cards' },
+    { id: 'events',   label: 'Events' },
     { id: 'logs',     label: 'Logs' },
+    { id: 'fishing',  label: 'Void Scrying' },
+    { id: 'runes',    label: 'Rune Casting' },
+    { id: 'cards',    label: 'Cards' },
   ]
 
   return (

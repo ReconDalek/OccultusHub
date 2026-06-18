@@ -168,7 +168,7 @@ function NewCardForm({ defaultType, onSave, onCancel }) {
             border: form.type === t ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.1)',
             background: form.type === t ? 'rgba(179,18,63,0.15)' : 'transparent',
             color: '#f4f4f5', cursor: 'pointer',
-          }}>{t === 'shadow' ? '◼ Shadow' : '◻ Fate'}</button>
+          }}>{t === 'shadow' ? '◻ Shadow' : '◼ Fate'}</button>
         ))}
       </div>
 
