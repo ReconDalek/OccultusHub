@@ -91,6 +91,39 @@ export default {
       return;
     }
 
+    // "*/5 * * * *" — stock list cache refresh every 5 minutes
+    if (event.cron === '*/5 * * * *') {
+      try {
+        const { fetchAndCacheStockList } = await import('./services/stocksService.js');
+        ctx.waitUntil(
+          fetchAndCacheStockList(env)
+            .then(r => console.log(`[cron] stock list cached: ${r.count} stocks`))
+            .catch(e => console.error('[cron] stock list cache failed:', e))
+        );
+      } catch (e) {
+        console.error('[cron] stock list handler error:', e);
+      }
+      return;
+    }
+
+    // "0 * * * *" — per-stock price history every hour
+    if (event.cron === '0 * * * *') {
+      try {
+        const { fetchAndCacheStockDetail } = await import('./services/stocksService.js');
+        ctx.waitUntil(
+          fetchAndCacheStockDetail(env)
+            .then(r => {
+              console.log(`[cron] stock detail cached: ${r.fetched}/35`);
+              if (r.errors?.length) console.warn('[cron] stock detail errors:', r.errors);
+            })
+            .catch(e => console.error('[cron] stock detail cache failed:', e))
+        );
+      } catch (e) {
+        console.error('[cron] stock detail handler error:', e);
+      }
+      return;
+    }
+
     // "0 */12 * * *" — faction/company cache refresh every 12 hours
     try {
       const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');

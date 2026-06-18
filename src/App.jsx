@@ -31,6 +31,7 @@ import Games          from './pages/Games'
 import GameRoom       from './pages/GameRoom'
 import CardsGame      from './pages/CardsGame'
 import Sanctum        from './pages/Sanctum'
+import Stocks         from './pages/Stocks'
 import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum'] // active gameplay routes — suppress easter egg overlays
@@ -181,6 +182,17 @@ function AppRoutes() {
           <Layout>
             <ProtectedRoute requiredLevel="member">
               <Forums />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/stocks"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="member">
+              <Stocks />
             </ProtectedRoute>
           </Layout>
         }

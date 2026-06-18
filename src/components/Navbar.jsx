@@ -30,6 +30,7 @@ function buildNavLinks(user, pages) {
   ]
   if (user?.isFactionMember) {
     links.push({ label: 'Forums', to: '/forums' })
+    links.push({ label: 'Stocks', to: '/stocks' })
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
     if (pages.companies) links.push({ label: 'Companies', to: '/companies' })
   }

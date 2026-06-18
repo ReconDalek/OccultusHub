@@ -20,6 +20,7 @@ import * as sanctumController from './controllers/sanctumController.js';
 import * as activityController from './controllers/activityController.js';
 import * as logsController from './controllers/logsController.js';
 import * as accountingController from './controllers/accountingController.js';
+import * as stocksController from './controllers/stocksController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -523,6 +524,16 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/admin\/cards\/(shadow|fate)\/\d+$/) && method === 'DELETE') {
       return cahController.adminDeleteCard(request, env);
     }
+  }
+
+  // Torn Stock Market — member-auth required
+  if (pathname === '/api/stocks' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return stocksController.getStocksList(request, env);
+  }
+  if (pathname.match(/^\/api\/stocks\/\d+$/) && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return stocksController.getStockDetail(request, env);
   }
 
   // The Sanctum — idle RPG (auth required)
