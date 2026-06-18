@@ -11,7 +11,7 @@ const FACTION_OPTIONS = [
 
 const EMPTY_FORM = {
   torn_user_id: '', discord_id: '', faction_id: 33097,
-  amount: '', rate: '', duration_months: 1, member_profit_pct: '100',
+  amount: '', rate: '', duration_months: 1, member_profit_pct: '50',
   start_date: '', notes: '',
 }
 
