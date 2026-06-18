@@ -264,10 +264,67 @@ function OverviewSubTab({ factionId, onNavigate }) {
           {displayFactions.length === 0 && (
             <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No faction data available. The 12-hour cache may not have run yet.</p>
           )}
+          {displayFactions.length > 1 && (() => {
+            const combinedTotal = displayFactions.reduce(
+              (sum, faction) => sum + calcFactionNetworth(faction, settings, summaries[faction.basic?.id]),
+              0
+            )
+            return (
+              <div style={{
+                background: 'rgba(109,40,217,0.06)',
+                border: '1px solid rgba(109,40,217,0.25)',
+                borderRadius: '14px',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <div>
+                    <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Combined Networth</span>
+                    <div style={{ color: '#71717a', fontSize: '11px', marginTop: '2px' }}>
+                      {displayFactions.map(f => f.basic?.name).join(' + ')}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedTotal)}</div>
+                    <div style={{ color: '#52525b', fontSize: '11px' }}>excl. armory & racket estimates</div>
+                  </div>
+                </div>
+                <div style={{ borderTop: '1px solid rgba(109,40,217,0.15)', padding: '8px 20px 12px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    {displayFactions.map(faction => (
+                      <div key={faction.basic?.id} style={{ fontSize: '12px' }}>
+                        <span style={{ color: '#71717a' }}>{faction.basic?.name}: </span>
+                        <span style={{ color: '#f4f4f5', fontWeight: '600' }}>
+                          {fmt(calcFactionNetworth(faction, settings, summaries[faction.basic?.id]))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>
   )
+}
+
+function calcFactionNetworth(faction, settings, summary) {
+  const basic = faction.basic || {}
+  const balanceFaction = faction.balance?.faction || {}
+  const balanceMembers = faction.balance?.members || []
+  const respect = basic.respect || 0
+  const vaultMoney = balanceFaction.money || 0
+  const points = balanceFaction.points || 0
+  const memberTotal = balanceMembers.reduce((sum, m) => sum + (m.money || 0), 0)
+  const respectEst = respect * (settings.respect_value || 0)
+  const pointsEst = points * (settings.points_value || 0)
+  const investmentTotal = summary?.investments?.total_amount || 0
+  const stockIncome = summary?.stocks?.monthly_income || 0
+  return respectEst + pointsEst + vaultMoney + memberTotal + investmentTotal + stockIncome
 }
 
 function FactionNetworthCard({ faction, settings, summary }) {

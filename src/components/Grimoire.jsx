@@ -249,12 +249,12 @@ export default function Grimoire({ open, onClose, openToPage = null }) {
               <h3 style={{
                 margin: '0 0 16px', fontFamily: 'Cinzel, serif',
                 fontSize: '15px', letterSpacing: '2px',
-                color: 'rgba(100,80,130,0.5)',
+                color: 'rgba(180,150,210,0.65)',
               }}>
                 — Page Missing —
               </h3>
               <p style={{
-                color: 'rgba(100,80,130,0.35)', lineHeight: 1.8, fontSize: '13px',
+                color: 'rgba(160,130,190,0.6)', lineHeight: 1.8, fontSize: '13px',
                 fontStyle: 'italic', margin: 0,
               }}>
                 This page has been torn from the grimoire.<br />
@@ -262,10 +262,10 @@ export default function Grimoire({ open, onClose, openToPage = null }) {
               </p>
               <div style={{
                 marginTop: '18px', padding: '10px 16px', borderRadius: '6px',
-                background: 'rgba(109,40,217,0.05)', border: '1px dashed rgba(109,40,217,0.15)',
+                background: 'rgba(109,40,217,0.08)', border: '1px dashed rgba(109,40,217,0.25)',
                 display: 'inline-block',
               }}>
-                <span style={{ fontSize: '11px', color: 'rgba(109,40,217,0.4)', letterSpacing: '1px', fontFamily: 'Cinzel, serif' }}>
+                <span style={{ fontSize: '11px', color: 'rgba(160,100,230,0.7)', letterSpacing: '1px', fontFamily: 'Cinzel, serif' }}>
                   AWAIT THE WATCHING EYE
                 </span>
               </div>
