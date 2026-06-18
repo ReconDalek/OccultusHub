@@ -48,14 +48,14 @@ export const TORN_STOCKS = [
 
 const TIER_OPTIONS = [1, 2, 3]
 const FREQ_OPTIONS = [
-  { value: '7-day',  label: '7 days' },
-  { value: '28-day', label: '28 days' },
+  { value: '7-day',  label: '7 days'  },
+  { value: '31-day', label: '31 days' },
 ]
 
 const EMPTY_FORM = {
   torn_user_id: '', discord_id: '', faction_id: 33097,
-  stock_acronym: 'TSB', tier: 1, payout_frequency: '28-day',
-  member_keeps_amount: '', notes: '',
+  stock_acronym: 'TSB', tier: 1, payout_frequency: '31-day',
+  stock_cost: '', member_keeps_amount: '', notes: '',
 }
 
 function currentPeriodLabel() {
@@ -64,7 +64,7 @@ function currentPeriodLabel() {
 }
 
 function payoutsPerMonth(freq) {
-  return freq === '7-day' ? (28 / 7) : 1
+  return freq === '7-day' ? 4 : 1
 }
 
 export default function StocksSubTab({ factionId }) {
@@ -224,8 +224,13 @@ export default function StocksSubTab({ factionId }) {
               </select>
             </div>
             <div>
+              <label style={labelStyle}>Stock Cost ($)</label>
+              <input style={inputStyle} type="number" step="0.01" min="0" placeholder="Total cost" value={form.stock_cost}
+                onChange={e => setForm(f => ({ ...f, stock_cost: e.target.value }))} />
+            </div>
+            <div>
               <label style={labelStyle}>Member Keeps ($)</label>
-              <input style={inputStyle} type="number" step="0.01" min="0" placeholder="0" value={form.member_keeps_amount}
+              <input style={inputStyle} type="number" step="0.01" min="0" placeholder="Per payout" value={form.member_keeps_amount}
                 onChange={e => setForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
             </div>
             <div>
@@ -257,7 +262,10 @@ export default function StocksSubTab({ factionId }) {
             const isEditing = editingId === s.id
             const isCollecting = collectingId === s.id
             const perMonth = payoutsPerMonth(s.payout_frequency)
-            const keepPerMonth = (s.member_keeps_amount || 0) * perMonth
+            const keepPerPayout = s.member_keeps_amount || 0
+            const keepPerMonth = keepPerPayout * perMonth
+            const factionIncomePerPayout = (s.stock_cost || 0) - keepPerPayout
+            const factionIncomePerMonth = factionIncomePerPayout * perMonth
             const lastColl = s.collections?.[0]
 
             return (
@@ -268,7 +276,7 @@ export default function StocksSubTab({ factionId }) {
                 {/* Row */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 70px 60px 90px 110px 110px auto',
+                  gridTemplateColumns: '1fr 70px 60px 90px 110px 110px 110px 110px auto',
                   alignItems: 'center', gap: '8px', padding: '10px 14px',
                 }}>
                   {/* Member */}
@@ -329,6 +337,20 @@ export default function StocksSubTab({ factionId }) {
                     )}
                   </div>
 
+                  {/* Stock cost */}
+                  <div>
+                    {isEditing ? (
+                      <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01" min="0"
+                        placeholder="Cost"
+                        value={editForm.stock_cost ?? s.stock_cost ?? ''}
+                        onChange={e => setEditForm(f => ({ ...f, stock_cost: e.target.value }))} />
+                    ) : (
+                      <div style={{ color: '#a1a1aa', fontSize: '12px' }}>
+                        ${(s.stock_cost || 0).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Member keeps */}
                   <div>
                     {isEditing ? (
@@ -345,6 +367,16 @@ export default function StocksSubTab({ factionId }) {
                         </div>
                       </>
                     )}
+                  </div>
+
+                  {/* Faction income */}
+                  <div>
+                    <div style={{ color: factionIncomePerPayout >= 0 ? '#22c55e' : '#f87171', fontSize: '12px' }}>
+                      ${Math.round(factionIncomePerPayout).toLocaleString()} / payout
+                    </div>
+                    <div style={{ color: '#52525b', fontSize: '11px' }}>
+                      ~${Math.round(factionIncomePerMonth).toLocaleString()} / mo
+                    </div>
                   </div>
 
                   {/* Last collection */}

@@ -217,7 +217,7 @@ export async function getStocks(request, env) {
 export async function createStock(request, env, user) {
   try {
     const body = await request.json();
-    const { torn_user_id, discord_id, faction_id, stock_acronym, tier, payout_frequency, member_keeps_amount, notes } = body;
+    const { torn_user_id, discord_id, faction_id, stock_acronym, tier, payout_frequency, stock_cost, member_keeps_amount, notes } = body;
 
     if (!torn_user_id || !faction_id || !stock_acronym) {
       return errorResponse('Missing required fields', 400);
@@ -227,12 +227,13 @@ export async function createStock(request, env, user) {
 
     await env.DB.prepare(`
       INSERT INTO accounting_stocks
-        (torn_user_id, discord_id, faction_id, stock_acronym, tier, payout_frequency, member_keeps_amount, notes, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (torn_user_id, discord_id, faction_id, stock_acronym, tier, payout_frequency, stock_cost, member_keeps_amount, notes, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       parseInt(torn_user_id), discord_id || null, parseInt(faction_id),
       stock_acronym.toUpperCase(), tierVal,
-      payout_frequency || '28-day', parseFloat(member_keeps_amount || 0),
+      payout_frequency || '31-day', parseFloat(stock_cost || 0),
+      parseFloat(member_keeps_amount || 0),
       notes || null, user.userId
     ).run();
 
@@ -248,7 +249,7 @@ export async function updateStock(request, env, user) {
     const id = parseInt(url.pathname.split('/').pop());
     const body = await request.json();
 
-    const allowed = ['discord_id', 'stock_acronym', 'tier', 'payout_frequency', 'member_keeps_amount', 'notes', 'is_active'];
+    const allowed = ['discord_id', 'stock_acronym', 'tier', 'payout_frequency', 'stock_cost', 'member_keeps_amount', 'notes', 'is_active'];
     const sets = [];
     const params = [];
 
@@ -332,10 +333,20 @@ export async function getSummary(request, env) {
     const invParams = factionId ? [parseInt(factionId)] : [];
     const invWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
 
-    const [invRow, stockRow] = await Promise.all([
+    const stockWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
+
+    const [invRow, stockRows] = await Promise.all([
       env.DB.prepare(`SELECT COUNT(*) as total, SUM(amount) as total_amount FROM accounting_investments ${invWhere}`).bind(...invParams).first(),
-      env.DB.prepare(`SELECT COUNT(*) as total FROM accounting_stocks ${invWhere}`).bind(...invParams).first(),
+      env.DB.prepare(`SELECT payout_frequency, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
     ]);
+
+    // monthly faction income: (stock_cost - member_keeps_amount) × payouts_per_month
+    let stockMonthlyIncome = 0;
+    for (const row of (stockRows.results || [])) {
+      const payoutsPerMonth = row.payout_frequency === '7-day' ? 4 : 1;
+      stockMonthlyIncome += ((row.stock_cost || 0) - (row.member_keeps_amount || 0)) * payoutsPerMonth;
+    }
+    const stockRow = { total: (stockRows.results || []).length };
 
     const tciDue = await env.DB.prepare(`
       SELECT COUNT(*) as count FROM accounting_investments
@@ -352,7 +363,7 @@ export async function getSummary(request, env) {
       },
       stocks: {
         total: stockRow?.total ?? 0,
-        monthly_income: 0,
+        monthly_income: stockMonthlyIncome,
       },
     });
   } catch (e) {

@@ -155,7 +155,7 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
         </td>
         <td style={{ padding: '10px 12px' }}><SignalBadge signal={signal} /></td>
         <td style={{ padding: '10px 12px', color: '#555', fontSize: 11 }}>{apiStock?.bonus?.requirement?.toLocaleString() ?? '—'} shares</td>
-        <td style={{ padding: '10px 12px', color: '#888', fontSize: 11 }}>{localStock?.frequency === 7 ? '7-day' : '28-day'}</td>
+        <td style={{ padding: '10px 12px', color: '#888', fontSize: 11 }}>{localStock?.frequency === 7 ? '7-day' : '31-day'}</td>
         <td style={{ padding: '10px 12px', color: '#555', fontSize: 18 }}>{expanded ? '▲' : '▼'}</td>
       </tr>
       {expanded && (
