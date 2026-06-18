@@ -119,7 +119,7 @@ export default function StocksSubTab({ factionId }) {
     const val = parseFloat(form.item_value || 0)
     const pct = parseFloat(form.member_portion_pct || 100)
     const fp = val * ((100 - pct) / 100)
-    return fp > 0 ? `£${fp.toLocaleString(undefined, { maximumFractionDigits: 0 })} / period to faction` : null
+    return fp > 0 ? `$${fp.toLocaleString(undefined, { maximumFractionDigits: 0 })} / period to faction` : null
   }
 
   return (
@@ -197,7 +197,7 @@ export default function StocksSubTab({ factionId }) {
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Item Value (£)</label>
+              <label style={labelStyle}>Item Value ($)</label>
               <input style={inputStyle} type="number" step="0.01" placeholder="0" value={form.item_value}
                 onChange={e => setForm(f => ({ ...f, item_value: e.target.value }))} />
             </div>
@@ -301,7 +301,7 @@ export default function StocksSubTab({ factionId }) {
                         onChange={e => setEditForm(f => ({ ...f, item_value: e.target.value }))} />
                     ) : (
                       <>
-                        <div style={{ color: '#f4f4f5' }}>£{s.item_value.toLocaleString()}</div>
+                        <div style={{ color: '#f4f4f5' }}>${s.item_value.toLocaleString()}</div>
                         <div style={{ color: '#a1a1aa' }}>{s.member_portion_pct}% kept</div>
                       </>
                     )}
@@ -310,7 +310,7 @@ export default function StocksSubTab({ factionId }) {
                   {/* Faction payment */}
                   <div>
                     <div style={{ color: '#22c55e', fontSize: '13px', fontWeight: '600' }}>
-                      £{Math.round(s.faction_payment).toLocaleString()}
+                      ${Math.round(s.faction_payment).toLocaleString()}
                     </div>
                     <div style={{ color: '#a1a1aa', fontSize: '11px' }}>/ {s.payout_frequency}</div>
                   </div>
@@ -320,7 +320,7 @@ export default function StocksSubTab({ factionId }) {
                     {lastColl ? (
                       <>
                         <div>Last: {lastColl.period_label}</div>
-                        <div>£{lastColl.amount_paid.toLocaleString()}</div>
+                        <div>${lastColl.amount_paid.toLocaleString()}</div>
                       </>
                     ) : <div>No payments</div>}
                   </div>
@@ -337,7 +337,7 @@ export default function StocksSubTab({ factionId }) {
                         <ActionBtn onClick={() => setExpandedId(isExpanded ? null : s.id)} color="#60a5fa">
                           {isExpanded ? '▲' : '▼'}
                         </ActionBtn>
-                        <ActionBtn onClick={() => { setCollectingId(isCollecting ? null : s.id); setCollectForm({ period_label: currentPeriodLabel(), amount_paid: String(Math.round(s.faction_payment)), notes: '' }) }} color="#22c55e">£</ActionBtn>
+                        <ActionBtn onClick={() => { setCollectingId(isCollecting ? null : s.id); setCollectForm({ period_label: currentPeriodLabel(), amount_paid: String(Math.round(s.faction_payment)), notes: '' }) }} color="#22c55e">$</ActionBtn>
                         <ActionBtn onClick={() => { setEditingId(s.id); setEditForm({}) }} color="#6d28d9">✎</ActionBtn>
                         <ActionBtn onClick={() => handleArchive(s.id)} color="#b3123f">✕</ActionBtn>
                       </>
@@ -356,7 +356,7 @@ export default function StocksSubTab({ factionId }) {
                           onChange={e => setCollectForm(f => ({ ...f, period_label: e.target.value }))} />
                       </div>
                       <div>
-                        <label style={labelStyle}>Amount Paid (£)</label>
+                        <label style={labelStyle}>Amount Paid ($)</label>
                         <input style={{ ...inputStyle, width: '100px' }} type="number" step="0.01" value={collectForm.amount_paid}
                           onChange={e => setCollectForm(f => ({ ...f, amount_paid: e.target.value }))} />
                       </div>
@@ -400,7 +400,7 @@ export default function StocksSubTab({ factionId }) {
                           }}>
                             <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                               <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{c.period_label}</span>
-                              <span style={{ color: '#22c55e', fontSize: '13px' }}>£{parseFloat(c.amount_paid).toLocaleString()}</span>
+                              <span style={{ color: '#22c55e', fontSize: '13px' }}>${parseFloat(c.amount_paid).toLocaleString()}</span>
                               {c.notes && <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{c.notes}</span>}
                             </div>
                             <button onClick={() => handleDeleteCollection(c.id)} style={{

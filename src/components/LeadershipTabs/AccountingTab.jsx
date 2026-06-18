@@ -104,7 +104,7 @@ const OUR_FACTION_IDS = [33097, 9728, 9171]
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
-  return `£${Math.round(n).toLocaleString()}`
+  return `$${Math.round(n).toLocaleString()}`
 }
 
 function OverviewSubTab({ factionId, onNavigate }) {
@@ -196,9 +196,9 @@ function OverviewSubTab({ factionId, onNavigate }) {
         {!editSettings ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
-              Respect: £{(settings.respect_value || 0).toLocaleString()}/pt
+              Respect: ${(settings.respect_value || 0).toLocaleString()}/pt
               &nbsp;·&nbsp;
-              Points: £{(settings.points_value || 0).toLocaleString()}/pt
+              Points: ${(settings.points_value || 0).toLocaleString()}/pt
             </span>
             <button
               onClick={() => setEditSettings(true)}
@@ -214,7 +214,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
         ) : (
           <form onSubmit={handleSaveSettings} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>£ per Respect</label>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>$ per Respect</label>
               <input
                 style={inputStyle} type="number" step="0.01" min="0"
                 value={settingsForm.respect_value}
@@ -222,7 +222,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>£ per Point</label>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>$ per Point</label>
               <input
                 style={inputStyle} type="number" step="0.01" min="0"
                 value={settingsForm.points_value}
@@ -258,7 +258,6 @@ function OverviewSubTab({ factionId, onNavigate }) {
               faction={faction}
               settings={settings}
               summary={summaries[faction.basic?.id]}
-              onNavigate={onNavigate}
             />
           ))}
           {displayFactions.length === 0 && (
@@ -270,7 +269,8 @@ function OverviewSubTab({ factionId, onNavigate }) {
   )
 }
 
-function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
+function FactionNetworthCard({ faction, settings, summary }) {
+  const [collapsed, setCollapsed] = useState(false)
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
   const balanceMembers = faction.balance?.members || []
@@ -292,7 +292,7 @@ function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
   const rows = [
     {
       label: 'Respect',
-      sub: `${respect.toLocaleString()} × £${(settings.respect_value || 0).toLocaleString()}/pt`,
+      sub: `${respect.toLocaleString()} × $${(settings.respect_value || 0).toLocaleString()}/pt`,
       value: respectEst,
       color: '#a78bfa',
     },
@@ -305,7 +305,7 @@ function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
     },
     {
       label: 'Points',
-      sub: `${points.toLocaleString()} × £${(settings.points_value || 0).toLocaleString()}/pt`,
+      sub: `${points.toLocaleString()} × $${(settings.points_value || 0).toLocaleString()}/pt`,
       value: pointsEst,
       color: '#60a5fa',
     },
@@ -345,18 +345,25 @@ function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
       overflow: 'hidden',
     }}>
       {/* Header */}
-      <div style={{
-        padding: '14px 20px',
-        background: 'rgba(255,255,255,0.02)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
+      <div
+        onClick={() => setCollapsed(v => !v)}
+        style={{
+          padding: '14px 20px',
+          background: 'rgba(255,255,255,0.02)',
+          borderBottom: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          cursor: 'pointer', userSelect: 'none',
+        }}
+      >
         <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>{basic.name}</span>
-        <span style={{ color: '#a1a1aa', fontSize: '12px' }}>ID: {basic.id}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ color: '#a1a1aa', fontSize: '12px' }}>ID: {basic.id}</span>
+          <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+        </div>
       </div>
 
       {/* Rows */}
-      <div style={{ padding: '0 4px' }}>
+      {!collapsed && <div style={{ padding: '0 4px' }}>
         {rows.map((row, i) => (
           <div key={row.label} style={{
             display: 'grid', gridTemplateColumns: '160px 1fr auto',
@@ -380,7 +387,7 @@ function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* Total */}
       <div style={{
@@ -391,35 +398,9 @@ function FactionNetworthCard({ faction, settings, summary, onNavigate }) {
       }}>
         <div>
           <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</span>
-          <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>excl. armory & racket estimates</span>
+          {!collapsed && <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '8px' }}>excl. armory & racket estimates</span>}
         </div>
         <span style={{ color: '#b3123f', fontSize: '18px', fontWeight: '700' }}>{fmt(totalNetworth)}</span>
-      </div>
-
-      {/* Quick links */}
-      <div style={{ padding: '10px 20px', display: 'flex', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-        {summary?.investments?.tci_action_required > 0 && (
-          <div style={{
-            background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)',
-            borderRadius: '6px', padding: '4px 10px', fontSize: '11px', color: '#f97316',
-          }}>
-            {summary.investments.tci_action_required} TCI purchase{summary.investments.tci_action_required > 1 ? 's' : ''} due
-          </div>
-        )}
-        <button onClick={() => onNavigate('investments')} style={{
-          background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '6px', color: '#71717a', padding: '4px 10px',
-          fontSize: '11px', cursor: 'pointer',
-        }}>
-          Investments
-        </button>
-        <button onClick={() => onNavigate('stocks')} style={{
-          background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '6px', color: '#71717a', padding: '4px 10px',
-          fontSize: '11px', cursor: 'pointer',
-        }}>
-          Stocks
-        </button>
       </div>
     </div>
   )

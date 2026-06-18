@@ -153,7 +153,7 @@ export default function InvestmentsSubTab({ factionId }) {
               onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
           </div>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Amount (£) *</label>
+            <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Amount ($) *</label>
             <input style={inputStyle} type="number" step="0.01" required placeholder="0" value={form.amount}
               onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
           </div>
@@ -233,7 +233,7 @@ export default function InvestmentsSubTab({ factionId }) {
                       {isEditing ? (
                         <input style={{ ...inputStyle, width: '90px' }} type="number" step="0.01" value={editForm.amount ?? inv.amount}
                           onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))} />
-                      ) : `£${inv.amount.toLocaleString()}`}
+                      ) : `$${inv.amount.toLocaleString()}`}
                     </td>
                     <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px' }}>
                       {isEditing ? (
