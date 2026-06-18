@@ -262,6 +262,29 @@ export default function InvestmentsSubTab({ factionId }) {
         </form>
       )}
 
+      {!loading && sorted.length > 0 && (() => {
+        const totalPrincipal = sorted.reduce((sum, inv) => sum + (inv.amount || 0), 0)
+        const totalFactionIncome = sorted.reduce((sum, inv) => sum + (inv.faction_income || 0), 0)
+        return (
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            {[
+              { label: 'Investments', value: sorted.length },
+              { label: 'Total Principal', value: `$${Math.round(totalPrincipal).toLocaleString()}` },
+              { label: 'Faction Income', value: `$${Math.round(totalFactionIncome).toLocaleString()}`, highlight: true },
+            ].map(({ label, value, highlight }) => (
+              <div key={label} style={{
+                flex: '1 1 140px',
+                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: '8px', padding: '10px 14px',
+              }}>
+                <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '4px' }}>{label}</div>
+                <div style={{ color: highlight ? '#22c55e' : '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {loading ? (
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
       ) : sorted.length === 0 ? (
@@ -271,7 +294,7 @@ export default function InvestmentsSubTab({ factionId }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>
-                {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'End', 'Days Left', 'TCI Purchased', 'TCI Received', ''].map(h => (
+                {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'End', 'Days Left', 'TCI Purchased', ''].map(h => (
                   <th key={h} style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.06)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -357,11 +380,6 @@ export default function InvestmentsSubTab({ factionId }) {
                     <td style={{ padding: '10px', textAlign: 'center' }}>
                       <Checkbox checked={!!inv.tci_purchased} onChange={() => handleToggle(inv, 'tci_purchased')} color="#f97316"
                         title={inv.tci_purchased && inv.tci_purchased_at ? `Purchased ${inv.tci_purchased_at}` : 'Mark TCI as purchased'} />
-                    </td>
-                    {/* TCI received */}
-                    <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <Checkbox checked={!!inv.tci_received} onChange={() => handleToggle(inv, 'tci_received')} color="#22c55e"
-                        title="Mark TCI as received by member" />
                     </td>
                     {/* Actions */}
                     <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
