@@ -60,25 +60,23 @@ export async function getRandomUserApiKey(env) {
   }
 }
 
-// Fetches faction data for all factions. v2 supports &id= so any key works.
+// Fetches faction data for all factions using a faction-specific API key per faction.
 export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigger = 'cron') {
   let fetched = 0;
   let errors = 0;
 
-  const apiKeyObj = await getRandomUserApiKey(env);
-  if (!apiKeyObj?.key) {
-    await logError(env, { category: 'api_error', event: 'faction_cache_no_key', message: 'No API key available for faction cache refresh', meta: { trigger } });
-    for (const factionId of factionIds) {
+  for (const factionId of factionIds) {
+    const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
+    if (!apiKeyObj?.key) {
+      await logError(env, { category: 'api_error', event: 'faction_cache_no_key', message: `No API key available for faction ${factionId}`, faction_id: factionId, meta: { trigger } });
       await env.DB.prepare(
         `INSERT INTO faction_cache (faction_id, data, error) VALUES (?, '{}', ?)
          ON CONFLICT(faction_id) DO UPDATE SET error = excluded.error, fetched_at = CURRENT_TIMESTAMP`
       ).bind(factionId, 'No API key available').run();
+      errors++;
+      continue;
     }
-    return { fetched: 0, errors: factionIds.length };
-  }
-  const { key, tornUserId, username } = apiKeyObj;
-
-  for (const factionId of factionIds) {
+    const { key, tornUserId, username } = apiKeyObj;
     const url = `${TORN_API_BASE}/faction?selections=basic,members,balance,rackets&id=${factionId}&cat=all&comment=OccHub`;
 
     try {

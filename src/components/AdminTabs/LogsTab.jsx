@@ -129,7 +129,7 @@ function LogRow({ log, onDelete }) {
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: log.meta ? '8px' : 0 }}>
             {log.username && (
               <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
-                User: <span style={{ color: '#f4f4f5' }}>{log.username}</span>
+                Key used: <span style={{ color: '#f4f4f5' }}>{log.username}</span>
                 {log.torn_user_id && <span style={{ color: '#52525b' }}> (#{log.torn_user_id})</span>}
               </span>
             )}
