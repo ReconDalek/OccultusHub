@@ -7,10 +7,43 @@ const FACTION_OPTIONS = [
   { id: 9171,  label: 'Occul3us' },
 ]
 
-const TORN_STOCKS = [
-  'AAB', 'ACC', 'BAM', 'BCRX', 'BFG', 'CAP', 'CNC', 'EWM', 'FAN',
-  'GRN', 'HRG', 'IIL', 'LSC', 'MCAM', 'MCS', 'MSG', 'MWM', 'OMX',
-  'PRN', 'SHD', 'TCSE', 'TCTE', 'TORN', 'TRN', 'WLT', 'YAZ',
+// Full Torn stock list — also used by the future Stocks page
+export const TORN_STOCKS = [
+  { id:  1, acronym: 'TSB', name: 'Torn & Shanghai Banking',   logo: 'https://www.torn.com/images/v2/stock-market/logos/TSB.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TSB.svg', frequency: 31 },
+  { id:  2, acronym: 'TCI', name: 'Torn City Investments',      logo: 'https://www.torn.com/images/v2/stock-market/logos/TCI.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TCI.svg', frequency: 7  },
+  { id:  3, acronym: 'SYS', name: 'Syscore MFG',               logo: 'https://www.torn.com/images/v2/stock-market/logos/SYS.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/SYS.svg', frequency: 7  },
+  { id:  4, acronym: 'LAG', name: 'Legal Authorities Group',    logo: 'https://www.torn.com/images/v2/stock-market/logos/LAG.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/LAG.svg', frequency: 7  },
+  { id:  5, acronym: 'IOU', name: 'Insured On Us',              logo: 'https://www.torn.com/images/v2/stock-market/logos/IOU.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/IOU.svg', frequency: 31 },
+  { id:  6, acronym: 'GRN', name: 'Grain',                      logo: 'https://www.torn.com/images/v2/stock-market/logos/GRN.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/GRN.svg', frequency: 31 },
+  { id:  7, acronym: 'THS', name: 'Torn City Health Service',   logo: 'https://www.torn.com/images/v2/stock-market/logos/THS.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/THS.svg', frequency: 7  },
+  { id:  8, acronym: 'YAZ', name: 'Yazoo',                      logo: 'https://www.torn.com/images/v2/stock-market/logos/YAZ.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/YAZ.svg', frequency: 7  },
+  { id:  9, acronym: 'TCT', name: 'The Torn City Times',        logo: 'https://www.torn.com/images/v2/stock-market/logos/TCT.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TCT.svg', frequency: 31 },
+  { id: 10, acronym: 'CNC', name: 'Crude & Co',                 logo: 'https://www.torn.com/images/v2/stock-market/logos/CNC.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/CNC.svg', frequency: 31 },
+  { id: 11, acronym: 'MSG', name: 'Messaging Inc.',             logo: 'https://www.torn.com/images/v2/stock-market/logos/MSG.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/MSG.svg', frequency: 7  },
+  { id: 12, acronym: 'TMI', name: 'TC Music Industries',        logo: 'https://www.torn.com/images/v2/stock-market/logos/TMI.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TMI.svg', frequency: 31 },
+  { id: 13, acronym: 'TCP', name: 'TC Media Productions',       logo: 'https://www.torn.com/images/v2/stock-market/logos/TCP.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TCP.svg', frequency: 7  },
+  { id: 14, acronym: 'IIL', name: 'I Industries Ltd.',          logo: 'https://www.torn.com/images/v2/stock-market/logos/IIL.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/IIL.svg', frequency: 7  },
+  { id: 15, acronym: 'FHG', name: 'Feathery Hotels Group',      logo: 'https://www.torn.com/images/v2/stock-market/logos/FHG.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/FHG.svg', frequency: 7  },
+  { id: 16, acronym: 'SYM', name: 'Symbiotic Ltd.',             logo: 'https://www.torn.com/images/v2/stock-market/logos/SYM.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/SYM.svg', frequency: 7  },
+  { id: 17, acronym: 'LSC', name: 'Lucky Shot Casino',          logo: 'https://www.torn.com/images/v2/stock-market/logos/LSC.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/LSC.svg', frequency: 7  },
+  { id: 18, acronym: 'PRN', name: 'Performance Ribaldry',       logo: 'https://www.torn.com/images/v2/stock-market/logos/PRN.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/PRN.svg', frequency: 7  },
+  { id: 19, acronym: 'EWM', name: 'Eaglewood Mercenary',        logo: 'https://www.torn.com/images/v2/stock-market/logos/EWM.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/EWM.svg', frequency: 7  },
+  { id: 20, acronym: 'TCM', name: 'Torn City Motors',           logo: 'https://www.torn.com/images/v2/stock-market/logos/TCM.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TCM.svg', frequency: 7  },
+  { id: 21, acronym: 'ELT', name: 'Empty Lunchbox Traders',     logo: 'https://www.torn.com/images/v2/stock-market/logos/ELT.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/ELT.svg', frequency: 7  },
+  { id: 22, acronym: 'HRG', name: 'Home Retail Group',          logo: 'https://www.torn.com/images/v2/stock-market/logos/HRG.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/HRG.svg', frequency: 31 },
+  { id: 23, acronym: 'TGP', name: 'Tell Group Plc.',            logo: 'https://www.torn.com/images/v2/stock-market/logos/TGP.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TGP.svg', frequency: 7  },
+  { id: 24, acronym: 'MUN', name: 'Munster Beverage Corp.',     logo: 'https://www.torn.com/images/v2/stock-market/logos/MUN.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/MUN.svg', frequency: 7  },
+  { id: 25, acronym: 'WSU', name: 'West Side University',       logo: 'https://www.torn.com/images/v2/stock-market/logos/WSU.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/WSU.svg', frequency: 7  },
+  { id: 26, acronym: 'IST', name: 'International School TC',    logo: 'https://www.torn.com/images/v2/stock-market/logos/IST.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/IST.svg', frequency: 7  },
+  { id: 27, acronym: 'BAG', name: "Big Al's Gun Shop",          logo: 'https://www.torn.com/images/v2/stock-market/logos/BAG.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/BAG.svg', frequency: 7  },
+  { id: 28, acronym: 'EVL', name: 'Evil Ducks Candy Corp',      logo: 'https://www.torn.com/images/v2/stock-market/logos/EVL.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/EVL.svg', frequency: 7  },
+  { id: 29, acronym: 'MCS', name: 'Mc Smoogle Corp',            logo: 'https://www.torn.com/images/v2/stock-market/logos/MCS.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/MCS.svg', frequency: 7  },
+  { id: 30, acronym: 'WLT', name: 'Wind Lines Travel',          logo: 'https://www.torn.com/images/v2/stock-market/logos/WLT.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/WLT.svg', frequency: 7  },
+  { id: 31, acronym: 'TCC', name: 'Torn City Clothing',         logo: 'https://www.torn.com/images/v2/stock-market/logos/TCC.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/TCC.svg', frequency: 31 },
+  { id: 32, acronym: 'ASS', name: 'Alcoholics Synonymous',      logo: 'https://www.torn.com/images/v2/stock-market/logos/ASS.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/ASS.svg', frequency: 7  },
+  { id: 33, acronym: 'CBD', name: 'Herbal Releaf Co.',          logo: 'https://www.torn.com/images/v2/stock-market/logos/CBD.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/CBD.svg', frequency: 7  },
+  { id: 34, acronym: 'LOS', name: 'Lo Squalo Waste',            logo: 'https://www.torn.com/images/v2/stock-market/logos/LOS.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/LOS.svg', frequency: 7  },
+  { id: 35, acronym: 'PTS', name: 'PointLess',                  logo: 'https://www.torn.com/images/v2/stock-market/logos/PTS.svg', full: 'https://www.torn.com/images/v2/stock-market/portfolio/PTS.svg', frequency: 7  },
 ]
 
 const TIER_OPTIONS = [1, 2, 3]
@@ -21,7 +54,7 @@ const FREQ_OPTIONS = [
 
 const EMPTY_FORM = {
   torn_user_id: '', discord_id: '', faction_id: 33097,
-  stock_acronym: 'TORN', tier: 1, payout_frequency: '28-day',
+  stock_acronym: 'TSB', tier: 1, payout_frequency: '28-day',
   member_keeps_amount: '', notes: '',
 }
 
@@ -173,7 +206,7 @@ export default function StocksSubTab({ factionId }) {
               <label style={labelStyle}>Stock *</label>
               <select style={inputStyle} value={form.stock_acronym}
                 onChange={e => setForm(f => ({ ...f, stock_acronym: e.target.value }))}>
-                {TORN_STOCKS.map(s => <option key={s} value={s} style={{ background: '#1a1a2e' }}>{s}</option>)}
+                {TORN_STOCKS.map(s => <option key={s.acronym} value={s.acronym} style={{ background: '#1a1a2e' }}>{s.acronym} — {s.name}</option>)}
               </select>
             </div>
             <div>
