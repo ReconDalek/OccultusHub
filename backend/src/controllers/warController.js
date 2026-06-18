@@ -407,12 +407,14 @@ export async function trackActiveWars(env) {
 
       await env.DB.prepare(`UPDATE ranked_wars SET last_checked_at=CURRENT_TIMESTAMP WHERE id=?`).bind(warId).run();
 
-      await logInfo(env, {
-        category: 'war_cron',
-        event: 'war_poll',
-        message: `War ${warId} (faction ${factionId} vs ${opponentId}): status=${currentWar?.status ?? status}, +${newAttacks} attacks, +${newArmory} armory`,
-        meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, newAttacks, newArmory },
-      }).catch(() => {});
+      if (newAttacks > 0 || newArmory > 0) {
+        await logInfo(env, {
+          category: 'war_cron',
+          event: 'war_poll',
+          message: `War ${warId} (faction ${factionId} vs ${opponentId}): status=${currentWar?.status ?? status}, +${newAttacks} attacks, +${newArmory} armory`,
+          meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, newAttacks, newArmory },
+        }).catch(() => {});
+      }
 
       checked++;
     } catch (err) {
