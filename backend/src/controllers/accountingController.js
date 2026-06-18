@@ -71,7 +71,7 @@ export async function getInvestments(request, env) {
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
     const enriched = results.map(row => {
-      const profit = row.amount * (row.rate / 100) * (row.duration_months / 12);
+      const profit = row.amount * (row.rate / 100);
       const memberKeeps = profit * (row.member_profit_pct / 100);
       const factionIncome = profit - memberKeeps;
       return {

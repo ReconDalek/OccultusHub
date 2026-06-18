@@ -22,8 +22,9 @@ function daysLabel(days) {
   return { text: `${days}d left`, color: '#a1a1aa' }
 }
 
-function calcProfit(amount, rate, durationMonths) {
-  return parseFloat(amount || 0) * (parseFloat(rate || 0) / 100) * (parseInt(durationMonths || 1) / 12)
+// Rate is a flat percentage for the full duration, not annual
+function calcProfit(amount, rate) {
+  return parseFloat(amount || 0) * (parseFloat(rate || 0) / 100)
 }
 
 function fmt(n) {
@@ -33,6 +34,7 @@ function fmt(n) {
 
 export default function InvestmentsSubTab({ factionId }) {
   const [investments, setInvestments] = useState([])
+  const [memberNames, setMemberNames] = useState({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -58,6 +60,25 @@ export default function InvestmentsSubTab({ factionId }) {
     setShowForm(false)
     setEditingId(null)
   }, [fetchInvestments])
+
+  useEffect(() => {
+    const FACTION_IDS = [33097, 9728, 9171]
+    Promise.all(
+      FACTION_IDS.map(id =>
+        fetch(`${API_BASE_URL}/api/leadership/members?faction_id=${id}`, { headers: { Authorization: token } })
+          .then(r => r.ok ? r.json() : { members: [] })
+          .catch(() => ({ members: [] }))
+      )
+    ).then(results => {
+      const map = {}
+      for (const data of results) {
+        for (const m of (data.members || [])) {
+          map[String(m.torn_user_id)] = m.username
+        }
+      }
+      setMemberNames(map)
+    })
+  }, [token])
 
   async function handleCreate(e) {
     e.preventDefault()
@@ -114,8 +135,25 @@ export default function InvestmentsSubTab({ factionId }) {
     padding: '6px 10px', fontSize: '13px', width: '100%',
   }
 
+  function memberLabel(tornId) {
+    const name = memberNames[String(tornId)]
+    return name ? `${name} (#${tornId})` : `#${tornId}`
+  }
+
+  function startEdit(inv) {
+    setEditingId(inv.id)
+    setEditForm({
+      amount: inv.amount,
+      rate: inv.rate,
+      duration_months: inv.duration_months,
+      member_profit_pct: inv.member_profit_pct,
+      start_date: inv.start_date,
+      notes: inv.notes ?? '',
+    })
+  }
+
   // Live profit preview in form
-  const formProfit = calcProfit(form.amount, form.rate, form.duration_months)
+  const formProfit = calcProfit(form.amount, form.rate)
   const formMemberKeeps = formProfit * (parseFloat(form.member_profit_pct || 0) / 100)
   const formFactionIncome = formProfit - formMemberKeeps
 
@@ -171,7 +209,7 @@ export default function InvestmentsSubTab({ factionId }) {
                 onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Annual Rate (%) *</label>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Rate (%) *</label>
               <input style={inputStyle} type="number" step="0.01" required placeholder="e.g. 10.5" value={form.rate}
                 onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
             </div>
@@ -249,20 +287,11 @@ export default function InvestmentsSubTab({ factionId }) {
                   }}>
                     {/* Member */}
                     <td style={{ padding: '10px', color: '#f4f4f5', fontSize: '13px' }}>
-                      {isEditing ? (
-                        <input style={{ ...inputStyle, width: '100px' }} placeholder="Discord ID"
-                          value={editForm.discord_id ?? inv.discord_id ?? ''}
-                          onChange={e => setEditForm(f => ({ ...f, discord_id: e.target.value }))} />
-                      ) : (
-                        <>
-                          <div style={{ fontWeight: '500', color: '#a1a1aa', fontSize: '11px' }}>#{inv.torn_user_id}</div>
-                          {inv.discord_id && <div style={{ fontSize: '11px', color: '#71717a' }}>{inv.discord_id}</div>}
-                          {factionId == null && inv.faction_id && (
-                            <div style={{ color: '#6d28d9', fontSize: '10px', marginTop: '2px' }}>
-                              {FACTION_OPTIONS.find(f => f.id === inv.faction_id)?.label ?? `#${inv.faction_id}`}
-                            </div>
-                          )}
-                        </>
+                      <div style={{ fontWeight: '500', fontSize: '13px' }}>{memberLabel(inv.torn_user_id)}</div>
+                      {factionId == null && inv.faction_id && (
+                        <div style={{ color: '#6d28d9', fontSize: '10px', marginTop: '2px' }}>
+                          {FACTION_OPTIONS.find(f => f.id === inv.faction_id)?.label ?? `#${inv.faction_id}`}
+                        </div>
                       )}
                     </td>
                     {/* Principal */}
@@ -343,7 +372,7 @@ export default function InvestmentsSubTab({ factionId }) {
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <ActionBtn onClick={() => { setEditingId(inv.id); setEditForm({}) }} color="#6d28d9">✎</ActionBtn>
+                          <ActionBtn onClick={() => startEdit(inv)} color="#6d28d9">✎</ActionBtn>
                           <ActionBtn onClick={() => handleArchive(inv.id)} color="#b3123f">✕</ActionBtn>
                         </div>
                       )}
