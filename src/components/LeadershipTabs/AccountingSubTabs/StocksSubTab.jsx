@@ -3,8 +3,14 @@ import { API_BASE_URL } from '../../../config/api'
 
 const FREQ_OPTIONS = ['4-weekly', 'monthly']
 
+const FACTION_OPTIONS = [
+  { id: 33097, label: 'Occultus' },
+  { id: 9728,  label: 'Occul2us' },
+  { id: 9171,  label: 'Occul3us' },
+]
+
 const EMPTY_FORM = {
-  torn_user_id: '', username: '', stock_acronym: '', stock_name: '',
+  torn_user_id: '', username: '', faction_id: 33097, stock_acronym: '', stock_name: '',
   tier: '', payout_item: '', payout_frequency: '4-weekly',
   item_value: '', member_portion_pct: '100', notes: '',
 }
@@ -30,7 +36,8 @@ export default function StocksSubTab({ factionId }) {
 
   const fetchStocks = useCallback(() => {
     setLoading(true)
-    fetch(`${API_BASE_URL}/api/leadership/accounting/stocks?faction_id=${factionId}`, {
+    const qs = factionId != null ? `?faction_id=${factionId}` : ''
+    fetch(`${API_BASE_URL}/api/leadership/accounting/stocks${qs}`, {
       headers: { Authorization: token },
     })
       .then(r => r.json())
@@ -51,7 +58,7 @@ export default function StocksSubTab({ factionId }) {
     await fetch(`${API_BASE_URL}/api/leadership/accounting/stocks`, {
       method: 'POST',
       headers: { Authorization: token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, faction_id: factionId }),
+      body: JSON.stringify({ ...form, faction_id: factionId ?? form.faction_id }),
     })
     setSaving(false)
     setShowForm(false)
@@ -143,6 +150,15 @@ export default function StocksSubTab({ factionId }) {
           borderRadius: '10px', padding: '16px', marginBottom: '20px',
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+            {factionId == null && (
+              <div>
+                <label style={labelStyle}>Faction *</label>
+                <select style={inputStyle} value={form.faction_id}
+                  onChange={e => setForm(f => ({ ...f, faction_id: parseInt(e.target.value) }))}>
+                  {FACTION_OPTIONS.map(o => <option key={o.id} value={o.id} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label style={labelStyle}>User ID *</label>
               <input style={inputStyle} type="number" required placeholder="Torn ID" value={form.torn_user_id}
@@ -245,7 +261,14 @@ export default function StocksSubTab({ factionId }) {
                     ) : (
                       <>
                         <div style={{ color: '#f4f4f5', fontWeight: '500', fontSize: '13px' }}>{s.username || '—'}</div>
-                        <div style={{ color: '#a1a1aa', fontSize: '11px' }}>#{s.torn_user_id}</div>
+                        <div style={{ color: '#a1a1aa', fontSize: '11px' }}>
+                          #{s.torn_user_id}
+                          {factionId == null && s.faction_id && (
+                            <span style={{ marginLeft: '6px', color: '#6d28d9', fontSize: '10px' }}>
+                              {FACTION_OPTIONS.find(f => f.id === s.faction_id)?.label ?? `#${s.faction_id}`}
+                            </span>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>

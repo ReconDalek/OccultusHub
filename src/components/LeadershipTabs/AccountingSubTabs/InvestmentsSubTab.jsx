@@ -10,7 +10,13 @@ function daysLabel(days) {
   return { text: `${days}d left`, color: '#a1a1aa' }
 }
 
-const EMPTY_FORM = { torn_user_id: '', username: '', amount: '', duration_months: 1, start_date: '', notes: '' }
+const FACTION_OPTIONS = [
+  { id: 33097, label: 'Occultus' },
+  { id: 9728,  label: 'Occul2us' },
+  { id: 9171,  label: 'Occul3us' },
+]
+
+const EMPTY_FORM = { torn_user_id: '', username: '', faction_id: 33097, amount: '', duration_months: 1, start_date: '', notes: '' }
 
 export default function InvestmentsSubTab({ factionId }) {
   const [investments, setInvestments] = useState([])
@@ -25,7 +31,8 @@ export default function InvestmentsSubTab({ factionId }) {
 
   const fetchInvestments = useCallback(() => {
     setLoading(true)
-    fetch(`${API_BASE_URL}/api/leadership/accounting/investments?faction_id=${factionId}`, {
+    const qs = factionId != null ? `?faction_id=${factionId}` : ''
+    fetch(`${API_BASE_URL}/api/leadership/accounting/investments${qs}`, {
       headers: { Authorization: token },
     })
       .then(r => r.json())
@@ -45,7 +52,7 @@ export default function InvestmentsSubTab({ factionId }) {
     await fetch(`${API_BASE_URL}/api/leadership/accounting/investments`, {
       method: 'POST',
       headers: { Authorization: token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, faction_id: factionId }),
+      body: JSON.stringify({ ...form, faction_id: factionId ?? form.faction_id }),
     })
     setSaving(false)
     setShowForm(false)
@@ -126,6 +133,15 @@ export default function InvestmentsSubTab({ factionId }) {
           borderRadius: '10px', padding: '16px', marginBottom: '20px',
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px',
         }}>
+          {factionId == null && (
+            <div>
+              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Faction *</label>
+              <select style={inputStyle} value={form.faction_id}
+                onChange={e => setForm(f => ({ ...f, faction_id: parseInt(e.target.value) }))}>
+                {FACTION_OPTIONS.map(o => <option key={o.id} value={o.id} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>User ID *</label>
             <input style={inputStyle} type="number" required placeholder="Torn ID" value={form.torn_user_id}
@@ -202,7 +218,14 @@ export default function InvestmentsSubTab({ factionId }) {
                       ) : (
                         <>
                           <div style={{ fontWeight: '500' }}>{inv.username || '—'}</div>
-                          <div style={{ color: '#a1a1aa', fontSize: '11px' }}>#{inv.torn_user_id}</div>
+                          <div style={{ color: '#a1a1aa', fontSize: '11px' }}>
+                            #{inv.torn_user_id}
+                            {factionId == null && inv.faction_id && (
+                              <span style={{ marginLeft: '6px', color: '#6d28d9', fontSize: '10px' }}>
+                                {FACTION_OPTIONS.find(f => f.id === inv.faction_id)?.label ?? `#${inv.faction_id}`}
+                              </span>
+                            )}
+                          </div>
                         </>
                       )}
                     </td>

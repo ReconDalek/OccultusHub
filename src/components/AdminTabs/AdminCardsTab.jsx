@@ -303,7 +303,7 @@ export default function AdminCardsTab() {
               color: view === t ? '#f4f4f5' : '#a1a1aa',
             }}
           >
-            {t === 'shadow' ? '◼ Shadow Cards' : '◻ Fate Cards'}
+            {t === 'shadow' ? '◻ Shadow Cards' : '◼ Fate Cards'}
           </button>
         ))}
       </div>
