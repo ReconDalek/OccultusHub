@@ -42,7 +42,7 @@ export default function AccountingTab() {
             Accounting
           </h2>
           <p style={{ color: '#a1a1aa', fontSize: '13px' }}>
-            Track investments and stock scheme payouts across the faction
+            Track faction bank and stock investment payouts.
           </p>
         </div>
 

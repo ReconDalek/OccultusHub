@@ -230,9 +230,9 @@ export default function StocksSubTab({ factionId }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
-          <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Stock Scheme</h3>
+          <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Stock Investments</h3>
           <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
-            Track members in the stock scheme. Member Payment is what the member pays the faction per payout (base for Tier 1 — multiplied by tier level).
+            Track members holding faction stock investments.
           </p>
         </div>
         <button

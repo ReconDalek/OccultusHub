@@ -125,7 +125,7 @@ export default function InvestmentsSubTab({ factionId }) {
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Bank Investments</h3>
           <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
-            Track member investments. TCI should be purchased 7 days before the investment ends.
+            Track member bank investments. TCI should be purchased 7 days before the investment ends.
           </p>
         </div>
         <button
