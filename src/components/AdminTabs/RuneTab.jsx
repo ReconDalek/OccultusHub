@@ -76,7 +76,7 @@ export default function RuneTab() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
         <div>
           <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
-            ᚠ Rune Casting Leaderboard
+            Rune Casting Leaderboard
           </h3>
           <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>Manage the rune casting easter egg leaderboard</p>
         </div>
@@ -92,7 +92,7 @@ export default function RuneTab() {
               cursor: toggling ? 'not-allowed' : 'pointer', opacity: toggling ? 0.6 : 1,
             }}
           >
-            {toggling ? '...' : enabled ? 'ᚠ Enabled' : 'ᚠ Disabled'}
+            {toggling ? '...' : enabled ? 'Enabled' : 'Disabled'}
           </button>
           <button
             onClick={resetLeaderboard} disabled={resetting}
@@ -102,7 +102,7 @@ export default function RuneTab() {
               color: '#f87171', cursor: resetting ? 'not-allowed' : 'pointer', opacity: resetting ? 0.6 : 1,
             }}
           >
-            {resetting ? 'Resetting...' : '🗑 Reset Rune Leaderboard'}
+            {resetting ? 'Resetting...' : 'Reset Rune Leaderboard'}
           </button>
         </div>
       </div>

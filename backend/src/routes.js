@@ -127,6 +127,10 @@ export async function handleRequest(request, env, ctx) {
       return runeController.resetLeaderboard(request, env, user);
     }
 
+    if (pathname === '/api/admin/sanctum/reset' && method === 'POST') {
+      return sanctumController.resetLeaderboard(request, env, user);
+    }
+
     // Chain cache endpoints
     if (pathname === '/api/admin/chains/status' && method === 'GET') {
       return chainController.getChainCacheStatus(request, env, user);

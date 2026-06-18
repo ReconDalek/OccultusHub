@@ -199,3 +199,12 @@ export async function getLeaderboard(request, env) {
 
   return jsonResponse({ leaderboard: rows.results || [] });
 }
+
+export async function resetLeaderboard(request, env, user) {
+  try {
+    await env.DB.prepare(`DELETE FROM sanctum_saves`).run();
+    return jsonResponse({ success: true });
+  } catch (e) {
+    return errorResponse('Reset failed: ' + e.message, 500);
+  }
+}

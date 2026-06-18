@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import UsersTab from '../components/AdminTabs/UsersTab'
 import CacheTab from '../components/AdminTabs/CacheTab'
-import FishingTab       from '../components/AdminTabs/FishingTab'
-import RuneTab          from '../components/AdminTabs/RuneTab'
+import LeaderboardsTab  from '../components/AdminTabs/LeaderboardsTab'
 import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
 import AdminCardsTab from '../components/AdminTabs/AdminCardsTab'
 import LogsTab from '../components/AdminTabs/LogsTab'
@@ -13,11 +12,10 @@ export default function Admin() {
   const tabs = [
     { id: 'users', label: 'Users' },
     { id: 'cache', label: 'Cache' },
-    { id: 'events',   label: 'Events' },
-    { id: 'logs',     label: 'Logs' },
-    { id: 'fishing',  label: 'Void Scrying' },
-    { id: 'runes',    label: 'Rune Casting' },
-    { id: 'cards',    label: 'Cards' },
+    { id: 'events',      label: 'Events' },
+    { id: 'logs',        label: 'Logs' },
+    { id: 'leaderboards', label: 'Leaderboards' },
+    { id: 'cards',       label: 'Cards' },
   ]
 
   return (
@@ -74,9 +72,8 @@ export default function Admin() {
         >
           {activeTab === 'users' && <UsersTab />}
           {activeTab === 'cache' && <CacheTab />}
-          {activeTab === 'fishing'  && <FishingTab />}
-          {activeTab === 'runes'    && <RuneTab />}
-          {activeTab === 'events'   && <SeasonalEventsTab />}
+          {activeTab === 'leaderboards' && <LeaderboardsTab />}
+          {activeTab === 'events'      && <SeasonalEventsTab />}
           {activeTab === 'cards'    && <AdminCardsTab />}
           {activeTab === 'logs'     && <LogsTab />}
         </div>
