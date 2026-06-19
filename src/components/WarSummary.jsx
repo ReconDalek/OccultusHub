@@ -119,7 +119,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
     if (!attackerIds.has(d.defender_id)) {
       rows.push({ attacker_id: d.defender_id, attacker_name: d.defender_name,
         war_hits: 0, war_losses: 0, war_interrupted: 0,
-        war_respect_gained: 0, war_respect_lost: 0, avg_fair_fight: 0,
+        war_respect_gained: 0, bonus_respect: 0, avg_fair_fight: 0,
         outside_attacks: 0, energy_used: 0 })
     }
   }
@@ -136,6 +136,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
             <th style={th}>Hits</th>
             <th style={th}>Losses</th>
             <th style={th}>Gained</th>
+            <th style={th}>Bonus</th>
             <th style={th}>Lost</th>
             <th style={th}>Net</th>
             <th style={th}>Def Won</th>
@@ -147,8 +148,9 @@ function MemberStatsTable({ attackerStats, defendStats }) {
         </thead>
         <tbody>
           {rows.map((r) => {
-            const def = defendMap[r.attacker_id] || {}
-            const net = (r.war_respect_gained || 0) - (r.war_respect_lost || 0)
+            const def         = defendMap[r.attacker_id] || {}
+            const respectLost = def.respect_lost_defending || 0
+            const net         = (r.war_respect_gained || 0) - respectLost
             return (
               <tr key={r.attacker_id}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
@@ -158,7 +160,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
                 <td style={{ ...td, color: '#22c55e' }}>{fmt(r.war_respect_gained, 2)}</td>
-                <td style={{ ...td, color: '#ef4444' }}>{fmt(r.war_respect_lost, 2)}</td>
+                <td style={{ ...td, color: r.bonus_respect > 0 ? '#f59e0b' : '#71717a' }}>{fmt(r.bonus_respect || 0, 2)}</td>
+                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : '#71717a' }}>{fmt(respectLost, 2)}</td>
                 <td style={{ ...td, color: net >= 0 ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
                   {net >= 0 ? '+' : ''}{fmt(net, 2)}
                 </td>
