@@ -24,7 +24,7 @@ const CATEGORY_LABELS = {
 
 function ts(unix) {
   const d = new Date(unix * 1000)
-  return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+  return d.toISOString().replace('T', ' ').slice(0, 19) + ' TCT'
 }
 
 function MetaBlock({ meta }) {
@@ -270,7 +270,7 @@ export default function LogsTab() {
         display: 'grid', gridTemplateColumns: '160px 90px 110px 1fr',
         gap: '10px', padding: '4px 14px 8px', marginBottom: '4px',
       }}>
-        {['Timestamp (UTC)', 'Level', 'Category', 'Message / Event'].map(h => (
+        {['Timestamp (TCT)', 'Level', 'Category', 'Message / Event'].map(h => (
           <span key={h} style={{ color: '#52525b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
         ))}
       </div>

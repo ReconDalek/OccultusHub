@@ -21,7 +21,21 @@ function formatDate(unix) {
   if (!unix) return '—'
   return new Date(unix * 1000).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
-  })
+  }) + ' TCT'
+}
+
+function formatDateTime(unix) {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    timeZone: 'UTC', hour12: false,
+  }) + ' TCT'
+}
+
+function parseD1DateTime(str) {
+  if (!str) return null
+  // D1 returns "YYYY-MM-DD HH:MM:SS" with no timezone — treat as UTC
+  return Math.floor(new Date(str.replace(' ', 'T') + 'Z').getTime() / 1000)
 }
 
 // ─── Scoreboard ───────────────────────────────────────────────────────────────
@@ -193,6 +207,9 @@ function WarCard({ war, factionName }) {
     ? `Started ${formatDate(war.started_at)}`
     : `Scheduled ${formatDate(war.scheduled_start)}`
 
+  const lastCheckedUnix = parseD1DateTime(war.last_checked_at)
+  const lastUpdatedLabel = lastCheckedUnix ? `Updated ${formatDateTime(lastCheckedUnix)}` : null
+
   const toggle = useCallback(() => {
     setExpanded((e) => {
       if (!e && !detail && !loading) {
@@ -228,7 +245,8 @@ function WarCard({ war, factionName }) {
           <p style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', margin: '0 0 2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             vs {war.opponent_faction_name || `Faction #${war.opponent_faction_id}`}
           </p>
-          <p style={{ color: '#71717a', fontSize: '11px', margin: 0 }}>{dateLabel}</p>
+          <p style={{ color: '#71717a', fontSize: '11px', margin: '0 0 1px 0' }}>{dateLabel}</p>
+          {lastUpdatedLabel && <p style={{ color: '#52525b', fontSize: '10px', margin: 0 }}>{lastUpdatedLabel}</p>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           <span style={{

@@ -22,7 +22,7 @@ function formatUnixDate(unix) {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
     timeZone: 'UTC',
-  }) + ' UTC'
+  }) + ' TCT'
 }
 
 function formatDuration(startAt, endAt) {
