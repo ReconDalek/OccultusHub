@@ -96,13 +96,12 @@ async function buildMemberStats(env, warId) {
        COUNT(CASE WHEN attack_type='war_attack' AND (result IN ('Escape','Lost') OR is_interrupted=1) THEN 1 END)        AS war_losses,
        COUNT(CASE WHEN attack_type='war_attack' AND is_interrupted=1 THEN 1 END)                                         AS war_interrupted,
        ROUND(SUM(CASE WHEN attack_type='war_attack'    THEN respect_gain ELSE 0 END), 2)                                 AS war_respect_gained,
-       ROUND(SUM(CASE WHEN attack_type='war_attack'    THEN respect_loss ELSE 0 END), 2)                                 AS war_respect_lost,
        ROUND(AVG(CASE WHEN attack_type='war_attack'    THEN fair_fight   END), 2)                                        AS avg_fair_fight,
        COUNT(CASE WHEN attack_type='outside_attack'    THEN 1 END)                                                       AS outside_attacks,
        ROUND(SUM(CASE WHEN attack_type='outside_attack' THEN respect_gain ELSE 0 END), 2)                                AS outside_respect,
        COUNT(CASE WHEN attack_type='assist'            THEN 1 END)                                                       AS assists,
-       (COUNT(CASE WHEN attack_type='war_attack'    THEN 1 END) +
-        COUNT(CASE WHEN attack_type='outside_attack' THEN 1 END)) * 25                                                   AS energy_used
+       ROUND(SUM(CASE WHEN attack_type='war_attack' AND chain_count IN (10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000) THEN respect_gain ELSE 0 END), 2) AS bonus_respect,
+       COUNT(CASE WHEN attack_type IN ('war_attack','outside_attack','assist') THEN 1 END) * 25                          AS energy_used
      FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0
      GROUP BY attacker_id, attacker_name ORDER BY war_hits DESC`
   ).bind(warId).all();
@@ -110,10 +109,11 @@ async function buildMemberStats(env, warId) {
   const { results: defendStats } = await env.DB.prepare(
     `SELECT
        defender_id, defender_name,
-       COUNT(*)                                                                                           AS total_defends,
-       COUNT(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN 1 END)       AS defends_lost,
-       COUNT(CASE WHEN result IN ('Escape','Lost','Stalemate') OR is_interrupted=1 THEN 1 END)            AS defends_won,
-       COUNT(CASE WHEN is_interrupted=1 THEN 1 END)                                                       AS defends_interrupted
+       COUNT(*)                                                                                                    AS total_defends,
+       COUNT(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN 1 END)              AS defends_lost,
+       COUNT(CASE WHEN result IN ('Escape','Lost','Stalemate') OR is_interrupted=1 THEN 1 END)                   AS defends_won,
+       COUNT(CASE WHEN is_interrupted=1 THEN 1 END)                                                              AS defends_interrupted,
+       ROUND(SUM(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN respect_loss ELSE 0 END), 2) AS respect_lost_defending
      FROM war_attacks WHERE ranked_war_id=? AND attack_type='war_defend' AND defender_id>0
      GROUP BY defender_id, defender_name`
   ).bind(warId).all();
@@ -279,9 +279,10 @@ export async function trackActiveWars(env) {
     `SELECT * FROM ranked_wars WHERE status IN ('matched', 'active')`
   ).all();
 
-  if (!wars?.length) return { checked: 0 };
+  if (!wars?.length) return { checked: 0, errors: [] };
 
   let checked = 0;
+  const errors = [];
 
   for (const war of wars) {
     const { id: warId, faction_id: factionId, opponent_faction_id: opponentId,
@@ -289,7 +290,11 @@ export async function trackActiveWars(env) {
             last_attack_id: lastAttackId } = war;
     try {
       const apiKeyObj = await getRandomApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
-      if (!apiKey) { console.warn(`trackActiveWars: no API key for faction ${factionId}`); continue; }
+      if (!apiKey) {
+        console.warn(`trackActiveWars: no API key for faction ${factionId}`);
+        errors.push({ warId, factionId, error: `no API key for faction ${factionId}` });
+        continue;
+      }
 
       // ── 1. Fetch live scores from rankedwars API ────────────────────────────
       // For active wars: updates scores OR detects war end
@@ -378,7 +383,9 @@ export async function trackActiveWars(env) {
       // ── 3. Armory usage ─────────────────────────────────────────────────────
       const currentWar = await env.DB.prepare(`SELECT status, ended_at FROM ranked_wars WHERE id=?`).bind(warId).first();
       const armoryEndCap   = currentWar?.ended_at ?? now;
-      const armoryStartCap = scheduled_start ? Math.min(scheduled_start, warStartedAt || scheduled_start) : (warStartedAt || fourDaysAgo);
+      // scheduled_start = war START time (future), not match announcement time.
+      // For pre-war (matched) use fourDaysAgo; for active use warStartedAt.
+      const armoryStartCap = warStartedAt ?? fourDaysAgo;
       const armoryRes = await fetch(
         `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
         { headers: { Authorization: `ApiKey ${apiKey}` } }
@@ -419,6 +426,7 @@ export async function trackActiveWars(env) {
       checked++;
     } catch (err) {
       console.error(`trackActiveWars: war ${warId}:`, err.message);
+      errors.push({ warId, factionId, error: err.message });
       await logError(env, {
         category: 'war_cron',
         event: 'war_poll_error',
@@ -426,7 +434,7 @@ export async function trackActiveWars(env) {
       }).catch(() => {});
     }
   }
-  return { checked };
+  return { checked, errors };
 }
 
 async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, warStartedAt, lastAttackId, apiKey, warEndedAt = null) {
@@ -472,8 +480,8 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
         `INSERT OR IGNORE INTO war_attacks
            (ranked_war_id, faction_id, torn_attack_id, attacker_id, attacker_name,
             defender_id, defender_name, attack_type, result, respect_gain, respect_loss,
-            is_interrupted, fair_fight, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            is_interrupted, fair_fight, started_at, chain_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         warId, factionId, attack.id,
         attack.attacker?.id   ?? 0, attack.attacker?.name ?? null,
@@ -481,7 +489,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
         attackType, attack.result ?? null,
         attack.respect_gain   ?? 0, attack.respect_loss ?? 0,
         attack.is_interrupted ? 1 : 0, attack.modifiers?.fair_fight ?? 1,
-        attack.started
+        attack.started, attack.chain ?? 0
       ).run();
       if (meta?.changes > 0) totalNew++;
     }
@@ -784,8 +792,9 @@ export async function createManualWar(request, env, user) {
 
 export async function triggerWarCheck(request, env) {
   try {
-    const results = await checkWarMatches(env);
-    return jsonResponse({ message: 'War match check complete', results });
+    const matchResults  = await checkWarMatches(env);
+    const trackResults  = await trackActiveWars(env);
+    return jsonResponse({ message: 'War check + track complete', matchResults, trackResults });
   } catch (err) {
     console.error('triggerWarCheck error:', err);
     return errorResponse('War check failed', 500);
