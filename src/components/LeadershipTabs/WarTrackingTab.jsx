@@ -102,7 +102,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
         attacker_id: d.defender_id,
         attacker_name: d.defender_name,
         war_hits: 0, war_losses: 0, war_interrupted: 0,
-        war_respect_gained: 0, war_respect_lost: 0, avg_fair_fight: 0,
+        war_respect_gained: 0, avg_fair_fight: 0,
         outside_attacks: 0, outside_respect: 0, energy_used: 0,
       })
     }
@@ -143,9 +143,10 @@ function MemberStatsTable({ attackerStats, defendStats }) {
         </thead>
         <tbody>
           {rows.map((r) => {
-            const def    = defendMap[r.attacker_id] || {}
-            const net    = (r.war_respect_gained || 0) - (r.war_respect_lost || 0)
-            const netPos = net >= 0
+            const def         = defendMap[r.attacker_id] || {}
+            const respectLost = def.respect_lost_defending || 0
+            const net         = (r.war_respect_gained || 0) - respectLost
+            const netPos      = net >= 0
             return (
               <tr key={r.attacker_id}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
@@ -156,7 +157,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
                 <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : '#71717a' }}>{fmt(r.war_interrupted)}</td>
                 <td style={{ ...td, color: '#22c55e' }}>{fmt(r.war_respect_gained, 2)}</td>
-                <td style={{ ...td, color: '#ef4444' }}>{fmt(r.war_respect_lost, 2)}</td>
+                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : '#71717a' }}>{fmt(respectLost, 2)}</td>
                 <td style={{ ...td, color: netPos ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
                   {netPos ? '+' : ''}{fmt(net, 2)}
                 </td>
