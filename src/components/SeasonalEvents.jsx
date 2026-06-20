@@ -402,13 +402,24 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
         boxSizing:'border-box',
       }}>
         <span style={{ fontSize:'clamp(12px,2vw,15px)' }}>{ev.icon}</span>
-        <span style={{
-          fontSize:'clamp(9px,1.4vw,12px)',
-          color: ev.banner.color,
-          letterSpacing:'0.18em',
-          fontFamily:'Cinzel, serif',
-        }}>
-          {ev.banner.text}
+        <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'2px' }}>
+          <span style={{
+            fontSize:'clamp(9px,1.4vw,12px)',
+            color: ev.banner.color,
+            letterSpacing:'0.18em',
+            fontFamily:'Cinzel, serif',
+          }}>
+            {ev.banner.text}
+          </span>
+          <span style={{
+            fontSize:'clamp(7px,1vw,9px)',
+            color: ev.banner.color,
+            opacity: 0.6,
+            letterSpacing:'0.12em',
+            fontFamily:'Cinzel, serif',
+          }}>
+            {ev.name.toUpperCase()}
+          </span>
         </span>
         {isPreview && (
           <span style={{

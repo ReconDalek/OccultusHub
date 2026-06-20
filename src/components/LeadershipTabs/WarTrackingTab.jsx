@@ -304,6 +304,51 @@ function computePayouts(attackerStats, { warPct, outsidePct, assistPct, capEnabl
     .filter(r => r.units > 0)
 }
 
+function EditAttacksModal({ row, onSave, onClose }) {
+  const [vals, setVals] = useState({
+    war_hits:           row.war_hits            ?? 0,
+    outside_attacks:    row.outside_attacks      ?? 0,
+    assists:            row.assists              ?? 0,
+    war_respect_gained: parseFloat(row.war_respect_gained) || 0,
+  })
+  const set = (k, v) => setVals(prev => ({ ...prev, [k]: v }))
+  const inp = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '7px', color: '#f4f4f5', padding: '7px 10px', fontSize: '13px', width: '100%' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '20px', width: '320px', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }}>
+        <p style={{ color: '#e4e4e7', fontWeight: '600', fontSize: '14px', margin: '0 0 4px 0' }}>Edit Attack Data</p>
+        <p style={{ color: '#71717a', fontSize: '12px', margin: '0 0 18px 0' }}>{row.attacker_name || `[${row.attacker_id}]`}</p>
+        {[
+          ['War Hits',       'war_hits',           0],
+          ['Outside / Chain','outside_attacks',     0],
+          ['Assists',        'assists',             0],
+          ['Respect Gained', 'war_respect_gained',  2],
+        ].map(([label, key, decimals]) => (
+          <div key={key} style={{ marginBottom: '12px' }}>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>{label}</label>
+            <input type="number" min="0" step={decimals ? '0.01' : '1'}
+              value={vals[key]}
+              onChange={e => set(key, decimals ? parseFloat(e.target.value) || 0 : parseInt(e.target.value) || 0)}
+              style={inp} />
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          <button onClick={() => onSave(vals)} style={{
+            flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+            background: 'rgba(159,103,255,0.15)', border: '1px solid rgba(159,103,255,0.4)', color: '#c4b5fd',
+          }}>Save</button>
+          <button onClick={onClose} style={{
+            flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#71717a',
+          }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSaved }) {
   const [warPct,      setWarPct]      = useState(100)
   const [outsidePct,  setOutsidePct]  = useState(0)
@@ -318,6 +363,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
   const [saving,      setSaving]      = useState(false)
   const [rankSaving,  setRankSaving]  = useState(false)
   const [saveMsg,     setSaveMsg]     = useState(null)
+  const [overrides,   setOverrides]   = useState({})   // { [attacker_id]: { war_hits, outside_attacks, assists, war_respect_gained } }
+  const [editingRow,  setEditingRow]  = useState(null) // row object currently being edited
 
   useEffect(() => {
     const controller = new AbortController()
@@ -333,14 +380,21 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
           setFactionShare(p.settings.factionShare ?? 10); setCapEnabled(p.settings.capEnabled ?? false)
           setCapType(p.settings.capType ?? 'attacks'); setCapValue(p.settings.capValue ?? '')
         }
-        if (p.paid) setPaidSet(new Set(Object.keys(p.paid).map(Number)))
+        if (p.paid)      setPaidSet(new Set(Object.keys(p.paid).map(Number)))
+        if (p.overrides) setOverrides(p.overrides)
       })
       .catch((e) => { if (e.name !== 'AbortError') console.error('payout fetch failed', e) })
     return () => controller.abort()
   }, [warId])
 
+  // Merge overrides into attackerStats before computing payouts
+  const mergedStats = attackerStats.map(r => {
+    const ov = overrides[r.attacker_id]
+    return ov ? { ...r, ...ov } : r
+  })
+
   const settings = { warPct, outsidePct, assistPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare }
-  const rows         = computePayouts(attackerStats, settings)
+  const rows         = computePayouts(mergedStats, settings)
   const totalUnits   = rows.reduce((s, r) => s + r.units, 0)
   const amount       = parseFloat(totalAmount) || 0
   const available    = amount * (1 - factionShare / 100)
@@ -358,14 +412,21 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
 
   const flash = (msg) => { setSaveMsg(msg); setTimeout(() => setSaveMsg(null), 3000) }
 
-  // Save draft: payout_json + paid state only (no war_hits write)
+  const applyEdit = (vals) => {
+    setOverrides(prev => ({ ...prev, [editingRow.attacker_id]: vals }))
+    setEditingRow(null)
+  }
+
+  const clearOverride = (id) => setOverrides(prev => { const n = { ...prev }; delete n[id]; return n })
+
+  // Save draft: payout_json + paid state + overrides (no war_hits write)
   const saveDraft = async () => {
     setSaving(true)
     try {
       const paid = {}; rows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
       await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
         method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payout: { settings, paid }, is_paid: allPaid }),
+        body: JSON.stringify({ payout: { settings, paid, overrides }, is_paid: allPaid }),
       })
       flash('Draft saved')
       onPayoutSaved?.(allPaid)
@@ -379,10 +440,10 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
     setRankSaving(true)
     try {
       const paid = {}; rows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
-      // First persist payout + is_paid
+      // First persist payout + is_paid + overrides
       await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
         method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payout: { settings, paid }, is_paid: true }),
+        body: JSON.stringify({ payout: { settings, paid, overrides }, is_paid: true }),
       })
       // Then write permanent war_hits
       const members = rows.map(r => ({
@@ -493,6 +554,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                 <th style={th()}>War Hits</th>
                 <th style={th()}>Outside</th>
                 <th style={th()}>Assists</th>
+                <th style={th()}>Friendly</th>
                 <th style={th()}>Respect</th>
                 <th style={th()}>Units</th>
                 <th style={th()}>Payout</th>
@@ -502,7 +564,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             </thead>
             <tbody>
               {rows.map(r => {
-                const paid = paidSet.has(r.attacker_id)
+                const paid       = paidSet.has(r.attacker_id)
+                const hasOverride = !!overrides[r.attacker_id]
                 return (
                   <tr key={r.attacker_id}
                     style={{ opacity: paid ? 0.5 : 1 }}
@@ -510,11 +573,30 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
                     <td style={{ ...td('left'), color: '#e4e4e7', textDecoration: paid ? 'line-through' : 'none' }}>
-                      {r.attacker_name || `[${r.attacker_id}]`}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {r.attacker_name || `[${r.attacker_id}]`}
+                        {!hitsSaved && (
+                          <span style={{ display: 'flex', gap: '3px' }}>
+                            <button onClick={() => setEditingRow(r)} title="Edit attack data" style={{
+                              padding: '1px 5px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', lineHeight: 1,
+                              background: hasOverride ? 'rgba(159,103,255,0.15)' : 'transparent',
+                              border: `1px solid ${hasOverride ? 'rgba(159,103,255,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                              color: hasOverride ? '#c4b5fd' : '#52525b',
+                            }}>✎</button>
+                            {hasOverride && (
+                              <button onClick={() => clearOverride(r.attacker_id)} title="Clear overrides" style={{
+                                padding: '1px 5px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', lineHeight: 1,
+                                background: 'transparent', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171',
+                              }}>×</button>
+                            )}
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td style={td()}>{r.war_hits || 0}</td>
                     <td style={td()}>{r.outside_attacks || 0}</td>
                     <td style={td()}>{r.assists || 0}</td>
+                    <td style={{ ...td(), color: (r.friendly_hits || 0) > 0 ? '#fb923c' : '#52525b' }}>{r.friendly_hits || 0}</td>
                     <td style={{ ...td(), color: '#a78bfa' }}>{(parseFloat(r.war_respect_gained) || 0).toFixed(2)}</td>
                     <td style={{ ...td(), color: '#f4f4f5', fontWeight: '600' }}>{r.units.toFixed(useRespect ? 2 : 1)}</td>
                     <td style={{ ...td(), color: '#22c55e', fontWeight: '700', fontSize: '13px' }}>
@@ -546,7 +628,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="5" style={{ padding: '10px', fontSize: '11px', color: '#a1a1aa', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <td colSpan="6" style={{ padding: '10px', fontSize: '11px', color: '#a1a1aa', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                   {paidSet.size} of {rows.length} paid
                 </td>
                 <td style={{ padding: '10px', fontSize: '12px', fontWeight: '700', color: '#f4f4f5', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totalUnits.toFixed(1)}</td>
@@ -583,6 +665,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
           {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('✓') ? '#4ade80' : '#f87171' }}>{saveMsg}</span>}
         </div>
       )}
+
+      {editingRow && <EditAttacksModal row={editingRow} onSave={applyEdit} onClose={() => setEditingRow(null)} />}
     </div>
   )
 }
@@ -631,6 +715,7 @@ function WarDetail({ warId, onPayoutSaved }) {
         <Stat label="Enemy Hits"    value={fmt(summary.total_enemy_hits)}     red />
         <Stat label="Outside Atks"  value={fmt(summary.total_outside_attacks)} />
         <Stat label="Assists"       value={fmt(summary.total_assists)} />
+        <Stat label="Friendly Hits" value={fmt(summary.total_friendly_hits ?? 0)} />
         <Stat label="Respect Gained" value={fmt(summary.total_respect_gained, 2)} accent />
         <Stat label="Respect Lost"   value={fmt(summary.total_respect_lost,   2)} red />
         <Stat label="Net Respect"

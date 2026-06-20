@@ -76,6 +76,12 @@ export default {
     // "*/10 * * * *" — every 10 minutes: check for new war matches + track active/matched wars
     if (event.cron === '*/10 * * * *') {
       try {
+        // Skip entirely if no war is active or matched — avoids Torn API calls during quiet weeks
+        const { count } = await env.DB.prepare(
+          `SELECT COUNT(*) as count FROM ranked_wars WHERE faction_id=? AND status IN ('active','matched')`
+        ).bind(env.FACTION_ID).first();
+        if (!count) return;
+
         const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
         ctx.waitUntil(
           checkWarMatches(env)

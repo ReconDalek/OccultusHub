@@ -80,6 +80,7 @@ function categoriseAttack(attack, ourFactionId, opponentFactionId) {
 
   if (af === ourFactionId  && df === opponentFactionId) return 'war_attack';
   if (af === opponentFactionId && df === ourFactionId)  return 'war_defend';
+  if (af === ourFactionId  && df === ourFactionId)      return 'friendly_hit';
   if (af === ourFactionId)                              return 'outside_attack';
   if (df === ourFactionId)                              return 'outside_defend';
   return null;
@@ -100,6 +101,7 @@ async function buildMemberStats(env, warId) {
        COUNT(CASE WHEN attack_type='outside_attack'    THEN 1 END)                                                       AS outside_attacks,
        ROUND(SUM(CASE WHEN attack_type='outside_attack' THEN respect_gain ELSE 0 END), 2)                                AS outside_respect,
        COUNT(CASE WHEN attack_type='assist'            THEN 1 END)                                                       AS assists,
+       COUNT(CASE WHEN attack_type='friendly_hit'      THEN 1 END)                                                       AS friendly_hits,
        ROUND(SUM(CASE WHEN attack_type='war_attack' AND chain_count IN (10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000) THEN respect_gain ELSE 0 END), 2) AS bonus_respect,
        COUNT(CASE WHEN attack_type IN ('war_attack','outside_attack','assist') THEN 1 END) * 25                          AS energy_used
      FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0
@@ -136,6 +138,7 @@ async function buildMemberStats(env, warId) {
 
        COUNT(CASE WHEN attack_type='outside_attack' THEN 1 END)                                 AS total_outside_attacks,
        COUNT(CASE WHEN attack_type='assist'         THEN 1 END)                                 AS total_assists,
+       COUNT(CASE WHEN attack_type='friendly_hit'   THEN 1 END)                                 AS total_friendly_hits,
 
        -- Respect we gained from our successful war attacks
        ROUND(SUM(CASE WHEN attack_type='war_attack' THEN respect_gain ELSE 0 END), 2)           AS total_respect_gained,
