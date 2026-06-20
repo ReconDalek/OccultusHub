@@ -141,18 +141,20 @@ export const EVENT_DEFS = [
     pulseAnim: 'evMarigoldPulse 8s ease-in-out infinite',
     banner: { text: 'LOS MUERTOS WALK',        color: '#fde68a', bg: 'rgba(40,20,0,0.7)',  border: 'rgba(220,150,20,0.5)' },
     particles: 'marigolds',
+    extras: ['dayOfDead'],
   },
   {
     id: 'anniversary',
     name: 'Faction Anniversary', icon: '🩸', dateDesc: 'Nov 10',
     isActive: () => inRange(11,10,10),
-    bodyBg: `radial-gradient(circle at top, rgba(120,5,30,0.6), transparent 50%),
-             radial-gradient(circle at bottom right, rgba(80,5,50,0.4), transparent 50%), #060005`,
-    vignette: 'radial-gradient(ellipse at 50% 50%, rgba(150,10,40,0.18) 0%, rgba(80,5,30,0.09) 65%, transparent 85%)',
+    bodyBg: `radial-gradient(circle at top, rgba(120,5,30,0.65), transparent 45%),
+             radial-gradient(circle at bottom right, rgba(80,0,60,0.45), transparent 50%),
+             radial-gradient(circle at bottom left, rgba(60,0,100,0.3), transparent 45%), #050004`,
+    vignette: 'radial-gradient(ellipse at 50% 50%, rgba(160,10,45,0.2) 0%, rgba(80,5,60,0.1) 65%, transparent 85%)',
     pulseAnim: 'evAnnivPulse 8s ease-in-out infinite',
-    banner: { text: 'ANOTHER YEAR IN THE SHADOWS', color: '#fca5a5', bg: 'rgba(50,3,15,0.75)', border: 'rgba(180,20,50,0.55)' },
+    banner: { text: 'ANOTHER YEAR IN THE SHADOWS', color: '#fca5a5', bg: 'rgba(50,3,15,0.78)', border: 'rgba(180,20,50,0.55)' },
     particles: 'sparkles',
-    extras: 'anniversary',
+    extras: ['anniversary', 'candles', 'sigil', 'flicker'],
   },
   {
     id: 'winter_solstice',
@@ -238,6 +240,10 @@ const KEYFRAMES = `
   @keyframes evSpiderDrop  { 0%{transform:translateY(-120px)} 100%{transform:translateY(0)} }
   @keyframes evSpiderSway  { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
   @keyframes evSpiderSwing { 0%{transform:translateX(0) rotate(-12deg)} 50%{transform:translateX(var(--swing)) rotate(12deg)} 100%{transform:translateX(0) rotate(-12deg)} }
+  @keyframes evSkullBob    { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-5px) rotate(2deg)} }
+  @keyframes evGarlandSway { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.04)} }
+  @keyframes evSigilPulse  { 0%,100%{opacity:.18;filter:drop-shadow(0 0 6px rgba(200,30,60,0.4))} 50%{opacity:.32;filter:drop-shadow(0 0 14px rgba(220,40,70,0.7))} }
+  @keyframes evFlicker     { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.06} 94%{opacity:1} 96%{opacity:0.12} 97%{opacity:1} }
 `
 
 // ── Particle generators ──────────────────────────────────────────────────────
@@ -569,6 +575,140 @@ function Bonfire() {
   )
 }
 
+// ── Day of the Dead skulls + garland ─────────────────────────────────────────
+function DayOfDead() {
+  const skulls = [
+    { x: 'clamp(8px,2vw,24px)',  side: 'left',  delay: 0,   size: 1    },
+    { x: 'clamp(60px,8vw,100px)',side: 'left',  delay: 0.8, size: 0.75 },
+    { x: 'clamp(8px,2vw,24px)',  side: 'right', delay: 0.4, size: 0.9  },
+    { x: 'clamp(60px,8vw,100px)',side: 'right', delay: 1.2, size: 0.7  },
+  ]
+  return (
+    <>
+      {/* Marigold garland along top */}
+      <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:3, pointerEvents:'none', height:'clamp(18px,3vh,28px)', overflow:'hidden' }}>
+        <svg viewBox="0 0 1200 28" preserveAspectRatio="none" width="100%" height="100%" style={{ animation:'evGarlandSway 4s ease-in-out infinite' }}>
+          {Array.from({ length: 30 }, (_, i) => {
+            const cx = (i / 29) * 1200
+            const cy = 14 + Math.sin(i * 0.9) * 5
+            return (
+              <g key={i}>
+                <circle cx={cx} cy={cy} r="7" fill={`hsla(${28+i*5},90%,${48+Math.random()*12}%,0.8)`}/>
+                <circle cx={cx} cy={cy} r="3.5" fill={`hsla(${40+i*4},95%,72%,0.9)`}/>
+              </g>
+            )
+          })}
+          {/* Connecting string */}
+          <polyline points={Array.from({length:30},(_,i)=>`${(i/29)*1200},${14+Math.sin(i*0.9)*5}`).join(' ')}
+            fill="none" stroke="rgba(180,120,20,0.5)" strokeWidth="1.2"/>
+        </svg>
+      </div>
+
+      {/* Sugar skull corner decorations */}
+      {skulls.map((sk, i) => (
+        <div key={i} style={{
+          position:'fixed', top:'clamp(32px,5vh,60px)',
+          [sk.side]: sk.x,
+          zIndex:3, pointerEvents:'none',
+          animation:`evSkullBob ${3+i*0.4}s ${sk.delay}s ease-in-out infinite`,
+        }}>
+          <svg viewBox="0 0 60 70" style={{ width:`${50*sk.size}px`, height:`${58*sk.size}px`, display:'block' }}>
+            {/* Skull dome */}
+            <ellipse cx="30" cy="28" rx="22" ry="20" fill="rgba(255,245,220,0.88)" stroke="rgba(220,150,20,0.6)" strokeWidth="1"/>
+            {/* Jaw */}
+            <rect x="16" y="42" width="28" height="16" rx="3" fill="rgba(255,245,220,0.88)" stroke="rgba(220,150,20,0.6)" strokeWidth="1"/>
+            {/* Eye sockets */}
+            <ellipse cx="22" cy="26" rx="7" ry="7" fill="rgba(30,10,0,0.85)"/>
+            <ellipse cx="38" cy="26" rx="7" ry="7" fill="rgba(30,10,0,0.85)"/>
+            {/* Eye flowers */}
+            {[22,38].map(ex => [0,72,144,216,288].map(a => (
+              <ellipse key={`${ex}${a}`}
+                cx={ex + 4*Math.cos(a*Math.PI/180)} cy={26 + 4*Math.sin(a*Math.PI/180)}
+                rx="2" ry="2"
+                fill={`hsl(${i*40+a},80%,65%)`} opacity="0.9"/>
+            )))}
+            {/* Nose */}
+            <ellipse cx="30" cy="36" rx="3" ry="2.5" fill="rgba(30,10,0,0.7)"/>
+            {/* Teeth */}
+            {[20,24,28,32,36,40].map(tx => (
+              <rect key={tx} x={tx} y="44" width="3" height="6" rx="1" fill="rgba(30,10,0,0.5)"/>
+            ))}
+            {/* Decorative cheek flowers */}
+            <circle cx="12" cy="34" r="4" fill="rgba(220,50,80,0.6)" stroke="rgba(255,150,50,0.5)" strokeWidth="0.5"/>
+            <circle cx="48" cy="34" r="4" fill="rgba(50,150,220,0.6)" stroke="rgba(100,200,255,0.5)" strokeWidth="0.5"/>
+          </svg>
+        </div>
+      ))}
+    </>
+  )
+}
+
+// ── Pentagram sigil (Anniversary) ─────────────────────────────────────────────
+function Sigil() {
+  // Five-pointed star path centered at 90,90 r=70
+  const pts = Array.from({length:5}, (_,i) => {
+    const a = (i * 144 - 90) * Math.PI / 180
+    return [90 + 70*Math.cos(a), 90 + 70*Math.sin(a)]
+  })
+  const star = `M${pts[0]} L${pts[2]} L${pts[4]} L${pts[1]} L${pts[3]} Z`
+  return (
+    <div style={{ position:'fixed', bottom:'clamp(90px,14vh,130px)', left:'50%', transform:'translateX(-50%)', zIndex:2, pointerEvents:'none' }}>
+      <svg viewBox="0 0 180 180" style={{ width:'clamp(90px,12vw,150px)', height:'clamp(90px,12vw,150px)', display:'block', animation:'evSigilPulse 5s ease-in-out infinite' }}>
+        <defs>
+          <radialGradient id="sigilGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stopColor="rgba(220,40,70,0.25)"/>
+            <stop offset="100%" stopColor="transparent"/>
+          </radialGradient>
+        </defs>
+        <circle cx="90" cy="90" r="88" fill="url(#sigilGlow)"/>
+        {/* Outer circle */}
+        <circle cx="90" cy="90" r="72" fill="none" stroke="rgba(200,50,80,0.5)" strokeWidth="1.2"/>
+        <circle cx="90" cy="90" r="68" fill="none" stroke="rgba(200,50,80,0.2)" strokeWidth="0.5"/>
+        {/* Pentagram */}
+        <path d={star} fill="none" stroke="rgba(220,60,90,0.7)" strokeWidth="1.4"/>
+        {/* Inner pentagon */}
+        {Array.from({length:5}, (_,i) => {
+          const a1 = (i*144-90)*Math.PI/180; const a2 = ((i+1)*144-90)*Math.PI/180
+          const x1 = 90+70*Math.cos(a1); const y1 = 90+70*Math.sin(a1)
+          const x2 = 90+70*Math.cos(a2); const y2 = 90+70*Math.sin(a2)
+          // midpoint intersection to form inner pentagon
+          const mx = (x1+x2)/2*0.36+90*0.64; const my = (y1+y2)/2*0.36+90*0.64
+          return <circle key={i} cx={x1} cy={y1} r="2.5" fill="rgba(220,80,100,0.8)"/>
+        })}
+        {/* Centre dot */}
+        <circle cx="90" cy="90" r="4" fill="rgba(220,60,90,0.85)"/>
+      </svg>
+    </div>
+  )
+}
+
+// ── Screen flicker (Anniversary) ─────────────────────────────────────────────
+// Fires roughly every 18–35s: a very brief opacity dip on an overlay
+function Flicker() {
+  const [active, setActive] = useState(false)
+  useEffect(() => {
+    let t
+    function schedule() {
+      // Random interval 18–35 seconds
+      t = setTimeout(() => {
+        setActive(true)
+        setTimeout(() => { setActive(false); schedule() }, 300)
+      }, 18000 + Math.random() * 17000)
+    }
+    schedule()
+    return () => clearTimeout(t)
+  }, [])
+
+  if (!active) return null
+  return (
+    <div style={{
+      position:'fixed', inset:0, zIndex:9998, pointerEvents:'none',
+      background:'rgba(80,0,20,0.08)',
+      animation:'evFlicker 0.3s steps(1) forwards',
+    }}/>
+  )
+}
+
 // ── Preview localStorage key ─────────────────────────────────────────────────
 export const PREVIEW_KEY = 'occultus_event_preview'
 
@@ -641,13 +781,20 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
       {/* Particles */}
       {ev.particles && <Particles type={ev.particles}/>}
 
-      {/* Extra visual elements */}
-      {ev.extras === 'bloodMoon'   && <BloodMoonOrb/>}
-      {ev.extras === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/></>}
-      {ev.extras === 'candles'     && <Candles/>}
-      {ev.extras === 'anniversary' && <AnniversaryOrb/>}
-      {ev.extras === 'icicles'     && <Icicles/>}
-      {ev.extras === 'bonfire'     && <Bonfire/>}
+      {/* Extra visual elements — extras can be a string or an array */}
+      {[ev.extras].flat().filter(Boolean).map(x => (
+        <span key={x}>
+          {x === 'bloodMoon'   && <BloodMoonOrb/>}
+          {x === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/></>}
+          {x === 'candles'     && <Candles/>}
+          {x === 'anniversary' && <AnniversaryOrb/>}
+          {x === 'sigil'       && <Sigil/>}
+          {x === 'dayOfDead'   && <DayOfDead/>}
+          {x === 'icicles'     && <Icicles/>}
+          {x === 'bonfire'     && <Bonfire/>}
+          {x === 'flicker'     && <Flicker/>}
+        </span>
+      ))}
 
       {/* Banner — fixed bottom, above footer, below nothing that matters */}
       <div style={{
