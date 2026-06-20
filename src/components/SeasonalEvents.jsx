@@ -243,7 +243,7 @@ const KEYFRAMES = `
   @keyframes evSkullBob    { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-5px) rotate(2deg)} }
   @keyframes evGarlandSway { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.04)} }
   @keyframes evSigilPulse  { 0%,100%{opacity:.18;filter:drop-shadow(0 0 6px rgba(200,30,60,0.4))} 50%{opacity:.32;filter:drop-shadow(0 0 14px rgba(220,40,70,0.7))} }
-  @keyframes evFlicker     { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.06} 94%{opacity:1} 96%{opacity:0.12} 97%{opacity:1} }
+  @keyframes evFlicker     { 0%{opacity:1} 10%{opacity:0.12} 18%{opacity:0.9} 26%{opacity:0.08} 36%{opacity:0.85} 46%{opacity:0.1} 56%{opacity:0.88} 68%{opacity:0.07} 78%{opacity:0.92} 88%{opacity:0.1} 100%{opacity:1} }
 `
 
 // ── Particle generators ──────────────────────────────────────────────────────
@@ -517,12 +517,18 @@ function AnniversaryOrb() {
             <stop offset="40%"  stopColor="#b91c1c"/>
             <stop offset="100%" stopColor="#5a0808"/>
           </radialGradient>
+          <filter id="annivTextGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
         </defs>
         <circle cx="80" cy="80" r="78" fill="url(#annivGlow)"/>
         <circle cx="80" cy="80" r="52" fill="url(#annivCore)" opacity="0.9"/>
         <circle cx="80" cy="80" r="52" fill="none" stroke="rgba(255,160,160,0.2)" strokeWidth="1.5"/>
         {/* Roman numeral IV for year 4 (founded 2021, 4th anniversary 2025) */}
-        <text x="80" y="88" textAnchor="middle" fontFamily="Cinzel, serif" fontSize="28" fill="rgba(255,200,200,0.85)" letterSpacing="3">IV</text>
+        <text x="80" y="88" textAnchor="middle" fontFamily="Cinzel, serif" fontSize="30" fontWeight="bold"
+          fill="#fff8f8" letterSpacing="4"
+          filter="url(#annivTextGlow)">IV</text>
       </svg>
     </div>
   )
@@ -692,7 +698,7 @@ function Flicker() {
       // Random interval 18–35 seconds
       t = setTimeout(() => {
         setActive(true)
-        setTimeout(() => { setActive(false); schedule() }, 300)
+        setTimeout(() => { setActive(false); schedule() }, 850)
       }, 18000 + Math.random() * 17000)
     }
     schedule()
@@ -703,8 +709,8 @@ function Flicker() {
   return (
     <div style={{
       position:'fixed', inset:0, zIndex:9998, pointerEvents:'none',
-      background:'rgba(80,0,20,0.08)',
-      animation:'evFlicker 0.3s steps(1) forwards',
+      background:'rgba(5,0,10,0.85)',
+      animation:'evFlicker 0.8s linear forwards',
     }}/>
   )
 }
