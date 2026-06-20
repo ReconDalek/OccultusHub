@@ -203,7 +203,7 @@ async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
 
     // War ended: end timestamp is set in the API
     if (rw.end > 0) {
-      return { ended: true, tornWarId: rw.id, winner: rw.winner, target: rw.target, ourScore: ourFac.score, oppScore: oppFac.score, ourChain: ourFac.chain, oppChain: oppFac.chain };
+      return { ended: true, tornWarId: rw.id, winner: rw.winner, target: rw.target, endedAt: rw.end, ourScore: ourFac.score, oppScore: oppFac.score, ourChain: ourFac.chain, oppChain: oppFac.chain };
     }
 
     // War still active — update live scores
@@ -211,8 +211,12 @@ async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
       `UPDATE ranked_wars SET our_score=?, opponent_score=?, target=?, our_chain=?, opponent_chain=?, torn_war_id=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
     ).bind(ourFac.score, oppFac.score, rw.target, ourFac.chain, oppFac.chain, rw.id, warId).run();
 
+    console.log(`fetchAndUpdateScores: war ${warId} scores updated — us=${ourFac.score} opp=${oppFac.score} target=${rw.target}`);
     return { ended: false, ourScore: ourFac.score, oppScore: oppFac.score };
   }
+
+  // War not found in rankedwars API response — log for diagnostics
+  console.warn(`fetchAndUpdateScores: war ${warId} (faction ${factionId} vs ${opponentId}) not found in rankedwars response (${(data.rankedwars || []).length} wars returned)`);
   return null;
 }
 
@@ -287,7 +291,7 @@ export async function trackActiveWars(env) {
   for (const war of wars) {
     const { id: warId, faction_id: factionId, opponent_faction_id: opponentId,
             status, scheduled_start, started_at: warStartedAt,
-            last_attack_id: lastAttackId } = war;
+            last_attack_fetched: lastAttackId } = war;
     try {
       const apiKeyObj = await getRandomApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
       if (!apiKey) {
@@ -302,17 +306,25 @@ export async function trackActiveWars(env) {
         const scoreResult = await fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey);
 
         if (scoreResult?.ended) {
-          const result     = scoreResult.winner === factionId ? 'won' : 'lost';
+          const result       = scoreResult.winner === factionId ? 'won' : 'lost';
+          const tornEndedAt  = scoreResult.endedAt; // exact end time from Torn API
           // Save final scores before summarising
           await env.DB.prepare(
             `UPDATE ranked_wars SET our_score=?, opponent_score=?, target=?, our_chain=?, opponent_chain=?, torn_war_id=?, status='completed', ended_at=?, result=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
-          ).bind(scoreResult.ourScore, scoreResult.oppScore, scoreResult.target, scoreResult.ourChain, scoreResult.oppChain, scoreResult.tornWarId, now, result, warId).run();
+          ).bind(scoreResult.ourScore, scoreResult.oppScore, scoreResult.target, scoreResult.ourChain, scoreResult.oppChain, scoreResult.tornWarId, tornEndedAt, result, warId).run();
+
+          // Final attack fetch capped at exact Torn war end time
+          await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, tornEndedAt);
 
           await summariseAndCleanWar(env, warId, factionId);
           console.log(`trackActiveWars: war ${warId} ended (scores API) — ${result}`);
           await logInfo(env, { category: 'war_cron', event: 'war_ended', message: `War ${warId} ended (scores API): ${result}`, meta: { warId, factionId, result } }).catch(() => {});
           checked++;
           continue;
+        }
+
+        if (scoreResult === null) {
+          await logWarn(env, { category: 'war_cron', event: 'war_score_miss', message: `War ${warId}: not found in rankedwars API — scores not updated`, meta: { warId, factionId, opponentId } }).catch(() => {});
         }
       }
 
@@ -509,8 +521,8 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   // Update watermark to highest ID seen
   if (maxId > lastAttackId) {
     await env.DB.prepare(
-      `UPDATE ranked_wars SET last_attack_id=?, last_attack_fetched=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
-    ).bind(maxId, maxId, warId).run();
+      `UPDATE ranked_wars SET last_attack_fetched=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(maxId, warId).run();
   }
   if (totalNew > 0) console.log(`fetchAndStoreAttacks: war ${warId} — ${totalNew} new attacks (maxId=${maxId})`);
   return totalNew;
@@ -579,9 +591,17 @@ export async function getWarArmory(request, env) {
     const warId = match ? parseInt(match[1], 10) : null;
     if (!warId) return errorResponse('Invalid war ID', 400);
     const { results } = await env.DB.prepare(
-      `SELECT torn_user_id, username, item_name, COUNT(*) AS count, MIN(used_at) AS first_used, MAX(used_at) AS last_used
-       FROM war_armory_usage WHERE ranked_war_id=?
-       GROUP BY torn_user_id, username, item_name ORDER BY torn_user_id, last_used DESC`
+      `SELECT
+         a.torn_user_id, a.username, a.item_name,
+         COUNT(*) AS count,
+         COUNT(CASE WHEN w.started_at IS NOT NULL AND a.used_at < w.started_at THEN 1 END) AS stacking_count,
+         COUNT(CASE WHEN w.started_at IS NULL OR a.used_at >= w.started_at THEN 1 END)     AS war_count,
+         MIN(a.used_at) AS first_used, MAX(a.used_at) AS last_used
+       FROM war_armory_usage a
+       JOIN ranked_wars w ON w.id = a.ranked_war_id
+       WHERE a.ranked_war_id=?
+       GROUP BY a.torn_user_id, a.username, a.item_name
+       ORDER BY a.torn_user_id, MAX(a.used_at) DESC`
     ).bind(warId).all();
     return jsonResponse({ armory: results || [] });
   } catch (err) {
@@ -599,7 +619,7 @@ export async function getWarsSummary(request, env) {
       const { results } = await env.DB.prepare(
         `SELECT id, faction_id, opponent_faction_id, opponent_faction_name,
                 status, scheduled_start, started_at, ended_at, result, rank_change, bonus_respect, rewards_json,
-                our_score, opponent_score, target, our_chain, opponent_chain
+                our_score, opponent_score, target, our_chain, opponent_chain, last_checked_at
          FROM ranked_wars WHERE faction_id=? ORDER BY COALESCE(scheduled_start, 0) DESC LIMIT 5`
       ).bind(factionId).all();
       summary[factionId] = results || [];

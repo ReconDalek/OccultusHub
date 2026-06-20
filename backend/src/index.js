@@ -73,8 +73,8 @@ export default {
       return;
     }
 
-    // "*/30 * * * *" — every 30 minutes: check for new war matches + track active/matched wars
-    if (event.cron === '*/30 * * * *') {
+    // "*/10 * * * *" — every 10 minutes: check for new war matches + track active/matched wars
+    if (event.cron === '*/10 * * * *') {
       try {
         const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
         ctx.waitUntil(
@@ -125,7 +125,7 @@ export default {
     }
 
     // "0 */12 * * *" — faction/company cache refresh every 12 hours
-    try {
+    if (event.cron === '0 */12 * * *') try {
       const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');
       const { syncMembersFromCache } = await import('./controllers/memberController.js');
 

@@ -21,7 +21,7 @@ function formatDate(unix) {
   if (!unix) return '—'
   return new Date(unix * 1000).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
-  }) + ' TCT'
+  }) + ' UTC/TCT'
 }
 
 function formatDateTime(unix) {
@@ -29,7 +29,7 @@ function formatDateTime(unix) {
   return new Date(unix * 1000).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
     timeZone: 'UTC', hour12: false,
-  }) + ' TCT'
+  }) + ' UTC/TCT'
 }
 
 function parseD1DateTime(str) {
@@ -164,6 +164,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
           {rows.map((r) => {
             const def         = defendMap[r.attacker_id] || {}
             const respectLost = def.respect_lost_defending || 0
+            const bonus       = r.bonus_respect || 0
+            const gained      = (r.war_respect_gained || 0) - bonus
             const net         = (r.war_respect_gained || 0) - respectLost
             return (
               <tr key={r.attacker_id}
@@ -173,8 +175,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, textAlign: 'left', color: '#e4e4e7' }}>{r.attacker_name || `[${r.attacker_id}]`}</td>
                 <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
-                <td style={{ ...td, color: '#22c55e' }}>{fmt(r.war_respect_gained, 2)}</td>
-                <td style={{ ...td, color: r.bonus_respect > 0 ? '#f59e0b' : '#71717a' }}>{fmt(r.bonus_respect || 0, 2)}</td>
+                <td style={{ ...td, color: '#22c55e' }}>{fmt(gained, 2)}</td>
+                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : '#71717a' }}>{fmt(bonus, 2)}</td>
                 <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : '#71717a' }}>{fmt(respectLost, 2)}</td>
                 <td style={{ ...td, color: net >= 0 ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
                   {net >= 0 ? '+' : ''}{fmt(net, 2)}

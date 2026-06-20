@@ -14,10 +14,10 @@ database_id = "48ac7e16-8aab-4772-b624-8a7d1c230207"
 # Production environment
 [env.production]
 vars = { CORS_ORIGIN = "https://occultushub.com", JWT_SECRET = "sk_prod_7Kj9mNp2qRx8vBcDeFgHiJkLmNoPqRsTuVwXyZ0aB1cD2eF", TORN_API_KEY = "", DISCORD_CLIENT_ID = "1137242446082879548", DISCORD_GUILD_ID = "856861435950268467", DISCORD_REDIRECT_URI = "https://occultushub-worker-production.rkilpatrick4221.workers.dev/api/discord/callback" }
-triggers = { crons = ["0 */12 * * *", "0 1 * * 2", "*/30 * * * *", "0 1 * * *", "*/5 * * * *", "0 * * * *"] }
+triggers = { crons = ["0 */12 * * *", "0 1 * * 2", "*/10 * * * *", "0 1 * * *", "*/5 * * * *", "0 * * * *"] }
 # "0 */12 * * *" — faction/company cache refresh every 12 hours + member sync
 # "0 1 * * 2"    — Tuesday 01:00 UTC: ranked war match check + weekly chain history fetch
-# "*/30 * * * *" — active war tracking (no-ops instantly if no wars are matched/active)
+# "*/10 * * * *" — active war tracking (no-ops instantly if no wars are matched/active)
 # "*/5 * * * *"  — Torn stock list cache refresh (current prices, all 35 stocks)
 # "0 * * * *"    — per-stock price history snapshot (35 API calls, stored for charts)
 # "0 1 * * *"    — daily snapshots: energy + personal stats (runs sequentially)

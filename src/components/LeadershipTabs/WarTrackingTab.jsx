@@ -16,7 +16,20 @@ function formatUnixDate(unix) {
   return new Date(unix * 1000).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-  }) + ' UTC'
+  }) + ' UTC/TCT'
+}
+
+function formatUnixDateTime(unix) {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    timeZone: 'UTC', hour12: false,
+  }) + ' UTC/TCT'
+}
+
+function parseD1DateTime(str) {
+  if (!str) return null
+  return Math.floor(new Date(str.replace(' ', 'T') + 'Z').getTime() / 1000)
 }
 
 function fmt(n, dp = 0) {
@@ -146,6 +159,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
           {rows.map((r) => {
             const def         = defendMap[r.attacker_id] || {}
             const respectLost = def.respect_lost_defending || 0
+            const bonus       = r.bonus_respect || 0
+            const gained      = (r.war_respect_gained || 0) - bonus
             const net         = (r.war_respect_gained || 0) - respectLost
             const netPos      = net >= 0
             return (
@@ -157,8 +172,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
                 <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : '#71717a' }}>{fmt(r.war_interrupted)}</td>
-                <td style={{ ...td, color: '#22c55e' }}>{fmt(r.war_respect_gained, 2)}</td>
-                <td style={{ ...td, color: r.bonus_respect > 0 ? '#f59e0b' : '#71717a' }}>{fmt(r.bonus_respect || 0, 2)}</td>
+                <td style={{ ...td, color: '#22c55e' }}>{fmt(gained, 2)}</td>
+                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : '#71717a' }}>{fmt(bonus, 2)}</td>
                 <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : '#71717a' }}>{fmt(respectLost, 2)}</td>
                 <td style={{ ...td, color: netPos ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
                   {netPos ? '+' : ''}{fmt(net, 2)}
@@ -180,10 +195,26 @@ function MemberStatsTable({ attackerStats, defendStats }) {
 
 // ─── Armory table ─────────────────────────────────────────────────────────────
 
+const BADGE_STACK = { bg: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#fcd34d' }
+const BADGE_WAR   = { bg: 'rgba(159,103,255,0.1)', border: '1px solid rgba(159,103,255,0.25)', color: '#c4b5fd' }
+
+function ItemBadge({ name, count, style: s }) {
+  return (
+    <span style={{
+      padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500',
+      background: s.bg, border: s.border, color: s.color, whiteSpace: 'nowrap',
+    }}>
+      {name} ×{count}
+    </span>
+  )
+}
+
 function ArmoryTable({ armory }) {
   if (!armory?.length) {
     return <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No armory data recorded.</p>
   }
+
+  const hasSplit = armory.some(r => (r.stacking_count ?? 0) > 0)
 
   // Group by member
   const byMember = {}
@@ -195,25 +226,39 @@ function ArmoryTable({ armory }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-      {Object.values(byMember).map((member) => (
-        <div key={member.torn_user_id || member.username}
-          style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.06)' }}
-        >
-          <p style={{ color: '#e4e4e7', fontWeight: '600', fontSize: '13px', margin: '0 0 6px 0' }}>
-            {member.username || `[${member.torn_user_id}]`}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {member.items.map((item, i) => (
-              <span key={i} style={{
-                padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500',
-                background: 'rgba(159,103,255,0.1)', border: '1px solid rgba(159,103,255,0.25)', color: '#c4b5fd',
-              }}>
-                {item.item_name} ×{item.count}
-              </span>
-            ))}
-          </div>
+      {hasSplit && (
+        <div style={{ display: 'flex', gap: '14px', padding: '4px 2px', fontSize: '11px', color: '#a1a1aa' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+            Stacking (before war)
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#9f67ff', display: 'inline-block' }} />
+            War period
+          </span>
         </div>
-      ))}
+      )}
+      {Object.values(byMember).map((member) => {
+        const stackItems = member.items.filter(it => (it.stacking_count ?? 0) > 0)
+        const warItems   = member.items.filter(it => (it.war_count ?? it.count ?? 0) > 0)
+        return (
+          <div key={member.torn_user_id || member.username}
+            style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            <p style={{ color: '#e4e4e7', fontWeight: '600', fontSize: '13px', margin: '0 0 6px 0' }}>
+              {member.username || `[${member.torn_user_id}]`}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+              {stackItems.map((item, i) => (
+                <ItemBadge key={`s${i}`} name={item.item_name} count={item.stacking_count} style={BADGE_STACK} />
+              ))}
+              {warItems.map((item, i) => (
+                <ItemBadge key={`w${i}`} name={item.item_name} count={item.war_count ?? item.count} style={BADGE_WAR} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -737,6 +782,9 @@ function WarCard({ war, factionName }) {
     ? `Started ${formatUnixDate(war.started_at)}`
     : `Scheduled ${formatUnixDate(war.scheduled_start)}`
 
+  const lastCheckedUnix  = parseD1DateTime(war.last_checked_at)
+  const lastUpdatedLabel = lastCheckedUnix ? `Updated ${formatUnixDateTime(lastCheckedUnix)}` : null
+
   const isActive = war.status === 'active'
 
   return (
@@ -759,7 +807,8 @@ function WarCard({ war, factionName }) {
           <p style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', margin: '0 0 2px 0' }}>
             vs {war.opponent_faction_name || `Faction #${war.opponent_faction_id}`}
           </p>
-          <p style={{ color: '#71717a', fontSize: '11px', margin: 0 }}>{dateLabel}</p>
+          <p style={{ color: '#71717a', fontSize: '11px', margin: '0 0 1px 0' }}>{dateLabel}</p>
+          {lastUpdatedLabel && <p style={{ color: '#52525b', fontSize: '10px', margin: 0 }}>{lastUpdatedLabel}</p>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {isPaid && (
@@ -1024,7 +1073,7 @@ export default function WarTrackingTab() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
         <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
           Wars are auto-detected weekly and attack data
-          is tracked every 30 minutes during active wars.
+          is tracked every 10 minutes during active wars.
         </p>
         <button onClick={() => setShowManual(true)} style={{
           padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
