@@ -152,6 +152,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
             <th style={th}>Def Lost</th>
             <th style={th}>Outside</th>
             <th style={th}>Assists</th>
+            <th style={th}>Friendly</th>
             <th style={th}>Energy</th>
           </tr>
         </thead>
@@ -183,6 +184,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : '#71717a' }}>{fmt(def.defends_lost)}</td>
                 <td style={td}>{fmt(r.outside_attacks)}</td>
                 <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : '#71717a' }}>{fmt(r.assists)}</td>
+                <td style={{ ...td, color: (r.friendly_hits || 0) > 0 ? '#fb923c' : '#71717a' }}>{fmt(r.friendly_hits || 0)}</td>
                 <td style={{ ...td, color: '#a1a1aa' }}>{fmt(r.energy_used)}</td>
               </tr>
             )
@@ -285,19 +287,20 @@ function PctToggle({ label, value, onChange, disabled }) {
   )
 }
 
-function computePayouts(attackerStats, { warPct, outsidePct, assistPct, capEnabled, capType, capValue }) {
+function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue }) {
   // When cap is off, always use attack-based formula regardless of capType
   const useRespect = capEnabled && capType === 'respect'
   const cap        = capEnabled && capValue > 0 ? capValue : Infinity
 
   return attackerStats
-    .filter(r => (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.war_respect_gained || 0) > 0)
+    .filter(r => (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.friendly_hits || 0) + (r.war_respect_gained || 0) > 0)
     .map(r => {
       const rawUnits = useRespect
         ? (parseFloat(r.war_respect_gained) || 0)
-        : (r.war_hits        || 0) * warPct     / 100
-        + (r.outside_attacks || 0) * outsidePct / 100
-        + (r.assists         || 0) * assistPct  / 100
+        : (r.war_hits        || 0) * warPct      / 100
+        + (r.outside_attacks || 0) * outsidePct  / 100
+        + (r.assists         || 0) * assistPct   / 100
+        + (r.friendly_hits   || 0) * (friendlyPct ?? 0) / 100
       const units = Math.min(rawUnits, cap)
       return { ...r, rawUnits, units }
     })
@@ -309,6 +312,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
     war_hits:           row.war_hits            ?? 0,
     outside_attacks:    row.outside_attacks      ?? 0,
     assists:            row.assists              ?? 0,
+    friendly_hits:      row.friendly_hits        ?? 0,
     war_respect_gained: parseFloat(row.war_respect_gained) || 0,
   })
   const set = (k, v) => setVals(prev => ({ ...prev, [k]: v }))
@@ -324,6 +328,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
           ['War Hits',       'war_hits',           0],
           ['Outside / Chain','outside_attacks',     0],
           ['Assists',        'assists',             0],
+          ['Friendly Hits',  'friendly_hits',       0],
           ['Respect Gained', 'war_respect_gained',  2],
         ].map(([label, key, decimals]) => (
           <div key={key} style={{ marginBottom: '12px' }}>
@@ -353,6 +358,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
   const [warPct,      setWarPct]      = useState(100)
   const [outsidePct,  setOutsidePct]  = useState(0)
   const [assistPct,   setAssistPct]   = useState(0)
+  const [friendlyPct, setFriendlyPct] = useState(0)
   const [totalAmount, setTotalAmount] = useState('')
   const [factionShare,setFactionShare]= useState(10)
   const [capEnabled,  setCapEnabled]  = useState(false)
@@ -376,7 +382,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         const p = d.payout
         if (p.settings) {
           setWarPct(p.settings.warPct ?? 100);    setOutsidePct(p.settings.outsidePct ?? 0)
-          setAssistPct(p.settings.assistPct ?? 0); setTotalAmount(p.settings.totalAmount ?? '')
+          setAssistPct(p.settings.assistPct ?? 0); setFriendlyPct(p.settings.friendlyPct ?? 0)
+          setTotalAmount(p.settings.totalAmount ?? '')
           setFactionShare(p.settings.factionShare ?? 10); setCapEnabled(p.settings.capEnabled ?? false)
           setCapType(p.settings.capType ?? 'attacks'); setCapValue(p.settings.capValue ?? '')
         }
@@ -393,7 +400,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
     return ov ? { ...r, ...ov } : r
   })
 
-  const settings = { warPct, outsidePct, assistPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare }
+  const settings = { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare }
   const rows         = computePayouts(mergedStats, settings)
   const totalUnits   = rows.reduce((s, r) => s + r.units, 0)
   const amount       = parseFloat(totalAmount) || 0
@@ -487,9 +494,10 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <p style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>Payout Settings</p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
-          <PctToggle label="War Hits"        value={warPct}     onChange={setWarPct}     disabled={useRespect} />
-          <PctToggle label="Chain / Outside" value={outsidePct} onChange={setOutsidePct} disabled={useRespect} />
-          <PctToggle label="Assists"         value={assistPct}  onChange={setAssistPct}  disabled={useRespect} />
+          <PctToggle label="War Hits"        value={warPct}      onChange={setWarPct}      disabled={useRespect} />
+          <PctToggle label="Chain / Outside" value={outsidePct}  onChange={setOutsidePct}  disabled={useRespect} />
+          <PctToggle label="Assists"         value={assistPct}   onChange={setAssistPct}   disabled={useRespect} />
+          <PctToggle label="Friendly Hits"   value={friendlyPct} onChange={setFriendlyPct} disabled={useRespect} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
