@@ -3,7 +3,7 @@ import { API_BASE_URL } from '../config/api'
 
 const DEFAULT_PAGES = { factions: true, companies: true, leadership: true, respect: true }
 
-const ALL_EVENTS = ['blood_moon','new_year','valentines','st_patricks','walpurgis','summer_solstice','halloween','day_of_dead','winter_solstice','yuletide']
+const ALL_EVENTS = ['blood_moon','new_year','valentines','st_patricks','walpurgis','spring_equinox','beltane','summer_solstice','lammas','autumn_equinox','halloween','samhain','day_of_dead','anniversary','winter_solstice','yuletide']
 const DEFAULT_EVENTS = Object.fromEntries(ALL_EVENTS.map(k => [k, true]))
 
 const SiteContext = createContext({

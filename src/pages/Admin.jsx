@@ -12,7 +12,7 @@ export default function Admin() {
   const tabs = [
     { id: 'users', label: 'Users' },
     { id: 'cache', label: 'Cache' },
-    { id: 'events',      label: 'Events' },
+    { id: 'events',      label: 'Themes' },
     { id: 'logs',        label: 'Logs' },
     { id: 'leaderboards', label: 'Leaderboards' },
     { id: 'cards',       label: 'Cards' },

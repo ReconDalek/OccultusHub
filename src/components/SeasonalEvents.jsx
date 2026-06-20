@@ -84,6 +84,29 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(220,150,20,0.14) 0%, rgba(160,90,10,0.07) 55%, transparent 72%)',
     pulseAnim: 'evSolarPulse 10s ease-in-out infinite',
     banner: { text: 'THE SUN STANDS STILL',    color: '#fde68a', bg: 'rgba(40,25,0,0.65)', border: 'rgba(220,160,20,0.45)' },
+    particles: 'sunmotes',
+  },
+  {
+    id: 'lammas',
+    name: 'Lammas',           icon: '🌾', dateDesc: 'Aug 1',
+    isActive: () => inRange(8,1,1),
+    bodyBg: `radial-gradient(circle at top, rgba(160,80,0,0.52), transparent 50%),
+             radial-gradient(circle at bottom, rgba(120,45,0,0.35), transparent 50%), #090500`,
+    vignette: 'radial-gradient(ellipse at 50% 0%, rgba(190,100,10,0.16) 0%, rgba(140,60,5,0.08) 55%, transparent 72%)',
+    pulseAnim: 'evHarvestPulse 9s ease-in-out infinite',
+    banner: { text: 'THE FIRST HARVEST FALLS', color: '#fcd34d', bg: 'rgba(40,18,0,0.7)',  border: 'rgba(210,140,10,0.5)' },
+    particles: 'grain',
+  },
+  {
+    id: 'autumn_equinox',
+    name: 'Autumn Equinox',   icon: '🍂', dateDesc: 'Sep 20–22',
+    isActive: () => inRange(9,20,22),
+    bodyBg: `radial-gradient(circle at top, rgba(160,50,5,0.5), transparent 50%),
+             radial-gradient(circle at bottom right, rgba(120,30,0,0.32), transparent 50%), #080402`,
+    vignette: 'radial-gradient(ellipse at 50% 0%, rgba(180,70,10,0.15) 0%, rgba(120,40,5,0.08) 55%, transparent 72%)',
+    pulseAnim: 'evAutumnPulse 9s ease-in-out infinite',
+    banner: { text: 'THE LIGHT YIELDS TO DARK',color: '#fdba74', bg: 'rgba(38,12,0,0.7)',  border: 'rgba(200,90,20,0.5)' },
+    particles: 'leaves',
   },
   {
     id: 'halloween',
@@ -97,6 +120,18 @@ export const EVENT_DEFS = [
     extras: 'halloween',
   },
   {
+    id: 'samhain',
+    name: 'Samhain',          icon: '🕯️', dateDesc: 'Oct 31 – Nov 1',
+    isActive: () => { const m=new Date().getMonth()+1,d=new Date().getDate(); return (m===10&&d===31)||(m===11&&d===1) },
+    bodyBg: `radial-gradient(circle at top, rgba(20,0,50,0.7), transparent 50%),
+             radial-gradient(circle at bottom, rgba(10,0,35,0.5), transparent 50%), #030008`,
+    vignette: 'radial-gradient(ellipse at 50% 50%, rgba(60,10,100,0.2) 0%, rgba(20,0,45,0.1) 65%, transparent 88%)',
+    pulseAnim: 'evSamhainPulse 7s ease-in-out infinite',
+    banner: { text: 'THE DEAD ARE REMEMBERED', color: '#e9d5ff', bg: 'rgba(15,0,30,0.75)', border: 'rgba(130,60,200,0.55)' },
+    particles: 'wisps',
+    extras: 'candles',
+  },
+  {
     id: 'day_of_dead',
     name: 'Day of the Dead',  icon: '💀', dateDesc: 'Nov 1–2',
     isActive: () => inRange(11,1,2),
@@ -105,6 +140,19 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 100%, rgba(200,120,10,0.15) 0%, rgba(150,80,5,0.07) 55%, transparent 72%)',
     pulseAnim: 'evMarigoldPulse 8s ease-in-out infinite',
     banner: { text: 'LOS MUERTOS WALK',        color: '#fde68a', bg: 'rgba(40,20,0,0.7)',  border: 'rgba(220,150,20,0.5)' },
+    particles: 'marigolds',
+  },
+  {
+    id: 'anniversary',
+    name: 'Faction Anniversary', icon: '🩸', dateDesc: 'Nov 10',
+    isActive: () => inRange(11,10,10),
+    bodyBg: `radial-gradient(circle at top, rgba(120,5,30,0.6), transparent 50%),
+             radial-gradient(circle at bottom right, rgba(80,5,50,0.4), transparent 50%), #060005`,
+    vignette: 'radial-gradient(ellipse at 50% 50%, rgba(150,10,40,0.18) 0%, rgba(80,5,30,0.09) 65%, transparent 85%)',
+    pulseAnim: 'evAnnivPulse 8s ease-in-out infinite',
+    banner: { text: 'ANOTHER YEAR IN THE SHADOWS', color: '#fca5a5', bg: 'rgba(50,3,15,0.75)', border: 'rgba(180,20,50,0.55)' },
+    particles: 'sparkles',
+    extras: 'anniversary',
   },
   {
     id: 'winter_solstice',
@@ -116,6 +164,7 @@ export const EVENT_DEFS = [
     pulseAnim: 'evFrostPulse 10s ease-in-out infinite',
     banner: { text: 'THE LONGEST NIGHT FALLS', color: '#bfdbfe', bg: 'rgba(5,10,35,0.7)',  border: 'rgba(60,80,200,0.5)' },
     particles: 'frost',
+    extras: 'icicles',
   },
   {
     id: 'yuletide',
@@ -127,6 +176,29 @@ export const EVENT_DEFS = [
     pulseAnim: 'evFrostPulse 10s ease-in-out infinite',
     banner: { text: 'YULETIDE FALLS UPON US',  color: '#e2e8f0', bg: 'rgba(10,15,30,0.7)', border: 'rgba(150,170,210,0.5)' },
     particles: 'snow',
+  },
+  {
+    id: 'spring_equinox',
+    name: 'Spring Equinox',   icon: '🌿', dateDesc: 'Mar 19–21',
+    isActive: () => inRange(3,19,21),
+    bodyBg: `radial-gradient(circle at top, rgba(30,120,60,0.4), transparent 50%),
+             radial-gradient(circle at bottom, rgba(80,160,60,0.2), transparent 50%), #040905`,
+    vignette: 'radial-gradient(ellipse at 50% 50%, rgba(50,160,80,0.12) 0%, rgba(20,100,40,0.06) 65%, transparent 85%)',
+    pulseAnim: 'evSpringPulse 10s ease-in-out infinite',
+    banner: { text: 'THE WORLD FINDS BALANCE',  color: '#a7f3d0', bg: 'rgba(4,22,10,0.7)', border: 'rgba(52,211,153,0.45)' },
+    particles: 'blossoms',
+  },
+  {
+    id: 'beltane',
+    name: 'Beltane',          icon: '🔥', dateDesc: 'May 1',
+    isActive: () => inRange(5,1,1),
+    bodyBg: `radial-gradient(circle at top, rgba(220,80,0,0.52), transparent 50%),
+             radial-gradient(circle at bottom, rgba(160,40,0,0.35), transparent 50%), #0a0400`,
+    vignette: 'radial-gradient(ellipse at 50% 100%, rgba(210,70,5,0.2) 0%, rgba(150,35,5,0.1) 55%, transparent 72%)',
+    pulseAnim: 'evBeltanePulse 5s ease-in-out infinite',
+    banner: { text: 'THE FIRES ARE LIT',        color: '#fed7aa', bg: 'rgba(45,12,0,0.72)', border: 'rgba(220,80,10,0.55)' },
+    particles: 'embers',
+    extras: 'bonfire',
   },
 ]
 
@@ -141,19 +213,35 @@ const KEYFRAMES = `
   @keyframes evHexPulse      { 0%,100%{opacity:.8}  50%{opacity:1} }
   @keyframes evMarigoldPulse { 0%,100%{opacity:.7}  50%{opacity:1} }
   @keyframes evFrostPulse    { 0%,100%{opacity:.65} 50%{opacity:1} }
+  @keyframes evHarvestPulse  { 0%,100%{opacity:.7}  50%{opacity:1} }
+  @keyframes evAutumnPulse   { 0%,100%{opacity:.72} 50%{opacity:1} }
+  @keyframes evSamhainPulse  { 0%,100%{opacity:.78} 50%{opacity:1} }
+  @keyframes evAnnivPulse    { 0%,100%{opacity:.78} 50%{opacity:1} }
+  @keyframes evSpringPulse   { 0%,100%{opacity:.65} 50%{opacity:1} }
+  @keyframes evBeltanePulse  { 0%,100%{opacity:.75} 50%{opacity:1} }
   @keyframes evMoonPulse     { 0%,100%{opacity:.82;filter:drop-shadow(0 0 24px rgba(200,30,15,0.7))} 50%{opacity:1;filter:drop-shadow(0 0 44px rgba(220,40,20,0.9))} }
   @keyframes evSnowFall  { 0%{transform:translateY(-20px);opacity:0} 8%{opacity:1} 90%{opacity:.8} 100%{transform:translateY(105vh);opacity:0} }
   @keyframes evPetalFall { 0%{transform:translateY(-20px) rotate(0deg) translateX(0);opacity:0} 8%{opacity:.9} 90%{opacity:.7} 100%{transform:translateY(105vh) rotate(540deg) translateX(50px);opacity:0} }
+  @keyframes evLeafFall  { 0%{transform:translateY(-20px) rotate(0deg);opacity:0} 8%{opacity:.85} 90%{opacity:.65} 100%{transform:translateY(105vh) rotate(720deg) translateX(var(--lx));opacity:0} }
+  @keyframes evBlossomFall { 0%{transform:translateY(-20px) rotate(0deg) scale(1);opacity:0} 8%{opacity:.8} 90%{opacity:.6} 100%{transform:translateY(105vh) rotate(360deg) scale(0.8) translateX(var(--lx));opacity:0} }
+  @keyframes evGrainFall { 0%{transform:translateY(-10px) rotate(var(--gr));opacity:0} 10%{opacity:.7} 90%{opacity:.5} 100%{transform:translateY(105vh) rotate(calc(var(--gr) + 180deg)) translateX(var(--lx));opacity:0} }
   @keyframes evEmberRise { 0%{transform:translateY(105vh);opacity:0} 8%{opacity:.9} 90%{opacity:.6} 100%{transform:translateY(-20px);opacity:0} }
+  @keyframes evWispFloat { 0%{transform:translateY(0) translateX(0) scale(1);opacity:0} 15%{opacity:.6} 50%{transform:translateY(-40px) translateX(var(--wx)) scale(1.2);opacity:.7} 85%{opacity:.4} 100%{transform:translateY(-90px) translateX(0) scale(0.7);opacity:0} }
+  @keyframes evMoteFloat { 0%{transform:translateY(0) scale(0.8);opacity:0} 20%{opacity:.7} 80%{opacity:.5} 100%{transform:translateY(-60px) scale(1.1);opacity:0} }
   @keyframes evSparkle   { 0%{transform:translate(0,0) scale(0);opacity:0} 25%{opacity:1} 100%{transform:translate(var(--tx),var(--ty)) scale(1.2);opacity:0} }
-  @keyframes evSpiderDrop { 0%{transform:translateY(-120px)} 100%{transform:translateY(0)} }
-  @keyframes evSpiderSway { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
+  @keyframes evCandleFlicker { 0%,100%{opacity:.7;transform:scaleY(1)} 25%{opacity:.9;transform:scaleY(1.08)} 50%{opacity:.75;transform:scaleY(0.94)} 75%{opacity:.85;transform:scaleY(1.04)} }
+  @keyframes evIcicleGrow  { 0%{transform:scaleY(0);opacity:0} 100%{transform:scaleY(1);opacity:0.7} }
+  @keyframes evBonfireWave { 0%,100%{transform:scaleX(1) scaleY(1)} 33%{transform:scaleX(1.06) scaleY(1.1)} 66%{transform:scaleX(0.94) scaleY(0.95)} }
+  @keyframes evSpiderDrop  { 0%{transform:translateY(-120px)} 100%{transform:translateY(0)} }
+  @keyframes evSpiderSway  { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
+  @keyframes evSpiderSwing { 0%{transform:translateX(0) rotate(-12deg)} 50%{transform:translateX(var(--swing)) rotate(12deg)} 100%{transform:translateX(0) rotate(-12deg)} }
 `
 
 // ── Particle generators ──────────────────────────────────────────────────────
 function Particles({ type }) {
-  const items = Array.from({ length: 22 }, (_, i) => {
-    const left = Math.random() * 100
+  const count = type === 'wisps' ? 14 : type === 'marigolds' ? 18 : 22
+  const items = Array.from({ length: count }, (_, i) => {
+    const left  = Math.random() * 100
     const delay = Math.random() * 12
     const dur   = 7 + Math.random() * 9
     const size  = 3 + Math.random() * 7
@@ -174,12 +262,75 @@ function Particles({ type }) {
         animation:`evPetalFall ${dur}s ${delay}s linear infinite`,
       }}/>
     }
+    if (type === 'blossoms') {
+      const lx = (Math.random()-0.5)*80
+      return <div key={i} style={{
+        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*1.4, height:size*1.2, borderRadius:'50% 40% 50% 40%',
+        background:`rgba(${210+Math.random()*40},${170+Math.random()*50},${185+Math.random()*40},0.6)`,
+        '--lx':`${lx}px`,
+        animation:`evBlossomFall ${dur+2}s ${delay}s linear infinite`,
+      }}/>
+    }
+    if (type === 'leaves') {
+      const lx = (Math.random()-0.5)*100
+      const r  = Math.random()*360
+      const hue = 15+Math.random()*25  // orange-red range
+      return <div key={i} style={{
+        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*1.8, height:size*1.1,
+        borderRadius:'20% 80% 20% 80%',
+        background:`hsla(${hue},85%,${40+Math.random()*20}%,0.7)`,
+        '--lx':`${lx}px`,
+        animation:`evLeafFall ${dur+1}s ${delay}s linear infinite`,
+      }}/>
+    }
+    if (type === 'grain') {
+      const lx = (Math.random()-0.5)*60
+      const gr = Math.random()*360
+      return <div key={i} style={{
+        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*0.5, height:size*1.8,
+        borderRadius:'40%',
+        background:`rgba(${200+Math.random()*50},${150+Math.random()*60},${20+Math.random()*30},0.65)`,
+        '--lx':`${lx}px`, '--gr':`${gr}deg`,
+        animation:`evGrainFall ${dur+2}s ${delay}s linear infinite`,
+      }}/>
+    }
+    if (type === 'marigolds') {
+      return <div key={i} style={{
+        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*1.5, height:size*1.5, borderRadius:'50%',
+        background:`rgba(${220+Math.random()*35},${120+Math.random()*60},5,0.65)`,
+        animation:`evPetalFall ${dur}s ${delay}s linear infinite`,
+      }}/>
+    }
     if (type === 'embers') {
       return <div key={i} style={{
         position:'fixed', bottom:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*0.65, height:size*0.65, borderRadius:'50%',
         background:`rgba(${215+Math.random()*40},${55+Math.random()*85},8,0.8)`,
         animation:`evEmberRise ${dur}s ${delay}s linear infinite`,
+      }}/>
+    }
+    if (type === 'wisps') {
+      const wx = (Math.random()-0.5)*60
+      return <div key={i} style={{
+        position:'fixed', bottom:`${Math.random()*50}%`, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*2, height:size*3, borderRadius:'50%',
+        background:`rgba(${160+Math.random()*60},${80+Math.random()*60},${220+Math.random()*35},0.35)`,
+        filter:'blur(4px)',
+        '--wx':`${wx}px`,
+        animation:`evWispFloat ${dur+4}s ${delay}s ease-in-out infinite`,
+      }}/>
+    }
+    if (type === 'sunmotes') {
+      return <div key={i} style={{
+        position:'fixed', top:`${10+Math.random()*50}%`, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*0.8, height:size*0.8, borderRadius:'50%',
+        background:`rgba(${240+Math.random()*15},${200+Math.random()*40},${50+Math.random()*50},0.6)`,
+        filter:'blur(1px)',
+        animation:`evMoteFloat ${dur+3}s ${delay}s ease-in-out infinite`,
       }}/>
     }
     if (type === 'sparkles') {
@@ -256,52 +407,161 @@ function BloodMoonOrb() {
 }
 
 // ── Halloween cobwebs ────────────────────────────────────────────────────────
+function Spider({ x, y, swingPx, delay, size = 1 }) {
+  const s = size
+  return (
+    <g style={{ '--swing':`${swingPx}px`, animation:`evSpiderSwing ${5+Math.abs(swingPx)*0.04}s ${delay}s ease-in-out infinite`, transformOrigin:`${x}px 0` }}>
+      <line x1={x} y1="0" x2={x} y2={y} stroke="rgba(200,180,230,0.55)" strokeWidth="0.7"/>
+      <g transform={`translate(${x},${y})`} style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>
+        <ellipse cx="0" cy="0" rx={7*s} ry={9*s} fill="rgba(20,3,40,0.92)" stroke="rgba(160,120,200,0.5)" strokeWidth="0.5"/>
+        <circle cx="0" cy={-13*s} r={5*s} fill="rgba(20,3,40,0.92)" stroke="rgba(160,120,200,0.5)" strokeWidth="0.5"/>
+        <circle cx={-2*s} cy={-14*s} r={1.4*s} fill="rgba(220,30,40,0.95)"/>
+        <circle cx={2*s}  cy={-14*s} r={1.4*s} fill="rgba(220,30,40,0.95)"/>
+        {[-1,1].map(sd => [0,1,2,3].map(j => (
+          <line key={`${sd}${j}`}
+            x1={sd*2*s} y1={(-6+j*4)*s} x2={sd*20*s} y2={(-10+j*5)*s}
+            stroke="rgba(160,120,200,0.75)" strokeWidth={0.9*s}/>
+        )))}
+      </g>
+    </g>
+  )
+}
+
 function SpiderWeb({ side }) {
-  // side = 'left' | 'right'
   const flip = side === 'right' ? 'scaleX(-1)' : 'none'
   const pos  = side === 'right' ? { right: 0, top: 0 } : { left: 0, top: 0 }
   return (
     <div style={{
       position:'fixed', ...pos, zIndex:3, pointerEvents:'none',
       transform: flip,
-      width:'clamp(110px,18vw,210px)', height:'clamp(110px,18vw,210px)',
+      width:'clamp(160px,24vw,290px)', height:'clamp(160px,24vw,290px)',
     }}>
-      <svg viewBox="0 0 210 210" width="100%" height="100%" opacity="0.55">
-        {/* Radial threads from corner */}
-        {[0,18,36,54,72,90].map(angle => {
+      <svg viewBox="0 0 290 290" width="100%" height="100%" opacity="0.6">
+        {[0,15,30,45,60,75,90].map(angle => {
           const rad = (angle * Math.PI) / 180
-          const x2  = 210 * Math.cos(rad)
-          const y2  = 210 * Math.sin(rad)
-          return <line key={angle} x1="0" y1="0" x2={x2} y2={y2} stroke="rgba(200,180,230,0.55)" strokeWidth="0.8"/>
+          return <line key={angle} x1="0" y1="0" x2={290*Math.cos(rad)} y2={290*Math.sin(rad)}
+            stroke="rgba(200,180,230,0.5)" strokeWidth="0.9"/>
         })}
-        {/* Concentric spiral arcs */}
-        {[30,60,90,120,150,175].map((r,i) => {
-          const pts = [0,18,36,54,72,90].map(a => {
+        {[35,70,105,145,185,225,265].map(r => {
+          const pts = [0,15,30,45,60,75,90].map(a => {
             const rad = (a * Math.PI) / 180
             return `${r*Math.cos(rad)},${r*Math.sin(rad)}`
           })
-          return <polyline key={r} points={pts.join(' ')} fill="none" stroke="rgba(200,180,230,0.45)" strokeWidth="0.7"/>
+          return <polyline key={r} points={pts.join(' ')} fill="none" stroke="rgba(200,180,230,0.4)" strokeWidth="0.8"/>
         })}
-        {/* Spider body hanging from a thread */}
-        <g style={{ transformOrigin:'20px 0', animation:'evSpiderSway 4s ease-in-out infinite', animationDelay:`${side==='right'?'1.5':'0'}s` }}>
-          <line x1="20" y1="0" x2="20" y2="52" stroke="rgba(200,180,230,0.6)" strokeWidth="0.7"/>
-          <g transform="translate(20,52)" style={{ animation:'evSpiderDrop 1.2s ease-out both' }}>
-            {/* Abdomen */}
-            <ellipse cx="0" cy="0" rx="7" ry="9" fill="rgba(30,5,50,0.9)" stroke="rgba(160,120,200,0.5)" strokeWidth="0.5"/>
-            {/* Head */}
-            <circle cx="0" cy="-12" r="5" fill="rgba(30,5,50,0.9)" stroke="rgba(160,120,200,0.5)" strokeWidth="0.5"/>
-            {/* Eyes */}
-            <circle cx="-2" cy="-13" r="1.2" fill="rgba(200,30,40,0.9)"/>
-            <circle cx="2"  cy="-13" r="1.2" fill="rgba(200,30,40,0.9)"/>
-            {/* Legs */}
-            {[-1,1].map(side => [-24,-16,-8,0].map((yo,j) => (
-              <line key={`${side}${j}`}
-                x1={side*2} y1={yo+(-24+j*8)*0+(-4+j*3)} x2={side*18} y2={yo+(-24+j*8)*0+(-4+j*3)-4}
-                stroke="rgba(160,120,200,0.7)" strokeWidth="0.9"/>
-            )))}
-          </g>
+        {/* Stationary sway spider near the corner */}
+        <g style={{ transformOrigin:'22px 0', animation:'evSpiderSway 4.5s ease-in-out infinite' }}>
+          <Spider x={22} y={58} swingPx={0} delay={0} size={1}/>
         </g>
+        {/* Swinging spider travelling between webs */}
+        <Spider x={80} y={105} swingPx={55} delay={1.8} size={1.25}/>
       </svg>
+    </div>
+  )
+}
+
+// ── Candles (Samhain) ────────────────────────────────────────────────────────
+function Candles() {
+  const candles = [
+    { left:'8%',  height:55, delay:0   },
+    { left:'14%', height:38, delay:0.7 },
+    { left:'84%', height:48, delay:0.3 },
+    { left:'90%', height:62, delay:1.1 },
+  ]
+  return (
+    <>
+      {candles.map((c, i) => (
+        <div key={i} style={{ position:'fixed', bottom:0, left:c.left, zIndex:3, pointerEvents:'none', display:'flex', flexDirection:'column', alignItems:'center' }}>
+          {/* Flame */}
+          <div style={{
+            width:10, height:18,
+            background:'radial-gradient(ellipse at 50% 80%, rgba(255,220,40,0.95), rgba(255,120,10,0.7) 55%, transparent)',
+            borderRadius:'50% 50% 20% 20%',
+            marginBottom:-2,
+            animation:`evCandleFlicker ${1.5+Math.random()*0.8}s ${c.delay}s ease-in-out infinite`,
+          }}/>
+          {/* Wax pillar */}
+          <div style={{
+            width:14, height:c.height,
+            background:'linear-gradient(to right, rgba(200,185,220,0.6), rgba(240,230,255,0.5), rgba(180,165,200,0.55))',
+            borderRadius:'3px 3px 0 0',
+          }}/>
+        </div>
+      ))}
+    </>
+  )
+}
+
+// ── Anniversary gold crown flourish ─────────────────────────────────────────
+function AnniversaryOrb() {
+  return (
+    <div style={{ position:'fixed', top:'clamp(80px,12vh,130px)', right:'clamp(12px,3vw,40px)', zIndex:3, pointerEvents:'none' }}>
+      <svg viewBox="0 0 160 160" style={{ width:'clamp(60px,8vw,110px)', height:'clamp(60px,8vw,110px)', display:'block' }}>
+        <defs>
+          <radialGradient id="annivGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stopColor="rgba(220,30,60,0.3)"/>
+            <stop offset="60%"  stopColor="rgba(150,10,35,0.15)"/>
+            <stop offset="100%" stopColor="transparent"/>
+          </radialGradient>
+          <radialGradient id="annivCore" cx="40%" cy="35%" r="65%">
+            <stop offset="0%"   stopColor="#f87171"/>
+            <stop offset="40%"  stopColor="#b91c1c"/>
+            <stop offset="100%" stopColor="#5a0808"/>
+          </radialGradient>
+        </defs>
+        <circle cx="80" cy="80" r="78" fill="url(#annivGlow)"/>
+        <circle cx="80" cy="80" r="52" fill="url(#annivCore)" opacity="0.9"/>
+        <circle cx="80" cy="80" r="52" fill="none" stroke="rgba(255,160,160,0.2)" strokeWidth="1.5"/>
+        {/* Roman numeral IV for year 4 (founded 2021, 4th anniversary 2025) */}
+        <text x="80" y="88" textAnchor="middle" fontFamily="Cinzel, serif" fontSize="28" fill="rgba(255,200,200,0.85)" letterSpacing="3">IV</text>
+      </svg>
+    </div>
+  )
+}
+
+// ── Icicles (Winter Solstice) ─────────────────────────────────────────────────
+function Icicles() {
+  const icicles = Array.from({ length: 14 }, (_, i) => ({
+    left: `${(i / 13) * 96 + 2}%`,
+    height: 30 + Math.random() * 55,
+    width:  6  + Math.random() * 9,
+    delay:  Math.random() * 1.5,
+  }))
+  return (
+    <>
+      {icicles.map((ic, i) => (
+        <div key={i} style={{
+          position:'fixed', top:0, left:ic.left, zIndex:3, pointerEvents:'none',
+          width:ic.width, height:ic.height,
+          background:'linear-gradient(to bottom, rgba(180,210,255,0.65), rgba(140,180,255,0.15), transparent)',
+          clipPath:'polygon(30% 0%, 70% 0%, 100% 100%, 0% 100%)',
+          transformOrigin:'top center',
+          animation:`evIcicleGrow 1.5s ${ic.delay}s ease-out both`,
+        }}/>
+      ))}
+    </>
+  )
+}
+
+// ── Bonfire (Beltane) ────────────────────────────────────────────────────────
+function Bonfire() {
+  return (
+    <div style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', zIndex:3, pointerEvents:'none', display:'flex', flexDirection:'column', alignItems:'center' }}>
+      {[
+        { w:60, h:90, c:'rgba(255,80,10,0.55)',  delay:0   },
+        { w:44, h:72, c:'rgba(255,140,20,0.6)',  delay:0.2 },
+        { w:28, h:52, c:'rgba(255,210,50,0.65)', delay:0.4 },
+      ].map((f, i) => (
+        <div key={i} style={{
+          position:'absolute', bottom:18,
+          width:f.w, height:f.h,
+          background:`radial-gradient(ellipse at 50% 90%, ${f.c}, transparent 75%)`,
+          borderRadius:'50% 50% 20% 20%',
+          animation:`evBonfireWave ${1.2+i*0.3}s ${f.delay}s ease-in-out infinite`,
+        }}/>
+      ))}
+      {/* Log base */}
+      <div style={{ width:80, height:14, background:'rgba(60,25,5,0.8)', borderRadius:'4px', marginTop:4 }}/>
     </div>
   )
 }
@@ -379,8 +639,12 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
       {ev.particles && <Particles type={ev.particles}/>}
 
       {/* Extra visual elements */}
-      {ev.extras === 'bloodMoon'  && <BloodMoonOrb/>}
-      {ev.extras === 'halloween'  && <><SpiderWeb side="left"/><SpiderWeb side="right"/></>}
+      {ev.extras === 'bloodMoon'   && <BloodMoonOrb/>}
+      {ev.extras === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/></>}
+      {ev.extras === 'candles'     && <Candles/>}
+      {ev.extras === 'anniversary' && <AnniversaryOrb/>}
+      {ev.extras === 'icicles'     && <Icicles/>}
+      {ev.extras === 'bonfire'     && <Bonfire/>}
 
       {/* Banner — fixed bottom, above footer, below nothing that matters */}
       <div style={{
