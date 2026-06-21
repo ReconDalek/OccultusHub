@@ -73,26 +73,41 @@ export default {
       return;
     }
 
-    // "*/10 * * * *" — every 10 minutes: check for new war matches + track active/matched wars
+    // "*/10 * * * *" — every 10 minutes: chain tracking + war match check + active war tracking
     if (event.cron === '*/10 * * * *') {
       try {
-        // Skip entirely if no war is active or matched — avoids Torn API calls during quiet weeks
-        const { count } = await env.DB.prepare(
-          `SELECT COUNT(*) as count FROM ranked_wars WHERE faction_id=? AND status IN ('active','matched')`
-        ).bind(env.FACTION_ID).first();
-        if (!count) return;
+        const { checkAndTrackActiveChains } = await import('./controllers/chainController.js');
 
-        const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
-        ctx.waitUntil(
-          checkWarMatches(env)
-            .then(r => { if (r.length) console.log('[cron] war match check:', JSON.stringify(r)); })
-            .catch(e => console.error('[cron] war match check failed:', e))
-            .then(() => trackActiveWars(env))
-            .then(r => { if (r.checked > 0) console.log(`[cron] war tracking: ${r.checked} wars checked`); })
-            .catch(e => console.error('[cron] war tracking failed:', e))
-        );
+        // Check for active wars (early-exit war tracking if none)
+        const { count: warCount } = await env.DB.prepare(
+          `SELECT COUNT(*) as count FROM ranked_wars WHERE status IN ('active','matched')`
+        ).first();
+
+        ctx.waitUntil((async () => {
+          // Chain tracking runs every tick regardless (3 lightweight status calls per faction)
+          try {
+            const chainResults = await checkAndTrackActiveChains(env);
+            const activeChains = chainResults.filter(r => r.status === 'active');
+            if (activeChains.length) console.log(`[cron] chain tracking: ${activeChains.length} active chain(s)`);
+          } catch (e) {
+            console.error('[cron] chain tracking failed:', e);
+          }
+
+          // War tracking only runs when there are active/matched wars
+          if (warCount) {
+            try {
+              const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
+              const matchResult = await checkWarMatches(env);
+              if (matchResult.length) console.log('[cron] war match check:', JSON.stringify(matchResult));
+              const warResult = await trackActiveWars(env);
+              if (warResult.checked > 0) console.log(`[cron] war tracking: ${warResult.checked} wars checked`);
+            } catch (e) {
+              console.error('[cron] war tracking failed:', e);
+            }
+          }
+        })());
       } catch (error) {
-        console.error('[cron] war tracking handler error:', error);
+        console.error('[cron] 10-min handler error:', error);
       }
       return;
     }

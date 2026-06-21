@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import WarTrackingTab from './WarTrackingTab'
+import ActiveChainCard from '../ActiveChainCard'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1078,7 +1079,10 @@ export default function ChainTrackingTab() {
 
       {topTab === 'chains' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+          {/* Live active chain (hidden when no chain running) */}
+          <ActiveChainCard />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '4px', marginTop: '16px' }}>
             <SubTabs options={factionTabs} active={factionId} onChange={setFactionId} />
             <ChainImporter />
           </div>

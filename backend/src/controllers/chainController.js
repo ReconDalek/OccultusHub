@@ -405,6 +405,237 @@ export async function getChainCacheStatus(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Cron: check for active chains and track attacks + armory (every 10 min)
+// Called from the scheduled handler alongside war tracking.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CHAIN_BONUS_MILESTONES = new Set([10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000]);
+const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer/i;
+
+function parseArmoryEntry(text) {
+  const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
+  const itemM = text.match(/faction's (.+?) items?/);
+  if (!userM || !itemM) return null;
+  if (ARMORY_IGNORE.test(itemM[1].trim())) return null;
+  return { torn_user_id: parseInt(userM[1], 10), username: userM[2].trim(), item_name: itemM[1].trim() };
+}
+
+export async function checkAndTrackActiveChains(env) {
+  const now     = Math.floor(Date.now() / 1000);
+  const results = [];
+
+  for (const factionId of FACTION_IDS) {
+    try {
+      const apiKeyObj = await getRandomUserApiKey(env);
+      if (!apiKeyObj?.key) {
+        results.push({ factionId, error: 'no API key' });
+        continue;
+      }
+      const { key: apiKey } = apiKeyObj;
+
+      // ── 1. Check current chain status ────────────────────────────────────────
+      const chainRes = await fetch(
+        `${TORN_API_BASE}/faction/${factionId}/chain?comment=OccHub`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+      if (!chainRes.ok) { results.push({ factionId, error: `chain HTTP ${chainRes.status}` }); continue; }
+      const chainData = await chainRes.json();
+      if (chainData.error) { results.push({ factionId, error: chainData.error.error }); continue; }
+
+      const chain    = chainData.chain;
+      const isActive = chain && chain.current > 0 && (!chain.cooldown || chain.cooldown === 0);
+
+      // ── 2. If no chain: mark any existing session as ended ───────────────────
+      if (!isActive) {
+        if (chain?.cooldown > 0) {
+          // Chain ended; record ended_at if not already marked
+          const endedAt = chain.end > 0 ? chain.end : now - chain.cooldown;
+          await env.DB.prepare(
+            `UPDATE active_chain_sessions SET status='ended', ended_at=?, last_checked_at=CURRENT_TIMESTAMP
+             WHERE faction_id=? AND status='active'`
+          ).bind(endedAt, factionId).run();
+        }
+        results.push({ factionId, status: 'none' });
+        continue;
+      }
+
+      const chainStart = chain.start;
+
+      // ── 3. Upsert active chain session ───────────────────────────────────────
+      const existingSession = await env.DB.prepare(
+        `SELECT id, last_attack_id, chain_start_at FROM active_chain_sessions WHERE faction_id=?`
+      ).bind(factionId).first();
+
+      // If chain_start_at changed, this is a new chain — clear old session data
+      if (existingSession && existingSession.chain_start_at !== chainStart) {
+        await env.DB.prepare(
+          `DELETE FROM chain_session_stats WHERE faction_id=? AND chain_start_at=?`
+        ).bind(factionId, existingSession.chain_start_at).run();
+        await env.DB.prepare(
+          `DELETE FROM chain_session_armory WHERE faction_id=? AND chain_start_at=?`
+        ).bind(factionId, existingSession.chain_start_at).run();
+      }
+
+      await env.DB.prepare(
+        `INSERT INTO active_chain_sessions
+           (faction_id, chain_start_at, current_length, timeout, modifier, status, last_checked_at)
+         VALUES (?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
+         ON CONFLICT(faction_id) DO UPDATE SET
+           chain_start_at  = excluded.chain_start_at,
+           current_length  = excluded.current_length,
+           timeout         = excluded.timeout,
+           modifier        = excluded.modifier,
+           status          = 'active',
+           ended_at        = NULL,
+           last_checked_at = CURRENT_TIMESTAMP`
+      ).bind(factionId, chainStart, chain.current, chain.timeout ?? 0, chain.modifier ?? 1.0).run();
+
+      const lastAttackId = (existingSession?.chain_start_at === chainStart)
+        ? (existingSession.last_attack_id ?? 0)
+        : 0;
+
+      // ── 4. Fetch attacks since chain started ─────────────────────────────────
+      let nextUrl    = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
+      let maxId      = lastAttackId;
+      let newAttacks = 0;
+      // Accumulate per-member deltas in memory then batch-upsert
+      const memberDeltas = {}; // torn_user_id → { username, attacks, respect, bonus }
+
+      for (let page = 0; page < 15; page++) {
+        const atkRes = await fetch(nextUrl, { headers: { Authorization: `ApiKey ${apiKey}` } });
+        if (!atkRes.ok) break;
+        const atkData = await atkRes.json();
+        if (atkData.error) break;
+
+        const attacks = atkData.attacks || [];
+        if (!attacks.length) break;
+
+        let allOlder = true;
+        let hitWatermark = false;
+
+        for (const atk of attacks) {
+          if (atk.id <= lastAttackId) { hitWatermark = true; break; }
+          if (atk.id > maxId) maxId = atk.id;
+
+          // Only count attacks within the chain window by our faction members
+          if (atk.started < chainStart) continue;
+          if (atk.attacker?.faction?.id !== factionId) continue;
+          if (!atk.chain || atk.chain === 0) continue; // not a chain hit
+
+          allOlder = false;
+          const uid  = atk.attacker.id;
+          const name = atk.attacker.name ?? null;
+          const isBonus = CHAIN_BONUS_MILESTONES.has(atk.chain) ? 1 : 0;
+
+          if (!memberDeltas[uid]) memberDeltas[uid] = { username: name, attacks: 0, respect: 0, bonus: 0 };
+          memberDeltas[uid].attacks += 1;
+          memberDeltas[uid].respect += atk.respect_gain ?? 0;
+          memberDeltas[uid].bonus   += isBonus;
+          newAttacks++;
+        }
+
+        if (hitWatermark || allOlder) break;
+        const prevUrl = atkData._metadata?.links?.prev;
+        if (!prevUrl) break;
+        nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub` +
+                  `&to=${new URL(prevUrl).searchParams.get('to')}`;
+      }
+
+      // Upsert per-member deltas
+      for (const [uid, d] of Object.entries(memberDeltas)) {
+        await env.DB.prepare(
+          `INSERT INTO chain_session_stats
+             (faction_id, chain_start_at, torn_user_id, username, total_attacks, total_respect, bonus_hits)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(faction_id, chain_start_at, torn_user_id) DO UPDATE SET
+             username      = COALESCE(excluded.username, username),
+             total_attacks = total_attacks + excluded.total_attacks,
+             total_respect = total_respect + excluded.total_respect,
+             bonus_hits    = bonus_hits    + excluded.bonus_hits`
+        ).bind(factionId, chainStart, parseInt(uid), d.username, d.attacks, d.respect, d.bonus).run();
+      }
+
+      // Save watermark
+      if (maxId > lastAttackId) {
+        await env.DB.prepare(
+          `UPDATE active_chain_sessions SET last_attack_id=? WHERE faction_id=?`
+        ).bind(maxId, factionId).run();
+      }
+
+      // ── 5. Armory usage since chain started ──────────────────────────────────
+      const armRes = await fetch(
+        `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
+        { headers: { Authorization: `ApiKey ${apiKey}` } }
+      );
+      let newArmory = 0;
+      if (armRes.ok) {
+        const armData = await armRes.json();
+        for (const item of armData.news || []) {
+          if (item.timestamp < chainStart) break;
+          const parsed = parseArmoryEntry(item.text);
+          if (!parsed) continue;
+          const { meta } = await env.DB.prepare(
+            `INSERT OR IGNORE INTO chain_session_armory
+               (faction_id, chain_start_at, torn_news_id, torn_user_id, username, item_name, used_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(factionId, chainStart, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
+          if (meta?.changes > 0) newArmory++;
+        }
+      }
+
+      console.log(`checkAndTrackActiveChains: faction ${factionId} — hits=${chain.current}, +${newAttacks} attacks, +${newArmory} armory`);
+      results.push({ factionId, status: 'active', currentLength: chain.current, newAttacks, newArmory });
+
+    } catch (err) {
+      console.error(`checkAndTrackActiveChains: faction ${factionId}:`, err.message);
+      results.push({ factionId, error: err.message });
+    }
+  }
+
+  return results;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/chain/active
+// Public endpoint — returns active chain sessions with member stats + armory.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getActiveChains(request, env) {
+  try {
+    const { results: sessions } = await env.DB.prepare(
+      `SELECT faction_id, chain_start_at, current_length, timeout, modifier, status, ended_at, last_checked_at
+       FROM active_chain_sessions WHERE status='active'`
+    ).all();
+
+    if (!sessions?.length) return jsonResponse({ chains: [] });
+
+    const chains = [];
+    for (const session of sessions) {
+      const { results: members } = await env.DB.prepare(
+        `SELECT torn_user_id, username, total_attacks, total_respect, bonus_hits
+         FROM chain_session_stats
+         WHERE faction_id=? AND chain_start_at=?
+         ORDER BY total_attacks DESC`
+      ).bind(session.faction_id, session.chain_start_at).all();
+
+      const { results: armory } = await env.DB.prepare(
+        `SELECT torn_user_id, username, item_name, COUNT(*) as uses
+         FROM chain_session_armory
+         WHERE faction_id=? AND chain_start_at=?
+         GROUP BY torn_user_id, item_name
+         ORDER BY uses DESC`
+      ).bind(session.faction_id, session.chain_start_at).all();
+
+      chains.push({ ...session, members: members || [], armory: armory || [] });
+    }
+
+    return jsonResponse({ chains });
+  } catch (err) {
+    console.error('getActiveChains error:', err);
+    return errorResponse('Failed to fetch active chains', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/chains/refresh
 // Admin-triggered force refresh of chain cache.
 // ─────────────────────────────────────────────────────────────────────────────

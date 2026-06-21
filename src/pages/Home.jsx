@@ -5,6 +5,7 @@ import EventCalendar from '../components/EventCalendar'
 import FactionEventCards from '../components/FactionEventCards'
 import DailyCipher from '../components/DailyCipher'
 import WarSummary from '../components/WarSummary'
+import ActiveChainCard from '../components/ActiveChainCard'
 import { API_BASE_URL } from '../config/api'
 
 const FACTIONS = [
@@ -93,6 +94,11 @@ function MemberHome({ user }) {
         {/* Daily Cipher */}
         <div style={{ marginTop: 24 }}>
           <DailyCipher />
+        </div>
+
+        {/* Active Chain */}
+        <div style={{ marginTop: 24 }}>
+          <ActiveChainCard />
         </div>
 
         {/* Ranked War History */}
