@@ -61,10 +61,6 @@ export async function handleRequest(request, env, ctx) {
     return warController.getWarsSummary(request, env);
   }
 
-  if (pathname === '/api/chain/active' && method === 'GET') {
-    return chainController.getActiveChains(request, env);
-  }
-
   if (pathname === '/api/events' && method === 'GET') {
     return eventsController.getEvents(request, env);
   }
