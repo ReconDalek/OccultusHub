@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
+import { getRandomApiKeyForFaction, getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 // ── Personal stats field definitions ─────────────────────────────────────────
