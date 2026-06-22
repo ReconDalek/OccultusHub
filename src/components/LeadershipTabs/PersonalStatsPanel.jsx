@@ -561,6 +561,246 @@ function LineChart({ series, statLabel }) {
   )
 }
 
+// ─── Snapshot gaps panel ───────────────────────────────────────────────────────
+
+const FACTION_NAMES_GAP  = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
+const FACTION_COLORS_GAP = { 33097: '#b3123f', 9728: '#6d28d9', 9171: '#0e7490' }
+
+function SnapshotGapsPanel() {
+  const [open, setOpen]       = useState(false)
+  const [gaps, setGaps]       = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState(null)
+  // Track per-member backfill state: { [key: `${torn_user_id}:${date}`]: 'idle'|'loading'|'done'|'error' }
+  const [states, setStates]   = useState({})
+  // Track errors per member key
+  const [errMsgs, setErrMsgs] = useState({})
+
+  function loadGaps() {
+    setLoading(true); setError(null)
+    fetch(`${API_BASE_URL}/api/leadership/personal-stats/gaps`, { headers: authHeaders() })
+      .then(r => r.json().then(j => ({ r, j })))
+      .then(({ r, j }) => {
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+        setGaps(j)
+        setStates({})
+        setErrMsgs({})
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  function toggle() {
+    if (!open && !gaps) loadGaps()
+    setOpen(v => !v)
+  }
+
+  async function backfill(torn_user_id, snapshot_date) {
+    const key = `${torn_user_id}:${snapshot_date}`
+    setStates(s => ({ ...s, [key]: 'loading' }))
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/personal-stats/backfill`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ torn_user_id, snapshot_date }),
+      })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      setStates(s => ({ ...s, [key]: 'done' }))
+      // Remove this member from the gap list after a short delay
+      setTimeout(() => {
+        setGaps(g => {
+          if (!g) return g
+          const updated = g.gaps.map(group => ({
+            ...group,
+            missing: group.missing.filter(m => !(m.torn_user_id === torn_user_id && group.date === snapshot_date)),
+          })).filter(group => group.missing.length > 0)
+          return { ...g, gaps: updated, total: g.total - 1 }
+        })
+      }, 800)
+    } catch (e) {
+      setStates(s => ({ ...s, [key]: 'error' }))
+      setErrMsgs(s => ({ ...s, [key]: e.message }))
+    }
+  }
+
+  async function backfillGroup(group) {
+    for (const m of group.missing) {
+      const key = `${m.torn_user_id}:${group.date}`
+      if (states[key] === 'done' || states[key] === 'loading') continue
+      await backfill(m.torn_user_id, group.date)
+      // Small delay between requests to avoid hammering the API
+      await new Promise(r => setTimeout(r, 300))
+    }
+  }
+
+  const totalGaps = gaps?.total ?? 0
+  const btnLabel  = open
+    ? '▲ Hide Gaps'
+    : gaps
+      ? `⚠ Snapshot Gaps ${totalGaps > 0 ? `(${totalGaps})` : '(none)'}`
+      : '⚠ Snapshot Gaps'
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <button
+        onClick={toggle}
+        style={{
+          padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
+          border: `1px solid ${open || totalGaps > 0 ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.1)'}`,
+          background: open ? 'rgba(251,191,36,0.08)' : 'transparent',
+          color: totalGaps > 0 ? '#fbbf24' : '#a1a1aa',
+          transition: 'all 0.15s',
+        }}
+      >
+        {btnLabel}
+      </button>
+
+      {open && (
+        <div style={{
+          marginTop: '12px', border: '1px solid rgba(251,191,36,0.2)',
+          borderRadius: '12px', background: 'rgba(14,14,22,0.6)', padding: '20px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontFamily: 'Cinzel, serif', color: '#fbbf24', fontSize: '15px', letterSpacing: '0.5px', margin: 0 }}>
+              Snapshot Gaps
+            </h3>
+            <button
+              onClick={loadGaps}
+              disabled={loading}
+              style={{
+                padding: '5px 14px', borderRadius: '8px', cursor: loading ? 'default' : 'pointer',
+                border: '1px solid rgba(255,255,255,0.1)', background: 'transparent',
+                color: '#a1a1aa', fontSize: '12px',
+              }}
+            >
+              {loading ? 'Loading…' : '↻ Refresh'}
+            </button>
+          </div>
+
+          {error && (
+            <div style={{ color: '#f87171', fontSize: '13px', padding: '10px', background: 'rgba(248,113,113,0.06)', borderRadius: '8px', marginBottom: '12px' }}>
+              {error}
+            </div>
+          )}
+
+          {!loading && gaps && gaps.gaps.length === 0 && (
+            <div style={{ color: '#52525b', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
+              No gaps detected — all active members have snapshots for every recorded date.
+            </div>
+          )}
+
+          {!loading && gaps && gaps.gaps.length > 0 && (
+            <div>
+              <p style={{ color: '#71717a', fontSize: '12px', margin: '0 0 16px' }}>
+                {gaps.total} missing snapshot{gaps.total !== 1 ? 's' : ''} across {gaps.gaps.length} date{gaps.gaps.length !== 1 ? 's' : ''}.
+                Each backfill fetches that member's stats at 01:00 UTC on the missing date.
+              </p>
+              {gaps.gaps.map(group => {
+                const doneCount = group.missing.filter(m => states[`${m.torn_user_id}:${group.date}`] === 'done').length
+                const allDone   = doneCount === group.missing.length
+                const anyLoading = group.missing.some(m => states[`${m.torn_user_id}:${group.date}`] === 'loading')
+                return (
+                  <div key={group.date} style={{
+                    marginBottom: '16px', border: '1px solid rgba(255,255,255,0.07)',
+                    borderRadius: '10px', overflow: 'hidden',
+                    opacity: allDone ? 0.4 : 1, transition: 'opacity 0.4s',
+                  }}>
+                    {/* Date header */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 14px', background: 'rgba(255,255,255,0.03)',
+                      borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    }}>
+                      <div>
+                        <span style={{ color: '#fbbf24', fontWeight: '600', fontSize: '13px' }}>{group.date}</span>
+                        <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '10px' }}>
+                          {group.missing.length} missing
+                          {doneCount > 0 && !allDone && <span style={{ color: '#34d399' }}> · {doneCount} backfilled</span>}
+                          {allDone && <span style={{ color: '#34d399' }}> · all backfilled ✓</span>}
+                        </span>
+                        <span style={{ color: '#3f3f46', fontSize: '10px', marginLeft: '10px' }}>
+                          ts: {group.timestamp}
+                        </span>
+                      </div>
+                      {!allDone && (
+                        <button
+                          onClick={() => backfillGroup(group)}
+                          disabled={anyLoading}
+                          style={{
+                            padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: anyLoading ? 'default' : 'pointer',
+                            border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)',
+                            color: '#fbbf24',
+                          }}
+                        >
+                          {anyLoading ? 'Backfilling…' : `Backfill All (${group.missing.length - doneCount})`}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Member rows */}
+                    <div style={{ padding: '4px 0' }}>
+                      {group.missing.map(m => {
+                        const key    = `${m.torn_user_id}:${group.date}`
+                        const st     = states[key] ?? 'idle'
+                        const errMsg = errMsgs[key]
+                        return (
+                          <div key={m.torn_user_id} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.03)',
+                            background: st === 'done' ? 'rgba(52,211,153,0.04)' : 'transparent',
+                            transition: 'background 0.3s',
+                          }}>
+                            <div>
+                              <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{m.username}</span>
+                              {m.faction_id && (
+                                <span style={{ color: FACTION_COLORS_GAP[m.faction_id] ?? '#52525b', fontSize: '10px', marginLeft: '8px' }}>
+                                  {FACTION_NAMES_GAP[m.faction_id] ?? `Faction ${m.faction_id}`}
+                                </span>
+                              )}
+                              {errMsg && <span style={{ color: '#f87171', fontSize: '10px', marginLeft: '8px' }}>{errMsg}</span>}
+                            </div>
+                            {st === 'idle' && (
+                              <button
+                                onClick={() => backfill(m.torn_user_id, group.date)}
+                                style={{
+                                  padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                  border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.08)',
+                                  color: '#c4b5fd',
+                                }}
+                              >
+                                Backfill
+                              </button>
+                            )}
+                            {st === 'loading' && <span style={{ color: '#a1a1aa', fontSize: '11px' }}>fetching…</span>}
+                            {st === 'done'    && <span style={{ color: '#34d399', fontSize: '13px' }}>✓</span>}
+                            {st === 'error'   && (
+                              <button
+                                onClick={() => backfill(m.torn_user_id, group.date)}
+                                style={{
+                                  padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                  border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)',
+                                  color: '#f87171',
+                                }}
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Compare panel ─────────────────────────────────────────────────────────────
 
 function ComparePanel({ allMembers, allFields, minDate }) {
@@ -886,6 +1126,9 @@ export default function PersonalStatsPanel() {
                     : `Snapshots: ${data.coverage.earliest} → ${data.coverage.latest} (${data.coverage.days_covered} day${data.coverage.days_covered !== 1 ? 's' : ''})`}
                 </div>
               )}
+
+              {/* Gaps — sits above compare and stats table */}
+              <SnapshotGapsPanel />
 
               {/* Compare — sits above the stats table */}
               <div style={{ marginBottom: '20px' }}>

@@ -391,6 +391,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/personal-stats/compare' && method === 'GET') {
       return activityController.getPersonalStatsCompare(request, env);
     }
+    if (pathname === '/api/leadership/personal-stats/gaps' && method === 'GET') {
+      return activityController.getPersonalStatsGaps(request, env);
+    }
+    if (pathname === '/api/leadership/personal-stats/backfill' && method === 'POST') {
+      return activityController.backfillPersonalStats(request, env, user);
+    }
   }
 
   // Discord endpoints

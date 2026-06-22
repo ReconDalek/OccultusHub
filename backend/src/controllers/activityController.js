@@ -749,6 +749,111 @@ export async function getPersonalStatsCompare(request, env) {
   }
 }
 
+// ── Personal stats gaps ───────────────────────────────────────────────────────
+// GET /api/leadership/personal-stats/gaps
+// For each date that has snapshot data, returns active members with a missing row.
+export async function getPersonalStatsGaps(request, env) {
+  try {
+    const gapRows = await env.DB.prepare(`
+      SELECT fm.torn_user_id, fm.username, fm.faction_id, dates.snapshot_date
+      FROM faction_members fm
+      CROSS JOIN (
+        SELECT DISTINCT snapshot_date
+        FROM personal_stats_snapshots
+        ORDER BY snapshot_date DESC
+        LIMIT 60
+      ) dates
+      WHERE fm.is_active = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM personal_stats_snapshots p
+          WHERE p.torn_user_id = fm.torn_user_id AND p.snapshot_date = dates.snapshot_date
+        )
+      ORDER BY dates.snapshot_date DESC, fm.username
+    `).all();
+
+    const rows = gapRows.results || [];
+
+    const byDate = {};
+    for (const row of rows) {
+      if (!byDate[row.snapshot_date]) {
+        byDate[row.snapshot_date] = {
+          date: row.snapshot_date,
+          timestamp: Math.floor(new Date(row.snapshot_date + 'T01:00:00Z').getTime() / 1000),
+          missing: [],
+        };
+      }
+      byDate[row.snapshot_date].missing.push({
+        torn_user_id: row.torn_user_id,
+        username: row.username,
+        faction_id: row.faction_id,
+      });
+    }
+
+    return jsonResponse({
+      gaps: Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date)),
+      total: rows.length,
+    });
+  } catch (err) {
+    console.error('getPersonalStatsGaps error:', err);
+    return errorResponse('Failed to fetch personal stats gaps', 500);
+  }
+}
+
+// ── Personal stats backfill ───────────────────────────────────────────────────
+// POST /api/leadership/personal-stats/backfill
+// Body: { torn_user_id, snapshot_date }
+// Fetches the Torn API with a historical timestamp and stores the snapshot.
+export async function backfillPersonalStats(request, env, user) {
+  try {
+    const { torn_user_id, snapshot_date } = await request.json();
+
+    if (!torn_user_id || !snapshot_date) {
+      return errorResponse('Missing required fields: torn_user_id, snapshot_date', 400);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(snapshot_date)) {
+      return errorResponse('Invalid snapshot_date format, expected YYYY-MM-DD', 400);
+    }
+
+    const member = await env.DB.prepare(
+      `SELECT torn_user_id, username, faction_id FROM faction_members WHERE torn_user_id = ?`
+    ).bind(torn_user_id).first();
+    if (!member) return errorResponse(`Member ${torn_user_id} not found in faction_members`, 404);
+
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) return errorResponse('No API key available', 503);
+
+    // Use 01:00 UTC on that date — the time the daily cron normally runs.
+    const timestamp = Math.floor(new Date(snapshot_date + 'T01:00:00Z').getTime() / 1000);
+
+    const data = await fetchWithRetry(
+      `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=all&timestamp=${timestamp}&comment=OccHub`,
+      { Authorization: `ApiKey ${apiKeyObj.key}` }
+    );
+
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(`
+      INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
+        stats      = excluded.stats,
+        username   = excluded.username,
+        faction_id = excluded.faction_id
+    `).bind(torn_user_id, member.username, member.faction_id, snapshot_date, JSON.stringify(data.personalstats), now).run();
+
+    await logInfo(env, {
+      category: 'admin', event: 'personal_stats_backfill',
+      message: `Personal stats backfilled for ${member.username} on ${snapshot_date}`,
+      torn_user_id: user?.userId, username: user?.username,
+      meta: { target_user: torn_user_id, target_username: member.username, snapshot_date, timestamp },
+    });
+
+    return jsonResponse({ success: true, torn_user_id, username: member.username, snapshot_date });
+  } catch (err) {
+    console.error('backfillPersonalStats error:', err);
+    return errorResponse(`Backfill failed: ${err.message}`, 500);
+  }
+}
+
 // ── Admin: manually trigger personal stats snapshot ───────────────────────────
 export async function triggerPersonalStatsSnapshotAdmin(request, env) {
   try {
