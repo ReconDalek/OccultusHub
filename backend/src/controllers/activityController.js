@@ -896,48 +896,61 @@ export async function backfillPersonalStats(request, env, user) {
       );
     }
 
-    // Validate against the LATEST snapshot for this user. Historical backfill data
-    // must have lower cumulative values than the most recent snapshot. If the backfilled
-    // values match or exceed the latest for several probe fields, Torn returned current
-    // stats rather than historical data for the timestamp.
-    // All probe fields are spread across our 16 categories so they will all be present
-    // in the merged result.
-    const latestRow = await env.DB.prepare(
+    // Validate against the NEXT snapshot after the backfill date.
+    // Rules:
+    //   - If ANY probe field is strictly higher in the backfill than the next snapshot → abort
+    //     (cumulative stats can never go backwards — this means Torn returned current data)
+    //   - If at least 2 probe fields are strictly lower in the backfill than the next snapshot → pass
+    //     (confirms the timestamp is working; not every stat moves every day so we don't require all)
+    //   - Otherwise (all same, or fewer than 2 lower) → abort (can't confirm it's historical)
+    const nextRow = await env.DB.prepare(
       `SELECT snapshot_date, stats FROM personal_stats_snapshots
-       WHERE torn_user_id = ?
-       ORDER BY snapshot_date DESC LIMIT 1`
-    ).bind(torn_user_id).first();
+       WHERE torn_user_id = ? AND snapshot_date > ?
+       ORDER BY snapshot_date ASC LIMIT 1`
+    ).bind(torn_user_id, snapshot_date).first();
 
-    if (latestRow && latestRow.snapshot_date > snapshot_date) {
+    if (nextRow) {
       try {
         const fetchedStats = extractStats(merged);
-        const latestStats  = extractStats(JSON.parse(latestRow.stats));
+        const nextStats    = extractStats(JSON.parse(nextRow.stats));
         const probeFields  = [
           'active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total',
           'atk_won', 'war_hits', 'streak_current',
         ];
         const probeComparisons = {};
         for (const f of probeFields) {
-          probeComparisons[f] = { backfill: fetchedStats[f] ?? null, latest: latestStats[f] ?? null };
+          probeComparisons[f] = { backfill: fetchedStats[f] ?? null, next: nextStats[f] ?? null };
         }
-        const inflated = probeFields.filter(f => (fetchedStats[f] ?? 0) >= (latestStats[f] ?? 0));
+        const corrupted = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
+        const confirmed = probeFields.filter(f => (fetchedStats[f] ?? 0) < (nextStats[f] ?? 0));
 
         console.log('[backfill] probe comparison', JSON.stringify({
           torn_user_id, snapshot_date,
-          latest_snapshot_date: latestRow.snapshot_date,
+          next_snapshot_date: nextRow.snapshot_date,
           comparisons: probeComparisons,
-          inflated_fields: inflated,
-          inflated_count: inflated.length,
+          corrupted_fields: corrupted,
+          confirmed_fields: confirmed,
         }));
 
-        if (inflated.length >= 3) {
+        if (corrupted.length > 0) {
           return new Response(JSON.stringify({
-            error: `Torn returned current stats instead of historical data for ${snapshot_date}. ` +
-                   `Backfilled values are not lower than the ${latestRow.snapshot_date} snapshot for: ${inflated.join(', ')}. ` +
-                   `Saving would corrupt gain tracking — backfill aborted.`,
+            error: `Backfill data is corrupt for ${snapshot_date} — ` +
+                   `backfilled values exceed the ${nextRow.snapshot_date} snapshot for: ${corrupted.join(', ')}. ` +
+                   `Cumulative stats cannot decrease over time. Backfill aborted.`,
             inflation_detected: true,
-            inflated_fields: inflated,
-            debug: { comparisons: probeComparisons, latest_snapshot_date: latestRow.snapshot_date },
+            corrupted_fields: corrupted,
+            debug: { comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
+          }), { status: 422, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        if (confirmed.length < 2) {
+          return new Response(JSON.stringify({
+            error: `Cannot confirm backfill data is historical for ${snapshot_date} — ` +
+                   `fewer than 2 probe fields are lower than the ${nextRow.snapshot_date} snapshot (${confirmed.length} confirmed: ${confirmed.join(', ') || 'none'}). ` +
+                   `Backfill aborted to avoid storing potentially stale data.`,
+            inflation_detected: true,
+            confirmed_fields: confirmed,
+            debug: { comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
           }), { status: 422, headers: { 'Content-Type': 'application/json' } });
         }
       } catch (validationErr) {
@@ -945,7 +958,7 @@ export async function backfillPersonalStats(request, env, user) {
       }
     } else {
       console.log('[backfill] skipped validation — no later snapshot found', JSON.stringify({
-        torn_user_id, snapshot_date, latestRow: latestRow?.snapshot_date ?? null,
+        torn_user_id, snapshot_date,
       }));
     }
 
