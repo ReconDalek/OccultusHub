@@ -865,13 +865,14 @@ export async function backfillPersonalStats(request, env, user) {
     const merged = {};
     const catErrors = [];
 
+    console.log('[backfill] starting', JSON.stringify({ torn_user_id, snapshot_date, timestamp, categories: BACKFILL_CATEGORIES.length }));
+
     for (let i = 0; i < BACKFILL_CATEGORIES.length; i += BATCH_SIZE) {
       const batch = BACKFILL_CATEGORIES.slice(i, i + BATCH_SIZE);
+      const urls = batch.map(cat => `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=${cat}&timestamp=${timestamp}&comment=OccHub`);
+      console.log('[backfill] batch', i / BATCH_SIZE, JSON.stringify(urls));
       const results = await Promise.allSettled(
-        batch.map(cat => fetchWithRetry(
-          `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=${cat}&timestamp=${timestamp}&comment=OccHub`,
-          { Authorization: `ApiKey ${apiKeyObj.key}` }
-        ))
+        urls.map(url => fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` }))
       );
       for (let j = 0; j < batch.length; j++) {
         const r = results[j];
@@ -915,9 +916,20 @@ export async function backfillPersonalStats(request, env, user) {
           'active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total',
           'atk_won', 'war_hits', 'streak_current',
         ];
-        // Backfilled values should be LOWER than the latest snapshot.
-        // Flag any field where backfill >= latest (suggests current data was returned).
+        const probeComparisons = {};
+        for (const f of probeFields) {
+          probeComparisons[f] = { backfill: fetchedStats[f] ?? null, latest: latestStats[f] ?? null };
+        }
         const inflated = probeFields.filter(f => (fetchedStats[f] ?? 0) >= (latestStats[f] ?? 0));
+
+        console.log('[backfill] probe comparison', JSON.stringify({
+          torn_user_id, snapshot_date,
+          latest_snapshot_date: latestRow.snapshot_date,
+          comparisons: probeComparisons,
+          inflated_fields: inflated,
+          inflated_count: inflated.length,
+        }));
+
         if (inflated.length >= 3) {
           return new Response(JSON.stringify({
             error: `Torn returned current stats instead of historical data for ${snapshot_date}. ` +
@@ -925,11 +937,16 @@ export async function backfillPersonalStats(request, env, user) {
                    `Saving would corrupt gain tracking — backfill aborted.`,
             inflation_detected: true,
             inflated_fields: inflated,
+            debug: { comparisons: probeComparisons, latest_snapshot_date: latestRow.snapshot_date },
           }), { status: 422, headers: { 'Content-Type': 'application/json' } });
         }
-      } catch {
-        // Validation parse error — proceed rather than block
+      } catch (validationErr) {
+        console.error('[backfill] validation error', validationErr?.message);
       }
+    } else {
+      console.log('[backfill] skipped validation — no later snapshot found', JSON.stringify({
+        torn_user_id, snapshot_date, latestRow: latestRow?.snapshot_date ?? null,
+      }));
     }
 
     const now = Math.floor(Date.now() / 1000);
