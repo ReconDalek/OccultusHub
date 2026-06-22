@@ -895,24 +895,33 @@ export async function backfillPersonalStats(request, env, user) {
       );
     }
 
-    // Validate: compare against next known snapshot to detect inflation
-    // (Torn returning current stats instead of historical data for the timestamp).
-    const nextRow = await env.DB.prepare(
+    // Validate against the LATEST snapshot for this user. Historical backfill data
+    // must have lower cumulative values than the most recent snapshot. If the backfilled
+    // values match or exceed the latest for several probe fields, Torn returned current
+    // stats rather than historical data for the timestamp.
+    // All probe fields are spread across our 16 categories so they will all be present
+    // in the merged result.
+    const latestRow = await env.DB.prepare(
       `SELECT snapshot_date, stats FROM personal_stats_snapshots
-       WHERE torn_user_id = ? AND snapshot_date > ?
-       ORDER BY snapshot_date ASC LIMIT 1`
-    ).bind(torn_user_id, snapshot_date).first();
+       WHERE torn_user_id = ?
+       ORDER BY snapshot_date DESC LIMIT 1`
+    ).bind(torn_user_id).first();
 
-    if (nextRow) {
+    if (latestRow && latestRow.snapshot_date > snapshot_date) {
       try {
         const fetchedStats = extractStats(merged);
-        const nextStats    = extractStats(JSON.parse(nextRow.stats));
-        const probeFields  = ['active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total', 'atk_won', 'war_hits'];
-        const inflated     = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
+        const latestStats  = extractStats(JSON.parse(latestRow.stats));
+        const probeFields  = [
+          'active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total',
+          'atk_won', 'war_hits', 'streak_current',
+        ];
+        // Backfilled values should be LOWER than the latest snapshot.
+        // Flag any field where backfill >= latest (suggests current data was returned).
+        const inflated = probeFields.filter(f => (fetchedStats[f] ?? 0) >= (latestStats[f] ?? 0));
         if (inflated.length >= 3) {
           return new Response(JSON.stringify({
             error: `Torn returned current stats instead of historical data for ${snapshot_date}. ` +
-                   `Values are higher than the ${nextRow.snapshot_date} snapshot for: ${inflated.join(', ')}. ` +
+                   `Backfilled values are not lower than the ${latestRow.snapshot_date} snapshot for: ${inflated.join(', ')}. ` +
                    `Saving would corrupt gain tracking — backfill aborted.`,
             inflation_detected: true,
             inflated_fields: inflated,
