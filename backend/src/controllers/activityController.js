@@ -803,6 +803,8 @@ export async function getPersonalStatsGaps(request, env) {
 // POST /api/leadership/personal-stats/backfill
 // Body: { torn_user_id, snapshot_date }
 // Fetches the Torn API with a historical timestamp and stores the snapshot.
+// Validates fetched data against the next known snapshot to catch cases where
+// Torn returns current stats instead of historical data for the timestamp.
 export async function backfillPersonalStats(request, env, user) {
   try {
     const { torn_user_id, snapshot_date } = await request.json();
@@ -830,6 +832,36 @@ export async function backfillPersonalStats(request, env, user) {
       { Authorization: `ApiKey ${apiKeyObj.key}` }
     );
 
+    // Validate: if the returned stats are higher than the next known snapshot,
+    // Torn returned current data instead of historical data for this timestamp.
+    // Storing it would corrupt gain calculations for this member.
+    const nextRow = await env.DB.prepare(
+      `SELECT snapshot_date, stats FROM personal_stats_snapshots
+       WHERE torn_user_id = ? AND snapshot_date > ?
+       ORDER BY snapshot_date ASC LIMIT 1`
+    ).bind(torn_user_id, snapshot_date).first();
+
+    if (nextRow) {
+      try {
+        const fetchedStats = extractStats(data.personalstats);
+        const nextStats    = extractStats(JSON.parse(nextRow.stats));
+        // Check a handful of always-increasing fields
+        const probeFields = ['atk_won', 'war_hits', 'crimes', 'revives', 'atk_lost', 'travel'];
+        const inflated = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
+        if (inflated.length >= 3) {
+          return new Response(JSON.stringify({
+            error: `Torn returned current stats instead of historical data for ${snapshot_date}. ` +
+                   `The fetched values are higher than the ${nextRow.snapshot_date} snapshot for: ${inflated.join(', ')}. ` +
+                   `Saving this would corrupt gain tracking — backfill aborted.`,
+            inflation_detected: true,
+            inflated_fields: inflated,
+          }), { status: 422, headers: { 'Content-Type': 'application/json' } });
+        }
+      } catch {
+        // If validation parse fails, proceed — don't block on it
+      }
+    }
+
     const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(`
       INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
@@ -851,6 +883,38 @@ export async function backfillPersonalStats(request, env, user) {
   } catch (err) {
     console.error('backfillPersonalStats error:', err);
     return errorResponse(`Backfill failed: ${err.message}`, 500);
+  }
+}
+
+// ── Delete a specific personal stats snapshot ─────────────────────────────────
+// DELETE /api/leadership/personal-stats/snapshot?torn_user_id=X&snapshot_date=YYYY-MM-DD
+export async function deletePersonalStatsSnapshot(request, env, user) {
+  try {
+    const url           = new URL(request.url);
+    const torn_user_id  = parseInt(url.searchParams.get('torn_user_id'), 10);
+    const snapshot_date = url.searchParams.get('snapshot_date');
+
+    if (!torn_user_id || !snapshot_date) {
+      return errorResponse('Missing torn_user_id or snapshot_date', 400);
+    }
+
+    const result = await env.DB.prepare(
+      `DELETE FROM personal_stats_snapshots WHERE torn_user_id = ? AND snapshot_date = ?`
+    ).bind(torn_user_id, snapshot_date).run();
+
+    const deleted = result.meta?.changes ?? 0;
+
+    await logInfo(env, {
+      category: 'admin', event: 'personal_stats_delete_snapshot',
+      message: `Personal stats snapshot deleted for user ${torn_user_id} on ${snapshot_date}`,
+      torn_user_id: user?.userId, username: user?.username,
+      meta: { target_user: torn_user_id, snapshot_date, deleted },
+    });
+
+    return jsonResponse({ success: true, deleted });
+  } catch (err) {
+    console.error('deletePersonalStatsSnapshot error:', err);
+    return errorResponse('Failed to delete snapshot', 500);
   }
 }
 

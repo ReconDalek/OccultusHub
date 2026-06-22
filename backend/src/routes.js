@@ -397,6 +397,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/personal-stats/backfill' && method === 'POST') {
       return activityController.backfillPersonalStats(request, env, user);
     }
+    if (pathname === '/api/leadership/personal-stats/snapshot' && method === 'DELETE') {
+      return activityController.deletePersonalStatsSnapshot(request, env, user);
+    }
   }
 
   // Discord endpoints

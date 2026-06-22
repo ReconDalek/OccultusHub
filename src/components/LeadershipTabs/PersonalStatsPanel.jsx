@@ -605,7 +605,13 @@ function SnapshotGapsPanel() {
         body: JSON.stringify({ torn_user_id, snapshot_date }),
       })
       const j = await res.json()
-      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      if (!res.ok) {
+        // 422 = Torn returned current stats — show as a special warning, not an error
+        const state = res.status === 422 ? 'inflation' : 'error'
+        setStates(s => ({ ...s, [key]: state }))
+        setErrMsgs(s => ({ ...s, [key]: j.error || `HTTP ${res.status}` }))
+        return
+      }
       setStates(s => ({ ...s, [key]: 'done' }))
       // Remove this member from the gap list after a short delay
       setTimeout(() => {
@@ -621,6 +627,36 @@ function SnapshotGapsPanel() {
     } catch (e) {
       setStates(s => ({ ...s, [key]: 'error' }))
       setErrMsgs(s => ({ ...s, [key]: e.message }))
+    }
+  }
+
+  async function deleteSnapshot(torn_user_id, snapshot_date) {
+    const key = `${torn_user_id}:${snapshot_date}`
+    setStates(s => ({ ...s, [key]: 'deleting' }))
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/leadership/personal-stats/snapshot?torn_user_id=${torn_user_id}&snapshot_date=${snapshot_date}`,
+        { method: 'DELETE', headers: authHeaders() }
+      )
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      // Put back in gaps list as idle
+      setStates(s => ({ ...s, [key]: 'idle' }))
+      setErrMsgs(s => ({ ...s, [key]: undefined }))
+      setGaps(g => {
+        if (!g) return g
+        const updated = g.gaps.map(group => {
+          if (group.date !== snapshot_date) return group
+          const already = group.missing.find(m => m.torn_user_id === torn_user_id)
+          if (already) return group
+          return { ...group, missing: [...group.missing, { torn_user_id, username: '?', faction_id: null }] }
+        })
+        return { ...g, gaps: updated, total: g.total + 1 }
+      })
+      loadGaps() // refresh to get accurate username back
+    } catch (e) {
+      setStates(s => ({ ...s, [key]: 'done' })) // stay done, show error inline
+      setErrMsgs(s => ({ ...s, [key]: `Delete failed: ${e.message}` }))
     }
   }
 
@@ -746,46 +782,61 @@ function SnapshotGapsPanel() {
                         const errMsg = errMsgs[key]
                         return (
                           <div key={m.torn_user_id} style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
                             padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.03)',
-                            background: st === 'done' ? 'rgba(52,211,153,0.04)' : 'transparent',
-                            transition: 'background 0.3s',
+                            background: st === 'done' ? 'rgba(52,211,153,0.04)' : st === 'inflation' ? 'rgba(251,191,36,0.04)' : 'transparent',
+                            transition: 'background 0.3s', gap: '8px',
                           }}>
-                            <div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
                               <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{m.username}</span>
                               {m.faction_id && (
                                 <span style={{ color: FACTION_COLORS_GAP[m.faction_id] ?? '#52525b', fontSize: '10px', marginLeft: '8px' }}>
                                   {FACTION_NAMES_GAP[m.faction_id] ?? `Faction ${m.faction_id}`}
                                 </span>
                               )}
-                              {errMsg && <span style={{ color: '#f87171', fontSize: '10px', marginLeft: '8px' }}>{errMsg}</span>}
+                              {st === 'inflation' && (
+                                <div style={{ color: '#fbbf24', fontSize: '10px', marginTop: '3px', lineHeight: '1.4' }}>
+                                  ⚠ Torn returned current stats — historical data unavailable for this date. Gap cannot be backfilled.
+                                </div>
+                              )}
+                              {st === 'error' && errMsg && (
+                                <div style={{ color: '#f87171', fontSize: '10px', marginTop: '2px' }}>{errMsg}</div>
+                              )}
+                              {st === 'done' && errMsg && (
+                                <div style={{ color: '#f87171', fontSize: '10px', marginTop: '2px' }}>{errMsg}</div>
+                              )}
                             </div>
-                            {st === 'idle' && (
-                              <button
-                                onClick={() => backfill(m.torn_user_id, group.date)}
-                                style={{
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                              {st === 'idle' && (
+                                <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
                                   padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
-                                  border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.08)',
-                                  color: '#c4b5fd',
-                                }}
-                              >
-                                Backfill
-                              </button>
-                            )}
-                            {st === 'loading' && <span style={{ color: '#a1a1aa', fontSize: '11px' }}>fetching…</span>}
-                            {st === 'done'    && <span style={{ color: '#34d399', fontSize: '13px' }}>✓</span>}
-                            {st === 'error'   && (
-                              <button
-                                onClick={() => backfill(m.torn_user_id, group.date)}
-                                style={{
-                                  padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
-                                  border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)',
-                                  color: '#f87171',
-                                }}
-                              >
-                                Retry
-                              </button>
-                            )}
+                                  border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.08)', color: '#c4b5fd',
+                                }}>Backfill</button>
+                              )}
+                              {st === 'loading'  && <span style={{ color: '#a1a1aa', fontSize: '11px' }}>fetching…</span>}
+                              {st === 'deleting' && <span style={{ color: '#a1a1aa', fontSize: '11px' }}>deleting…</span>}
+                              {st === 'inflation' && (
+                                <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
+                                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                  border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24',
+                                }}>Retry</button>
+                              )}
+                              {st === 'error' && (
+                                <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
+                                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                  border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171',
+                                }}>Retry</button>
+                              )}
+                              {st === 'done' && (
+                                <>
+                                  <span style={{ color: '#34d399', fontSize: '13px' }}>✓</span>
+                                  <button onClick={() => deleteSnapshot(m.torn_user_id, group.date)} style={{
+                                    padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                    border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.06)', color: '#f87171',
+                                  }}>Delete</button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
