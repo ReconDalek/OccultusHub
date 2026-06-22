@@ -877,7 +877,7 @@ export async function backfillPersonalStats(request, env, user) {
       const results = await Promise.allSettled(
         batchUrls.map(url => fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` }))
       );
-      for (let j = 0; j < batch.length; j++) {
+      for (let j = 0; j < batchUrls.length; j++) {
         const r = results[j];
         if (r.status === 'fulfilled' && r.value?.personalstats) {
           Object.assign(merged, r.value.personalstats);
