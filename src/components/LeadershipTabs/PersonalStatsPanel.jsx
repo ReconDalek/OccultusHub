@@ -493,7 +493,7 @@ function LineChart({ series, statLabel }) {
                   r="5"
                   fill="transparent"
                   stroke="transparent"
-                  onMouseEnter={() => setTooltip({ x: PAD.left + xOf(p.date), y: PAD.top + yOf(p.delta), date: p.date, delta: p.delta, username: s.username, color })}
+                  onMouseEnter={() => setTooltip({ x: PAD.left + xOf(p.date), y: PAD.top + yOf(p.delta), date: p.date, delta: p.delta, day_gain: p.day_gain, total: p.total, username: s.username, color })}
                   style={{ cursor: 'crosshair' }}
                 />
               ))}
@@ -537,9 +537,24 @@ function LineChart({ series, statLabel }) {
           zIndex: 10,
           whiteSpace: 'nowrap',
         }}>
-          <div style={{ color: tooltip.color, fontWeight: '600', marginBottom: '2px' }}>{tooltip.username}</div>
-          <div style={{ color: '#a1a1aa' }}>{tooltip.date}</div>
-          <div style={{ color: '#f4f4f5', fontWeight: '600', marginTop: '2px' }}>+{fmt(tooltip.delta)}</div>
+          <div style={{ color: tooltip.color, fontWeight: '600', marginBottom: '4px' }}>{tooltip.username}</div>
+          <div style={{ color: '#71717a', fontSize: '11px' }}>{tooltip.date}</div>
+          <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+              <span style={{ color: '#71717a', fontSize: '11px' }}>Total</span>
+              <span style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '12px' }}>{fmt(tooltip.total)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+              <span style={{ color: '#71717a', fontSize: '11px' }}>Period gain</span>
+              <span style={{ color: tooltip.color, fontWeight: '600', fontSize: '12px' }}>+{fmt(tooltip.delta)}</span>
+            </div>
+            {tooltip.day_gain > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+                <span style={{ color: '#71717a', fontSize: '11px' }}>Day gain</span>
+                <span style={{ color: '#34d399', fontWeight: '600', fontSize: '12px' }}>+{fmt(tooltip.day_gain)}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

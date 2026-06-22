@@ -613,6 +613,27 @@ export async function getPersonalStats(request, env) {
     const fromDate = url.searchParams.get('from') || defaultFrom;
     const toDate   = url.searchParams.get('to')   || defaultTo;
 
+    // ── Single-day mode: return raw snapshot totals, not deltas ───────────────
+    if (fromDate === toDate) {
+      const rows = await env.DB.prepare(`
+        SELECT torn_user_id, username, faction_id, stats, snapshot_date
+        FROM personal_stats_snapshots WHERE snapshot_date = ?
+      `).bind(fromDate).all();
+
+      const members = [];
+      for (const r of (rows.results || [])) {
+        let statsObj;
+        try { statsObj = JSON.parse(r.stats); } catch { continue; }
+        members.push({ id: r.torn_user_id, username: r.username, faction_id: r.faction_id, snapshot_date: r.snapshot_date, stats: extractStats(statsObj) });
+      }
+
+      const coverage = await env.DB.prepare(
+        `SELECT MIN(snapshot_date) AS earliest, MAX(snapshot_date) AS latest, COUNT(DISTINCT snapshot_date) AS days_covered FROM personal_stats_snapshots`
+      ).first();
+
+      return jsonResponse({ members, fields: FIELDS_META, mode: 'day', period: { from: fromDate, to: toDate, days: 1 }, coverage });
+    }
+
     let startRows, endRows;
     try {
       [startRows, endRows] = await Promise.all([
@@ -726,13 +747,16 @@ export async function getPersonalStatsCompare(request, env) {
       if (!member) { series.push({ id, username: null, faction_id: null, points: [] }); continue; }
 
       let baseline = null;
+      let prevVal  = null;
       const points = [];
       for (const r of member.rows) {
         let statsObj;
         try { statsObj = JSON.parse(r.stats); } catch { continue; }
         const val = getPath(statsObj, field.path);
         if (baseline === null) baseline = val;
-        points.push({ date: r.snapshot_date, delta: Math.max(0, val - baseline) });
+        const dayGain = prevVal !== null ? Math.max(0, val - prevVal) : 0;
+        points.push({ date: r.snapshot_date, delta: Math.max(0, val - baseline), day_gain: dayGain, total: val });
+        prevVal = val;
       }
 
       series.push({ id: member.id, username: member.username, faction_id: member.faction_id, points });
@@ -862,10 +886,10 @@ export async function backfillPersonalStats(request, env, user) {
       }
     }
 
-    // Abort if more than 3 categories failed — partial data would skew gain calculations.
-    if (catErrors.length > 3) {
+    // Abort if any category failed — partial data would skew gain calculations.
+    if (catErrors.length > 0) {
       return errorResponse(
-        `Backfill aborted — ${catErrors.length} categories failed: ${catErrors.join(', ')}`,
+        `Backfill aborted — ${catErrors.length} categor${catErrors.length === 1 ? 'y' : 'ies'} failed: ${catErrors.join(', ')}. Please retry.`,
         502
       );
     }
