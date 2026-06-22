@@ -882,7 +882,7 @@ export async function backfillPersonalStats(request, env, user) {
         if (r.status === 'fulfilled' && r.value?.personalstats) {
           Object.assign(merged, r.value.personalstats);
         } else if (r.status === 'rejected') {
-          catErrors.push(`${batch[j]}: ${r.reason?.message}`);
+          catErrors.push(`${BACKFILL_CATEGORIES[i + j]}: ${r.reason?.message}`);
         }
       }
       // Brief pause between batches
