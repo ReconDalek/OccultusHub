@@ -846,8 +846,92 @@ function SnapshotGapsPanel() {
               })}
             </div>
           )}
+
+          {/* Manual delete — for snapshots already filled (not in gap list) */}
+          <ManualSnapshotDelete onDelete={loadGaps} />
         </div>
       )}
+    </div>
+  )
+}
+
+function ManualSnapshotDelete({ onDelete }) {
+  const [userId, setUserId]   = useState('')
+  const [date, setDate]       = useState('')
+  const [status, setStatus]   = useState(null) // null | 'loading' | 'done' | 'error'
+  const [msg, setMsg]         = useState('')
+
+  async function handleDelete() {
+    if (!userId || !date) return
+    setStatus('loading'); setMsg('')
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/leadership/personal-stats/snapshot?torn_user_id=${userId}&snapshot_date=${date}`,
+        { method: 'DELETE', headers: authHeaders() }
+      )
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`)
+      if (!j.deleted) {
+        setStatus('error'); setMsg('No snapshot found for that user + date.')
+        return
+      }
+      setStatus('done'); setMsg(`Deleted. Refreshing gap list…`)
+      setUserId(''); setDate('')
+      setTimeout(onDelete, 600)
+    } catch (e) {
+      setStatus('error'); setMsg(e.message)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
+      <p style={{ color: '#52525b', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
+        Delete a specific snapshot
+      </p>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <label style={{ color: '#71717a', fontSize: '10px' }}>Torn User ID</label>
+          <input
+            type="number"
+            value={userId}
+            onChange={e => setUserId(e.target.value)}
+            placeholder="e.g. 2741093"
+            style={{
+              padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
+              background: '#18181b', color: '#f4f4f5', fontSize: '13px', width: '140px',
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <label style={{ color: '#71717a', fontSize: '10px' }}>Snapshot Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            style={{
+              padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
+              background: '#18181b', color: '#f4f4f5', fontSize: '13px',
+            }}
+          />
+        </div>
+        <button
+          onClick={handleDelete}
+          disabled={!userId || !date || status === 'loading'}
+          style={{
+            padding: '6px 16px', borderRadius: '8px', fontSize: '12px',
+            cursor: (!userId || !date || status === 'loading') ? 'default' : 'pointer',
+            border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)',
+            color: '#f87171', opacity: (!userId || !date) ? 0.5 : 1,
+          }}
+        >
+          {status === 'loading' ? 'Deleting…' : 'Delete Snapshot'}
+        </button>
+        {msg && (
+          <span style={{ fontSize: '12px', color: status === 'done' ? '#34d399' : '#f87171', alignSelf: 'center' }}>
+            {msg}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

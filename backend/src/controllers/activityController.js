@@ -845,8 +845,11 @@ export async function backfillPersonalStats(request, env, user) {
       try {
         const fetchedStats = extractStats(data.personalstats);
         const nextStats    = extractStats(JSON.parse(nextRow.stats));
-        // Check a handful of always-increasing fields
-        const probeFields = ['atk_won', 'war_hits', 'crimes', 'revives', 'atk_lost', 'travel'];
+        // Check fields that are always cumulative and cover diverse activity types.
+        // active_time/drugs/travel_time/crimes/dmg_total are the most reliable indicators
+        // since they span different gameplay areas and are highly unlikely to all be
+        // inflated simultaneously unless Torn returned current stats.
+        const probeFields = ['active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total', 'atk_won', 'war_hits'];
         const inflated = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
         if (inflated.length >= 3) {
           return new Response(JSON.stringify({
