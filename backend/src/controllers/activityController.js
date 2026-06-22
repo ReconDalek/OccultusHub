@@ -824,11 +824,12 @@ export async function getPersonalStatsGaps(request, env) {
 }
 
 // All Torn personalstats categories available via ?cat= with timestamp support.
+// Private categories (battle_stats, investments, itemmarket*) require the
+// user's own API key and are not accessible via third-party keys — excluded.
 const BACKFILL_CATEGORIES = [
-  'attacking', 'battle_stats', 'jobs', 'trading', 'jail', 'hospital',
-  'finishing_hits', 'communication', 'crimes', 'bounties', 'investments',
-  'items', 'travel', 'drugs', 'missions', 'racing', 'networth', 'other',
-  'itemmarketcustomers', 'itemmarketsales', 'itemmarketrevenue', 'itemmarketfees',
+  'attacking', 'jobs', 'trading', 'jail', 'hospital', 'finishing_hits',
+  'communication', 'crimes', 'bounties', 'items', 'travel', 'drugs',
+  'missions', 'racing', 'networth', 'other',
 ];
 
 // ── Personal stats backfill ───────────────────────────────────────────────────
