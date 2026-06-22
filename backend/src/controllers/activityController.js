@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomApiKeyForFaction } from '../services/tornApiService.js';
+import { getRandomApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 // ── Personal stats field definitions ─────────────────────────────────────────
@@ -222,28 +222,40 @@ const TORN_API_BASE = 'https://api.torn.com/v2';
 
 // Fetch current gym energy contributors for a faction (cat=current = active members only).
 async function fetchGymEnergy(apiKey) {
-  const url = `${TORN_API_BASE}/faction/contributors?stat=gymenergy&cat=current&comment=OccHub`;
-  const res = await fetch(url, { headers: { Authorization: `ApiKey ${apiKey}` } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
+  const data = await fetchWithRetry(
+    `${TORN_API_BASE}/faction/contributors?stat=gymenergy&cat=current&comment=OccHub`,
+    { Authorization: `ApiKey ${apiKey}` }
+  );
   return data.contributors || [];
 }
 
 // Called by daily cron — snapshot current energy totals for all factions.
 export async function takeEnergySnapshot(env) {
-  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
-  const now   = Math.floor(Date.now() / 1000);
+  const today     = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const now       = Math.floor(Date.now() / 1000);
+
+  // Gap detection — warn if yesterday's snapshot is absent
+  const { count: yesterdayCount } = await env.DB.prepare(
+    `SELECT COUNT(*) as count FROM energy_snapshots WHERE snapshot_date = ?`
+  ).bind(yesterday).first();
+  if (!yesterdayCount) {
+    await logWarn(env, {
+      category: 'cron', event: 'energy_snapshot_gap',
+      message: `Energy snapshot gap detected: no data for ${yesterday}. Yesterday's cron may have failed.`,
+      meta: { missing_date: yesterday },
+    });
+  }
 
   const results = await Promise.allSettled(
     FACTION_IDS.map(async (factionId) => {
       const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
       if (!apiKeyObj?.key) throw new Error(`No API key for faction ${factionId}`);
 
+      // fetchWithRetry handles transient errors (3 retries, 2/4/8s backoff)
       const contributors = await fetchGymEnergy(apiKeyObj.key);
       console.log(`[energy snapshot] faction ${factionId}: ${contributors.length} members`);
 
-      // Upsert each member — if a snapshot already exists for today, update it.
       const stmt = env.DB.prepare(`
         INSERT INTO energy_snapshots (torn_user_id, username, faction_id, energy_total, snapshot_date, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -266,10 +278,8 @@ export async function takeEnergySnapshot(env) {
     `DELETE FROM energy_snapshots WHERE snapshot_date < date('now', '-6 months')`
   ).run();
 
-  const summary = results.map(r =>
-    r.status === 'fulfilled' ? r.value : { error: r.reason?.message }
-  );
-  const errors = results.filter(r => r.status === 'rejected').map(r => r.reason?.message);
+  const summary    = results.map(r => r.status === 'fulfilled' ? r.value : { error: r.reason?.message });
+  const errors     = results.filter(r => r.status === 'rejected').map(r => r.reason?.message);
   const totalSaved = results.filter(r => r.status === 'fulfilled').reduce((s, r) => s + r.value.count, 0);
 
   await logInfo(env, {
@@ -278,7 +288,11 @@ export async function takeEnergySnapshot(env) {
     meta: { summary, errors: errors.length ? errors : undefined },
   });
   if (errors.length) {
-    await logWarn(env, { category: 'cron', event: 'energy_snapshot_partial', message: `Energy snapshot errors: ${errors.join(', ')}`, meta: { errors } });
+    await logError(env, {
+      category: 'cron', event: 'energy_snapshot_failed',
+      message: `Energy snapshot failed for ${errors.length} faction(s): ${errors.join(', ')}`,
+      meta: { errors },
+    });
   }
   console.log('[energy snapshot] complete:', JSON.stringify(summary));
   return summary;
@@ -344,13 +358,32 @@ export async function getEnergyActivity(request, env) {
   }
 }
 
+// Fetch and store a single member's personalstats snapshot for the given date.
+// Returns true on success, throws on failure (caller decides retry strategy).
+async function fetchAndStoreMemberStats(env, member, apiKey, date, now) {
+  const data = await fetchWithRetry(
+    `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`,
+    { Authorization: `ApiKey ${apiKey}` }
+  );
+  await env.DB.prepare(`
+    INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
+      stats      = excluded.stats,
+      username   = excluded.username,
+      faction_id = excluded.faction_id
+  `).bind(member.torn_user_id, member.username, member.faction_id, date, JSON.stringify(data.personalstats), now).run();
+  return true;
+}
+
 // ── Personal stats snapshot ───────────────────────────────────────────────────
 // Called by daily cron — snapshots personalstats for every active faction member.
 export async function takePersonalStatsSnapshot(env) {
-  const today = new Date().toISOString().slice(0, 10);
-  const now   = Math.floor(Date.now() / 1000);
+  const today     = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const now       = Math.floor(Date.now() / 1000);
 
-  // All active members across all factions
+  // Gap detection — warn if yesterday's snapshot has fewer members than today's active count
   const memberRows = await env.DB.prepare(
     `SELECT torn_user_id, username, faction_id FROM faction_members WHERE is_active = 1`
   ).all();
@@ -359,6 +392,23 @@ export async function takePersonalStatsSnapshot(env) {
   if (!members.length) {
     await logWarn(env, { category: 'cron', event: 'personal_stats_no_members', message: 'No active members for personal stats snapshot' });
     return;
+  }
+
+  const { count: yesterdayCount } = await env.DB.prepare(
+    `SELECT COUNT(*) as count FROM personal_stats_snapshots WHERE snapshot_date = ?`
+  ).bind(yesterday).first();
+  if (yesterdayCount === 0) {
+    await logWarn(env, {
+      category: 'cron', event: 'personal_stats_gap',
+      message: `Personal stats gap detected: no data for ${yesterday}. Trigger manual snapshot if needed.`,
+      meta: { missing_date: yesterday, active_members: members.length },
+    });
+  } else if (yesterdayCount < members.length * 0.8) {
+    await logWarn(env, {
+      category: 'cron', event: 'personal_stats_gap',
+      message: `Personal stats partial gap: only ${yesterdayCount}/${members.length} members captured for ${yesterday}.`,
+      meta: { missing_date: yesterday, captured: yesterdayCount, active_members: members.length },
+    });
   }
 
   // Load all registered API keys
@@ -376,77 +426,77 @@ export async function takePersonalStatsSnapshot(env) {
   }
 
   const pool = new KeyPool(keys);
+
+  // ── Pass 1: main run ────────────────────────────────────────────────────────
   let success = 0;
-  let errors = 0;
-  const errorDetails = [];
+  const transientFailures = []; // members to retry in pass 2
+  const permanentErrors   = []; // Torn API errors / bad member IDs
 
   for (const member of members) {
-    let lastError = null;
-    let saved = false;
-
-    for (let attempt = 0; attempt <= 1; attempt++) {
-      const keyObj = await pool.getKey();
-      try {
-        const url = `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`;
-        const res = await fetch(url, { headers: { Authorization: `ApiKey ${keyObj.key}` } });
-        if (!res.ok) {
-          lastError = `HTTP ${res.status}`;
-          // Retry once on transient errors
-          if (res.status === 504 || res.status === 503 || res.status === 502) {
-            if (attempt < 1) continue;
-          }
-          throw new Error(lastError);
-        }
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
-
-        await env.DB.prepare(`
-          INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
-            stats      = excluded.stats,
-            username   = excluded.username,
-            faction_id = excluded.faction_id
-        `).bind(member.torn_user_id, member.username, member.faction_id, today, JSON.stringify(data.personalstats), now).run();
-
-        saved = true;
-        break;
-      } catch (e) {
-        lastError = e.message;
-        break; // Non-transient error, don't retry
+    const keyObj = await pool.getKey();
+    try {
+      await fetchAndStoreMemberStats(env, member, keyObj.key, today, now);
+      success++;
+    } catch (e) {
+      // fetchWithRetry already exhausted retries for transient errors.
+      // Classify: Torn API app errors are permanent; anything else may be transient.
+      const isAppError = e.message.startsWith('Torn API error:');
+      if (isAppError) {
+        permanentErrors.push({ id: member.torn_user_id, user: member.username, error: e.message });
+      } else {
+        transientFailures.push(member);
       }
     }
+  }
 
-    if (saved) {
-      success++;
-    } else {
-      errors++;
-      errorDetails.push({ id: member.torn_user_id, user: member.username, error: lastError });
+  // ── Pass 2: retry transient failures after a 15s pause ─────────────────────
+  let pass2Success = 0;
+  const pass2Errors = [];
+
+  if (transientFailures.length) {
+    console.log(`[personal stats] pass 2: retrying ${transientFailures.length} transient failures after 15s`);
+    await new Promise(r => setTimeout(r, 15000));
+
+    for (const member of transientFailures) {
+      const keyObj = await pool.getKey();
+      try {
+        await fetchAndStoreMemberStats(env, member, keyObj.key, today, now);
+        success++;
+        pass2Success++;
+      } catch (e) {
+        pass2Errors.push({ id: member.torn_user_id, user: member.username, error: e.message });
+      }
     }
   }
+
+  const totalErrors = permanentErrors.length + pass2Errors.length;
+  const allErrors   = [...permanentErrors, ...pass2Errors];
 
   // Purge snapshots older than 6 months
   await env.DB.prepare(`DELETE FROM personal_stats_snapshots WHERE snapshot_date < date('now', '-6 months')`).run();
 
-  // Single batch log entry for the whole run
   await logInfo(env, {
     category: 'cron', event: 'personal_stats_snapshot',
-    message: `Personal stats snapshot: ${success}/${members.length} saved, ${errors} errors`,
+    message: `Personal stats snapshot: ${success}/${members.length} saved, ${totalErrors} failed` +
+             (pass2Success ? ` (${pass2Success} recovered in pass 2)` : ''),
     meta: {
-      success, errors, total: members.length, keys_available: keys.length,
-      errors_detail: errorDetails.length ? errorDetails.slice(0, 30) : undefined,
+      success, total: members.length, keys_available: keys.length,
+      pass2_recovered: pass2Success,
+      permanent_errors: permanentErrors.length,
+      transient_errors: pass2Errors.length,
+      errors_detail: allErrors.length ? allErrors.slice(0, 30) : undefined,
     },
   });
-  if (errors) {
+  if (totalErrors) {
     await logWarn(env, {
       category: 'cron', event: 'personal_stats_snapshot_errors',
-      message: `Personal stats: ${errors} members failed`,
-      meta: { errors_detail: errorDetails.slice(0, 30) },
+      message: `Personal stats: ${totalErrors} members still failed after retry`,
+      meta: { errors_detail: allErrors.slice(0, 30) },
     });
   }
 
-  console.log(`[personal stats] complete: ${success} saved, ${errors} errors`);
-  return { stored: success, skipped: errors, total: members.length };
+  console.log(`[personal stats] complete: ${success} saved, ${totalErrors} errors, ${pass2Success} recovered`);
+  return { stored: success, skipped: totalErrors, total: members.length };
 }
 
 // ── Personal stats query ──────────────────────────────────────────────────────
