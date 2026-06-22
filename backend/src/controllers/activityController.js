@@ -854,8 +854,22 @@ export async function backfillPersonalStats(request, env, user) {
     ).bind(torn_user_id).first();
     if (!member) return errorResponse(`Member ${torn_user_id} not found in faction_members`, 404);
 
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) return errorResponse('No API key available', 503);
+    // Torn only returns historical personalstats for the key owner's own data.
+    // We must use the target member's own stored API key, not a random faction key.
+    const userKeyRow = await env.DB.prepare(
+      `SELECT api_key FROM users WHERE torn_user_id = ? AND api_key IS NOT NULL LIMIT 1`
+    ).bind(torn_user_id).first();
+
+    let apiKey;
+    if (userKeyRow?.api_key) {
+      try { apiKey = atob(userKeyRow.api_key); } catch { apiKey = null; }
+    }
+    if (!apiKey) {
+      return errorResponse(
+        `No API key on file for user ${torn_user_id} — they must log in to OccultusHub at least once before their stats can be backfilled.`,
+        503
+      );
+    }
 
     // 01:00 UTC on the missing date — matches when the daily cron runs.
     const timestamp = Math.floor(new Date(snapshot_date + 'T01:00:00Z').getTime() / 1000);
@@ -875,7 +889,7 @@ export async function backfillPersonalStats(request, env, user) {
       const batchUrls = allUrls.slice(i, i + BATCH_SIZE);
       console.log('[backfill] batch', i / BATCH_SIZE, JSON.stringify(batchUrls));
       const results = await Promise.allSettled(
-        batchUrls.map(url => fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` }))
+        batchUrls.map(url => fetchWithRetry(url, { Authorization: `ApiKey ${apiKey}` }))
       );
       for (let j = 0; j < batchUrls.length; j++) {
         const r = results[j];
