@@ -1,3 +1,5 @@
+import { fetchWithRetry } from './tornApiService.js';
+
 const TORN_API_BASE = 'https://api.torn.com/v2';
 const STOCK_IDS = Array.from({ length: 35 }, (_, i) => i + 1);
 
@@ -13,11 +15,10 @@ export async function fetchAndCacheStockList(env) {
   const key = await getApiKey(env);
   if (!key) throw new Error('No API key available');
 
-  const res = await fetch(`${TORN_API_BASE}/torn/stocks?selections=stocks`, {
-    headers: { Authorization: `ApiKey ${key}` },
-  });
-  if (!res.ok) throw new Error(`Torn API error: ${res.status}`);
-  const json = await res.json();
+  const json = await fetchWithRetry(
+    `${TORN_API_BASE}/torn/stocks?selections=stocks`,
+    { Authorization: `ApiKey ${key}` }
+  );
 
   if (!json?.stocks) throw new Error('Unexpected Torn stocks response');
 
@@ -39,11 +40,10 @@ export async function fetchAndCacheStockDetail(env) {
     if (!key) { errors.push(`${stockId}: no api key`); continue; }
 
     try {
-      const res = await fetch(`${TORN_API_BASE}/torn/${stockId}/stocks`, {
-        headers: { Authorization: `ApiKey ${key}` },
-      });
-      if (!res.ok) { errors.push(`${stockId}: HTTP ${res.status}`); continue; }
-      const json = await res.json();
+      const json = await fetchWithRetry(
+        `${TORN_API_BASE}/torn/${stockId}/stocks`,
+        { Authorization: `ApiKey ${key}` }
+      );
 
       // Response: { stocks: { id, name, market, bonus, chart: { performance, history } } }
       const stock = json?.stocks;

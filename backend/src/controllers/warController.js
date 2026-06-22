@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomApiKeyForFaction } from '../services/tornApiService.js';
+import { getRandomApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS   = [33097, 9728, 9171];
@@ -188,13 +188,13 @@ async function summariseAndCleanWar(env, warId, factionId) {
 // ── Fetch live scores from rankedwars API and update DB ───────────────────────
 
 async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
-  const res = await fetch(
-    `${TORN_API_BASE}/faction/rankedwars?limit=20&sort=DESC&comment=OccHub`,
-    { headers: { Authorization: `ApiKey ${apiKey}` } }
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  if (data.error) return null;
+  let data;
+  try {
+    data = await fetchWithRetry(
+      `${TORN_API_BASE}/faction/rankedwars?limit=20&sort=DESC&comment=OccHub`,
+      { Authorization: `ApiKey ${apiKey}` }
+    );
+  } catch { return null; }
 
   for (const rw of data.rankedwars || []) {
     const ids = rw.factions.map((f) => f.id);
@@ -235,13 +235,10 @@ export async function checkWarMatches(env) {
       const apiKeyObj = await getRandomApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
       if (!apiKey) { results.push({ factionId, error: 'no API key' }); continue; }
 
-      const res = await fetch(
+      const data = await fetchWithRetry(
         `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
-        { headers: { Authorization: `ApiKey ${apiKey}` } }
+        { Authorization: `ApiKey ${apiKey}` }
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.error || JSON.stringify(data.error));
 
       for (const item of data.news || []) {
         if (item.timestamp < sevenDaysAgo)     continue;
@@ -332,13 +329,19 @@ export async function trackActiveWars(env) {
       }
 
       // ── 2. Check rankedWar news for state changes ───────────────────────────
-      const newsRes = await fetch(
-        `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
-        { headers: { Authorization: `ApiKey ${apiKey}` } }
-      );
+      let newsItems = [];
+      try {
+        const newsData = await fetchWithRetry(
+          `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
+          { Authorization: `ApiKey ${apiKey}` }
+        );
+        newsItems = newsData.news || [];
+      } catch (e) {
+        console.warn(`trackActiveWars: war ${warId} news fetch failed: ${e.message}`);
+      }
 
-      if (newsRes.ok) {
-        const items = (await newsRes.json()).news || [];
+      if (newsItems.length) {
+        const items = newsItems;
 
         for (const item of items) {
           const involvesBoth = item.text.includes(`ID=${factionId}`) && item.text.includes(`ID=${opponentId}`);
@@ -401,13 +404,13 @@ export async function trackActiveWars(env) {
       // scheduled_start = war START time (future), not match announcement time.
       // For pre-war (matched) use fourDaysAgo; for active use warStartedAt.
       const armoryStartCap = warStartedAt ?? fourDaysAgo;
-      const armoryRes = await fetch(
-        `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
-        { headers: { Authorization: `ApiKey ${apiKey}` } }
-      );
       let newArmory = 0;
-      if (armoryRes.ok) {
-        for (const item of (await armoryRes.json()).news || []) {
+      try {
+        const armoryData = await fetchWithRetry(
+          `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
+          { Authorization: `ApiKey ${apiKey}` }
+        );
+        for (const item of armoryData.news || []) {
           if (item.timestamp < fourDaysAgo) break;
           if (item.timestamp > armoryEndCap) continue;
           if (item.timestamp < armoryStartCap) continue;
@@ -419,6 +422,8 @@ export async function trackActiveWars(env) {
           ).bind(warId, factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
           if (meta?.changes > 0) newArmory++;
         }
+      } catch (e) {
+        console.warn(`trackActiveWars: war ${warId} armory fetch failed: ${e.message}`);
       }
 
       // ── 4. Fetch attacks (active wars only, isolated to this faction) ───────
@@ -464,10 +469,10 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   const MAX_PAGES = 20;
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await fetch(nextUrl, { headers: { Authorization: `ApiKey ${apiKey}` } });
-    if (!res.ok) { console.error(`fetchAndStoreAttacks: HTTP ${res.status}`); break; }
-    const data = await res.json();
-    if (data.error) { console.error(`fetchAndStoreAttacks: API error`, data.error); break; }
+    let data;
+    try {
+      data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
+    } catch (e) { console.error(`fetchAndStoreAttacks: ${e.message}`); break; }
 
     const attacks = data.attacks || [];
     if (!attacks.length) break;

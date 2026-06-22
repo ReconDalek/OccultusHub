@@ -1,8 +1,8 @@
 import { logInfo, logError } from './logger.js';
 
 const TORN_API_BASE = 'https://api.torn.com/v2';
-const MAX_RETRIES = 2;
-const RETRY_DELAY = 1000;
+const MAX_RETRIES   = 3;
+const BASE_DELAY_MS = 2000;
 
 function authHeader(key) {
   return { Authorization: `ApiKey ${key}` };
@@ -12,19 +12,40 @@ async function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// All Torn API calls go through here. Headers must include Authorization.
-async function fetchWithRetry(url, headers = {}, maxRetries = MAX_RETRIES) {
+// Returns true for transient errors worth retrying (network failures, 5xx, 429).
+// Torn API application errors (e.g. "Incorrect ID-entity relation") are not retryable.
+function isRetryable(error) {
+  const msg = error.message;
+  if (msg.startsWith('Torn API error:')) return false; // application-level error
+  if (/^HTTP 4/.test(msg) && !msg.startsWith('HTTP 429')) return false; // 4xx except rate-limit
+  return true; // network error, 5xx, 429
+}
+
+// Shared retry wrapper used by all Torn API callers.
+// Returns parsed JSON on success, throws on final failure.
+export async function fetchWithRetry(url, headers = {}, maxRetries = MAX_RETRIES) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(url, { headers });
-      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       const data = await response.json();
-      if (data.error) throw new Error(`Torn API error: ${data.error.error}`);
+      if (data.error) {
+        throw new Error(`Torn API error: ${data.error.error || JSON.stringify(data.error)}`);
+      }
       return data;
     } catch (error) {
+      if (!isRetryable(error)) throw error; // fast-fail non-transient errors
       lastError = error;
-      if (attempt < maxRetries) await delay(RETRY_DELAY * Math.pow(2, attempt));
+      if (attempt < maxRetries) {
+        const waitMs = error.message.startsWith('HTTP 429')
+          ? 15000  // rate-limited: wait 15s
+          : BASE_DELAY_MS * Math.pow(2, attempt); // 2s, 4s, 8s
+        console.warn(`[fetchWithRetry] attempt ${attempt + 1}/${maxRetries + 1} failed (${error.message}) — retrying in ${waitMs}ms`);
+        await delay(waitMs);
+      }
     }
   }
   throw lastError;

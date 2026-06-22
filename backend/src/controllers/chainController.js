@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomUserApiKey } from '../services/tornApiService.js';
+import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
@@ -32,22 +32,7 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
   for (const factionId of FACTION_IDS) {
     const url = `${TORN_API_BASE}/faction/${factionId}/chains?limit=100&sort=DESC&comment=OccHub`;
     try {
-      const res = await fetch(url, {
-        headers: { Authorization: `ApiKey ${apiKey}` },
-      });
-
-      if (!res.ok) {
-        errors.push(`Faction ${factionId}: HTTP ${res.status}`);
-        continue;
-      }
-
-      const data = await res.json();
-
-      if (data.error) {
-        errors.push(`Faction ${factionId}: ${data.error.error || JSON.stringify(data.error)}`);
-        continue;
-      }
-
+      const data = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKey}` });
       const chains = data.chains || [];
       let added   = 0;
       let skipped = 0;
@@ -163,18 +148,14 @@ export async function getChainReport(request, env) {
       return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
     }
 
-    const res = await fetch(`${TORN_API_BASE}/faction/${chainId}/chainreport?comment=OccHub`, {
-      headers: { Authorization: `ApiKey ${apiKeyObj.key}` },
-    });
-
-    if (!res.ok) {
-      return errorResponse(`Torn API returned HTTP ${res.status}`, 502);
-    }
-
-    const data = await res.json();
-
-    if (data.error) {
-      return errorResponse(`Torn API error: ${data.error.error || JSON.stringify(data.error)}`, 502);
+    let data;
+    try {
+      data = await fetchWithRetry(
+        `${TORN_API_BASE}/faction/${chainId}/chainreport?comment=OccHub`,
+        { Authorization: `ApiKey ${apiKeyObj.key}` }
+      );
+    } catch (err) {
+      return errorResponse(`Torn API error: ${err.message}`, 502);
     }
 
     // Collect all IDs that need a name: attackers + bonus hit attackers
