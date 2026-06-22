@@ -799,12 +799,20 @@ export async function getPersonalStatsGaps(request, env) {
   }
 }
 
+// All Torn personalstats categories available via ?cat= with timestamp support.
+const BACKFILL_CATEGORIES = [
+  'attacking', 'battle_stats', 'jobs', 'trading', 'jail', 'hospital',
+  'finishing_hits', 'communication', 'crimes', 'bounties', 'investments',
+  'items', 'travel', 'drugs', 'missions', 'racing', 'networth', 'other',
+  'itemmarketcustomers', 'itemmarketsales', 'itemmarketrevenue', 'itemmarketfees',
+];
+
 // ── Personal stats backfill ───────────────────────────────────────────────────
 // POST /api/leadership/personal-stats/backfill
 // Body: { torn_user_id, snapshot_date }
-// Fetches the Torn API with a historical timestamp and stores the snapshot.
-// Validates fetched data against the next known snapshot to catch cases where
-// Torn returns current stats instead of historical data for the timestamp.
+// Fetches each personalstats category separately with a historical timestamp
+// (cat=all does not respect timestamps reliably), merges results, then validates
+// against the next known snapshot before saving.
 export async function backfillPersonalStats(request, env, user) {
   try {
     const { torn_user_id, snapshot_date } = await request.json();
@@ -824,17 +832,46 @@ export async function backfillPersonalStats(request, env, user) {
     const apiKeyObj = await getRandomUserApiKey(env);
     if (!apiKeyObj?.key) return errorResponse('No API key available', 503);
 
-    // Use 01:00 UTC on that date — the time the daily cron normally runs.
+    // 01:00 UTC on the missing date — matches when the daily cron runs.
     const timestamp = Math.floor(new Date(snapshot_date + 'T01:00:00Z').getTime() / 1000);
 
-    const data = await fetchWithRetry(
-      `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=all&timestamp=${timestamp}&comment=OccHub`,
-      { Authorization: `ApiKey ${apiKeyObj.key}` }
-    );
+    // Fetch each category in batches of 4 to avoid rate-limit bursts.
+    const BATCH_SIZE = 4;
+    const merged = {};
+    const catErrors = [];
 
-    // Validate: if the returned stats are higher than the next known snapshot,
-    // Torn returned current data instead of historical data for this timestamp.
-    // Storing it would corrupt gain calculations for this member.
+    for (let i = 0; i < BACKFILL_CATEGORIES.length; i += BATCH_SIZE) {
+      const batch = BACKFILL_CATEGORIES.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(cat => fetchWithRetry(
+          `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=${cat}&timestamp=${timestamp}&comment=OccHub`,
+          { Authorization: `ApiKey ${apiKeyObj.key}` }
+        ))
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const r = results[j];
+        if (r.status === 'fulfilled' && r.value?.personalstats) {
+          Object.assign(merged, r.value.personalstats);
+        } else if (r.status === 'rejected') {
+          catErrors.push(`${batch[j]}: ${r.reason?.message}`);
+        }
+      }
+      // Brief pause between batches
+      if (i + BATCH_SIZE < BACKFILL_CATEGORIES.length) {
+        await new Promise(r => setTimeout(r, 400));
+      }
+    }
+
+    // Abort if more than 3 categories failed — partial data would skew gain calculations.
+    if (catErrors.length > 3) {
+      return errorResponse(
+        `Backfill aborted — ${catErrors.length} categories failed: ${catErrors.join(', ')}`,
+        502
+      );
+    }
+
+    // Validate: compare against next known snapshot to detect inflation
+    // (Torn returning current stats instead of historical data for the timestamp).
     const nextRow = await env.DB.prepare(
       `SELECT snapshot_date, stats FROM personal_stats_snapshots
        WHERE torn_user_id = ? AND snapshot_date > ?
@@ -843,25 +880,21 @@ export async function backfillPersonalStats(request, env, user) {
 
     if (nextRow) {
       try {
-        const fetchedStats = extractStats(data.personalstats);
+        const fetchedStats = extractStats(merged);
         const nextStats    = extractStats(JSON.parse(nextRow.stats));
-        // Check fields that are always cumulative and cover diverse activity types.
-        // active_time/drugs/travel_time/crimes/dmg_total are the most reliable indicators
-        // since they span different gameplay areas and are highly unlikely to all be
-        // inflated simultaneously unless Torn returned current stats.
-        const probeFields = ['active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total', 'atk_won', 'war_hits'];
-        const inflated = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
+        const probeFields  = ['active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total', 'atk_won', 'war_hits'];
+        const inflated     = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
         if (inflated.length >= 3) {
           return new Response(JSON.stringify({
             error: `Torn returned current stats instead of historical data for ${snapshot_date}. ` +
-                   `The fetched values are higher than the ${nextRow.snapshot_date} snapshot for: ${inflated.join(', ')}. ` +
-                   `Saving this would corrupt gain tracking — backfill aborted.`,
+                   `Values are higher than the ${nextRow.snapshot_date} snapshot for: ${inflated.join(', ')}. ` +
+                   `Saving would corrupt gain tracking — backfill aborted.`,
             inflation_detected: true,
             inflated_fields: inflated,
           }), { status: 422, headers: { 'Content-Type': 'application/json' } });
         }
       } catch {
-        // If validation parse fails, proceed — don't block on it
+        // Validation parse error — proceed rather than block
       }
     }
 
@@ -873,16 +906,21 @@ export async function backfillPersonalStats(request, env, user) {
         stats      = excluded.stats,
         username   = excluded.username,
         faction_id = excluded.faction_id
-    `).bind(torn_user_id, member.username, member.faction_id, snapshot_date, JSON.stringify(data.personalstats), now).run();
+    `).bind(torn_user_id, member.username, member.faction_id, snapshot_date, JSON.stringify(merged), now).run();
 
     await logInfo(env, {
       category: 'admin', event: 'personal_stats_backfill',
-      message: `Personal stats backfilled for ${member.username} on ${snapshot_date}`,
+      message: `Personal stats backfilled for ${member.username} on ${snapshot_date}` +
+               (catErrors.length ? ` (${catErrors.length} categories failed)` : ''),
       torn_user_id: user?.userId, username: user?.username,
-      meta: { target_user: torn_user_id, target_username: member.username, snapshot_date, timestamp },
+      meta: { target_user: torn_user_id, target_username: member.username, snapshot_date, timestamp, cat_errors: catErrors.length ? catErrors : undefined },
     });
 
-    return jsonResponse({ success: true, torn_user_id, username: member.username, snapshot_date });
+    return jsonResponse({
+      success: true, torn_user_id, username: member.username, snapshot_date,
+      categories_fetched: BACKFILL_CATEGORIES.length - catErrors.length,
+      categories_failed: catErrors.length || undefined,
+    });
   } catch (err) {
     console.error('backfillPersonalStats error:', err);
     return errorResponse(`Backfill failed: ${err.message}`, 500);
