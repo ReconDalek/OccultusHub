@@ -175,40 +175,87 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
   )
 }
 
+// ─── Energy toggles ───────────────────────────────────────────────────────────
+
+function EnergyToggles({ includeRevives, setIncludeRevives, includeAttacks, setIncludeAttacks, hasRevives, hasAttacks }) {
+  const toggle = (active, hasData, label, onClick) => (
+    <button
+      key={label}
+      onClick={onClick}
+      disabled={!hasData}
+      title={hasData ? undefined : `No ${label.toLowerCase()} data saved for this period`}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '7px',
+        padding: '6px 12px', borderRadius: '8px', cursor: hasData ? 'pointer' : 'not-allowed',
+        border: `1px solid ${active ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
+        background: active ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
+        color: hasData ? (active ? '#c4b5fd' : '#a1a1aa') : '#3f3f46',
+        fontSize: '12px', fontWeight: active ? '600' : '400',
+        transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+        opacity: hasData ? 1 : 0.5,
+      }}
+    >
+      <span style={{
+        width: '14px', height: '14px', borderRadius: '4px', flexShrink: 0,
+        border: `1.5px solid ${active && hasData ? '#a78bfa' : 'rgba(255,255,255,0.2)'}`,
+        background: active && hasData ? '#a78bfa' : 'transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'background 0.15s, border-color 0.15s',
+      }}>
+        {active && hasData && <span style={{ color: '#fff', fontSize: '9px', lineHeight: 1 }}>✓</span>}
+      </span>
+      {label} <span style={{ color: active && hasData ? '#a78bfa' : '#52525b', fontSize: '11px' }}>+25 ea</span>
+    </button>
+  )
+
+  return (
+    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px' }}>
+      <span style={{ color: '#52525b', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Include:</span>
+      {toggle(includeRevives, hasRevives, 'Revives', () => setIncludeRevives(v => !v))}
+      {toggle(includeAttacks, hasAttacks, 'Attacks', () => setIncludeAttacks(v => !v))}
+    </div>
+  )
+}
+
 // ─── Energy table ─────────────────────────────────────────────────────────────
 
-function EnergyTable({ members }) {
-  const maxEnergy = members[0]?.energy || 1
+function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) {
+  const augmented = members.map(m => {
+    const reviveEnergy  = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
+    const attackEnergy  = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
+    const displayEnergy = m.energy + reviveEnergy + attackEnergy
+    return { ...m, displayEnergy, reviveEnergy, attackEnergy }
+  }).sort((a, b) => b.displayEnergy - a.displayEnergy)
+
+  const maxEnergy = augmented[0]?.displayEnergy || 1
+  const showBreakdown = includeRevives || includeAttacks
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: '540px' }}>
+      <div style={{ minWidth: showBreakdown ? '640px' : '540px' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '30px 1fr 140px 110px',
-          gap: '8px',
-          padding: '6px 12px',
-          marginBottom: '4px',
+          gridTemplateColumns: showBreakdown ? '30px 1fr 140px 160px 110px' : '30px 1fr 140px 110px',
+          gap: '8px', padding: '6px 12px', marginBottom: '4px',
         }}>
-          {['#', 'Member', 'Energy Used', 'Avg / Day'].map(h => (
+          {['#', 'Member', 'Energy Used', ...(showBreakdown ? ['Breakdown'] : []), 'Avg / Day'].map(h => (
             <span key={h} style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {h}
             </span>
           ))}
         </div>
 
-        {members.map((m, i) => {
-          const barPct = Math.round((m.energy / maxEnergy) * 100)
+        {augmented.map((m, i) => {
+          const barPct = Math.round((m.displayEnergy / maxEnergy) * 100)
+          const avgDay = days > 0 ? Math.round(m.displayEnergy / days) : 0
           return (
             <div
               key={m.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '30px 1fr 140px 110px',
+                gridTemplateColumns: showBreakdown ? '30px 1fr 140px 160px 110px' : '30px 1fr 140px 110px',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '9px 12px',
-                borderRadius: '8px',
+                gap: '8px', padding: '9px 12px', borderRadius: '8px',
                 background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
                 border: '1px solid transparent',
               }}
@@ -226,8 +273,15 @@ function EnergyTable({ members }) {
                   }} />
                 </div>
               </div>
-              <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.energy)}</span>
-              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{fmt(m.avg_day)} / day</span>
+              <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.displayEnergy)}</span>
+              {showBreakdown && (
+                <span style={{ color: '#52525b', fontSize: '11px', lineHeight: '1.6' }}>
+                  {m.energy > 0 && <span style={{ color: '#71717a', display: 'block' }}>gym {fmt(m.energy)}</span>}
+                  {m.reviveEnergy > 0 && <span style={{ color: '#34d399', display: 'block' }}>revives {fmt(m.reviveEnergy)}</span>}
+                  {m.attackEnergy > 0 && <span style={{ color: '#f87171', display: 'block' }}>attacks {fmt(m.attackEnergy)}</span>}
+                </span>
+              )}
+              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{fmt(avgDay)} / day</span>
             </div>
           )
         })}
@@ -238,8 +292,12 @@ function EnergyTable({ members }) {
 
 // ─── Summary bar ──────────────────────────────────────────────────────────────
 
-function SummaryBar({ members, days }) {
-  const total  = members.reduce((s, m) => s + m.energy, 0)
+function SummaryBar({ members, extras, includeRevives, includeAttacks, days }) {
+  const total = members.reduce((s, m) => {
+    const reviveEnergy = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
+    const attackEnergy = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
+    return s + m.energy + reviveEnergy + attackEnergy
+  }, 0)
   const avgDay = days > 0 ? Math.round(total / days) : 0
 
   return (
@@ -281,6 +339,9 @@ export default function EnergyActivityPanel() {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
+
+  const [includeRevives, setIncludeRevives] = useState(false)
+  const [includeAttacks, setIncludeAttacks] = useState(false)
 
   const minDate = data?.coverage?.earliest || todayStr
 
@@ -402,8 +463,22 @@ export default function EnergyActivityPanel() {
             </div>
           ) : (
             <>
-              <SummaryBar members={data.members} days={data.period.days} />
-              <EnergyTable members={data.members} />
+              <EnergyToggles
+                includeRevives={includeRevives} setIncludeRevives={setIncludeRevives}
+                includeAttacks={includeAttacks} setIncludeAttacks={setIncludeAttacks}
+                hasRevives={Object.keys(data.extras?.revives ?? {}).length > 0}
+                hasAttacks={Object.keys(data.extras?.attacks ?? {}).length > 0}
+              />
+              <SummaryBar
+                members={data.members} extras={data.extras}
+                includeRevives={includeRevives} includeAttacks={includeAttacks}
+                days={data.period.days}
+              />
+              <EnergyTable
+                members={data.members} extras={data.extras}
+                includeRevives={includeRevives} includeAttacks={includeAttacks}
+                days={data.period.days}
+              />
             </>
           )}
         </>

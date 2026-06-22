@@ -347,10 +347,77 @@ export async function getEnergyActivity(request, env) {
        FROM energy_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ?`
     ).bind(fromDate, toDate).first();
 
+    // ── Extras: revives delta from personal stats snapshots ──────────────────
+    // Use earliest and latest snapshot within the period per member.
+    const [reviveStartRows, reviveEndRows] = await Promise.all([
+      env.DB.prepare(`
+        SELECT p.torn_user_id,
+               CAST(json_extract(p.stats, '$.hospital.reviving.revives') AS INTEGER) AS val
+        FROM personal_stats_snapshots p
+        INNER JOIN (
+          SELECT torn_user_id, MIN(snapshot_date) AS min_date
+          FROM personal_stats_snapshots
+          WHERE snapshot_date >= ? AND snapshot_date <= ?
+          GROUP BY torn_user_id
+        ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+      `).bind(fromDate, toDate).all(),
+      env.DB.prepare(`
+        SELECT p.torn_user_id,
+               CAST(json_extract(p.stats, '$.hospital.reviving.revives') AS INTEGER) AS val
+        FROM personal_stats_snapshots p
+        INNER JOIN (
+          SELECT torn_user_id, MAX(snapshot_date) AS max_date
+          FROM personal_stats_snapshots
+          WHERE snapshot_date >= ? AND snapshot_date <= ?
+          GROUP BY torn_user_id
+        ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+      `).bind(fromDate, toDate).all(),
+    ]);
+
+    const reviveStart = {};
+    for (const r of (reviveStartRows.results || [])) reviveStart[r.torn_user_id] = r.val ?? 0;
+    const revives = {};
+    for (const r of (reviveEndRows.results || [])) {
+      const delta = (r.val ?? 0) - (reviveStart[r.torn_user_id] ?? 0);
+      if (delta > 0) revives[r.torn_user_id] = delta;
+    }
+
+    // ── Extras: attack counts from saved wars + chains in period ─────────────
+    const periodFromTs = Math.floor(new Date(fromDate + 'T00:00:00Z').getTime() / 1000);
+    const periodToTs   = Math.floor(new Date(toDate   + 'T23:59:59Z').getTime() / 1000);
+
+    const [warHitRows, chainHitRows] = await Promise.all([
+      env.DB.prepare(`
+        SELECT wh.torn_user_id,
+               SUM(wh.war_hits + wh.outside_hits + wh.assists) AS total
+        FROM war_hits wh
+        JOIN ranked_wars rw ON wh.ranked_war_id = rw.id
+        WHERE COALESCE(rw.started_at, rw.scheduled_start) >= ?
+          AND COALESCE(rw.started_at, rw.scheduled_start) <= ?
+        GROUP BY wh.torn_user_id
+      `).bind(periodFromTs, periodToTs).all(),
+      env.DB.prepare(`
+        SELECT ch.torn_user_id, SUM(ch.total_attacks) AS total
+        FROM chain_hits ch
+        JOIN chain_cache cc ON ch.torn_chain_id = cc.torn_chain_id
+        WHERE cc.start_at >= ? AND cc.start_at <= ?
+        GROUP BY ch.torn_user_id
+      `).bind(periodFromTs, periodToTs).all(),
+    ]);
+
+    const attacks = {};
+    for (const r of (warHitRows.results || [])) {
+      attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
+    }
+    for (const r of (chainHitRows.results || [])) {
+      attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
+    }
+
     return jsonResponse({
       members,
       period: { from: fromDate, to: toDate, days: Math.round(days * 10) / 10 },
       coverage: snapshotCheck,
+      extras: { revives, attacks },
     });
   } catch (error) {
     console.error('getEnergyActivity error:', error);
