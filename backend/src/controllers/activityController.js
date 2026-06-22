@@ -865,14 +865,17 @@ export async function backfillPersonalStats(request, env, user) {
     const merged = {};
     const catErrors = [];
 
-    console.log('[backfill] starting', JSON.stringify({ torn_user_id, snapshot_date, timestamp, categories: BACKFILL_CATEGORIES.length }));
+    const allUrls = BACKFILL_CATEGORIES.map(cat =>
+      `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=${cat}&timestamp=${timestamp}&comment=OccHub`
+    );
+
+    console.log('[backfill] starting', JSON.stringify({ torn_user_id, snapshot_date, timestamp, urls: allUrls }));
 
     for (let i = 0; i < BACKFILL_CATEGORIES.length; i += BATCH_SIZE) {
-      const batch = BACKFILL_CATEGORIES.slice(i, i + BATCH_SIZE);
-      const urls = batch.map(cat => `${TORN_API_BASE}/user/${torn_user_id}/personalstats?cat=${cat}&timestamp=${timestamp}&comment=OccHub`);
-      console.log('[backfill] batch', i / BATCH_SIZE, JSON.stringify(urls));
+      const batchUrls = allUrls.slice(i, i + BATCH_SIZE);
+      console.log('[backfill] batch', i / BATCH_SIZE, JSON.stringify(batchUrls));
       const results = await Promise.allSettled(
-        urls.map(url => fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` }))
+        batchUrls.map(url => fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` }))
       );
       for (let j = 0; j < batch.length; j++) {
         const r = results[j];
@@ -939,7 +942,7 @@ export async function backfillPersonalStats(request, env, user) {
                    `Cumulative stats cannot decrease over time. Backfill aborted.`,
             inflation_detected: true,
             corrupted_fields: corrupted,
-            debug: { comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
+            debug: { timestamp, snapshot_date, urls: allUrls, comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
           }), { status: 422, headers: { 'Content-Type': 'application/json' } });
         }
 
@@ -950,7 +953,7 @@ export async function backfillPersonalStats(request, env, user) {
                    `Backfill aborted to avoid storing potentially stale data.`,
             inflation_detected: true,
             confirmed_fields: confirmed,
-            debug: { comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
+            debug: { timestamp, snapshot_date, urls: allUrls, comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
           }), { status: 422, headers: { 'Content-Type': 'application/json' } });
         }
       } catch (validationErr) {
@@ -984,6 +987,7 @@ export async function backfillPersonalStats(request, env, user) {
       success: true, torn_user_id, username: member.username, snapshot_date,
       categories_fetched: BACKFILL_CATEGORIES.length - catErrors.length,
       categories_failed: catErrors.length || undefined,
+      debug: { timestamp, snapshot_date, urls: allUrls },
     });
   } catch (err) {
     console.error('backfillPersonalStats error:', err);
