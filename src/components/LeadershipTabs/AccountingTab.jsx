@@ -113,6 +113,8 @@ function OverviewSubTab({ factionId, onNavigate }) {
   const [editSettings, setEditSettings] = useState(false)
   const [settingsForm, setSettingsForm] = useState({ respect_value: '', points_value: '' })
   const [summaries, setSummaries] = useState({})
+  const [armoryValues, setArmoryValues] = useState({})
+  const [racketValues, setRacketValues] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const token = localStorage.getItem('occultusSession')
@@ -121,17 +123,42 @@ function OverviewSubTab({ factionId, onNavigate }) {
     async function load() {
       setLoading(true)
       try {
-        const [cacheRes, settingsRes] = await Promise.all([
+        const [cacheRes, settingsRes, armoryRes, itemPricesRes] = await Promise.all([
           fetch(`${API_BASE_URL}/api/faction-cache`),
           fetch(`${API_BASE_URL}/api/leadership/accounting/settings`, { headers: { Authorization: token } }),
+          fetch(`${API_BASE_URL}/api/leadership/armory`, { headers: { Authorization: token } }),
+          fetch(`${API_BASE_URL}/api/leadership/item-prices`, { headers: { Authorization: token } }),
         ])
         const cacheJson = await cacheRes.json()
         const settingsJson = await settingsRes.json()
+        const armoryJson = await armoryRes.json()
+        const itemPricesJson = await itemPricesRes.json()
 
         const factions = (cacheJson.data || []).filter(f => OUR_FACTION_IDS.includes(f.basic?.id))
         setFactionData(factions)
         setSettings(settingsJson)
         setSettingsForm({ respect_value: settingsJson.respect_value, points_value: settingsJson.points_value })
+
+        const armoryMap = {}
+        for (const entry of (armoryJson.armory || [])) {
+          armoryMap[entry.faction_id] = entry.totalValue ?? 0
+        }
+        setArmoryValues(armoryMap)
+
+        // Compute monthly racket income per faction from item prices
+        const prices = itemPricesJson.prices || {}
+        const racketMap = {}
+        for (const faction of factions) {
+          const fid = faction.basic?.id
+          if (!fid) continue
+          const rackets = (faction.rackets || []).filter(r => r.reward?.type === 'Item')
+          const monthlyIncome = rackets.reduce((sum, r) => {
+            const price = prices[r.reward.id] ?? 0
+            return sum + r.reward.quantity * price * 30
+          }, 0)
+          racketMap[fid] = monthlyIncome
+        }
+        setRacketValues(racketMap)
 
         const ids = factionId != null ? [factionId] : OUR_FACTION_IDS
         const results = await Promise.all(
@@ -189,7 +216,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', margin: 0, marginBottom: '2px' }}>Faction Networth Overview</h3>
           <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
-            Per-faction financial snapshot. Armory and racket values are placeholders pending configuration.
+            Per-faction monthly financial overview.
           </p>
         </div>
 
@@ -258,17 +285,32 @@ function OverviewSubTab({ factionId, onNavigate }) {
               key={faction.basic?.id}
               faction={faction}
               settings={settings}
-              summary={summaries[faction.basic?.id]}
+              armoryValue={armoryValues[faction.basic?.id] ?? 0}
+              racketValue={racketValues[faction.basic?.id] ?? 0}
             />
           ))}
           {displayFactions.length === 0 && (
             <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No faction data available. The 12-hour cache may not have run yet.</p>
           )}
+
+          {/* Investment summary card */}
+          {displayFactions.length > 0 && (
+            <InvestmentCard summaries={summaries} shownIds={displayFactions.map(f => f.basic?.id)} />
+          )}
+
+          {/* Combined networth */}
           {displayFactions.length > 1 && (() => {
-            const combinedTotal = displayFactions.reduce(
-              (sum, faction) => sum + calcFactionNetworth(faction, settings, summaries[faction.basic?.id]),
+            const factionSubtotal = displayFactions.reduce(
+              (sum, faction) => sum + calcFactionNetworth(faction, settings, armoryValues[faction.basic?.id] ?? 0, racketValues[faction.basic?.id] ?? 0),
               0
             )
+            const invPrincipal = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.investments?.total_amount ?? 0), 0)
+            const invMonthly = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.investments?.monthly_income ?? 0), 0)
+            const stockInvested = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.total_invested ?? 0), 0)
+            const stockMonthly = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.monthly_income ?? 0), 0)
+            const investmentNetworth = invPrincipal + stockInvested + invMonthly + stockMonthly
+            const combinedTotal = factionSubtotal + investmentNetworth
+
             return (
               <div style={{
                 background: 'rgba(109,40,217,0.06)',
@@ -285,7 +327,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
                     <div style={{ color: '#71717a', fontSize: '11px', marginTop: '3px', overflowWrap: 'break-word' }}>
                       {displayFactions.map(f => f.basic?.name).join(' + ')}
                     </div>
-                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>excl. armory & racket estimates</div>
+                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>incl. investment principal, investment profits, armory and rackets</div>
                   </div>
                   <div style={{ flexShrink: 0, textAlign: 'right' }}>
                     <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700', whiteSpace: 'nowrap' }}>{fmt(combinedTotal)}</div>
@@ -297,10 +339,14 @@ function OverviewSubTab({ factionId, onNavigate }) {
                       <div key={faction.basic?.id} style={{ fontSize: '12px' }}>
                         <span style={{ color: '#71717a' }}>{faction.basic?.name}: </span>
                         <span style={{ color: '#f4f4f5', fontWeight: '600' }}>
-                          {fmt(calcFactionNetworth(faction, settings, summaries[faction.basic?.id]))}
+                          {fmt(calcFactionNetworth(faction, settings, armoryValues[faction.basic?.id] ?? 0, racketValues[faction.basic?.id] ?? 0))}
                         </span>
                       </div>
                     ))}
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: '#71717a' }}>Investments: </span>
+                      <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(investmentNetworth)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -312,7 +358,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
   )
 }
 
-function calcFactionNetworth(faction, settings, summary) {
+function calcFactionNetworth(faction, settings, armoryValue = 0, racketValue = 0) {
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
   const balanceMembers = faction.balance?.members || []
@@ -322,12 +368,111 @@ function calcFactionNetworth(faction, settings, summary) {
   const memberTotal = balanceMembers.reduce((sum, m) => sum + (m.money || 0), 0)
   const respectEst = respect * (settings.respect_value || 0)
   const pointsEst = points * (settings.points_value || 0)
-  const investmentTotal = summary?.investments?.total_amount || 0
-  const stockIncome = summary?.stocks?.monthly_income || 0
-  return respectEst + pointsEst + vaultMoney + memberTotal + investmentTotal + stockIncome
+  return respectEst + pointsEst + vaultMoney + memberTotal + armoryValue + racketValue
 }
 
-function FactionNetworthCard({ faction, settings, summary }) {
+function InvestmentCard({ summaries, shownIds }) {
+  const [collapsed, setCollapsed] = useState(false)
+
+  const invMonthly   = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.monthly_income ?? 0), 0)
+  const invPrincipal = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.total_amount   ?? 0), 0)
+  const stockMonthly  = shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.monthly_income    ?? 0), 0)
+  const stockInvested = shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total_invested    ?? 0), 0)
+  const totalInvested = invPrincipal + stockInvested
+  const totalMonthly  = invMonthly + stockMonthly
+
+  const rows = [
+    {
+      label: 'Bank Investments',
+      sub: `${shownIds.reduce((s, id) => s + (summaries[id]?.investments?.total ?? 0), 0)} active — est. monthly faction income`,
+      principal: invPrincipal,
+      monthly: invMonthly,
+    },
+    {
+      label: 'Stocks',
+      sub: `${shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total ?? 0), 0)} schemes — est. monthly faction income`,
+      principal: stockInvested,
+      monthly: stockMonthly,
+    },
+  ]
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', overflow: 'hidden' }}>
+      {/* Header — clickable to collapse */}
+      <div
+        onClick={() => setCollapsed(v => !v)}
+        style={{
+          padding: '12px 16px',
+          background: 'rgba(255,255,255,0.02)',
+          borderBottom: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+          cursor: 'pointer', userSelect: 'none',
+        }}
+      >
+        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Investments</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {collapsed && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
+              <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
+            </div>
+          )}
+          <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* Header principal (visible when expanded) */}
+          <div style={{ padding: '8px 16px 0', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
+              <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
+            </div>
+          </div>
+
+          {/* Rows */}
+          <div style={{ padding: '0 4px' }}>
+            {rows.map((row, i) => (
+              <div key={row.label} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+                padding: '10px 16px',
+                borderBottom: i === 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+              }}>
+                <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                  <div style={{ color: '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
+                  <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
+                    {fmt(row.monthly)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span>
+                  </div>
+                  <div style={{ color: '#71717a', fontSize: '11px' }}>principal {fmt(row.principal)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Footer — always visible */}
+      <div style={{
+        padding: '12px 16px',
+        background: 'rgba(255,255,255,0.02)',
+        borderTop: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <div>
+          <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</div>
+          {!collapsed && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>principal + est. monthly profit</div>}
+        </div>
+        <div style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700' }}>{fmt(totalInvested + totalMonthly)}</div>
+      </div>
+    </div>
+  )
+}
+
+function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue = 0 }) {
   const [collapsed, setCollapsed] = useState(false)
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
@@ -342,10 +487,13 @@ function FactionNetworthCard({ faction, settings, summary }) {
 
   const respectEst = respect * (settings.respect_value || 0)
   const pointsEst = points * (settings.points_value || 0)
-  const investmentTotal = summary?.investments?.total_amount || 0
-  const stockIncome = summary?.stocks?.monthly_income || 0
 
-  const totalNetworth = respectEst + pointsEst + vaultMoney + memberTotal + investmentTotal + stockIncome
+  const totalNetworth = respectEst + pointsEst + vaultMoney + memberTotal + armoryValue + racketValue
+
+  const itemRackets = rackets.filter(r => r.reward?.type === 'Item')
+  const racketSub = itemRackets.length > 0
+    ? `${itemRackets.length} racket${itemRackets.length !== 1 ? 's' : ''} — est. 30-day item income`
+    : rackets.length > 0 ? `${rackets.length} racket${rackets.length !== 1 ? 's' : ''} — non-item rewards` : 'None owned'
 
   const rows = [
     {
@@ -353,12 +501,17 @@ function FactionNetworthCard({ faction, settings, summary }) {
       sub: `${respect.toLocaleString()} × $${(settings.respect_value || 0).toLocaleString()}/pt`,
       value: respectEst,
     },
-    { label: 'Armory', sub: 'Coming soon', value: null, placeholder: true },
+    {
+      label: 'Armory',
+      sub: armoryValue > 0 ? 'item qty × market/sell price' : 'cache not yet populated',
+      value: armoryValue > 0 ? armoryValue : null,
+      placeholder: armoryValue === 0,
+    },
     {
       label: 'Rackets',
-      sub: rackets.length > 0 ? `${rackets.length} owned — daily value TBD` : 'None owned',
-      value: null,
-      placeholder: true,
+      sub: racketSub,
+      value: racketValue > 0 ? racketValue : null,
+      placeholder: racketValue === 0,
     },
     {
       label: 'Points',
@@ -377,16 +530,6 @@ function FactionNetworthCard({ faction, settings, summary }) {
       value: factionNet,
       color: factionNet >= 0 ? '#22c55e' : '#ff6b8a',
       derived: true,
-    },
-    {
-      label: 'Investments',
-      sub: `${summary?.investments?.total || 0} active`,
-      value: investmentTotal,
-    },
-    {
-      label: 'Stocks',
-      sub: 'est. income / period',
-      value: stockIncome,
     },
   ]
 
@@ -457,7 +600,7 @@ function FactionNetworthCard({ faction, settings, summary }) {
       }}>
         <div style={{ flex: '1 1 0', minWidth: 0 }}>
           <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</div>
-          {!collapsed && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>excl. armory & racket estimates</div>}
+          {!collapsed && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}></div>}
         </div>
         <span style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700', flexShrink: 0, whiteSpace: 'nowrap' }}>{fmt(totalNetworth)}</span>
       </div>

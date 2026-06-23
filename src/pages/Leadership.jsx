@@ -7,6 +7,7 @@ import CipherReviewTab from '../components/LeadershipTabs/CipherReviewTab'
 import ChainTrackingTab from '../components/LeadershipTabs/ChainTrackingTab'
 import MemberRanksTab from '../components/LeadershipTabs/MemberRanksTab'
 import AccountingTab from '../components/LeadershipTabs/AccountingTab'
+import ArmoryTab from '../components/LeadershipTabs/ArmoryTab'
 
 const tabs = [
   { id: 'notices',    label: 'Notices' },
@@ -14,6 +15,7 @@ const tabs = [
   { id: 'chains',     label: 'Chain & War' },
   { id: 'ranks',      label: 'Ranks' },
   { id: 'accounting', label: 'Accounting' },
+  { id: 'armory',     label: 'Armory' },
   { id: 'tools',      label: 'Tools' },
   { id: 'cipher',     label: 'Cipher Review' },
 ]
@@ -106,6 +108,7 @@ export default function Leadership() {
               {activeTab === 'chains'  && <ChainTrackingTab />}
               {activeTab === 'ranks'   && <MemberRanksTab />}
               {activeTab === 'accounting' && <AccountingTab />}
+              {activeTab === 'armory'  && <ArmoryTab />}
               {activeTab === 'cipher'  && <CipherReviewTab />}
             </div>
           </>

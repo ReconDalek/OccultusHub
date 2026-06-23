@@ -130,6 +130,27 @@ export default {
       return;
     }
 
+    // "0 */6 * * *" — armory cache + item prices refresh every 6 hours
+    if (event.cron === '0 */6 * * *') {
+      try {
+        const { fetchAndCacheArmory, fetchAndCacheItemPrices } = await import('./controllers/armoryController.js');
+        ctx.waitUntil(
+          fetchAndCacheArmory(env)
+            .then(r => {
+              console.log(`[cron] armory cache refresh: ${r.fetched}/3 factions`);
+              if (r.errors?.length) console.warn('[cron] armory errors:', r.errors);
+            })
+            .catch(e => console.error('[cron] armory cache refresh failed:', e))
+            .then(() => fetchAndCacheItemPrices(env))
+            .then(r => console.log(`[cron] item prices cached: ${r.count} items`))
+            .catch(e => console.error('[cron] item prices cache failed:', e))
+        );
+      } catch (e) {
+        console.error('[cron] armory handler error:', e);
+      }
+      return;
+    }
+
     // "0 */12 * * *" — faction/company cache refresh every 12 hours
     if (event.cron === '0 */12 * * *') try {
       const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');

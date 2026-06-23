@@ -1,0 +1,224 @@
+import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { getRandomApiKeyForFaction, fetchWithRetry, getRandomUserApiKey } from '../services/tornApiService.js';
+
+const FACTION_IDS = [33097, 9171, 9728];
+const ARMORY_SELECTIONS = 'armor,boosters,caches,cesium,drugs,medical,temporary,weapons';
+
+export async function fetchAndCacheArmory(env) {
+  const results = { fetched: 0, errors: [] };
+
+  for (const factionId of FACTION_IDS) {
+    console.log(`[armory] fetching faction ${factionId}...`);
+    try {
+      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
+      if (!apiKeyObj?.key) {
+        const err = 'No API key available for this faction';
+        console.error(`[armory] faction ${factionId}: ${err}`);
+        results.errors.push({ factionId, error: err });
+        continue;
+      }
+      console.log(`[armory] faction ${factionId}: using key from user ${apiKeyObj.tornUserId} (${apiKeyObj.username})`);
+
+      const url = `https://api.torn.com/v2/faction?selections=${ARMORY_SELECTIONS}`;
+      const data = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` });
+
+      if (data?.error) {
+        const err = `Torn API error ${data.error.code}: ${data.error.error}`;
+        console.error(`[armory] faction ${factionId}: ${err}`);
+        results.errors.push({ factionId, error: err });
+        continue;
+      }
+
+      const categories = Object.keys(data).filter(k => Array.isArray(data[k]));
+      const totalItems = categories.reduce((s, k) => s + data[k].length, 0);
+      console.log(`[armory] faction ${factionId}: got ${totalItems} item types across [${categories.join(', ')}]`);
+
+      await env.DB.prepare(
+        `INSERT INTO armory_cache (faction_id, data, fetched_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(faction_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at`
+      ).bind(factionId, JSON.stringify(data)).run();
+
+      console.log(`[armory] faction ${factionId}: cached successfully`);
+      results.fetched++;
+    } catch (e) {
+      console.error(`[armory] faction ${factionId} failed:`, e.message, e.stack ?? '');
+      results.errors.push({ factionId, error: e.message });
+    }
+  }
+
+  console.log(`[armory] done — ${results.fetched}/3 fetched, ${results.errors.length} errors`);
+  if (results.errors.length) console.error('[armory] errors:', JSON.stringify(results.errors));
+  return results;
+}
+
+export async function fetchAndCacheItemPrices(env) {
+  console.log('[item-prices] fetching all items from Torn API...');
+  try {
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) throw new Error('No user API key available');
+
+    const data = await fetchWithRetry(
+      'https://api.torn.com/v2/torn/items?cat=All&sort=ASC',
+      { Authorization: `ApiKey ${apiKeyObj.key}` }
+    );
+
+    if (data?.error) throw new Error(`Torn API error ${data.error.code}: ${data.error.error}`);
+
+    const items = data?.items ?? [];
+    if (!items.length) throw new Error('No items returned from API');
+
+    const stmt = env.DB.prepare(
+      `INSERT INTO item_prices_cache (item_id, name, effective_price, market_price, sell_price, fetched_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(item_id) DO UPDATE SET
+         name = excluded.name,
+         effective_price = excluded.effective_price,
+         market_price = excluded.market_price,
+         sell_price = excluded.sell_price,
+         fetched_at = excluded.fetched_at`
+    );
+
+    const batch = items.map(item => {
+      const market = item.value?.market_price ?? 0;
+      const sell = item.value?.sell_price ?? 0;
+      const effective = Math.max(market, sell);
+      return stmt.bind(item.id, item.name, effective, market, sell);
+    });
+
+    await env.DB.batch(batch);
+    console.log(`[item-prices] cached ${items.length} items`);
+    return { count: items.length };
+  } catch (e) {
+    console.error('[item-prices] failed:', e.message);
+    throw e;
+  }
+}
+
+export async function getArmoryStatus(request, env, user) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT faction_id, fetched_at FROM armory_cache`
+    ).all();
+    const status = {};
+    for (const row of results) {
+      status[row.faction_id] = { fetched_at: row.fetched_at };
+    }
+    return jsonResponse({ status });
+  } catch (e) {
+    return errorResponse('Failed to fetch armory status: ' + e.message, 500);
+  }
+}
+
+export async function getItemPrices(request, env, user) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id, effective_price FROM item_prices_cache`
+    ).all();
+    const prices = {};
+    for (const row of results) prices[row.item_id] = row.effective_price;
+    return jsonResponse({ prices });
+  } catch (e) {
+    return errorResponse('Failed to fetch item prices: ' + e.message, 500);
+  }
+}
+
+export async function getItemPricesStatus(request, env, user) {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) as count, MAX(fetched_at) as fetched_at FROM item_prices_cache`
+    ).first();
+    return jsonResponse({ count: row?.count ?? 0, fetched_at: row?.fetched_at ?? null });
+  } catch (e) {
+    return errorResponse('Failed to fetch item prices status: ' + e.message, 500);
+  }
+}
+
+export async function refreshItemPricesCache(request, env, user) {
+  try {
+    const result = await fetchAndCacheItemPrices(env);
+    return jsonResponse({
+      message: `Item prices refreshed: ${result.count} items cached`,
+      count: result.count,
+      refreshedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    return errorResponse('Item prices refresh failed: ' + e.message, 500);
+  }
+}
+
+export async function refreshArmoryCache(request, env, user) {
+  try {
+    const result = await fetchAndCacheArmory(env);
+    return jsonResponse({
+      message: `Armory cache refreshed: ${result.fetched}/3 factions`,
+      fetched: result.fetched,
+      errors: result.errors,
+      refreshedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    return errorResponse('Armory cache refresh failed: ' + e.message, 500);
+  }
+}
+
+export async function getArmory(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = url.searchParams.get('faction_id');
+
+    // Build query — optionally filter by faction
+    let rows;
+    if (factionId) {
+      rows = await env.DB.prepare(
+        `SELECT faction_id, data, fetched_at FROM armory_cache WHERE faction_id = ?`
+      ).bind(Number(factionId)).all().then(r => r.results);
+    } else {
+      rows = await env.DB.prepare(
+        `SELECT faction_id, data, fetched_at FROM armory_cache`
+      ).all().then(r => r.results);
+    }
+
+    if (!rows.length) {
+      return jsonResponse({ armory: [], members: {} });
+    }
+
+    // Fetch all faction members for name resolution (only those in the requested factions)
+    const factionIds = rows.map(r => r.faction_id);
+    const placeholders = factionIds.map(() => '?').join(',');
+    const { results: members } = await env.DB.prepare(
+      `SELECT torn_user_id, username, faction_id FROM faction_members
+       WHERE is_active = 1 AND faction_id IN (${placeholders})`
+    ).bind(...factionIds).all();
+
+    // Build a lookup map: torn_user_id -> { username, faction_id }
+    const memberMap = {};
+    for (const m of members) {
+      memberMap[String(m.torn_user_id)] = { username: m.username, faction_id: m.faction_id };
+    }
+
+    // Load item prices for value calculation
+    const { results: priceRows } = await env.DB.prepare(
+      `SELECT item_id, effective_price FROM item_prices_cache`
+    ).all();
+    const priceMap = {};
+    for (const p of priceRows) priceMap[p.item_id] = p.effective_price;
+
+    const armory = rows.map(row => {
+      const data = JSON.parse(row.data);
+      // Sum quantity * effective_price across all categories
+      let totalValue = 0;
+      for (const category of Object.values(data)) {
+        if (!Array.isArray(category)) continue;
+        for (const item of category) {
+          const price = priceMap[item.ID] ?? 0;
+          totalValue += (item.quantity ?? 0) * price;
+        }
+      }
+      return { faction_id: row.faction_id, fetched_at: row.fetched_at, data, totalValue };
+    });
+
+    return jsonResponse({ armory, members: memberMap });
+  } catch (e) {
+    return errorResponse('Failed to fetch armory: ' + e.message, 500);
+  }
+}

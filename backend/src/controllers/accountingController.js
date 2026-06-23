@@ -335,19 +335,28 @@ export async function getSummary(request, env) {
 
     const stockWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
 
-    const [invRow, stockRows] = await Promise.all([
-      env.DB.prepare(`SELECT COUNT(*) as total, SUM(amount) as total_amount FROM accounting_investments ${invWhere}`).bind(...invParams).first(),
+    const [invRows, stockRows] = await Promise.all([
+      env.DB.prepare(`SELECT amount, rate, duration_months, member_profit_pct FROM accounting_investments ${invWhere}`).bind(...invParams).all(),
       env.DB.prepare(`SELECT payout_frequency, tier, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
     ]);
 
-    // monthly faction income: (base_payment × tier) × payouts_per_month
+    const invResults = invRows.results || [];
+    let invTotalAmount = 0;
+    let invMonthlyIncome = 0;
+    for (const row of invResults) {
+      invTotalAmount += row.amount || 0;
+      const totalProfit = (row.amount || 0) * ((row.rate || 0) / 100);
+      const factionIncome = totalProfit * (1 - (row.member_profit_pct || 0) / 100);
+      invMonthlyIncome += factionIncome / (row.duration_months || 1);
+    }
+
     let stockMonthlyIncome = 0;
+    let stockTotalInvested = 0;
     for (const row of (stockRows.results || [])) {
       const payoutsPerMonth = row.payout_frequency === '7-day' ? 4 : 1;
-      const factionIncomePerPayout = (row.member_keeps_amount || 0) * (row.tier || 1);
-      stockMonthlyIncome += factionIncomePerPayout * payoutsPerMonth;
+      stockMonthlyIncome += (row.member_keeps_amount || 0) * (row.tier || 1) * payoutsPerMonth;
+      stockTotalInvested += row.stock_cost || 0;
     }
-    const stockRow = { total: (stockRows.results || []).length };
 
     const tciDue = await env.DB.prepare(`
       SELECT COUNT(*) as count FROM accounting_investments
@@ -358,13 +367,15 @@ export async function getSummary(request, env) {
 
     return jsonResponse({
       investments: {
-        total: invRow?.total ?? 0,
-        total_amount: invRow?.total_amount ?? 0,
+        total: invResults.length,
+        total_amount: invTotalAmount,
+        monthly_income: invMonthlyIncome,
         tci_action_required: tciDue?.count ?? 0,
       },
       stocks: {
-        total: stockRow?.total ?? 0,
+        total: (stockRows.results || []).length,
         monthly_income: stockMonthlyIncome,
+        total_invested: stockTotalInvested,
       },
     });
   } catch (e) {

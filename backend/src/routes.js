@@ -20,7 +20,8 @@ import * as sanctumController from './controllers/sanctumController.js';
 import * as activityController from './controllers/activityController.js';
 import * as logsController from './controllers/logsController.js';
 import * as accountingController from './controllers/accountingController.js';
-import * as stocksController from './controllers/stocksController.js';
+import * as stocksController from './controllers/stocksController.js'
+import * as armoryController from './controllers/armoryController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -113,6 +114,19 @@ export async function handleRequest(request, env, ctx) {
 
     if (pathname === '/api/admin/cache/refresh' && method === 'POST') {
       return adminController.refreshCache(request, env, user);
+    }
+
+    if (pathname === '/api/admin/armory/status' && method === 'GET') {
+      return armoryController.getArmoryStatus(request, env, user);
+    }
+    if (pathname === '/api/admin/armory/refresh' && method === 'POST') {
+      return armoryController.refreshArmoryCache(request, env, user);
+    }
+    if (pathname === '/api/admin/item-prices/status' && method === 'GET') {
+      return armoryController.getItemPricesStatus(request, env, user);
+    }
+    if (pathname === '/api/admin/item-prices/refresh' && method === 'POST') {
+      return armoryController.refreshItemPricesCache(request, env, user);
     }
 
     // Analytics endpoint
@@ -379,6 +393,16 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/accounting\/collections\/\d+$/) && method === 'DELETE') {
       return accountingController.deleteCollection(request, env);
+    }
+
+    // Item prices map
+    if (pathname === '/api/leadership/item-prices' && method === 'GET') {
+      return armoryController.getItemPrices(request, env, user);
+    }
+
+    // Armory cache
+    if (pathname === '/api/leadership/armory' && method === 'GET') {
+      return armoryController.getArmory(request, env, user);
     }
 
     // Activity tracking

@@ -11,6 +11,8 @@ export default function CacheTab() {
   const [memberStatus,        setMemberStatus]        = useState(null)
   const [analytics,           setAnalytics]           = useState(null)
   const [personalStatsStatus, setPersonalStatsStatus] = useState(null)
+  const [armoryStatus,        setArmoryStatus]        = useState(null)
+  const [itemPricesStatus,    setItemPricesStatus]    = useState(null)
   const [loading,             setLoading]             = useState(true)
   const [refreshing,          setRefreshing]          = useState(null)
   const [lastResult,          setLastResult]          = useState(null)
@@ -48,6 +50,10 @@ export default function CacheTab() {
         .then((r) => r.json()).then(setMemberStatus).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/personal-stats/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then(setPersonalStatsStatus).catch(console.error),
+      fetch(`${API_BASE_URL}/api/admin/armory/status`, { headers: { Authorization: token } })
+        .then((r) => r.json()).then((d) => setArmoryStatus(d.status)).catch(console.error),
+      fetch(`${API_BASE_URL}/api/admin/item-prices/status`, { headers: { Authorization: token } })
+        .then((r) => r.json()).then(setItemPricesStatus).catch(console.error),
     ])
     setLoading(false)
   }
@@ -121,6 +127,56 @@ export default function CacheTab() {
           .then((r) => r.json())
           .then(setCacheStatus)
           .catch(console.error)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
+  const refreshArmory = async () => {
+    try {
+      setRefreshing('armory')
+      setError(null)
+      setLastResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/armory/refresh`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult(data)
+        fetch(`${API_BASE_URL}/api/admin/armory/status`, { headers: { Authorization: token } })
+          .then((r) => r.json()).then((d) => setArmoryStatus(d.status)).catch(console.error)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
+  const refreshItemPrices = async () => {
+    try {
+      setRefreshing('item-prices')
+      setError(null)
+      setLastResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/item-prices/refresh`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult(data)
+        fetch(`${API_BASE_URL}/api/admin/item-prices/status`, { headers: { Authorization: token } })
+          .then((r) => r.json()).then(setItemPricesStatus).catch(console.error)
       } else {
         setError(data.error || `Error ${res.status}`)
       }
@@ -432,6 +488,94 @@ export default function CacheTab() {
       </div>
       /*}
 
+      {/* Armory cache status */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Armory</h3>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+          {FACTION_IDS.map((fid) => {
+            const info = armoryStatus?.[fid]
+            return (
+              <div
+                key={fid}
+                className="p-5 rounded-lg"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <span style={{ fontSize: '18px' }}>🛡️</span>
+                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Last updated</span>
+                  <span style={{ color: '#a1a1aa', fontSize: '13px' }} title={info?.fetched_at ?? ''}>
+                    {info?.fetched_at ? timeAgo(info.fetched_at) : '—'}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={refreshArmory}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'armory' ? 'Refreshing…' : 'Refresh Armory Cache'}
+          </button>
+          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            Auto-refreshes every 6 hours (00:00, 06:00, 12:00, 18:00 UTC/TCT).
+          </p>
+        </div>
+      </div>
+
+      {/* Item prices cache */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Item Prices</h3>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          {[
+            { label: 'Items Cached', value: itemPricesStatus?.count ?? '—', color: '#f4f4f5' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="p-4 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color, fontSize: '24px', fontWeight: 'bold' }}>{value}</p>
+            </div>
+          ))}
+          <div className="p-4 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Last Updated</p>
+            <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
+              {itemPricesStatus?.fetched_at ? timeAgo(itemPricesStatus.fetched_at) : '—'}
+            </p>
+          </div>
+        </div>
+        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={refreshItemPrices}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'item-prices' ? 'Refreshing…' : 'Refresh Item Prices'}
+          </button>
+          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            Auto-refreshes every 6 hours alongside armory. Used for armory valuation.
+          </p>
+        </div>
+      </div>
+
       {/* Last result */}
       {lastResult && (
         <div
@@ -442,9 +586,18 @@ export default function CacheTab() {
             {lastResult.message}
           </p>
           {lastResult.refreshedAt && (
-            <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: lastResult.errors?.length ? '8px' : 0 }}>
               {formatUTC(lastResult.refreshedAt)}
             </p>
+          )}
+          {lastResult.errors?.length > 0 && (
+            <div style={{ marginTop: '6px' }}>
+              {lastResult.errors.map((e, i) => (
+                <p key={i} style={{ color: '#f87171', fontSize: '12px', margin: '2px 0' }}>
+                  ✗ Faction {e.factionId}: {e.error}
+                </p>
+              ))}
+            </div>
           )}
         </div>
       )}
