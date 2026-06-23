@@ -1268,7 +1268,7 @@ export default function PersonalStatsPanel() {
             </div>
           ) : (
             <>
-              <SummaryBar members={members} coverage={data.coverage} isLatest={mode === 'latest'} />
+              <SummaryBar members={members} coverage={data.coverage} isLatest={mode === 'latest' || mode === 'day'} />
               {data.coverage && (
                 <div style={{ color: '#52525b', fontSize: '11px', marginBottom: '12px' }}>
                   {mode === 'latest'

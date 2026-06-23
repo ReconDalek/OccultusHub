@@ -4,105 +4,104 @@ import { logInfo, logWarn, logError } from '../services/logger.js';
 
 // ── Personal stats field definitions ─────────────────────────────────────────
 // Each entry: key (internal), path (nested cat=all format), label, category,
-// stat (Torn v2 ?stat= name used for timestamp-based backfill).
-// stat names confirmed from user curl tests are marked // ✓
+// stat (Torn v2 ?stat= name — null means private/unavailable via public API).
 const PERSONAL_STAT_FIELDS = [
   // Attacking — Attacks
   { key: 'atk_won',          path: ['attacking','attacks','won'],                         label: 'Attacks Won',          category: 'attacking',     stat: 'attackswon'            },
   { key: 'atk_lost',         path: ['attacking','attacks','lost'],                        label: 'Attacks Lost',         category: 'attacking',     stat: 'attackslost'           },
-  { key: 'atk_stalemate',    path: ['attacking','attacks','stalemate'],                   label: 'Stalemates',           category: 'attacking',     stat: 'attacksstalemate'      },
-  { key: 'atk_assist',       path: ['attacking','attacks','assist'],                      label: 'Assists',              category: 'attacking',     stat: 'attackassisted'        },
-  { key: 'atk_stealth',      path: ['attacking','attacks','stealth'],                     label: 'Stealth Attacks',      category: 'attacking',     stat: 'stealthattacks'        },
+  { key: 'atk_stalemate',    path: ['attacking','attacks','stalemate'],                   label: 'Stalemates',           category: 'attacking',     stat: 'attacksdraw'           },
+  { key: 'atk_assist',       path: ['attacking','attacks','assist'],                      label: 'Assists',              category: 'attacking',     stat: 'attacksassisted'        },
+  { key: 'atk_stealth',      path: ['attacking','attacks','stealth'],                     label: 'Stealth Attacks',      category: 'attacking',     stat: 'attacksstealthed'        },
   // Attacking — Defends
   { key: 'def_won',          path: ['attacking','defends','won'],                         label: 'Defends Won',          category: 'attacking',     stat: 'defendswon'            },
   { key: 'def_lost',         path: ['attacking','defends','lost'],                        label: 'Defends Lost',         category: 'attacking',     stat: 'defendslost'           },
-  { key: 'def_stalemate',    path: ['attacking','defends','stalemate'],                   label: 'Def. Stalemates',      category: 'attacking',     stat: 'defendsstalemate'      },
-  { key: 'def_total',        path: ['attacking','defends','total'],                       label: 'Total Defends',        category: 'attacking',     stat: 'defends'               },
+  { key: 'def_stalemate',    path: ['attacking','defends','stalemate'],                   label: 'Def. Stalemates',      category: 'attacking',     stat: 'defendsstalemated'      },
+  { key: 'def_total',        path: ['attacking','defends','total'],                       label: 'Total Defends',        category: 'attacking',     stat: null                    },
   // Attacking — Combat stats
   { key: 'elo',              path: ['attacking','elo'],                                   label: 'ELO',                  category: 'attacking',     stat: 'elo'                   },
-  { key: 'unarmored_wins',   path: ['attacking','unarmored_wins'],                        label: 'Unarmored Wins',       category: 'attacking',     stat: 'unarmoredwins'         },
-  { key: 'highest_level',    path: ['attacking','highest_level_beaten'],                  label: 'Highest Level Beaten', category: 'attacking',     stat: 'highestlevelbeaten'    },
+  { key: 'unarmored_wins',   path: ['attacking','unarmored_wins'],                        label: 'Unarmored Wins',       category: 'attacking',     stat: 'unarmoredwon'         },
+  { key: 'highest_level',    path: ['attacking','highest_level_beaten'],                  label: 'Highest Level Beaten', category: 'attacking',     stat: 'highestbeaten'    },
   { key: 'killstreak_best',  path: ['attacking','killstreak','best'],                     label: 'Best Killstreak',      category: 'attacking',     stat: 'bestkillstreak'        },
   { key: 'hits_success',     path: ['attacking','hits','success'],                        label: 'Hits',                 category: 'attacking',     stat: 'attackhits'            },
   { key: 'hits_miss',        path: ['attacking','hits','miss'],                           label: 'Misses',               category: 'attacking',     stat: 'attackmisses'          },
-  { key: 'hits_critical',    path: ['attacking','hits','critical'],                       label: 'Critical Hits',        category: 'attacking',     stat: 'criticalattacks'       },
+  { key: 'hits_critical',    path: ['attacking','hits','critical'],                       label: 'Critical Hits',        category: 'attacking',     stat: 'attackcriticalhits'       },
   { key: 'hits_ohk',         path: ['attacking','hits','one_hit_kills'],                  label: 'One Hit Kills',        category: 'attacking',     stat: 'onehitkills'           },
-  { key: 'dmg_total',        path: ['attacking','damage','total'],                        label: 'Total Damage',         category: 'attacking',     stat: 'damagedone'            },
+  { key: 'dmg_total',        path: ['attacking','damage','total'],                        label: 'Total Damage',         category: 'attacking',     stat: 'attackdamage'            },
   { key: 'dmg_best',         path: ['attacking','damage','best'],                         label: 'Best Hit Damage',      category: 'attacking',     stat: 'bestdamage'            },
   // Attacking — Escapes
-  { key: 'esc_player',       path: ['attacking','escapes','player'],                      label: 'Player Escapes',       category: 'attacking',     stat: 'escapes'               },
-  { key: 'esc_foes',         path: ['attacking','escapes','foes'],                        label: 'Foe Escapes',          category: 'attacking',     stat: 'peoplebusted'          },
+  { key: 'esc_player',       path: ['attacking','escapes','player'],                      label: 'Player Escapes',       category: 'attacking',     stat: 'yourunaway'            },
+  { key: 'esc_foes',         path: ['attacking','escapes','foes'],                        label: 'Foe Escapes',          category: 'attacking',     stat: 'theyrunaway'          },
   // Attacking — Faction
   { key: 'war_hits',         path: ['attacking','faction','ranked_war_hits'],             label: 'Ranked War Hits',      category: 'attacking',     stat: 'rankedwarhits'         },
   { key: 'raid_hits',        path: ['attacking','faction','raid_hits'],                   label: 'Raid Hits',            category: 'attacking',     stat: 'raidhits'              },
   { key: 'faction_respect',  path: ['attacking','faction','respect'],                     label: 'Faction Respect',      category: 'attacking',     stat: 'respectforfaction'     },
-  { key: 'faction_retals',   path: ['attacking','faction','retaliations'],                label: 'Retaliations',         category: 'attacking',     stat: 'retaliations'          },
-  { key: 'wall_joins',       path: ['attacking','faction','territory','wall_joins'],      label: 'Wall Joins',           category: 'attacking',     stat: 'walljoins'             },
-  { key: 'wall_clears',      path: ['attacking','faction','territory','wall_clears'],     label: 'Wall Clears',          category: 'attacking',     stat: 'wallclears'            },
-  { key: 'wall_time',        path: ['attacking','faction','territory','wall_time'],       label: 'Wall Time (s)',        category: 'attacking',     stat: 'walltime'              },
+  { key: 'faction_retals',   path: ['attacking','faction','retaliations'],                label: 'Retaliations',         category: 'attacking',     stat: 'retals'          },
+  { key: 'wall_joins',       path: ['attacking','faction','territory','wall_joins'],      label: 'Wall Joins',           category: 'attacking',     stat: 'territoryjoins'             },
+  { key: 'wall_clears',      path: ['attacking','faction','territory','wall_clears'],     label: 'Wall Clears',          category: 'attacking',     stat: 'territoryclears'            },
+  { key: 'wall_time',        path: ['attacking','faction','territory','wall_time'],       label: 'Wall Time (s)',        category: 'attacking',     stat: 'territorytime'              },
   // Attacking — Ammunition
   { key: 'ammo_total',       path: ['attacking','ammunition','total'],                    label: 'Ammo Used',            category: 'attacking',     stat: 'roundsfired'           },
   { key: 'ammo_special',     path: ['attacking','ammunition','special'],                  label: 'Special Ammo',         category: 'attacking',     stat: 'specialammoused'       },
-  { key: 'ammo_hp',          path: ['attacking','ammunition','hollow_point'],             label: 'Hollow Point',         category: 'attacking',     stat: 'hollowpointused'       },
-  { key: 'ammo_tracer',      path: ['attacking','ammunition','tracer'],                   label: 'Tracer',               category: 'attacking',     stat: 'tracerused'            },
-  { key: 'ammo_piercing',    path: ['attacking','ammunition','piercing'],                 label: 'Piercing Ammo',        category: 'attacking',     stat: 'piercingused'          },
-  { key: 'ammo_incendiary',  path: ['attacking','ammunition','incendiary'],               label: 'Incendiary',           category: 'attacking',     stat: 'incendiaryused'        },
+  { key: 'ammo_hp',          path: ['attacking','ammunition','hollow_point'],             label: 'Hollow Point',         category: 'attacking',     stat: 'hollowammoused'       },
+  { key: 'ammo_tracer',      path: ['attacking','ammunition','tracer'],                   label: 'Tracer',               category: 'attacking',     stat: 'tracerammoused'            },
+  { key: 'ammo_piercing',    path: ['attacking','ammunition','piercing'],                 label: 'Piercing Ammo',        category: 'attacking',     stat: 'piercingammoused'          },
+  { key: 'ammo_incendiary',  path: ['attacking','ammunition','incendiary'],               label: 'Incendiary',           category: 'attacking',     stat: 'incendiaryammoused'        },
   // Attacking — Mugging
   { key: 'money_mugged',     path: ['attacking','networth','money_mugged'],               label: 'Money Mugged',         category: 'attacking',     stat: 'moneymugged'           },
-  { key: 'largest_mug',      path: ['attacking','networth','largest_mug'],                label: 'Largest Mug',          category: 'attacking',     stat: 'largestmugged'         },
+  { key: 'largest_mug',      path: ['attacking','networth','largest_mug'],                label: 'Largest Mug',          category: 'attacking',     stat: 'largestmug'         },
   { key: 'items_looted',     path: ['attacking','networth','items_looted'],               label: 'Items Looted',         category: 'attacking',     stat: 'itemslooted'           },
   // Jobs
   { key: 'job_points',       path: ['jobs','job_points_used'],                            label: 'Job Points Used',      category: 'jobs',          stat: 'jobpointsused'         },
   { key: 'trains_received',  path: ['jobs','trains_received'],                            label: 'Trains Received',      category: 'jobs',          stat: 'trainsreceived'        },
   // Trading
-  { key: 'bought_market',    path: ['trading','items','bought','market'],                 label: 'Market Purchases',     category: 'trading',       stat: 'marketbuys'            },
-  { key: 'bought_shops',     path: ['trading','items','bought','shops'],                  label: 'Shop Purchases',       category: 'trading',       stat: 'shopbuys'              },
+  { key: 'bought_market',    path: ['trading','items','bought','market'],                 label: 'Market Purchases',     category: 'trading',       stat: 'marketitemsbought'            },
+  { key: 'bought_shops',     path: ['trading','items','bought','shops'],                  label: 'Shop Purchases',       category: 'trading',       stat: 'cityitemsbought'              },
   { key: 'auctions_won',     path: ['trading','items','auctions','won'],                  label: 'Auctions Won',         category: 'trading',       stat: 'auctionswon'           },
-  { key: 'auctions_sold',    path: ['trading','items','auctions','sold'],                 label: 'Auctions Listed',      category: 'trading',       stat: 'auctionssold'          },
+  { key: 'auctions_sold',    path: ['trading','items','auctions','sold'],                 label: 'Auctions Listed',      category: 'trading',       stat: 'auctionsells'          },
   { key: 'items_sent',       path: ['trading','items','sent'],                            label: 'Items Sent',           category: 'trading',       stat: 'itemssent'             },
   { key: 'trades',           path: ['trading','trades'],                                  label: 'Trades',               category: 'trading',       stat: 'trades'                },
   { key: 'points_bought',    path: ['trading','points','bought'],                         label: 'Points Bought',        category: 'trading',       stat: 'pointsbought'          },
-  { key: 'points_sold',      path: ['trading','points','sold'],                           label: 'Points Sold',          category: 'trading',       stat: 'pointssold'            },
+  { key: 'points_sold',      path: ['trading','points','sold'],                           label: 'Points Sold',          category: 'trading',       stat: null                    },
   { key: 'bazaar_customers', path: ['trading','bazaar','customers'],                      label: 'Bazaar Customers',     category: 'trading',       stat: 'bazaarcustomers'       },
   { key: 'bazaar_sales',     path: ['trading','bazaar','sales'],                          label: 'Bazaar Sales',         category: 'trading',       stat: 'bazaarsales'           },
   { key: 'bazaar_profit',    path: ['trading','bazaar','profit'],                         label: 'Bazaar Profit',        category: 'trading',       stat: 'bazaarprofit'          },
-  { key: 'imarket_customers',path: ['trading','item_market','customers'],                 label: 'IM Customers',         category: 'trading',       stat: 'itemmarketcustomers'   },
-  { key: 'imarket_sales',    path: ['trading','item_market','sales'],                     label: 'IM Sales',             category: 'trading',       stat: 'itemmarketsales'       },
-  { key: 'imarket_revenue',  path: ['trading','item_market','revenue'],                   label: 'IM Revenue',           category: 'trading',       stat: 'itemmarketrevenue'     },
+  { key: 'imarket_customers',path: ['trading','item_market','customers'],                 label: 'IM Customers',         category: 'trading',       stat: null   },
+  { key: 'imarket_sales',    path: ['trading','item_market','sales'],                     label: 'IM Sales',             category: 'trading',       stat: null       },
+  { key: 'imarket_revenue',  path: ['trading','item_market','revenue'],                   label: 'IM Revenue',           category: 'trading',       stat: null     },
   // Jail
   { key: 'times_jailed',     path: ['jail','times_jailed'],                               label: 'Times Jailed',         category: 'jail',          stat: 'jailed'                },
-  { key: 'busts',            path: ['jail','busts','success'],                            label: 'Busts',                category: 'jail',          stat: 'busted'                },
-  { key: 'bust_fails',       path: ['jail','busts','fails'],                              label: 'Bust Fails',           category: 'jail',          stat: 'bustsfailed'           },
-  { key: 'bails',            path: ['jail','bails','amount'],                             label: 'Bails',                category: 'jail',          stat: 'bails'                 },
-  { key: 'bail_fees',        path: ['jail','bails','fees'],                               label: 'Bail Fees',            category: 'jail',          stat: 'bailfees'              },
+  { key: 'busts',            path: ['jail','busts','success'],                            label: 'Busts',                category: 'jail',          stat: 'peoplebusted'          },
+  { key: 'bust_fails',       path: ['jail','busts','fails'],                              label: 'Bust Fails',           category: 'jail',          stat: 'failedbusts'           },
+  { key: 'bails',            path: ['jail','bails','amount'],                             label: 'Bails',                category: 'jail',          stat: 'peoplebought'          },
+  { key: 'bail_fees',        path: ['jail','bails','fees'],                               label: 'Bail Fees',            category: 'jail',          stat: 'peopleboughtspent'              },
   // Hospital
-  { key: 'hosp',             path: ['hospital','times_hospitalized'],                     label: 'Times Hosp.',          category: 'hospital',      stat: 'timeshospital'         },
+  { key: 'hosp',             path: ['hospital','times_hospitalized'],                     label: 'Times Hosp.',          category: 'hospital',      stat: 'hospital'         },
   { key: 'medical_items',    path: ['hospital','medical_items_used'],                     label: 'Medical Items Used',   category: 'hospital',      stat: 'medicalitemsused'      },
   { key: 'blood_withdrawn',  path: ['hospital','blood_withdrawn'],                        label: 'Blood Withdrawn',      category: 'hospital',      stat: 'bloodwithdrawn'        },
   { key: 'revives',          path: ['hospital','reviving','revives'],                     label: 'Revives Given',        category: 'hospital',      stat: 'revives'               }, // ✓
   { key: 'revives_received', path: ['hospital','reviving','revives_received'],            label: 'Revives Received',     category: 'hospital',      stat: 'revivesreceived'       },
   // Finishing Hits
-  { key: 'fh_heavy_arty',   path: ['finishing_hits','heavy_artillery'],                  label: 'Heavy Artillery',      category: 'finishing',     stat: 'heavyartilleryhits'    },
-  { key: 'fh_machine_guns', path: ['finishing_hits','machine_guns'],                     label: 'Machine Guns',         category: 'finishing',     stat: 'machinegunhits'        },
+  { key: 'fh_heavy_arty',   path: ['finishing_hits','heavy_artillery'],                  label: 'Heavy Artillery',      category: 'finishing',     stat: 'heavyhits'    },
+  { key: 'fh_machine_guns', path: ['finishing_hits','machine_guns'],                     label: 'Machine Guns',         category: 'finishing',     stat: 'machinehits'        },
   { key: 'fh_rifles',       path: ['finishing_hits','rifles'],                           label: 'Rifles',               category: 'finishing',     stat: 'riflehits'             },
   { key: 'fh_smg',          path: ['finishing_hits','sub_machine_guns'],                 label: 'SMGs',                 category: 'finishing',     stat: 'smghits'               },
   { key: 'fh_shotguns',     path: ['finishing_hits','shotguns'],                         label: 'Shotguns',             category: 'finishing',     stat: 'shotgunhits'           },
   { key: 'fh_pistols',      path: ['finishing_hits','pistols'],                          label: 'Pistols',              category: 'finishing',     stat: 'pistolhits'            },
-  { key: 'fh_temporary',    path: ['finishing_hits','temporary'],                        label: 'Temporary',            category: 'finishing',     stat: 'temporaryhits'         },
+  { key: 'fh_temporary',    path: ['finishing_hits','temporary'],                        label: 'Temporary',            category: 'finishing',     stat: 'temphits'         },
   { key: 'fh_piercing',     path: ['finishing_hits','piercing'],                         label: 'Piercing',             category: 'finishing',     stat: 'piercinghits'          },
   { key: 'fh_slashing',     path: ['finishing_hits','slashing'],                         label: 'Slashing',             category: 'finishing',     stat: 'slashinghits'          },
   { key: 'fh_clubbing',     path: ['finishing_hits','clubbing'],                         label: 'Clubbing',             category: 'finishing',     stat: 'clubbinghits'          },
   { key: 'fh_mechanical',   path: ['finishing_hits','mechanical'],                       label: 'Mechanical',           category: 'finishing',     stat: 'mechanicalhits'        },
-  { key: 'fh_h2h',          path: ['finishing_hits','hand_to_hand'],                     label: 'Hand to Hand',         category: 'finishing',     stat: 'handtohandhits'        },
+  { key: 'fh_h2h',          path: ['finishing_hits','hand_to_hand'],                     label: 'Hand to Hand',         category: 'finishing',     stat: 'h2hhits'        },
   // Communication
   { key: 'mails_total',     path: ['communication','mails_sent','total'],                label: 'Mails Sent',           category: 'communication', stat: 'mailssent'             },
   { key: 'mails_friends',   path: ['communication','mails_sent','friends'],              label: 'To Friends',           category: 'communication', stat: 'friendmailssent'       },
   { key: 'mails_faction',   path: ['communication','mails_sent','faction'],              label: 'To Faction',           category: 'communication', stat: 'factionmailssent'      },
-  { key: 'mails_colleagues',path: ['communication','mails_sent','colleagues'],           label: 'To Colleagues',        category: 'communication', stat: 'colleaguemailssent'    },
-  { key: 'classified_ads',  path: ['communication','classified_ads'],                    label: 'Classified Ads',       category: 'communication', stat: 'classifiedads'         },
+  { key: 'mails_colleagues',path: ['communication','mails_sent','colleagues'],           label: 'To Colleagues',        category: 'communication', stat: 'companymailssent'    },
+  { key: 'classified_ads',  path: ['communication','classified_ads'],                    label: 'Classified Ads',       category: 'communication', stat: 'classifiedadsplaced'   },
   // Crimes
-  { key: 'crimes',          path: ['crimes','total'],                                     label: 'Total Crimes',         category: 'crimes',        stat: 'crimestotal'           },
-  { key: 'oc',              path: ['crimes','offenses','organized_crimes'],               label: 'Org. Crimes',          category: 'crimes',        stat: 'organisedcrimes'       },
+  { key: 'crimes',          path: ['crimes','total'],                                     label: 'Total Crimes',         category: 'crimes',        stat: 'criminaloffenses'           },
+  { key: 'oc',              path: ['crimes','offenses','organized_crimes'],               label: 'Org. Crimes',          category: 'crimes',        stat: 'organizedcrimes'       },
   { key: 'crime_vandalism', path: ['crimes','offenses','vandalism'],                      label: 'Vandalism',            category: 'crimes',        stat: 'vandalism'             },
   { key: 'crime_fraud',     path: ['crimes','offenses','fraud'],                          label: 'Fraud',                category: 'crimes',        stat: 'fraud'                 },
   { key: 'crime_theft',     path: ['crimes','offenses','theft'],                          label: 'Theft',                category: 'crimes',        stat: 'theft'                 },
@@ -113,15 +112,15 @@ const PERSONAL_STAT_FIELDS = [
   { key: 'crime_illprod',   path: ['crimes','offenses','illegal_production'],             label: 'Illegal Production',   category: 'crimes',        stat: 'illegalproduction'     },
   // Bounties
   { key: 'bounties_placed', path: ['bounties','placed','amount'],                         label: 'Bounties Placed',      category: 'bounties',      stat: 'bountiesplaced'        },
-  { key: 'bounty_val_placed',path: ['bounties','placed','value'],                         label: 'Value Placed',         category: 'bounties',      stat: 'bountyvalue'           },
+  { key: 'bounty_val_placed',path: ['bounties','placed','value'],                         label: 'Value Placed',         category: 'bounties',      stat: 'totalbountyspent'           },
   { key: 'bounties_coll',   path: ['bounties','collected','amount'],                      label: 'Bounties Collected',   category: 'bounties',      stat: 'bountiescollected'     },
-  { key: 'bounty_val_coll', path: ['bounties','collected','value'],                       label: 'Value Collected',      category: 'bounties',      stat: 'bountiescollectedvalue'},
+  { key: 'bounty_val_coll', path: ['bounties','collected','value'],                       label: 'Value Collected',      category: 'bounties',      stat: 'totalbountyreward'    },
   { key: 'bounties_received',path: ['bounties','received','amount'],                      label: 'Bounties Received',    category: 'bounties',      stat: 'bountiesreceived'      },
   // Items
-  { key: 'items_city',      path: ['items','found','city'],                               label: 'Found in City',        category: 'items',         stat: 'cityfind'              },
+  { key: 'items_city',      path: ['items','found','city'],                               label: 'Found in City',        category: 'items',         stat: 'cityfinds'             },
   { key: 'items_dump',      path: ['items','found','dump'],                               label: 'Found in Dump',        category: 'items',         stat: 'dumpfinds'             },
-  { key: 'items_trashed',   path: ['items','trashed'],                                    label: 'Items Trashed',        category: 'items',         stat: 'trashitemsused'        },
-  { key: 'viruses_coded',   path: ['items','viruses_coded'],                              label: 'Viruses Coded',        category: 'items',         stat: 'viruscoded'            },
+  { key: 'items_trashed',   path: ['items','trashed'],                                    label: 'Items Trashed',        category: 'items',         stat: 'itemsdumped'        },
+  { key: 'viruses_coded',   path: ['items','viruses_coded'],                              label: 'Viruses Coded',        category: 'items',         stat: 'virusescoded'            },
   { key: 'books_used',      path: ['items','used','books'],                               label: 'Books Read',           category: 'items',         stat: 'booksread'             },
   { key: 'boosters_used',   path: ['items','used','boosters'],                            label: 'Boosters Used',        category: 'items',         stat: 'boostersused'          },
   { key: 'consumables_used',path: ['items','used','consumables'],                         label: 'Consumables Used',     category: 'items',         stat: 'consumablesused'       },
@@ -129,35 +128,35 @@ const PERSONAL_STAT_FIELDS = [
   { key: 'alcohol_used',    path: ['items','used','alcohol'],                             label: 'Alcohol Used',         category: 'items',         stat: 'alcoholused'           },
   { key: 'energy_used',     path: ['items','used','energy'],                              label: 'Energy Items Used',    category: 'items',         stat: 'energydrinkused'       },
   // Travel
-  { key: 'travel',          path: ['travel','total'],                                      label: 'Trips',                category: 'travel',        stat: 'traveltotal'           },
-  { key: 'travel_time',     path: ['travel','time_spent'],                                label: 'Time Travelling (s)',  category: 'travel',        stat: 'timetraveling'         },
+  { key: 'travel',          path: ['travel','total'],                                      label: 'Trips',                category: 'travel',        stat: 'traveltimes'           },
+  { key: 'travel_time',     path: ['travel','time_spent'],                                label: 'Time Travelling (s)',  category: 'travel',        stat: 'timespenttraveling'         },
   { key: 'travel_items',    path: ['travel','items_bought'],                              label: 'Items Bought Abroad',  category: 'travel',        stat: 'itemsboughtabroad'     },
   { key: 'travel_atk_won',  path: ['travel','attacks_won'],                               label: 'Attacks Won Abroad',   category: 'travel',        stat: 'attackswonabroad'      },
   { key: 'travel_def_lost', path: ['travel','defends_lost'],                              label: 'Defends Lost Abroad',  category: 'travel',        stat: 'defendslostabroad'     },
-  { key: 'travel_argentina',path: ['travel','argentina'],                                 label: 'Argentina',            category: 'travel',        stat: 'argentina'             },
-  { key: 'travel_canada',   path: ['travel','canada'],                                    label: 'Canada',               category: 'travel',        stat: 'canada'                },
-  { key: 'travel_cayman',   path: ['travel','cayman_islands'],                            label: 'Cayman Islands',       category: 'travel',        stat: 'caymanislands'         },
-  { key: 'travel_china',    path: ['travel','china'],                                     label: 'China',                category: 'travel',        stat: 'china'                 },
-  { key: 'travel_hawaii',   path: ['travel','hawaii'],                                    label: 'Hawaii',               category: 'travel',        stat: 'hawaii'                },
-  { key: 'travel_japan',    path: ['travel','japan'],                                     label: 'Japan',                category: 'travel',        stat: 'japan'                 },
-  { key: 'travel_mexico',   path: ['travel','mexico'],                                    label: 'Mexico',               category: 'travel',        stat: 'mexico'                },
-  { key: 'travel_uae',      path: ['travel','united_arab_emirates'],                      label: 'UAE',                  category: 'travel',        stat: 'uae'                   },
-  { key: 'travel_uk',       path: ['travel','united_kingdom'],                            label: 'United Kingdom',       category: 'travel',        stat: 'uk'                    },
-  { key: 'travel_sa',       path: ['travel','south_africa'],                              label: 'South Africa',         category: 'travel',        stat: 'southafrica'           },
-  { key: 'travel_swiss',    path: ['travel','switzerland'],                               label: 'Switzerland',          category: 'travel',        stat: 'switzerland'           },
+  { key: 'travel_argentina',path: ['travel','argentina'],                                 label: 'Argentina',            category: 'travel',        stat: 'argtravel'             },
+  { key: 'travel_canada',   path: ['travel','canada'],                                    label: 'Canada',               category: 'travel',        stat: 'cantravel'             },
+  { key: 'travel_cayman',   path: ['travel','cayman_islands'],                            label: 'Cayman Islands',       category: 'travel',        stat: 'caytravel'         },
+  { key: 'travel_china',    path: ['travel','china'],                                     label: 'China',                category: 'travel',        stat: 'chitravel'             },
+  { key: 'travel_hawaii',   path: ['travel','hawaii'],                                    label: 'Hawaii',               category: 'travel',        stat: 'hawtravel'             },
+  { key: 'travel_japan',    path: ['travel','japan'],                                     label: 'Japan',                category: 'travel',        stat: 'japtravel'             },
+  { key: 'travel_mexico',   path: ['travel','mexico'],                                    label: 'Mexico',               category: 'travel',        stat: 'mextravel'             },
+  { key: 'travel_uae',      path: ['travel','united_arab_emirates'],                      label: 'UAE',                  category: 'travel',        stat: 'uaetravel'             },
+  { key: 'travel_uk',       path: ['travel','united_kingdom'],                            label: 'United Kingdom',       category: 'travel',        stat: 'uktravel'              },
+  { key: 'travel_sa',       path: ['travel','south_africa'],                              label: 'South Africa',         category: 'travel',        stat: 'satravel'           },
+  { key: 'travel_swiss',    path: ['travel','switzerland'],                               label: 'Switzerland',          category: 'travel',        stat: 'switravel'           },
   // Drugs
   { key: 'drugs',           path: ['drugs','total'],                                       label: 'Total Drugs',          category: 'drugs',         stat: 'drugsused'             }, // ✓
   { key: 'drug_overdoses',  path: ['drugs','overdoses'],                                  label: 'Overdoses',            category: 'drugs',         stat: 'overdosed'             },
   { key: 'drug_rehabs',     path: ['drugs','rehabilitations','amount'],                   label: 'Rehabilitations',      category: 'drugs',         stat: 'rehabs'                }, // ✓
-  { key: 'drug_cannabis',   path: ['drugs','cannabis'],                                   label: 'Cannabis',             category: 'drugs',         stat: 'cannabis'              },
-  { key: 'drug_ecstasy',    path: ['drugs','ecstasy'],                                    label: 'Ecstasy',              category: 'drugs',         stat: 'ecstasy'               },
-  { key: 'drug_ketamine',   path: ['drugs','ketamine'],                                   label: 'Ketamine',             category: 'drugs',         stat: 'ketamine'              },
-  { key: 'drug_lsd',        path: ['drugs','lsd'],                                        label: 'LSD',                  category: 'drugs',         stat: 'lsd'                   },
-  { key: 'drug_opium',      path: ['drugs','opium'],                                      label: 'Opium',                category: 'drugs',         stat: 'opium'                 },
-  { key: 'drug_pcp',        path: ['drugs','pcp'],                                        label: 'PCP',                  category: 'drugs',         stat: 'pcp'                   },
-  { key: 'drug_shrooms',    path: ['drugs','shrooms'],                                    label: 'Shrooms',              category: 'drugs',         stat: 'shrooms'               },
-  { key: 'drug_speed',      path: ['drugs','speed'],                                      label: 'Speed',                category: 'drugs',         stat: 'speed'                 },
-  { key: 'drug_vicodin',    path: ['drugs','vicodin'],                                    label: 'Vicodin',              category: 'drugs',         stat: 'vicodin'               },
+  { key: 'drug_cannabis',   path: ['drugs','cannabis'],                                   label: 'Cannabis',             category: 'drugs',         stat: 'cantaken'              },
+  { key: 'drug_ecstasy',    path: ['drugs','ecstasy'],                                    label: 'Ecstasy',              category: 'drugs',         stat: 'exttaken'              },
+  { key: 'drug_ketamine',   path: ['drugs','ketamine'],                                   label: 'Ketamine',             category: 'drugs',         stat: 'kettaken'              },
+  { key: 'drug_lsd',        path: ['drugs','lsd'],                                        label: 'LSD',                  category: 'drugs',         stat: 'lsdtaken'              },
+  { key: 'drug_opium',      path: ['drugs','opium'],                                      label: 'Opium',                category: 'drugs',         stat: 'opitaken'              },
+  { key: 'drug_pcp',        path: ['drugs','pcp'],                                        label: 'PCP',                  category: 'drugs',         stat: 'pcptaken'              },
+  { key: 'drug_shrooms',    path: ['drugs','shrooms'],                                    label: 'Shrooms',              category: 'drugs',         stat: 'shrtaken'              },
+  { key: 'drug_speed',      path: ['drugs','speed'],                                      label: 'Speed',                category: 'drugs',         stat: 'spetaken'              },
+  { key: 'drug_vicodin',    path: ['drugs','vicodin'],                                    label: 'Vicodin',              category: 'drugs',         stat: 'victaken'              },
   { key: 'drug_xanax',      path: ['drugs','xanax'],                                      label: 'Xanax',                category: 'drugs',         stat: 'xantaken'              }, // ✓
   // Missions
   { key: 'missions',        path: ['missions','missions'],                                 label: 'Missions',             category: 'missions',      stat: 'missionscompleted'     },
@@ -170,15 +169,15 @@ const PERSONAL_STAT_FIELDS = [
   // Networth
   { key: 'networth',        path: ['networth','total'],                                    label: 'Net Worth',            category: 'networth',      stat: 'networth'              },
   // Other
-  { key: 'active_time',     path: ['other','activity','time'],                             label: 'Active Time (s)',      category: 'other',         stat: 'activetime'            },
-  { key: 'streak_current',  path: ['other','activity','streak','current'],                label: 'Current Streak',       category: 'other',         stat: 'daysstreak'            },
-  { key: 'streak_best',     path: ['other','activity','streak','best'],                   label: 'Best Streak',          category: 'other',         stat: 'longeststreak'         },
+  { key: 'active_time',     path: ['other','activity','time'],                             label: 'Active Time (s)',      category: 'other',         stat: 'timeplayed'            },
+  { key: 'streak_current',  path: ['other','activity','streak','current'],                label: 'Current Streak',       category: 'other',         stat: 'activestreak'            },
+  { key: 'streak_best',     path: ['other','activity','streak','best'],                   label: 'Best Streak',          category: 'other',         stat: 'bestactivestreak'         },
   { key: 'awards',          path: ['other','awards'],                                      label: 'Awards',               category: 'other',         stat: 'awards'                },
   { key: 'merits_bought',   path: ['other','merits_bought'],                              label: 'Merits Bought',        category: 'other',         stat: 'meritsbought'          },
-  { key: 'refills_energy',  path: ['other','refills','energy'],                           label: 'Energy Refills',       category: 'other',         stat: 'energyrefills'         },
+  { key: 'refills_energy',  path: ['other','refills','energy'],                           label: 'Energy Refills',       category: 'other',         stat: 'refills'         },
   { key: 'refills_nerve',   path: ['other','refills','nerve'],                            label: 'Nerve Refills',        category: 'other',         stat: 'nerverefills'          },
-  { key: 'donator_days',    path: ['other','donator_days'],                               label: 'Donator Days',         category: 'other',         stat: 'donatordays'           },
-  { key: 'ranked_war_wins', path: ['other','ranked_war_wins'],                            label: 'Ranked War Wins',      category: 'other',         stat: 'rankedwarwins'         },
+  { key: 'donator_days',    path: ['other','donator_days'],                               label: 'Donator Days',         category: 'other',         stat: 'daysbeendonator'           },
+  { key: 'ranked_war_wins', path: ['other','ranked_war_wins'],                            label: 'Ranked War Wins',      category: 'other',         stat: null         },
 ];
 
 function getPath(obj, pathArr) {
@@ -510,7 +509,7 @@ export async function takePersonalStatsSnapshot(env) {
   for (const member of members) {
     const keyObj = await pool.getKey();
     try {
-      await fetchAndStoreMemberStats(env, member, keyObj.key, today, now);
+      await fetchAndStoreMemberStats(env, member, keyObj.key, yesterday, now);
       success++;
     } catch (e) {
       // fetchWithRetry already exhausted retries for transient errors.
@@ -535,7 +534,7 @@ export async function takePersonalStatsSnapshot(env) {
     for (const member of transientFailures) {
       const keyObj = await pool.getKey();
       try {
-        await fetchAndStoreMemberStats(env, member, keyObj.key, today, now);
+        await fetchAndStoreMemberStats(env, member, keyObj.key, yesterday, now);
         success++;
         pass2Success++;
       } catch (e) {
@@ -760,9 +759,14 @@ export async function getPersonalStatsCompare(request, env) {
       for (const r of member.rows) {
         let statsObj;
         try { statsObj = JSON.parse(r.stats); } catch { continue; }
-        const val = getPath(statsObj, field.path);
-        if (baseline === null) baseline = val;
-        const dayGain = prevVal !== null ? Math.max(0, val - prevVal) : 0;
+        const extracted = extractStats(statsObj);
+        const val = extracted[field.key] ?? 0;
+        if (baseline === null) {
+          baseline = val;
+          prevVal  = val;
+          continue; // first snapshot is baseline only — don't plot it
+        }
+        const dayGain = Math.max(0, val - prevVal);
         points.push({ date: r.snapshot_date, delta: Math.max(0, val - baseline), day_gain: dayGain, total: val });
         prevVal = val;
       }
@@ -833,7 +837,7 @@ export async function getPersonalStatsGaps(request, env) {
 
 // Stat names for ?stat= backfill, batched into groups of 10.
 const BACKFILL_STAT_CHUNKS = [];
-{ const names = PERSONAL_STAT_FIELDS.map(f => f.stat);
+{ const names = PERSONAL_STAT_FIELDS.filter(f => f.stat).map(f => f.stat);
   for (let i = 0; i < names.length; i += 10) BACKFILL_STAT_CHUNKS.push(names.slice(i, i + 10)); }
 
 // ── Personal stats backfill ───────────────────────────────────────────────────
@@ -884,7 +888,7 @@ export async function backfillPersonalStats(request, env, user) {
           }
         }
       } catch (err) {
-        chunkErrors.push(`chunk${i}: ${err?.message}`);
+        chunkErrors.push(`chunk${i} [${BACKFILL_STAT_CHUNKS[i].join(',')}]: ${err?.message}`);
       }
       if (i < allUrls.length - 1) await new Promise(r => setTimeout(r, 300));
     }
