@@ -760,8 +760,8 @@ export async function getPersonalStatsCompare(request, env) {
         let statsObj;
         try { statsObj = JSON.parse(r.stats); } catch { continue; }
         const val = getPath(statsObj, field.path);
-        if (baseline === null) baseline = val;
-        const dayGain = prevVal !== null ? Math.max(0, val - prevVal) : 0;
+        if (baseline === null) { baseline = val; prevVal = val; continue; }
+        const dayGain = Math.max(0, val - prevVal);
         points.push({ date: r.snapshot_date, delta: Math.max(0, val - baseline), day_gain: dayGain, total: val });
         prevVal = val;
       }
