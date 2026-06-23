@@ -759,13 +759,9 @@ export async function getPersonalStatsCompare(request, env) {
       for (const r of member.rows) {
         let statsObj;
         try { statsObj = JSON.parse(r.stats); } catch { continue; }
-        const val = statsObj?.__backfill ? (statsObj[field.key] ?? 0) : (getPath(statsObj, field.path) ?? 0);
-        if (baseline === null) {
-          baseline = val;
-          prevVal  = val;
-          continue; // first snapshot is baseline only — don't plot it
-        }
-        const dayGain = Math.max(0, val - prevVal);
+        const val = getPath(statsObj, field.path);
+        if (baseline === null) baseline = val;
+        const dayGain = prevVal !== null ? Math.max(0, val - prevVal) : 0;
         points.push({ date: r.snapshot_date, delta: Math.max(0, val - baseline), day_gain: dayGain, total: val });
         prevVal = val;
       }
