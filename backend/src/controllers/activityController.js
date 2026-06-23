@@ -759,8 +759,7 @@ export async function getPersonalStatsCompare(request, env) {
       for (const r of member.rows) {
         let statsObj;
         try { statsObj = JSON.parse(r.stats); } catch { continue; }
-        const extracted = extractStats(statsObj);
-        const val = extracted[field.key] ?? 0;
+        const val = statsObj?.__backfill ? (statsObj[field.key] ?? 0) : (getPath(statsObj, field.path) ?? 0);
         if (baseline === null) {
           baseline = val;
           prevVal  = val;
