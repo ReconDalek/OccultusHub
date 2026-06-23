@@ -392,20 +392,22 @@ function LineChart({ series, statLabel }) {
     </div>
   )
 
-  const maxDelta = Math.max(1, ...series.flatMap(s => s.points.map(p => p.delta)))
+  const maxTotal = Math.max(1, ...series.flatMap(s => s.points.map(p => p.total)))
+  const minTotal = Math.min(...series.flatMap(s => s.points.map(p => p.total)).filter(v => v > 0), maxTotal)
+  const yRange   = maxTotal - minTotal || 1
 
   function xOf(date) {
     const i = allDates.indexOf(date)
     if (allDates.length === 1) return INNER_W / 2
     return (i / (allDates.length - 1)) * INNER_W
   }
-  function yOf(delta) {
-    return INNER_H - (delta / maxDelta) * INNER_H
+  function yOf(total) {
+    return INNER_H - ((total - minTotal) / yRange) * INNER_H
   }
 
   // Y axis ticks — up to 5
-  const tickCount = Math.min(5, maxDelta)
-  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => Math.round((maxDelta / tickCount) * i))
+  const tickCount = Math.min(5, maxTotal)
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => Math.round(minTotal + (yRange / tickCount) * i))
 
   // X axis labels — show at most 8 evenly spaced
   const xLabelStep = Math.max(1, Math.ceil(allDates.length / 8))
@@ -463,51 +465,38 @@ function LineChart({ series, statLabel }) {
           {statLabel}
         </text>
 
-        {/* Series lines */}
+        {/* Series lines + fills (no pointer events) */}
         {series.map((s, si) => {
           const color = SERIES_COLORS[si % SERIES_COLORS.length]
           if (!s.points.length) return null
-          const pts = s.points.map(p => `${PAD.left + xOf(p.date)},${PAD.top + yOf(p.delta)}`).join(' ')
+          const pts = s.points.map(p => `${PAD.left + xOf(p.date)},${PAD.top + yOf(p.total)}`).join(' ')
           return (
-            <g key={s.id}>
-              <polyline
-                points={pts}
-                fill="none"
-                stroke={color}
-                strokeWidth="2"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                opacity="0.9"
-              />
-              {/* Area fill */}
+            <g key={s.id} style={{ pointerEvents: 'none' }}>
+              <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
               <polygon
                 points={`${PAD.left + xOf(s.points[0].date)},${PAD.top + INNER_H} ${pts} ${PAD.left + xOf(s.points[s.points.length - 1].date)},${PAD.top + INNER_H}`}
-                fill={color}
-                opacity="0.06"
+                fill={color} opacity="0.06"
               />
-              {/* Data points — hit targets */}
-              {s.points.map((p, pi) => (
-                <circle
-                  key={pi}
-                  cx={PAD.left + xOf(p.date)} cy={PAD.top + yOf(p.delta)}
-                  r="5"
-                  fill="transparent"
-                  stroke="transparent"
-                  onMouseEnter={() => setTooltip({ x: PAD.left + xOf(p.date), y: PAD.top + yOf(p.delta), date: p.date, delta: p.delta, day_gain: p.day_gain, total: p.total, username: s.username, color })}
-                  style={{ cursor: 'crosshair' }}
-                />
-              ))}
               {/* Visible dots */}
               {s.points.map((p, pi) => (
-                <circle
-                  key={`dot-${pi}`}
-                  cx={PAD.left + xOf(p.date)} cy={PAD.top + yOf(p.delta)}
-                  r="3" fill={color} stroke="#0d0d14" strokeWidth="1.5"
-                  style={{ pointerEvents: 'none' }}
-                />
+                <circle key={`dot-${pi}`} cx={PAD.left + xOf(p.date)} cy={PAD.top + yOf(p.total)} r="3" fill={color} stroke="#0d0d14" strokeWidth="1.5" />
               ))}
             </g>
           )
+        })}
+
+        {/* Hit targets — rendered last so they're on top of all series */}
+        {series.map((s, si) => {
+          const color = SERIES_COLORS[si % SERIES_COLORS.length]
+          return s.points.map((p, pi) => (
+            <circle
+              key={`hit-${si}-${pi}`}
+              cx={PAD.left + xOf(p.date)} cy={PAD.top + yOf(p.total)}
+              r="6" fill="transparent" stroke="transparent"
+              onMouseEnter={() => setTooltip({ x: PAD.left + xOf(p.date), y: PAD.top + yOf(p.total), date: p.date, delta: p.delta, day_gain: p.day_gain, total: p.total, username: s.username, color })}
+              style={{ cursor: 'crosshair' }}
+            />
+          ))
         })}
 
         {/* Tooltip vertical line */}
