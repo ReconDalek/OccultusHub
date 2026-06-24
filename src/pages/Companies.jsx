@@ -24,6 +24,19 @@ function getCompanyMembershipTier(user, company) {
   return null
 }
 
+function EffectivenessBar({ value }) {
+  const pct   = Math.min(100, Math.round((value / 150) * 100))
+  const color = value >= 100 ? '#4ade80' : value >= 70 ? '#fbbf24' : '#f87171'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '80px' }}>
+      <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: '2px' }} />
+      </div>
+      <span style={{ color, fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>{value}</span>
+    </div>
+  )
+}
+
 function CompanyCard({ company, membershipTier }) {
   const [expanded, setExpanded] = useState(false)
   const profile   = company.profile   || {}
@@ -32,6 +45,12 @@ function CompanyCard({ company, membershipTier }) {
   const highlight =
     membershipTier === 'director'  ? 'faction-director'  :
     membershipTier === 'member'    ? 'faction-member'     : ''
+
+  const avgEffectiveness = employees.length > 0
+    ? Math.round(employees.reduce((s, e) => s + (e.effectiveness?.total ?? 0), 0) / employees.length)
+    : null
+
+  const totalAddiction = employees.reduce((s, e) => s + (e.effectiveness?.addiction ?? 0), 0)
 
   return (
     <div
@@ -88,6 +107,19 @@ function CompanyCard({ company, membershipTier }) {
         Employees: {profile.employees?.hired} / {profile.employees?.capacity}
       </div>
 
+      {avgEffectiveness != null && (
+        <div className="mt-2.5 text-sm" style={{ color: '#9f67ff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>Avg Effectiveness:</span>
+          <EffectivenessBar value={avgEffectiveness} />
+        </div>
+      )}
+
+      {totalAddiction !== 0 && (
+        <div className="mt-2.5 text-sm" style={{ color: '#9f67ff' }}>
+          Total Addiction: <span style={{ color: '#f87171' }}>{totalAddiction}</span>
+        </div>
+      )}
+
       {/* Expandable section */}
       <div className="company-expand">
         <div
@@ -95,8 +127,8 @@ function CompanyCard({ company, membershipTier }) {
           style={{ gridTemplateColumns: '1fr 1fr 1fr' }}
         >
           {[
-            ['Daily Income',        `$${profile.income?.daily?.toLocaleString()}`],
-            ['Weekly Income (est.)', `$${(profile.income?.daily * 7)?.toLocaleString()}`],
+            ['Daily Income',          `$${profile.income?.daily?.toLocaleString()}`],
+            ['Weekly Income',         profile.income?.weekly != null ? `$${profile.income.weekly.toLocaleString()}` : `$${(profile.income?.daily * 7)?.toLocaleString()}`],
             ['Monthly Income (est.)', `$${(profile.income?.daily * 30)?.toLocaleString()}`],
           ].map(([label, val]) => (
             <div key={label}>
@@ -112,31 +144,46 @@ function CompanyCard({ company, membershipTier }) {
         </h4>
 
         <div>
-          {employees.map((emp) => (
-            <div
-              key={emp.id}
-              className="grid gap-3 py-3 employee-row"
-              style={{
-                gridTemplateColumns: '1.5fr 1fr 1fr',
-                borderBottom: '1px solid rgba(255,255,255,0.05)',
-                fontSize: '14px',
-              }}
-            >
-              <a
-                href={`https://www.torn.com/profiles.php?XID=${emp.id}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: '#9f67ff', textDecoration: 'none' }}
-                onClick={(e) => e.stopPropagation()}
-                onMouseEnter={(e) => (e.target.style.color = '#fff')}
-                onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
+          {employees.map((emp) => {
+            const eff       = emp.effectiveness?.total    ?? null
+            const addiction = emp.effectiveness?.addiction ?? 0
+            return (
+              <div
+                key={emp.id}
+                className="grid gap-3 py-3 employee-row"
+                style={{
+                  gridTemplateColumns: '1.5fr 1fr 1fr 1fr',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  fontSize: '14px',
+                }}
               >
-                {emp.name}
-              </a>
-              <span>{emp.position?.name}</span>
-              <span>{emp.last_action?.relative}</span>
-            </div>
-          ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <a
+                    href={`https://www.torn.com/profiles.php?XID=${emp.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#9f67ff', textDecoration: 'none' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseEnter={(e) => (e.target.style.color = '#fff')}
+                    onMouseLeave={(e) => (e.target.style.color = '#9f67ff')}
+                  >
+                    {emp.name}
+                  </a>
+                  {addiction !== 0 && (
+                    <span
+                      title={`Addiction penalty: ${addiction}`}
+                      style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '4px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontWeight: '600' }}
+                    >
+                      addicted {addiction}
+                    </span>
+                  )}
+                </div>
+                <span>{emp.position?.name}</span>
+                <span style={{ color: '#71717a', fontSize: '13px' }}>{emp.last_action?.relative}</span>
+                {eff != null ? <EffectivenessBar value={eff} /> : <span />}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

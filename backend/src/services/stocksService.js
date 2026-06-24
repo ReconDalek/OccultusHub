@@ -79,10 +79,64 @@ export async function fetchAndCacheStockDetail(env) {
   return { written, errors };
 }
 
+function computeRSI(prices, period = 14) {
+  if (prices.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const change = prices[i] - prices[i - 1];
+    if (change > 0) gains += change; else losses -= change;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  // Wilder's smoothing over remaining periods
+  for (let i = period + 1; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    avgGain = (avgGain * (period - 1) + (change > 0 ? change : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (change < 0 ? -change : 0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  return 100 - (100 / (1 + avgGain / avgLoss));
+}
+
 export async function getStockListFromCache(env) {
   const row = await env.DB.prepare(`SELECT data, fetched_at FROM stock_list_cache ORDER BY id DESC LIMIT 1`).first();
   if (!row) return null;
-  return { stocks: JSON.parse(row.data), fetched_at: row.fetched_at };
+
+  const stocks = JSON.parse(row.data);
+
+  // Merge chart.performance from detail cache
+  const { results: detailRows } = await env.DB.prepare(
+    `SELECT stock_id, json_extract(data, '$.chart.performance') as perf FROM stock_detail_cache`
+  ).all();
+  const perfMap = {};
+  for (const d of detailRows) {
+    if (d.perf) perfMap[d.stock_id] = JSON.parse(d.perf);
+  }
+
+  // Compute RSI using last 20 hourly price points per stock (14-period + 6 for Wilder smoothing)
+  const { results: histRows } = await env.DB.prepare(`
+    SELECT stock_id, price FROM (
+      SELECT stock_id, price, ROW_NUMBER() OVER (PARTITION BY stock_id ORDER BY recorded_at DESC) as rn
+      FROM stock_price_history
+    ) WHERE rn <= 20 ORDER BY stock_id, rn DESC
+  `).all();
+  const histMap = {};
+  for (const h of histRows) {
+    if (!histMap[h.stock_id]) histMap[h.stock_id] = [];
+    histMap[h.stock_id].push(h.price);
+  }
+  const rsiMap = {};
+  for (const [id, prices] of Object.entries(histMap)) {
+    rsiMap[id] = computeRSI(prices);
+  }
+
+  const enriched = stocks.map(s => ({
+    ...s,
+    chart: { performance: perfMap[s.id] ?? null },
+    rsi: rsiMap[s.id] ?? null,
+  }));
+
+  return { stocks: enriched, fetched_at: row.fetched_at };
 }
 
 export async function getStockDetailFromCache(env, stockId) {

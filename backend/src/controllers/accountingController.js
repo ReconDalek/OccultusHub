@@ -335,9 +335,21 @@ export async function getSummary(request, env) {
 
     const stockWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
 
-    const [invRows, stockRows] = await Promise.all([
+    const companyWhere = factionId ? `WHERE c.faction_id = ?` : ``;
+    const now = new Date();
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+
+    const [invRows, stockRows, companyRows] = await Promise.all([
       env.DB.prepare(`SELECT amount, rate, duration_months, member_profit_pct FROM accounting_investments ${invWhere}`).bind(...invParams).all(),
       env.DB.prepare(`SELECT payout_frequency, tier, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
+      env.DB.prepare(
+        `SELECT c.principal, c.has_api_key, c.principal_paid,
+                COALESCE(AVG(CASE WHEN s.snapshot_date >= date('now','start of month') THEN CAST(s.faction_cut AS REAL) END), c.faction_cut) AS avg_daily_cut
+         FROM company_profit_cache c
+         LEFT JOIN company_profit_snapshots s ON s.company_id = c.company_id
+         ${companyWhere}
+         GROUP BY c.company_id`
+      ).bind(...invParams).all(),
     ]);
 
     const invResults = invRows.results || [];
@@ -358,6 +370,15 @@ export async function getSummary(request, env) {
       stockTotalInvested += row.stock_cost || 0;
     }
 
+    let companyTotalPrincipal = 0;
+    let companyMonthlyIncome = 0;
+    let companyWithKey = 0;
+    for (const row of (companyRows.results || [])) {
+      if (row.principal_paid) companyTotalPrincipal += row.principal || 0;
+      companyMonthlyIncome += Math.round((row.avg_daily_cut || 0) * daysInMonth);
+      if (row.has_api_key) companyWithKey++;
+    }
+
     const tciDue = await env.DB.prepare(`
       SELECT COUNT(*) as count FROM accounting_investments
       WHERE is_active = 1 AND tci_purchased = 0
@@ -376,6 +397,12 @@ export async function getSummary(request, env) {
         total: (stockRows.results || []).length,
         monthly_income: stockMonthlyIncome,
         total_invested: stockTotalInvested,
+      },
+      companies: {
+        total: (companyRows.results || []).length,
+        with_key: companyWithKey,
+        total_principal: companyTotalPrincipal,
+        monthly_income: companyMonthlyIncome,
       },
     });
   } catch (e) {

@@ -13,6 +13,7 @@ export default function CacheTab() {
   const [personalStatsStatus, setPersonalStatsStatus] = useState(null)
   const [armoryStatus,        setArmoryStatus]        = useState(null)
   const [itemPricesStatus,    setItemPricesStatus]    = useState(null)
+  const [companyProfitStatus, setCompanyProfitStatus] = useState(null)
   const [loading,             setLoading]             = useState(true)
   const [refreshing,          setRefreshing]          = useState(null)
   const [lastResult,          setLastResult]          = useState(null)
@@ -54,6 +55,8 @@ export default function CacheTab() {
         .then((r) => r.json()).then((d) => setArmoryStatus(d.status)).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/item-prices/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then(setItemPricesStatus).catch(console.error),
+      fetch(`${API_BASE_URL}/api/admin/company-profits/status`, { headers: { Authorization: token } })
+        .then((r) => r.json()).then(setCompanyProfitStatus).catch(console.error),
     ])
     setLoading(false)
   }
@@ -162,6 +165,31 @@ export default function CacheTab() {
     }
   }
 
+  const refreshCompanyProfits = async () => {
+    try {
+      setRefreshing('company-profits')
+      setError(null)
+      setLastResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/company-profits/refresh`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult(data)
+        fetch(`${API_BASE_URL}/api/admin/company-profits/status`, { headers: { Authorization: token } })
+          .then((r) => r.json()).then(setCompanyProfitStatus).catch(console.error)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
   const refreshItemPrices = async () => {
     try {
       setRefreshing('item-prices')
@@ -241,22 +269,17 @@ export default function CacheTab() {
 
       {/* Cache status */}
       <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>General</h3>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Factions</h3>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-          {[
-            { key: 'factions',  label: 'Factions',  icon: '' },
-            { key: 'companies', label: 'Companies', icon: '' },
-          ].map(({ key, label, icon }) => {
-            const info = cacheStatus?.[key]
+          {(() => {
+            const info = cacheStatus?.['factions']
             return (
               <div
-                key={key}
                 className="p-5 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <span style={{ fontSize: '20px' }}>{icon}</span>
-                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{label}</span>
+                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>Faction Cache</span>
                 </div>
                 <div className="flex justify-between mb-1">
                   <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Cached entries</span>
@@ -264,32 +287,25 @@ export default function CacheTab() {
                 </div>
                 <div className="flex justify-between mb-4">
                   <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Last updated</span>
-                  <span
-                    style={{ color: '#a1a1aa', fontSize: '13px' }}
-                    title={info?.lastUpdated ?? ''}
-                  >
+                  <span style={{ color: '#a1a1aa', fontSize: '13px' }} title={info?.lastUpdated ?? ''}>
                     {timeAgo(info?.lastUpdated)}
                   </span>
                 </div>
                 <button
-                  onClick={() => refreshCache(key)}
+                  onClick={() => refreshCache('factions')}
                   disabled={!!refreshing}
                   className="w-full py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
-                  style={{
-                    background: 'rgba(179,18,63,0.2)',
-                    color: '#ff2f6d',
-                    opacity: refreshing ? 0.5 : 1,
-                  }}
+                  style={{ background: 'rgba(179,18,63,0.2)', color: '#ff2f6d', opacity: refreshing ? 0.5 : 1 }}
                 >
-                  {refreshing === key ? 'Refreshing...' : `Refresh ${label}`}
+                  {refreshing === 'factions' ? 'Refreshing...' : 'Refresh Factions'}
                 </button>
               </div>
             )
-          })}
+          })()}
         </div>
-        <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
-            Auto-refreshes daily at 00:00 and 12:00 UTC/TCT.
-          </p>
+        <p style={{ color: '#a1a1aa', fontSize: '12px', marginTop: '10px' }}>
+          Auto-refreshes every 12 hours (00:00 and 12:00 UTC/TCT). Company cache is updated by the daily director-key fetch.
+        </p>
       </div>
 
       {/* Chain cache status */}
@@ -573,6 +589,70 @@ export default function CacheTab() {
           <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
             Auto-refreshes every 6 hours alongside armory. Used for armory valuation.
           </p>
+        </div>
+      </div>
+
+      {/* Company profit snapshots */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Company Profits</h3>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          {[
+            { label: 'Companies Tracked', value: companyProfitStatus?.total              ?? '—', color: '#f4f4f5' },
+            { label: 'With Director Key',  value: companyProfitStatus?.with_key          ?? '—', color: companyProfitStatus?.with_key === companyProfitStatus?.total ? '#4ade80' : '#f97316' },
+            { label: 'Total Snapshots',    value: companyProfitStatus?.total_snapshots   ?? '—', color: '#f4f4f5' },
+            { label: "Today's Snapshots",  value: companyProfitStatus?.snapshots_today != null
+                ? `${companyProfitStatus.snapshots_today} / ${companyProfitStatus.with_key ?? 0}`
+                : '—',
+              color: companyProfitStatus?.snapshots_today === companyProfitStatus?.with_key ? '#4ade80' : '#f97316' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="p-4 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color, fontSize: '22px', fontWeight: 'bold' }}>{value}</p>
+            </div>
+          ))}
+          <div className="p-4 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Snapshot Range</p>
+            <p style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600', lineHeight: '1.7' }}>
+              {companyProfitStatus?.earliest_snapshot ?? '—'}
+              <br />
+              <span style={{ color: '#a1a1aa' }}>to</span>{' '}
+              {companyProfitStatus?.latest_snapshot ?? '—'}
+            </p>
+          </div>
+          <div className="p-4 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Last Fetched</p>
+            <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
+              {companyProfitStatus?.fetched_at ? timeAgo(companyProfitStatus.fetched_at) : '—'}
+            </p>
+          </div>
+        </div>
+        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={refreshCompanyProfits}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'company-profits' ? 'Refreshing…' : 'Run Company Snapshot'}
+          </button>
+          <div>
+            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+              Auto-runs daily at 01:00 UTC using each director's API key. Also updates the public company cache.
+            </p>
+            <p style={{ color: '#52525b', fontSize: '11px', margin: '2px 0 0 0' }}>
+              Manual run is safe — today's snapshot uses INSERT OR IGNORE so it won't duplicate if already run.
+            </p>
+          </div>
         </div>
       </div>
 

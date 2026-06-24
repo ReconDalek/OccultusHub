@@ -5,6 +5,7 @@ import LeaderboardsTab  from '../components/AdminTabs/LeaderboardsTab'
 import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
 import AdminCardsTab from '../components/AdminTabs/AdminCardsTab'
 import LogsTab from '../components/AdminTabs/LogsTab'
+import WebhooksTab from '../components/AdminTabs/WebhooksTab'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
@@ -16,6 +17,7 @@ export default function Admin() {
     { id: 'logs',        label: 'Logs' },
     { id: 'leaderboards', label: 'Leaderboards' },
     { id: 'cards',       label: 'Cards' },
+    { id: 'webhooks',    label: 'Webhooks' },
   ]
 
   return (
@@ -76,6 +78,7 @@ export default function Admin() {
           {activeTab === 'events'      && <SeasonalEventsTab />}
           {activeTab === 'cards'    && <AdminCardsTab />}
           {activeTab === 'logs'     && <LogsTab />}
+          {activeTab === 'webhooks' && <WebhooksTab />}
         </div>
       </div>
     </div>

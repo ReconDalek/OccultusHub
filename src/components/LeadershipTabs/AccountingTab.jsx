@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import InvestmentsSubTab from './AccountingSubTabs/InvestmentsSubTab'
 import StocksSubTab from './AccountingSubTabs/StocksSubTab'
+import CompanySubTab from './AccountingSubTabs/CompanySubTab'
 
 const FACTION_OPTIONS = [
   { id: null,  label: 'All Factions' },
@@ -14,6 +15,7 @@ const SUB_TABS = [
   { id: 'overview',    label: 'Overview' },
   { id: 'investments', label: 'Investments' },
   { id: 'stocks',      label: 'Stocks' },
+  { id: 'companies',   label: 'Companies' },
 ]
 
 export default function AccountingTab() {
@@ -96,6 +98,7 @@ export default function AccountingTab() {
       {activeSubTab === 'overview'    && <OverviewSubTab factionId={factionId} onNavigate={setActiveSubTab} />}
       {activeSubTab === 'investments' && <InvestmentsSubTab factionId={factionId} />}
       {activeSubTab === 'stocks'      && <StocksSubTab factionId={factionId} />}
+      {activeSubTab === 'companies'   && <CompanySubTab factionId={factionId} />}
     </div>
   )
 }
@@ -129,9 +132,9 @@ function OverviewSubTab({ factionId, onNavigate }) {
           fetch(`${API_BASE_URL}/api/leadership/armory`, { headers: { Authorization: token } }),
           fetch(`${API_BASE_URL}/api/leadership/item-prices`, { headers: { Authorization: token } }),
         ])
-        const cacheJson = await cacheRes.json()
-        const settingsJson = await settingsRes.json()
-        const armoryJson = await armoryRes.json()
+        const cacheJson     = await cacheRes.json()
+        const settingsJson  = await settingsRes.json()
+        const armoryJson    = await armoryRes.json()
         const itemPricesJson = await itemPricesRes.json()
 
         const factions = (cacheJson.data || []).filter(f => OUR_FACTION_IDS.includes(f.basic?.id))
@@ -151,7 +154,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
         for (const faction of factions) {
           const fid = faction.basic?.id
           if (!fid) continue
-          const rackets = (faction.rackets || []).filter(r => r.reward?.type === 'Item')
+          const rackets = (faction.rackets || []).filter(r => r.faction_id === fid && r.reward?.type === 'Item')
           const monthlyIncome = rackets.reduce((sum, r) => {
             const price = prices[r.reward.id] ?? 0
             return sum + r.reward.quantity * price * 30
@@ -288,6 +291,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               armoryValue={armoryValues[faction.basic?.id] ?? 0}
               racketValue={racketValues[faction.basic?.id] ?? 0}
             />
+
           ))}
           {displayFactions.length === 0 && (
             <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No faction data available. The 12-hour cache may not have run yet.</p>
@@ -300,16 +304,17 @@ function OverviewSubTab({ factionId, onNavigate }) {
 
           {/* Combined networth */}
           {displayFactions.length > 1 && (() => {
-            const factionSubtotal = displayFactions.reduce(
-              (sum, faction) => sum + calcFactionNetworth(faction, settings, armoryValues[faction.basic?.id] ?? 0, racketValues[faction.basic?.id] ?? 0),
-              0
-            )
-            const invPrincipal = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.investments?.total_amount ?? 0), 0)
-            const invMonthly = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.investments?.monthly_income ?? 0), 0)
-            const stockInvested = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.total_invested ?? 0), 0)
-            const stockMonthly = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.monthly_income ?? 0), 0)
-            const investmentNetworth = invPrincipal + stockInvested + invMonthly + stockMonthly
-            const combinedTotal = factionSubtotal + investmentNetworth
+            const factionSubtotal  = displayFactions.reduce((sum, f) => sum + calcFactionNetworth(f, settings, armoryValues[f.basic?.id] ?? 0), 0)
+            const totalRackets     = displayFactions.reduce((s, f) => s + (racketValues[f.basic?.id] ?? 0), 0)
+            const invPrincipal     = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.investments?.total_amount   ?? 0), 0)
+            const invMonthly       = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.investments?.monthly_income ?? 0), 0)
+            const stockInvested    = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.total_invested      ?? 0), 0)
+            const stockMonthly     = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.monthly_income      ?? 0), 0)
+            const companyPrincipal = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.companies?.total_principal  ?? 0), 0)
+            const companyMonthly   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.companies?.monthly_income   ?? 0), 0)
+            const investmentPrincipal = invPrincipal + stockInvested + companyPrincipal
+            const combinedNetworth = factionSubtotal + investmentPrincipal
+            const combinedMonthly  = totalRackets + invMonthly + stockMonthly + companyMonthly
 
             return (
               <div style={{
@@ -318,34 +323,59 @@ function OverviewSubTab({ factionId, onNavigate }) {
                 borderRadius: '14px',
                 overflow: 'hidden',
               }}>
-                <div style={{
-                  padding: '14px 16px',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px',
-                }}>
-                  <div style={{ flex: '1 1 0', minWidth: 0 }}>
-                    <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Combined Networth</span>
-                    <div style={{ color: '#71717a', fontSize: '11px', marginTop: '3px', overflowWrap: 'break-word' }}>
-                      {displayFactions.map(f => f.basic?.name).join(' + ')}
-                    </div>
-                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>incl. investment principal, investment profits, armory and rackets</div>
-                  </div>
-                  <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                    <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700', whiteSpace: 'nowrap' }}>{fmt(combinedTotal)}</div>
+                <div style={{ padding: '14px 16px 12px' }}>
+                  <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Combined Overview</span>
+                  <div style={{ color: '#71717a', fontSize: '11px', marginTop: '3px' }}>
+                    {displayFactions.map(f => f.basic?.name).join(' + ')}
                   </div>
                 </div>
-                <div style={{ borderTop: '1px solid rgba(109,40,217,0.15)', padding: '8px 20px 12px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    {displayFactions.map(faction => (
-                      <div key={faction.basic?.id} style={{ fontSize: '12px' }}>
-                        <span style={{ color: '#71717a' }}>{faction.basic?.name}: </span>
-                        <span style={{ color: '#f4f4f5', fontWeight: '600' }}>
-                          {fmt(calcFactionNetworth(faction, settings, armoryValues[faction.basic?.id] ?? 0, racketValues[faction.basic?.id] ?? 0))}
-                        </span>
+
+                {/* Two big figures */}
+                <div style={{ padding: '0 16px 14px', display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Combined Networth</div>
+                    <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedNetworth)}</div>
+                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>faction assets + all investment principal</div>
+                  </div>
+                  <div>
+                    <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+                    <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedMonthly)}<span style={{ color: '#52525b', fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
+                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>rackets + investments + stocks + companies</div>
+                  </div>
+                </div>
+
+                {/* Breakdown */}
+                <div style={{ borderTop: '1px solid rgba(109,40,217,0.15)', padding: '8px 16px 12px' }}>
+                  <div style={{ color: '#52525b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Networth Breakdown</div>
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    {displayFactions.map(f => (
+                      <div key={f.basic?.id} style={{ fontSize: '12px' }}>
+                        <span style={{ color: '#71717a' }}>{f.basic?.name}: </span>
+                        <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(calcFactionNetworth(f, settings, armoryValues[f.basic?.id] ?? 0))}</span>
                       </div>
                     ))}
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: '#71717a' }}>Investments: </span>
-                      <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(investmentNetworth)}</span>
+                      <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(investmentPrincipal)}</span>
+                    </div>
+                  </div>
+                  <div style={{ color: '#52525b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', marginTop: '10px' }}>Monthly Profit Breakdown</div>
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: '#71717a' }}>Rackets: </span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(totalRackets)}/mo</span>
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: '#71717a' }}>Bank investments: </span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(invMonthly)}/mo</span>
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: '#71717a' }}>Stocks: </span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(stockMonthly)}/mo</span>
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: '#71717a' }}>Companies: </span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(companyMonthly)}/mo</span>
                     </div>
                   </div>
                 </div>
@@ -358,7 +388,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
   )
 }
 
-function calcFactionNetworth(faction, settings, armoryValue = 0, racketValue = 0) {
+function calcFactionNetworth(faction, settings, armoryValue = 0) {
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
   const balanceMembers = faction.balance?.members || []
@@ -366,20 +396,26 @@ function calcFactionNetworth(faction, settings, armoryValue = 0, racketValue = 0
   const vaultMoney = balanceFaction.money || 0
   const points = balanceFaction.points || 0
   const memberTotal = balanceMembers.reduce((sum, m) => sum + (m.money || 0), 0)
+  const factionNet = vaultMoney - memberTotal
   const respectEst = respect * (settings.respect_value || 0)
   const pointsEst = points * (settings.points_value || 0)
-  return respectEst + pointsEst + vaultMoney + memberTotal + armoryValue + racketValue
+  return respectEst + pointsEst + factionNet + armoryValue
 }
 
 function InvestmentCard({ summaries, shownIds }) {
   const [collapsed, setCollapsed] = useState(false)
 
-  const invMonthly   = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.monthly_income ?? 0), 0)
-  const invPrincipal = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.total_amount   ?? 0), 0)
-  const stockMonthly  = shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.monthly_income    ?? 0), 0)
-  const stockInvested = shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total_invested    ?? 0), 0)
-  const totalInvested = invPrincipal + stockInvested
-  const totalMonthly  = invMonthly + stockMonthly
+  const invMonthly     = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.monthly_income ?? 0), 0)
+  const invPrincipal   = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.total_amount   ?? 0), 0)
+  const stockMonthly   = shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.monthly_income      ?? 0), 0)
+  const stockInvested  = shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total_invested      ?? 0), 0)
+  const companyMonthly = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.monthly_income   ?? 0), 0)
+  const companyPrincipal = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.total_principal ?? 0), 0)
+  const companyTotal   = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.total            ?? 0), 0)
+  const companyWithKey = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.with_key         ?? 0), 0)
+
+  const totalInvested = invPrincipal + stockInvested + companyPrincipal
+  const totalMonthly  = invMonthly + stockMonthly + companyMonthly
 
   const rows = [
     {
@@ -394,11 +430,18 @@ function InvestmentCard({ summaries, shownIds }) {
       principal: stockInvested,
       monthly: stockMonthly,
     },
+    {
+      label: 'Companies',
+      sub: `${companyTotal} companies, ${companyWithKey} with API key — 30% of monthly profit`,
+      principal: companyPrincipal,
+      monthly: companyMonthly,
+      partial: companyWithKey < companyTotal,
+    },
   ]
 
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', overflow: 'hidden' }}>
-      {/* Header — clickable to collapse */}
+      {/* Header */}
       <div
         onClick={() => setCollapsed(v => !v)}
         style={{
@@ -410,63 +453,50 @@ function InvestmentCard({ summaries, shownIds }) {
         }}
       >
         <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Investments</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {collapsed && (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
-              <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
-            </div>
-          )}
-          <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
-        </div>
+        <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
       </div>
 
       {!collapsed && (
-        <>
-          {/* Header principal (visible when expanded) */}
-          <div style={{ padding: '8px 16px 0', display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
-              <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
-            </div>
-          </div>
-
-          {/* Rows */}
-          <div style={{ padding: '0 4px' }}>
-            {rows.map((row, i) => (
-              <div key={row.label} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
-                padding: '10px 16px',
-                borderBottom: i === 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-              }}>
-                <div style={{ flex: '1 1 0', minWidth: 0 }}>
-                  <div style={{ color: '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
-                  <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
-                    {fmt(row.monthly)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span>
-                  </div>
-                  <div style={{ color: '#71717a', fontSize: '11px' }}>principal {fmt(row.principal)}</div>
-                </div>
+        <div style={{ padding: '0 4px' }}>
+          {rows.map((row, i) => (
+            <div key={row.label} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+              padding: '10px 16px',
+              borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+            }}>
+              <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                <div style={{ color: '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
+                <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
               </div>
-            ))}
-          </div>
-        </>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ color: row.partial ? '#f97316' : '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
+                  {fmt(row.monthly)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span>
+                  {row.partial && <span style={{ color: '#f97316', fontSize: '10px', marginLeft: '4px' }}>partial</span>}
+                </div>
+                <div style={{ color: '#71717a', fontSize: '11px' }}>principal {fmt(row.principal)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Footer — always visible */}
+      {/* Footer — split networth / monthly */}
       <div style={{
         padding: '12px 16px',
         background: 'rgba(255,255,255,0.02)',
         borderTop: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px',
       }}>
-        <div>
-          <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</div>
-          {!collapsed && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>principal + est. monthly profit</div>}
+        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
+            <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
+          </div>
+          <div>
+            <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalMonthly)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
+          </div>
         </div>
-        <div style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700' }}>{fmt(totalInvested + totalMonthly)}</div>
       </div>
     </div>
   )
@@ -488,7 +518,9 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const respectEst = respect * (settings.respect_value || 0)
   const pointsEst = points * (settings.points_value || 0)
 
-  const totalNetworth = respectEst + pointsEst + vaultMoney + memberTotal + armoryValue + racketValue
+  // Networth uses faction balance (vault − members) — can be negative, which is intentional
+  const totalNetworth = respectEst + pointsEst + factionNet + armoryValue
+  const monthlyProfit = racketValue
 
   const itemRackets = rackets.filter(r => r.reward?.type === 'Item')
   const racketSub = itemRackets.length > 0
@@ -561,7 +593,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
         </div>
       </div>
 
-      {/* Rows */}
+      {/* Rows — unchanged */}
       {!collapsed && <div style={{ padding: '0 4px' }}>
         {rows.map((row, i) => (
           <div key={row.label} style={{
@@ -573,10 +605,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
             <div style={{ flex: '1 1 0', minWidth: 0, paddingRight: '8px' }}>
               <div style={{ color: row.derived ? '#71717a' : '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
               {row.sub && (
-                <div style={{
-                  color: '#52525b', fontSize: '11px', marginTop: '2px',
-                  overflowWrap: 'break-word', wordBreak: 'break-word',
-                }}>{row.sub}</div>
+                <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px', overflowWrap: 'break-word', wordBreak: 'break-word' }}>{row.sub}</div>
               )}
             </div>
             <div style={{
@@ -591,18 +620,23 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
         ))}
       </div>}
 
-      {/* Total */}
+      {/* Footer — networth + monthly profit */}
       <div style={{
         padding: '12px 16px',
         background: 'rgba(255,255,255,0.02)',
         borderTop: '1px solid rgba(255,255,255,0.08)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+        display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center',
       }}>
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          <div style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>Total Networth</div>
-          {!collapsed && <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}></div>}
+        <div>
+          <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Networth</div>
+          <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalNetworth)}</div>
         </div>
-        <span style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700', flexShrink: 0, whiteSpace: 'nowrap' }}>{fmt(totalNetworth)}</span>
+        <div>
+          <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+          <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>
+            {fmt(monthlyProfit)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span>
+          </div>
+        </div>
       </div>
     </div>
   )

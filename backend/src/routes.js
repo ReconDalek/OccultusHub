@@ -22,6 +22,8 @@ import * as logsController from './controllers/logsController.js';
 import * as accountingController from './controllers/accountingController.js';
 import * as stocksController from './controllers/stocksController.js'
 import * as armoryController from './controllers/armoryController.js';
+import * as companyProfitController from './controllers/companyProfitController.js';
+import * as webhookController from './controllers/webhookController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -127,6 +129,26 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/admin/item-prices/refresh' && method === 'POST') {
       return armoryController.refreshItemPricesCache(request, env, user);
+    }
+    if (pathname === '/api/admin/company-profits/status' && method === 'GET') {
+      return companyProfitController.getCompanyProfitStatus(request, env, user);
+    }
+    if (pathname === '/api/admin/company-profits/refresh' && method === 'POST') {
+      return companyProfitController.refreshCompanyProfitCache(request, env, user);
+    }
+
+    // Webhook configs
+    if (pathname === '/api/admin/webhooks' && method === 'GET') {
+      return webhookController.getWebhookConfigs(request, env, user);
+    }
+    if (pathname === '/api/admin/webhooks' && method === 'POST') {
+      return webhookController.upsertWebhookConfig(request, env, user);
+    }
+    if (pathname.match(/^\/api\/admin\/webhooks\/[^/]+\/trigger$/) && method === 'POST') {
+      return webhookController.triggerWebhook(request, env, user);
+    }
+    if (pathname.match(/^\/api\/admin\/webhooks\/[^/]+\/test$/) && method === 'POST') {
+      return webhookController.sendTestMessage(request, env, user);
     }
 
     // Analytics endpoint
@@ -398,6 +420,16 @@ export async function handleRequest(request, env, ctx) {
     // Item prices map
     if (pathname === '/api/leadership/item-prices' && method === 'GET') {
       return armoryController.getItemPrices(request, env, user);
+    }
+    // Company profits
+    if (pathname === '/api/leadership/accounting/companies' && method === 'GET') {
+      return companyProfitController.getCompanyProfits(request, env, user);
+    }
+    if (pathname === '/api/leadership/accounting/companies' && method === 'POST') {
+      return companyProfitController.addCompany(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/companies\/\d+\/principal-paid$/) && method === 'POST') {
+      return companyProfitController.setPrincipalPaid(request, env, user);
     }
 
     // Armory cache

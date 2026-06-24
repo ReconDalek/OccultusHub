@@ -34,19 +34,44 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // "0 1 * * *" — daily 01:00 UTC: energy snapshot + personal stats snapshot
+    // "0 1 * * *" — daily 01:00 UTC: energy snapshot + personal stats snapshot + company profit snapshot + TCI alerts + armory low stock
     if (event.cron === '0 1 * * *') {
       try {
         const { takeEnergySnapshot, takePersonalStatsSnapshot } = await import('./controllers/activityController.js');
+        const { fetchAndCacheCompanyProfits } = await import('./controllers/companyProfitController.js');
+        const { sendInvestmentTciAlerts, sendArmoryLowStockAlerts } = await import('./controllers/webhookController.js');
         ctx.waitUntil(
           takeEnergySnapshot(env)
             .then(r => console.log('[cron] energy snapshot:', JSON.stringify(r)))
             .catch(e => console.error('[cron] energy snapshot failed:', e))
             .then(() => takePersonalStatsSnapshot(env))
             .catch(e => console.error('[cron] personal stats snapshot failed:', e))
+            .then(() => fetchAndCacheCompanyProfits(env))
+            .then(r => console.log(`[cron] company profits: ${r.fetched} fetched, ${r.skipped} skipped`))
+            .catch(e => console.error('[cron] company profits failed:', e))
+            .then(() => sendInvestmentTciAlerts(env))
+            .then(r => console.log(`[cron] TCI alerts: ${JSON.stringify(r)}`))
+            .catch(e => console.error('[cron] TCI alerts failed:', e))
+            .then(() => sendArmoryLowStockAlerts(env))
+            .catch(e => console.error('[cron] armory alerts failed:', e))
         );
       } catch (e) {
         console.error('[cron] daily snapshot handler error:', e);
+      }
+      return;
+    }
+
+    // "0 2 1 * *" — 1st of month 02:00 UTC: stock monthly payout summary
+    if (event.cron === '0 2 1 * *') {
+      try {
+        const { sendStockMonthlyPayouts } = await import('./controllers/webhookController.js');
+        ctx.waitUntil(
+          sendStockMonthlyPayouts(env)
+            .then(r => console.log('[cron] stock monthly payouts:', JSON.stringify(r)))
+            .catch(e => console.error('[cron] stock monthly payouts failed:', e))
+        );
+      } catch (e) {
+        console.error('[cron] monthly payout handler error:', e);
       }
       return;
     }
@@ -151,9 +176,9 @@ export default {
       return;
     }
 
-    // "0 */12 * * *" — faction/company cache refresh every 12 hours
+    // "0 */12 * * *" — faction cache refresh + member sync every 12 hours
     if (event.cron === '0 */12 * * *') try {
-      const { fetchAndCacheFactions, fetchAndCacheCompanies, getRandomUserApiKey } = await import('./services/tornApiService.js');
+      const { fetchAndCacheFactions, getRandomUserApiKey } = await import('./services/tornApiService.js');
       const { syncMembersFromCache } = await import('./controllers/memberController.js');
 
       const apiKeyObj = await getRandomUserApiKey(env);
@@ -163,33 +188,30 @@ export default {
       }
 
       const factionIds = [33097, 9171, 9728];
-      const companyIds = [112941, 120244, 121745, 122254, 120502, 124650];
 
-      console.log('Starting scheduled cache refresh...');
+      console.log('Starting scheduled faction cache refresh...');
 
       ctx.waitUntil(
-        Promise.all([
-          fetchAndCacheFactions(env, factionIds, apiKeyObj, 'cron'),
-          fetchAndCacheCompanies(env, companyIds, apiKeyObj, 'cron'),
-        ]).then(async ([factionResult, companyResult]) => {
-          console.log(`Cache refresh complete: ${factionResult.fetched} factions, ${companyResult.fetched} companies`);
+        fetchAndCacheFactions(env, factionIds, apiKeyObj, 'cron')
+          .then(async (factionResult) => {
+            console.log(`Faction cache refresh complete: ${factionResult.fetched} factions`);
 
-          // Sync faction members from the freshly-cached data (no extra API calls)
-          try {
-            const memberResult = await syncMembersFromCache(env);
-            console.log(
-              `Member sync complete: ${memberResult.synced} synced, ` +
-              `${memberResult.added} new, ${memberResult.departed} departed`
-            );
-            if (memberResult.errors.length) {
-              console.warn('Member sync errors:', memberResult.errors);
+            // Sync faction members from the freshly-cached data (no extra API calls)
+            try {
+              const memberResult = await syncMembersFromCache(env);
+              console.log(
+                `Member sync complete: ${memberResult.synced} synced, ` +
+                `${memberResult.added} new, ${memberResult.departed} departed`
+              );
+              if (memberResult.errors.length) {
+                console.warn('Member sync errors:', memberResult.errors);
+              }
+            } catch (memberErr) {
+              console.error('Member sync failed:', memberErr);
             }
-          } catch (memberErr) {
-            console.error('Member sync failed:', memberErr);
-          }
-        }).catch(error => {
-          console.error('Scheduled cache refresh failed:', error);
-        })
+          }).catch(error => {
+            console.error('Scheduled faction cache refresh failed:', error);
+          })
       );
     } catch (error) {
       console.error('Scheduled event handler error:', error);

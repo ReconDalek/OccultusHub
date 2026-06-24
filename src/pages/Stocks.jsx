@@ -116,15 +116,30 @@ function SignalBadge({ signal }) {
   )
 }
 
-function computeSignal(history, perf) {
-  if (!history || history.length < 5) return 'HOLD'
-  const prices = history.map(h => h.price)
-  const recent = prices.slice(-5)
-  const trend = recent[recent.length - 1] - recent[0]
-  // perf.last_day is an object { change_percentage, ... }
-  const dayPct = perf?.last_day?.change_percentage ?? perf?.last_day ?? 0
-  if (dayPct > 1.5 && trend > 0) return 'BUY'
-  if (dayPct < -1.5 && trend < 0) return 'SELL'
+function computeSignal(rsi, perf) {
+  // RSI is the primary signal — tells us where the stock is in its cycle,
+  // not just what direction it has already moved.
+  // <30 = oversold (potential bottom, consider buying)
+  // >70 = overbought (potential top, consider selling)
+  // Secondary: week + month momentum confirms the trend isn't still running hard against us.
+
+  if (rsi === null || rsi === undefined) return 'HOLD'
+
+  const weekPct  = perf?.last_week?.change_percentage  ?? 0
+  const monthPct = perf?.last_month?.change_percentage ?? 0
+
+  if (rsi < 30) {
+    // Oversold — only suggest BUY if the longer trend isn't in catastrophic freefall
+    if (monthPct > -5) return 'BUY'
+    return 'HOLD' // Still falling hard — wait for stabilisation
+  }
+
+  if (rsi > 70) {
+    // Overbought — only suggest SELL if the trend isn't still strongly bullish
+    if (monthPct < 5) return 'SELL'
+    return 'HOLD' // Still rising hard — let it run
+  }
+
   return 'HOLD'
 }
 
@@ -141,7 +156,8 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
   const sparkHistory = tornHistory.length > 0 ? tornHistory : storedHistory
   const chartHistory = storedHistory.length >= 5 ? storedHistory : tornHistory
 
-  const signal = computeSignal(sparkHistory, perf)
+  const rsi = detailStock?.rsi ?? apiStock?.rsi ?? null
+  const signal = computeSignal(rsi, perf)
 
   return (
     <>
@@ -218,9 +234,24 @@ function StockRow({ apiStock, localStock, onExpand, expanded, detail, detailLoad
                   </div>
                   <div style={{ marginTop: 16, padding: '10px 12px', background: '#0a0a14', border: '1px solid #1e1e2e', borderRadius: 6 }}>
                     <div style={{ color: '#888', fontSize: 11, marginBottom: 4, fontWeight: 600, letterSpacing: 1 }}>SIGNAL</div>
-                    <SignalBadge signal={signal} />
-                    <div style={{ color: '#444', fontSize: 10, marginTop: 6 }}>
-                      Based on recent trend & 24h performance. Not financial advice.
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <SignalBadge signal={signal} />
+                      {rsi !== null && (
+                        <span style={{ fontSize: 11, color: rsi < 30 ? '#4ade80' : rsi > 70 ? '#f87171' : '#666' }}>
+                          RSI {rsi.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ color: '#444', fontSize: 10, marginTop: 6, lineHeight: 1.5 }}>
+                      Based on RSI-14 using hourly price history.{' '}
+                      {rsi === null
+                        ? 'Insufficient price history — check back once more hourly data has been collected.'
+                        : rsi < 30
+                          ? 'RSI below 30 suggests oversold conditions — potential entry point if the broader trend is stabilising.'
+                          : rsi > 70
+                            ? 'RSI above 70 suggests overbought conditions — potential exit point if the run is slowing.'
+                            : 'RSI in neutral range — no strong entry or exit signal.'}
+                      {' '}Signals are indicative only and based on limited history. Not financial advice.
                     </div>
                   </div>
                 </div>
@@ -397,8 +428,9 @@ export default function Stocks() {
         </div>
       </div>
 
-      <div style={{ marginTop: 12, color: '#3a3a4a', fontSize: 11, textAlign: 'right' }}>
-        Buy/Sell signals are algorithmic suggestions based on recent price trends and 24h performance. They do not constitute financial advice.
+      <div style={{ marginTop: 12, color: '#3a3a4a', fontSize: 11, textAlign: 'right', lineHeight: 1.6 }}>
+        Buy/Sell signals use RSI-14 (Relative Strength Index) on hourly price data. RSI below 30 = oversold (potential buy zone), above 70 = overbought (potential sell zone).<br />
+        Signals identify where a stock is in its cycle — not momentum already in progress. Accuracy improves as more price history is collected. Not financial advice.
       </div>
     </div>
   )
