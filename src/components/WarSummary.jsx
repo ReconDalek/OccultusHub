@@ -40,6 +40,26 @@ function parseD1DateTime(str) {
 
 // ─── Scoreboard ───────────────────────────────────────────────────────────────
 
+function useCountdown(targetUnix) {
+  const [label, setLabel] = useState('')
+  useEffect(() => {
+    if (!targetUnix) return
+    const update = () => {
+      const secs = targetUnix - Math.floor(Date.now() / 1000)
+      if (secs <= 0) { setLabel('starting…'); return }
+      const d = Math.floor(secs / 86400)
+      const h = Math.floor((secs % 86400) / 3600)
+      const m = Math.floor((secs % 3600) / 60)
+      const s = secs % 60
+      setLabel(d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`)
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [targetUnix])
+  return label
+}
+
 function ScoreBoard({ war, ourFactionName }) {
   const { our_score = 0, opponent_score = 0, target = 0, our_chain = 0, opponent_chain = 0,
           opponent_faction_name, started_at, status, scheduled_start } = war
@@ -48,6 +68,8 @@ function ScoreBoard({ war, ourFactionName }) {
   const weWinning = our_score >= opponent_score
   const ourPct    = target > 0 ? Math.min((our_score  / target) * 100, 100) : 0
   const oppPct    = target > 0 ? Math.min((opponent_score / target) * 100, 100) : 0
+
+  const countdown = useCountdown(isMatched ? scheduled_start : null)
 
   const elapsed = started_at ? Math.floor(Date.now() / 1000) - started_at : 0
   const elH = Math.floor(elapsed / 3600)
@@ -78,9 +100,9 @@ function ScoreBoard({ war, ourFactionName }) {
           <p style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: '600', margin: 0 }}>
             {isMatched ? '—' : (target > 0 ? target.toLocaleString('en-GB') : '—')}
           </p>
-          {isMatched && scheduled_start && (
-            <p style={{ color: '#eab308', fontSize: '9px', margin: '4px 0 0 0' }}>
-              starts {new Date(scheduled_start * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}
+          {isMatched && countdown && (
+            <p style={{ color: '#eab308', fontSize: '12px', margin: '4px 0 0 0', fontVariantNumeric: 'tabular-nums' }}>
+              {countdown}
             </p>
           )}
           {!isMatched && elapsed > 0 && (

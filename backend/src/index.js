@@ -101,21 +101,21 @@ export default {
     // "*/10 * * * *" — every 10 minutes: check for new war matches + track active/matched wars
     if (event.cron === '*/10 * * * *') {
       try {
-        // Skip entirely if no war is active or matched — avoids Torn API calls during quiet weeks
-        const { count } = await env.DB.prepare(
-          `SELECT COUNT(*) as count FROM ranked_wars WHERE faction_id=? AND status IN ('active','matched')`
-        ).bind(env.FACTION_ID).first();
-        if (!count) return;
-
         const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
-        ctx.waitUntil(
-          checkWarMatches(env)
-            .then(r => { if (r.length) console.log('[cron] war match check:', JSON.stringify(r)); })
-            .catch(e => console.error('[cron] war match check failed:', e))
-            .then(() => trackActiveWars(env))
-            .then(r => { if (r.checked > 0) console.log(`[cron] war tracking: ${r.checked} wars checked`); })
-            .catch(e => console.error('[cron] war tracking failed:', e))
-        );
+        ctx.waitUntil((async () => {
+          // Always run checkWarMatches — it discovers new matches and must not be gated
+          const matchR = await checkWarMatches(env).catch(e => { console.error('[cron] war match check failed:', e); return []; });
+          if (matchR.length) console.log('[cron] war match check:', JSON.stringify(matchR));
+
+          // Only poll active/matched wars if any exist — avoids 9 Torn API calls during quiet weeks
+          const { count } = await env.DB.prepare(
+            `SELECT COUNT(*) as count FROM ranked_wars WHERE status IN ('active','matched')`
+          ).first();
+          if (!count) return;
+
+          const trackR = await trackActiveWars(env).catch(e => { console.error('[cron] war tracking failed:', e); return { checked: 0 }; });
+          if (trackR.checked > 0) console.log(`[cron] war tracking: ${trackR.checked} wars checked`);
+        })());
       } catch (error) {
         console.error('[cron] war tracking handler error:', error);
       }

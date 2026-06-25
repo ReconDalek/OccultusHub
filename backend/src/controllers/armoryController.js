@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomApiKeyForFaction, fetchWithRetry, getRandomUserApiKey } from '../services/tornApiService.js';
+import { getStaffApiKeyForFaction, fetchWithRetry, getRandomUserApiKey } from '../services/tornApiService.js';
 
 const FACTION_IDS = [33097, 9171, 9728];
 const ARMORY_SELECTIONS = 'armor,boosters,caches,cesium,drugs,medical,temporary,weapons';
@@ -10,7 +10,7 @@ export async function fetchAndCacheArmory(env) {
   for (const factionId of FACTION_IDS) {
     console.log(`[armory] fetching faction ${factionId}...`);
     try {
-      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
+      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
       if (!apiKeyObj?.key) {
         const err = 'No API key available for this faction';
         console.error(`[armory] faction ${factionId}: ${err}`);
@@ -158,6 +158,60 @@ export async function refreshArmoryCache(request, env, user) {
     });
   } catch (e) {
     return errorResponse('Armory cache refresh failed: ' + e.message, 500);
+  }
+}
+
+export async function getArmoryMinimums(request, env, user) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT item_id, item_name, category, min_33097, min_9171, min_9728 FROM armory_minimums ORDER BY category, item_name`
+    ).all();
+    return jsonResponse({ minimums: results });
+  } catch (e) {
+    return errorResponse('Failed to fetch armory minimums: ' + e.message, 500);
+  }
+}
+
+export async function saveArmoryMinimums(request, env, user) {
+  try {
+    const { items } = await request.json();
+    if (!Array.isArray(items)) return errorResponse('items array required', 400);
+
+    // Delete rows where all minimums are null/empty, upsert the rest
+    const toDelete = items.filter(i => !i.min_33097 && !i.min_9171 && !i.min_9728).map(i => i.item_id);
+    const toUpsert = items.filter(i => i.min_33097 || i.min_9171 || i.min_9728);
+
+    const stmt = env.DB.prepare(
+      `INSERT INTO armory_minimums (item_id, item_name, category, min_33097, min_9171, min_9728, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(item_id) DO UPDATE SET
+         item_name  = excluded.item_name,
+         category   = excluded.category,
+         min_33097  = excluded.min_33097,
+         min_9171   = excluded.min_9171,
+         min_9728   = excluded.min_9728,
+         updated_at = CURRENT_TIMESTAMP`
+    );
+
+    const ops = [];
+    for (const item of toUpsert) {
+      ops.push(stmt.bind(
+        item.item_id,
+        item.item_name,
+        item.category,
+        item.min_33097 || null,
+        item.min_9171  || null,
+        item.min_9728  || null,
+      ));
+    }
+    for (const id of toDelete) {
+      ops.push(env.DB.prepare(`DELETE FROM armory_minimums WHERE item_id = ?`).bind(id));
+    }
+
+    if (ops.length) await env.DB.batch(ops);
+    return jsonResponse({ success: true, saved: toUpsert.length, cleared: toDelete.length });
+  } catch (e) {
+    return errorResponse('Failed to save armory minimums: ' + e.message, 500);
   }
 }
 

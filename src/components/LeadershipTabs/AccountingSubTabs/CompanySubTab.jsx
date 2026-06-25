@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { API_BASE_URL } from '../../../config/api'
 
-const PRINCIPAL = 4_000_000_000
+const PRINCIPAL   = 4_000_000_000
+const TRACK_START = '2026-06-01'
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -13,6 +14,70 @@ function fmtShort(n) {
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`
   if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(1)}M`
   return `$${Math.round(n).toLocaleString()}`
+}
+
+function pad(n) { return String(n).padStart(2, '0') }
+
+function fmtMonthLabel(year, month) {
+  return new Date(Date.UTC(year, month - 1, 1))
+    .toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+function fmtDay(dateStr) {
+  const [, m, d] = dateStr.split('-').map(Number)
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]
+  return `${d} ${mon}`
+}
+
+// Returns list of YYYY-MM-DD strings for every day from monthStart up to min(today, monthEnd)
+function daysInRange(year, month) {
+  const now      = new Date()
+  const today    = `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())}`
+  const lastDay  = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`
+  const end      = today < monthEnd ? today : monthEnd
+  const dates    = []
+  for (let d = 1; d <= lastDay; d++) {
+    const s = `${year}-${pad(month)}-${pad(d)}`
+    if (s > end) break
+    dates.push(s)
+  }
+  return dates
+}
+
+// All months from TRACK_START to now, most recent first
+function getMonthRange() {
+  const months = []
+  const now = new Date()
+  let y = now.getUTCFullYear(), m = now.getUTCMonth() + 1
+  while (`${y}-${pad(m)}-01` >= TRACK_START) {
+    months.push({ year: y, month: m })
+    if (--m === 0) { m = 12; y-- }
+  }
+  return months
+}
+
+// Build coverage: per month, per company — which expected days are missing
+function buildCoverage(companies, monthRange) {
+  const withKey = companies.filter(c => c.has_api_key)
+  if (!withKey.length) return []
+
+  return monthRange.map(({ year, month }) => {
+    const expected = daysInRange(year, month)
+    if (!expected.length) return null
+
+    const perCompany = withKey.map(c => {
+      const tracked = new Set(c.snapshot_dates ?? [])
+      const missing = expected.filter(d => !tracked.has(d))
+      return { company_id: c.company_id, name: c.name, missing, tracked: expected.length - missing.length }
+    })
+
+    // Days where ALL companies have data
+    const fullDays = expected.filter(d => perCompany.every(c => !c.missing.includes(d)))
+    const anyMissing = perCompany.some(c => c.missing.length > 0)
+
+    return { year, month, expected: expected.length, fullDays: fullDays.length, perCompany, anyMissing }
+  }).filter(Boolean)
 }
 
 const TH = ({ children, right }) => (
@@ -31,12 +96,14 @@ const TD = ({ children, right, muted, color }) => (
 )
 
 export default function CompanySubTab({ factionId }) {
-  const [companies, setCompanies]   = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [addId, setAddId]           = useState('')
-  const [adding, setAdding]         = useState(false)
-  const [addError, setAddError]     = useState(null)
-  const [toggling, setToggling]     = useState(null)
+  const [companies, setCompanies]       = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [addId, setAddId]               = useState('')
+  const [adding, setAdding]             = useState(false)
+  const [addError, setAddError]         = useState(null)
+  const [toggling, setToggling]         = useState(null)
+  const [coverageOpen, setCoverageOpen] = useState(false)
+  const [openMonths, setOpenMonths]     = useState({})
   const token = localStorage.getItem('occultusSession')
 
   const load = () => {
@@ -51,6 +118,14 @@ export default function CompanySubTab({ factionId }) {
   }
 
   useEffect(load, [factionId, token])
+
+  const monthRange = useMemo(getMonthRange, [])
+  const coverage   = useMemo(() => buildCoverage(companies, monthRange), [companies, monthRange])
+
+  // Current month fully-covered days (all companies with API key have data)
+  const currentCov   = coverage[0] ?? null
+  const daysTracked  = currentCov?.fullDays ?? 0
+  const daysExpected = currentCov?.expected ?? 0
 
   const togglePrincipalPaid = async (company) => {
     setToggling(company.company_id)
@@ -93,14 +168,17 @@ export default function CompanySubTab({ factionId }) {
     }
   }
 
-  const totalPrincipalPaid   = companies.filter(c => c.principal_paid).length * PRINCIPAL
-  const totalPrincipalOwing  = companies.filter(c => !c.principal_paid).length * PRINCIPAL
-  const totalMtd             = companies.reduce((s, c) => s + (c.mtd_profit ?? 0), 0)
-  const totalEstMonthly      = companies.reduce((s, c) => s + (c.est_monthly ?? 0), 0)
-  const totalPrevMonth       = companies.reduce((s, c) => s + (c.prev_month_profit ?? 0), 0)
-  const withKey              = companies.filter(c => c.has_api_key).length
+  const totalPrincipalPaid  = companies.filter(c => c.principal_paid).length * PRINCIPAL
+  const totalPrincipalOwing = companies.filter(c => !c.principal_paid).length * PRINCIPAL
+  const totalMtd            = companies.reduce((s, c) => s + (c.mtd_profit ?? 0), 0)
+  const totalYtd            = companies.reduce((s, c) => s + (c.ytd_profit ?? 0), 0)
+  const totalEstMonthly     = companies.reduce((s, c) => s + (c.est_monthly ?? 0), 0)
+  const totalPrevMonth      = companies.reduce((s, c) => s + (c.prev_month_profit ?? 0), 0)
+  const withKey             = companies.filter(c => c.has_api_key).length
 
   if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
+
+  const daysColor = daysTracked === daysExpected ? '#4ade80' : daysTracked === 0 ? '#f87171' : '#f97316'
 
   return (
     <div>
@@ -111,8 +189,9 @@ export default function CompanySubTab({ factionId }) {
           { label: 'API Keys',           value: `${withKey} / ${companies.length}`,             color: withKey === companies.length ? '#4ade80' : '#f97316' },
           { label: 'Principal Invested', value: fmtShort(totalPrincipalPaid),                   color: '#f4f4f5' },
           { label: 'Principal Owing',    value: fmtShort(totalPrincipalOwing),                  color: totalPrincipalOwing > 0 ? '#f97316' : '#71717a' },
-          { label: 'MTD Profit',           value: fmtShort(totalMtd),          color: '#4ade80' },
-          { label: 'Current Month Est.', value: fmtShort(totalEstMonthly),    color: '#a78bfa' },
+          { label: 'MTD Profit',         value: fmtShort(totalMtd),                             color: '#4ade80' },
+          { label: 'Current Month Est.', value: fmtShort(totalEstMonthly),                      color: '#a78bfa' },
+          { label: 'Days Tracked',       value: `${daysTracked} / ${daysExpected}`,             color: daysColor },
         ].map(({ label, value, color }) => (
           <div key={label} className="p-4 rounded-lg" style={{
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', minWidth: '130px',
@@ -122,6 +201,88 @@ export default function CompanySubTab({ factionId }) {
           </div>
         ))}
       </div>
+
+      {/* Coverage panel */}
+      {coverage.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <button
+            onClick={() => setCoverageOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'none', border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '8px', padding: '10px 14px', cursor: 'pointer',
+              color: '#a1a1aa', fontSize: '12px', fontWeight: '600',
+              textTransform: 'uppercase', letterSpacing: '0.05em', width: '100%',
+            }}
+          >
+            <span style={{ fontSize: '10px' }}>{coverageOpen ? '▼' : '▶'}</span>
+            Data Coverage
+            {!coverageOpen && coverage.some(m => m.anyMissing) && (
+              <span style={{ marginLeft: '6px', color: '#f97316', fontSize: '11px', fontWeight: '500', textTransform: 'none', letterSpacing: 0 }}>
+                — missing data detected
+              </span>
+            )}
+          </button>
+
+          {coverageOpen && (
+            <div style={{
+              border: '1px solid rgba(255,255,255,0.08)', borderTop: 'none',
+              borderRadius: '0 0 8px 8px', overflow: 'hidden',
+            }}>
+              {coverage.map(({ year, month, expected, fullDays, perCompany, anyMissing }) => {
+                const key   = `${year}-${month}`
+                const open  = openMonths[key]
+                const label = fmtMonthLabel(year, month)
+                const allGood = fullDays === expected
+
+                return (
+                  <div key={key} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <button
+                      onClick={() => setOpenMonths(s => ({ ...s, [key]: !s[key] }))}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        width: '100%', background: 'rgba(255,255,255,0.02)',
+                        border: 'none', padding: '10px 16px', cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ color: '#71717a', fontSize: '10px' }}>{open ? '▼' : '▶'}</span>
+                      <span style={{ color: '#e4e4e7', fontSize: '13px', flex: 1 }}>{label}</span>
+                      <span style={{ fontSize: '12px', color: allGood ? '#4ade80' : '#f97316' }}>
+                        {fullDays} / {expected} days fully covered
+                      </span>
+                    </button>
+
+                    {open && (
+                      <div style={{ padding: '8px 16px 14px 36px' }}>
+                        {anyMissing ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {perCompany.map(c => c.missing.length > 0 && (
+                              <div key={c.company_id} style={{ fontSize: '12px' }}>
+                                <span style={{ color: '#a1a1aa', marginRight: '8px' }}>{c.name}</span>
+                                <span style={{ color: '#f97316' }}>
+                                  {c.tracked} / {expected} days —
+                                </span>
+                                <span style={{ color: '#71717a' }}> missing: </span>
+                                <span style={{ color: '#f87171' }}>{c.missing.map(fmtDay).join(', ')}</span>
+                              </div>
+                            ))}
+                            {perCompany.every(c => c.missing.length === 0) && (
+                              <p style={{ color: '#4ade80', fontSize: '12px', margin: 0 }}>All companies fully covered.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p style={{ color: '#4ade80', fontSize: '12px', margin: 0 }}>All companies fully covered.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
@@ -191,8 +352,18 @@ export default function CompanySubTab({ factionId }) {
               </td>
               <TD right color='#94a3b8'>{totalPrevMonth > 0 ? fmt(totalPrevMonth) : '—'}</TD>
               <TD right color='#4ade80'>{fmt(totalMtd)}</TD>
-              <TD right color='#60a5fa'>—</TD>
+              <TD right color='#60a5fa'>{fmt(totalYtd)}</TD>
               <TD right color='#a78bfa'>{fmt(totalEstMonthly)}</TD>
+              <td />
+            </tr>
+            <tr style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+              <td colSpan={6} style={{ padding: '6px 12px', color: '#52525b', fontSize: '11px', fontWeight: '600' }}>
+                Faction 30%
+              </td>
+              <TD right color='#64748b'>{totalPrevMonth > 0 ? fmt(totalPrevMonth * 0.3) : '—'}</TD>
+              <TD right color='#4ade8099'>{fmt(totalMtd * 0.3)}</TD>
+              <TD right color='#60a5fa99'>{fmt(totalYtd * 0.3)}</TD>
+              <TD right color='#a78bfa99'>{fmt(totalEstMonthly * 0.3)}</TD>
               <td />
             </tr>
           </tfoot>
@@ -237,7 +408,7 @@ export default function CompanySubTab({ factionId }) {
       <p style={{ color: '#52525b', fontSize: '11px', marginTop: '16px' }}>
         Principal: {fmt(PRINCIPAL)} per company · Profit = daily income − wages − advert ·
         MTD / YTD / Prev Month = sum of daily profit snapshots · Current Month Est. = daily average × days in month ·
-        Only paid principal counts toward networth
+        Days Tracked = days where all companies with API keys have data · Only paid principal counts toward networth
       </p>
     </div>
   )

@@ -124,6 +124,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/armory/refresh' && method === 'POST') {
       return armoryController.refreshArmoryCache(request, env, user);
     }
+    if (pathname === '/api/admin/armory/minimums' && method === 'GET') {
+      return armoryController.getArmoryMinimums(request, env, user);
+    }
+    if (pathname === '/api/admin/armory/minimums' && method === 'POST') {
+      return armoryController.saveArmoryMinimums(request, env, user);
+    }
     if (pathname === '/api/admin/item-prices/status' && method === 'GET') {
       return armoryController.getItemPricesStatus(request, env, user);
     }
@@ -149,6 +155,9 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/admin\/webhooks\/[^/]+\/test$/) && method === 'POST') {
       return webhookController.sendTestMessage(request, env, user);
+    }
+    if (pathname.match(/^\/api\/admin\/webhooks\/[^/]+\/preview$/) && method === 'POST') {
+      return webhookController.previewWebhook(request, env, user);
     }
 
     // Analytics endpoint
@@ -432,9 +441,12 @@ export async function handleRequest(request, env, ctx) {
       return companyProfitController.setPrincipalPaid(request, env, user);
     }
 
-    // Armory cache
+    // Armory cache + minimums (read-only for inventory highlights)
     if (pathname === '/api/leadership/armory' && method === 'GET') {
       return armoryController.getArmory(request, env, user);
+    }
+    if (pathname === '/api/leadership/armory/minimums' && method === 'GET') {
+      return armoryController.getArmoryMinimums(request, env, user);
     }
 
     // Activity tracking

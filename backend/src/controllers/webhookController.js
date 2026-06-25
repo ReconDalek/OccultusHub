@@ -39,10 +39,10 @@ const DEFAULT_TEMPLATES = {
   ].join('\n'),
 
   armory_low: [
-    '{mention}',
-    '🛡️ **Armory Low Stock Alert — {faction_name}**',
+    '🛡️ **Armory Low Stock Alert**',
     '',
-    '{item_list}',
+    '{faction_sections}',
+    '{mention}',
   ].join('\n'),
 };
 
@@ -292,14 +292,108 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
   }
 }
 
-// ── Armory Low Stock (stubbed — pending armory config page) ───────────────────
+// ── Armory Low Stock ──────────────────────────────────────────────────────────
 
-export async function sendArmoryLowStockAlerts(env) {
+const ARMORY_FACTION_ORDER = [
+  { id: 33097, name: 'Occultus',  col: 'min_33097' },
+  { id: 9728,  name: 'Occul2us', col: 'min_9728'  },
+  { id: 9171,  name: 'Occul3us', col: 'min_9171'  },
+];
+
+export async function sendArmoryLowStockAlerts(env, { testMode = false } = {}) {
   const cfg = await getConfig(env, 'armory_low');
-  if (!cfg?.enabled || !cfg.webhook_url) return { sent: false, reason: 'disabled or no webhook' };
-  // Logic implemented after armory config page is built
-  console.log('[webhook:armory] armory threshold config not yet set up — skipping');
-  return { sent: false, reason: 'armory thresholds not configured' };
+  if (!cfg?.webhook_url) return { sent: 0, reason: 'no webhook configured' };
+  if (!testMode && !cfg.enabled) return { sent: 0, reason: 'disabled' };
+
+  const today    = new Date().toISOString().slice(0, 10);
+  const eventKey = `armory_low_${today}`;
+
+  if (!testMode && await alreadySent(env, 'armory_low', eventKey)) {
+    return { sent: 0, reason: 'already sent today' };
+  }
+
+  // Load minimums
+  const { results: minimums } = await env.DB.prepare(
+    `SELECT item_id, item_name, category, min_33097, min_9171, min_9728 FROM armory_minimums`
+  ).all();
+  if (!minimums.length) {
+    console.log('[webhook:armory] no minimums configured — skipping');
+    return { sent: 0, reason: 'no minimums configured' };
+  }
+
+  const minMap = {};
+  for (const m of minimums) minMap[m.item_id] = m;
+
+  // Load armory cache
+  const { results: cacheRows } = await env.DB.prepare(
+    `SELECT faction_id, data FROM armory_cache`
+  ).all();
+  if (!cacheRows.length) return { sent: 0, reason: 'no armory cache' };
+
+  const armoryByFaction = {};
+  for (const row of cacheRows) {
+    armoryByFaction[row.faction_id] = JSON.parse(row.data);
+  }
+
+  // Build one section per faction that has low items.
+  // Iterate minimums (not armory items) so items with 0 or missing qty are caught.
+  const factionSections = [];
+  for (const faction of ARMORY_FACTION_ORDER) {
+    const factionData = armoryByFaction[faction.id] || {};
+
+    // Build qty lookup for this faction: item_id → quantity
+    const qtyMap = {};
+    for (const [, items] of Object.entries(factionData)) {
+      if (!Array.isArray(items)) continue;
+      for (const item of items) qtyMap[item.ID] = item.quantity ?? 0;
+    }
+
+    const lowItems = [];
+    for (const min of minimums) {
+      const threshold = min[faction.col];
+      if (!threshold) continue;
+      const qty = qtyMap[min.item_id] ?? 0; // 0 if not in armory at all
+      if (qty < threshold) {
+        lowItems.push({ name: min.item_name, qty, min: threshold });
+      }
+    }
+
+    if (!lowItems.length) continue;
+    lowItems.sort((a, b) => a.name.localeCompare(b.name));
+
+    const itemLines = lowItems.map(i => `> • ${i.name} — ${i.qty}/${i.min}`).join('\n');
+    factionSections.push(`**${faction.name}:**\n${itemLines}`);
+  }
+
+  if (!factionSections.length) {
+    if (!testMode) await setStatus(env, 'armory_low', 'No low stock items');
+    return { sent: 0, reason: 'no low stock items' };
+  }
+
+  const mention  = cfg.mention_user_id ? `<@${cfg.mention_user_id}>` : '';
+  const template = cfg.message_template || DEFAULT_TEMPLATES.armory_low;
+
+  const body = applyTemplate(template, {
+    mention,
+    faction_sections: factionSections.join('\n\n'),
+  });
+
+  const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
+
+  try {
+    await sendDiscordMessage(cfg.webhook_url, content);
+    if (!testMode) {
+      await markSent(env, 'armory_low', eventKey);
+      const status = `Sent — ${factionSections.length} faction section${factionSections.length !== 1 ? 's' : ''}`;
+      await setStatus(env, 'armory_low', status);
+      console.log(`[webhook:armory] ${status}`);
+    }
+    return { sent: 1, factions: factionSections.length };
+  } catch (e) {
+    console.error('[webhook:armory] failed:', e.message);
+    if (!testMode) await setStatus(env, 'armory_low', `Error: ${e.message}`);
+    return { sent: 0, error: e.message };
+  }
 }
 
 // ── CRUD routes ────────────────────────────────────────────────────────────────
@@ -345,6 +439,152 @@ export async function upsertWebhookConfig(request, env, user) {
     return jsonResponse({ success: true, config: updated });
   } catch (e) {
     return errorResponse('Failed to save webhook config: ' + e.message, 500);
+  }
+}
+
+// ── Preview (build content, return to browser, never send) ───────────────────
+
+export async function previewWebhook(request, env, user) {
+  try {
+    const url       = new URL(request.url);
+    const eventType = url.pathname.split('/').at(-2);
+
+    const cfg = await getConfig(env, eventType);
+    if (!cfg?.webhook_url) return errorResponse('No webhook URL configured', 400);
+
+    const messages = []; // collect content strings instead of sending
+
+    // Patch sendDiscordMessage locally by monkey-patching the env object with a capture flag.
+    // Simpler: rebuild message content inline for each event type.
+
+    if (eventType === 'investment_tci') {
+      const { results: investments } = await env.DB.prepare(`
+        SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
+               i.amount, i.end_date, i.tci_purchased,
+               u.username AS member_name,
+               CAST(julianday(i.end_date) - julianday('now') AS INTEGER) AS days_left
+        FROM accounting_investments i
+        LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+        WHERE i.is_active = 1 AND i.tci_purchased = 0
+          AND julianday(i.end_date) - julianday('now') BETWEEN 1 AND 10
+        ORDER BY i.end_date ASC
+      `).all();
+
+      const standardTemplate = cfg.message_template      || DEFAULT_TEMPLATES.investment_tci;
+      const lateTemplate     = cfg.late_message_template || DEFAULT_TEMPLATES.investment_tci_late;
+      const mention          = cfg.mention_user_id ? `<@${cfg.mention_user_id}> ` : '';
+      const tci     = await getTciPrice(env);
+      const tciCost = tci ? fmtMoney(tci.price * tci.requirement) : '—';
+      const tciPx   = tci ? `$${tci.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+
+      if (!investments.length) {
+        messages.push({ label: 'No qualifying investments', content: 'No active investments found within the 1–10 day window.' });
+      }
+      for (const inv of investments) {
+        const days     = inv.days_left;
+        const isLate   = days < 7;
+        const template = isLate ? lateTemplate : standardTemplate;
+        const body = applyTemplate(template, {
+          mention,
+          member_mention: inv.discord_id ? `<@${inv.discord_id}> ` : '',
+          member_name:    inv.member_name ?? `User ${inv.torn_user_id}`,
+          days_left:      days,
+          days_plural:    days === 1 ? '' : 's',
+          end_date:       inv.end_date,
+          amount:         fmtMoney(inv.amount),
+          faction_name:   FACTION_NAMES[inv.faction_id] ?? `Faction ${inv.faction_id}`,
+          last_day_note:  days === 7 ? '\n🚨 **This is the last day to buy TCI in time!**' : '',
+          tci_cost:       tciCost,
+          tci_price:      tciPx,
+        });
+        messages.push({ label: `${inv.member_name ?? `User ${inv.torn_user_id}`} — ${days} day${days === 1 ? '' : 's'} left`, content: body });
+      }
+
+    } else if (eventType === 'stock_monthly') {
+      const now = new Date();
+      const { results: stocks } = await env.DB.prepare(`
+        SELECT s.torn_user_id, s.discord_id, s.stock_acronym, s.tier,
+               s.payout_frequency, s.member_keeps_amount,
+               u.username AS member_name
+        FROM accounting_stocks s
+        LEFT JOIN users u ON u.torn_user_id = s.torn_user_id
+        WHERE s.is_active = 1
+        ORDER BY u.username ASC, s.stock_acronym ASC
+      `).all();
+
+      if (!stocks.length) {
+        messages.push({ label: 'No data', content: 'No active stock investments tracked.' });
+      } else {
+        const byMember = {};
+        for (const s of stocks) {
+          if (!byMember[s.torn_user_id]) byMember[s.torn_user_id] = { name: s.member_name ?? `User ${s.torn_user_id}`, discord_id: s.discord_id, total: 0, entries: [] };
+          byMember[s.torn_user_id].total += (s.member_keeps_amount ?? 0) * (s.tier ?? 1) * payoutsPerMonth(s.payout_frequency);
+          byMember[s.torn_user_id].entries.push(`${s.stock_acronym} T${s.tier ?? 1}`);
+        }
+        const members    = Object.values(byMember).sort((a, b) => b.total - a.total);
+        const grandTotal = members.reduce((s, m) => s + m.total, 0);
+        const rowTemplate = cfg.payout_row_template || '• {member_mention}**{member_name}** — {amount} ({stocks})';
+        const payoutList  = members.map(m => applyTemplate(rowTemplate, {
+          member_mention: m.discord_id ? `<@${m.discord_id}> ` : '',
+          member_name: m.name, amount: fmtMoney(m.total), stocks: m.entries.join(', '),
+        })).join('\n');
+        const content = applyTemplate(cfg.message_template || DEFAULT_TEMPLATES.stock_monthly, {
+          mention: cfg.mention_user_id ? `<@${cfg.mention_user_id}> ` : '',
+          month: MONTH_NAMES[now.getUTCMonth()], year: now.getUTCFullYear(),
+          payout_list: payoutList, total: fmtMoney(grandTotal),
+        });
+        messages.push({ label: `${MONTH_NAMES[now.getUTCMonth()]} ${now.getUTCFullYear()} — ${members.length} members`, content });
+      }
+
+    } else if (eventType === 'armory_low') {
+      const { results: minimums } = await env.DB.prepare(
+        `SELECT item_id, item_name, category, min_33097, min_9171, min_9728 FROM armory_minimums`
+      ).all();
+      const { results: cacheRows } = await env.DB.prepare(`SELECT faction_id, data FROM armory_cache`).all();
+
+      if (!minimums.length || !cacheRows.length) {
+        messages.push({ label: 'No data', content: 'No minimums configured or no armory cache available.' });
+      } else {
+        const minMap = {};
+        for (const m of minimums) minMap[m.item_id] = m;
+        const armoryByFaction = {};
+        for (const row of cacheRows) armoryByFaction[row.faction_id] = JSON.parse(row.data);
+
+        const factionSections = [];
+        for (const faction of ARMORY_FACTION_ORDER) {
+          const factionData = armoryByFaction[faction.id] || {};
+          const qtyMap = {};
+          for (const [, items] of Object.entries(factionData)) {
+            if (!Array.isArray(items)) continue;
+            for (const item of items) qtyMap[item.ID] = item.quantity ?? 0;
+          }
+          const lowItems = minimums
+            .filter(m => m[faction.col] && (qtyMap[m.item_id] ?? 0) < m[faction.col])
+            .map(m => ({ name: m.item_name, qty: qtyMap[m.item_id] ?? 0, min: m[faction.col] }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          if (lowItems.length) {
+            factionSections.push(`**${faction.name}:**\n${lowItems.map(i => `> • ${i.name} — ${i.qty}/${i.min}`).join('\n')}`);
+          }
+        }
+
+        if (!factionSections.length) {
+          messages.push({ label: 'All stocked', content: 'No items are currently below their configured minimums.' });
+        } else {
+          const content = applyTemplate(cfg.message_template || DEFAULT_TEMPLATES.armory_low, {
+            mention: cfg.mention_user_id ? `<@${cfg.mention_user_id}>` : '',
+            faction_sections: factionSections.join('\n\n'),
+          });
+          messages.push({ label: `${factionSections.length} faction section${factionSections.length !== 1 ? 's' : ''}`, content });
+        }
+      }
+
+    } else {
+      return errorResponse(`Unknown event type: ${eventType}`, 400);
+    }
+
+    return jsonResponse({ messages });
+  } catch (e) {
+    return errorResponse('Preview failed: ' + e.message, 500);
   }
 }
 
@@ -394,10 +634,13 @@ export async function sendTestMessage(request, env, user) {
         }
         break;
       case 'armory_low':
-        await sendDiscordMessage(cfg.webhook_url,
-          `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nArmory webhook is connected. Alert logic will be active once armory thresholds are configured.`
-        );
-        result = { sent: true };
+        result = await sendArmoryLowStockAlerts(env, { testMode: true });
+        if (result.sent === 0 && !result.error) {
+          await sendDiscordMessage(cfg.webhook_url,
+            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo low-stock items found (or no minimums configured), but the webhook is connected.`
+          );
+          result = { sent: 1, note: 'no low stock; sent connection notice' };
+        }
         break;
       default:
         return errorResponse(`Unknown event type: ${eventType}`, 400);

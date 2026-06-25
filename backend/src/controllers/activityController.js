@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomApiKeyForFaction, getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
+import { getStaffApiKeyForFaction, getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 // ── Personal stats field definitions ─────────────────────────────────────────
@@ -256,7 +256,7 @@ export async function takeEnergySnapshot(env) {
 
   const results = await Promise.allSettled(
     FACTION_IDS.map(async (factionId) => {
-      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
+      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
       if (!apiKeyObj?.key) throw new Error(`No API key for faction ${factionId}`);
 
       // fetchWithRetry handles transient errors (3 retries, 2/4/8s backoff)

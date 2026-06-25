@@ -67,6 +67,30 @@ export async function getRandomApiKeyForFaction(env, factionId) {
 }
 
 // Returns { key, tornUserId, username } or null.
+// Only selects leadership ranks. Faction 9728 is temporarily restricted to Leader/Co-leader only
+// until Archon/Council permissions are granted in Torn.
+export async function getStaffApiKeyForFaction(env, factionId) {
+  // Temporary: 9728 only has armory API access for Leader/Co-leader
+  const positions = factionId === 9728
+    ? `('Leader','Co-leader')`
+    : `('Leader','Co-leader','Council','Archon')`;
+  try {
+    const result = await env.DB.prepare(
+      `SELECT api_key, torn_user_id, username FROM users
+       WHERE api_key IS NOT NULL AND faction_id = ? AND faction_position IN ${positions}
+       ORDER BY RANDOM()
+       LIMIT 1`
+    ).bind(factionId).first();
+    if (!result?.api_key) return null;
+    try { return { key: atob(result.api_key), tornUserId: result.torn_user_id, username: result.username }; }
+    catch { return null; }
+  } catch (e) {
+    console.error('Error getting staff API key:', e);
+    return null;
+  }
+}
+
+// Returns { key, tornUserId, username } or null.
 export async function getRandomUserApiKey(env) {
   try {
     const result = await env.DB.prepare(
@@ -87,7 +111,7 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
   let errors = 0;
 
   for (const factionId of factionIds) {
-    const apiKeyObj = await getRandomApiKeyForFaction(env, factionId);
+    const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
     if (!apiKeyObj?.key) {
       await logError(env, { category: 'api_error', event: 'faction_cache_no_key', message: `No API key available for faction ${factionId}`, faction_id: factionId, meta: { trigger } });
       await env.DB.prepare(

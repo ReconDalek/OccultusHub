@@ -88,6 +88,26 @@ export default function CacheTab() {
     }
   }
 
+  const checkWarMatches = async () => {
+    try {
+      setRefreshing('war-check')
+      setError(null)
+      setLastResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/wars/check`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) setLastResult(data)
+      else setError(data.error || `Error ${res.status}`)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
   const syncMembers = async () => {
     try {
       setRefreshing('members')
@@ -353,8 +373,35 @@ export default function CacheTab() {
             {refreshing === 'chains' ? 'Refreshing…' : 'Refresh Chain Cache'}
           </button>
           <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
-            Auto-refreshes every Tuesday 01:00 UTC/TCT.
+            Auto-refreshes every Tuesday 14:00 UTC/TCT.
           </p>
+        </div>
+      </div>
+
+      {/* War match check */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Ranked Wars</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={checkWarMatches}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'war-check' ? 'Checking…' : 'Check War Matches'}
+          </button>
+          <div>
+            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+              Auto-runs every Tuesday 14:00 UTC (matchups announced at 14:00 UTC / midnight NZT).
+            </p>
+            <p style={{ color: '#52525b', fontSize: '11px', margin: '2px 0 0 0' }}>
+              Run manually if a matchup may have been missed by the weekly cron.
+            </p>
+          </div>
         </div>
       </div>
 

@@ -73,21 +73,126 @@ const EVENT_META = {
     label:    'Armory Low Stock Alerts',
     icon:     '🛡️',
     schedule: 'Daily at 01:00 UTC',
-    description: 'Sends a daily alert when armory items fall below configured thresholds for any faction. Thresholds are configured on the Armory Config page (coming soon).',
+    description: 'Sends one Discord message per faction when any armory item falls below its configured minimum quantity. Thresholds are set on the Armory → Config tab. Sends in faction order: Occultus, Occul2us, Occul3us.',
     vars: [
-      ['{mention}',      'Discord @mention from the configured user ID above'],
-      ['{faction_name}', 'Faction name'],
-      ['{item_list}',    'Formatted list of low-stock items and their quantities'],
+      ['{mention}',           'Discord @mention from the configured user ID above'],
+      ['{faction_sections}',  'One block per faction with low items, each formatted as **Faction:** followed by indented item lines'],
     ],
     defaultTemplate: [
-      '{mention}',
-      '🛡️ **Armory Low Stock Alert — {faction_name}**',
+      '🛡️ **Armory Low Stock Alert**',
       '',
-      '{item_list}',
+      '{faction_sections}',
+      '{mention}',
     ].join('\n'),
-    comingSoon: true,
   },
 }
+
+// ── Discord message renderer ──────────────────────────────────────────────────
+
+function renderDiscordMarkdown(text) {
+  // Split into lines and render each
+  const lines = text.split('\n')
+  return lines.map((line, i) => {
+    const key = i
+
+    // -# small subtext
+    if (line.startsWith('-# ')) {
+      return <div key={key} style={{ fontSize: '11px', color: '#71717a', marginBottom: '2px' }}>{renderInline(line.slice(3))}</div>
+    }
+    // > blockquote
+    if (line.startsWith('> ')) {
+      return (
+        <div key={key} style={{ display: 'flex', gap: '0', marginBottom: '2px' }}>
+          <div style={{ width: '3px', background: '#4e5058', borderRadius: '2px', flexShrink: 0, marginRight: '10px' }} />
+          <span style={{ color: '#dbdee1', fontSize: '13px' }}>{renderInline(line.slice(2))}</span>
+        </div>
+      )
+    }
+    // Empty line
+    if (line === '') return <div key={key} style={{ height: '6px' }} />
+    // Normal line
+    return <div key={key} style={{ fontSize: '13px', color: '#dbdee1', marginBottom: '2px' }}>{renderInline(line)}</div>
+  })
+}
+
+function renderInline(text) {
+  // Render **bold** inline. Split on ** pairs.
+  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} style={{ color: '#f2f3f5' }}>{part.slice(2, -2)}</strong>
+    }
+    // Render <@id> as a mention pill
+    return <span key={i}>{part.replace(/<@!?(\d+)>/g, (_, id) => `@${id}`)}</span>
+  })
+}
+
+function DiscordPreviewPanel({ messages, onClose }) {
+  const [idx, setIdx] = useState(0)
+  const msg = messages[idx]
+
+  return (
+    <div style={{
+      marginTop: '16px',
+      background: '#313338',
+      borderRadius: '10px',
+      overflow: 'hidden',
+      border: '1px solid rgba(255,255,255,0.08)',
+    }}>
+      {/* Panel header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#2b2d31', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', fontWeight: '600', color: '#b5bac1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Discord Preview</span>
+          {messages.length > 1 && (
+            <span style={{ fontSize: '11px', color: '#71717a' }}>({idx + 1} of {messages.length})</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {messages.length > 1 && (
+            <>
+              <button onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0}
+                style={{ padding: '3px 10px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.08)', color: '#b5bac1', cursor: idx === 0 ? 'default' : 'pointer', fontSize: '12px', opacity: idx === 0 ? 0.4 : 1 }}>
+                ‹ Prev
+              </button>
+              <button onClick={() => setIdx(i => Math.min(messages.length - 1, i + 1))} disabled={idx === messages.length - 1}
+                style={{ padding: '3px 10px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.08)', color: '#b5bac1', cursor: idx === messages.length - 1 ? 'default' : 'pointer', fontSize: '12px', opacity: idx === messages.length - 1 ? 0.4 : 1 }}>
+                Next ›
+              </button>
+            </>
+          )}
+          <button onClick={onClose} style={{ padding: '3px 10px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.06)', color: '#b5bac1', cursor: 'pointer', fontSize: '12px' }}>✕ Close</button>
+        </div>
+      </div>
+
+      {/* Message label */}
+      {msg.label && (
+        <div style={{ padding: '6px 14px', background: '#2b2d31', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '11px', color: '#71717a' }}>
+          {msg.label}
+        </div>
+      )}
+
+      {/* Discord-style message body */}
+      <div style={{ padding: '14px 16px', display: 'flex', gap: '14px' }}>
+        {/* Avatar */}
+        <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#5865f2', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+          🛡️
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+            <span style={{ fontWeight: '600', color: '#f2f3f5', fontSize: '14px' }}>OccultusHub</span>
+            <span style={{ fontSize: '11px', color: '#71717a' }}>Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span style={{ fontSize: '10px', padding: '1px 4px', background: '#5865f2', borderRadius: '3px', color: '#fff', fontWeight: '600' }}>BOT</span>
+          </div>
+          <div style={{ lineHeight: '1.5' }}>
+            {renderDiscordMarkdown(msg.content)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function WebhookCard({ config, onSaved }) {
   const meta     = EVENT_META[config.event_type] || {}
@@ -100,11 +205,13 @@ function WebhookCard({ config, onSaved }) {
   const [payoutRowTemplate,   setPayoutRowTemplate]   = useState(config.payout_row_template   || '')
   const [enabled,             setEnabled]             = useState(!!config.enabled)
   const [showTemplate,        setShowTemplate]        = useState(false)
-  const [showUrl,          setShowUrl]          = useState(false)
-  const [saving,           setSaving]           = useState(false)
-  const [testing,          setTesting]          = useState(false)
-  const [triggering,       setTriggering]       = useState(false)
-  const [feedback,         setFeedback]         = useState(null) // { type: 'ok'|'err', msg }
+  const [showUrl,             setShowUrl]             = useState(false)
+  const [saving,              setSaving]              = useState(false)
+  const [testing,             setTesting]             = useState(false)
+  const [triggering,          setTriggering]          = useState(false)
+  const [previewing,          setPreviewing]          = useState(false)
+  const [preview,             setPreview]             = useState(null)  // [{ label, content }] | null
+  const [feedback,            setFeedback]            = useState(null)  // { type: 'ok'|'err', msg }
 
   const flash = (type, msg) => {
     setFeedback({ type, msg })
@@ -173,6 +280,23 @@ function WebhookCard({ config, onSaved }) {
       flash('err', e.message)
     } finally {
       setTriggering(false)
+    }
+  }
+
+  const display = async () => {
+    setPreviewing(true)
+    setPreview(null)
+    try {
+      const res  = await fetch(`${API_BASE_URL}/api/admin/webhooks/${config.event_type}/preview`, {
+        method: 'POST', headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok && data.messages) setPreview(data.messages)
+      else flash('err', data.error || 'Preview failed')
+    } catch (e) {
+      flash('err', e.message)
+    } finally {
+      setPreviewing(false)
     }
   }
 
@@ -434,6 +558,20 @@ function WebhookCard({ config, onSaved }) {
           {triggering ? 'Running…' : 'Run Now'}
         </button>
 
+        <button
+          onClick={display}
+          disabled={previewing}
+          style={{
+            padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(88,101,242,0.4)',
+            background: preview ? 'rgba(88,101,242,0.15)' : 'transparent',
+            color: '#8891f2', fontSize: '13px', cursor: 'pointer',
+            opacity: previewing ? 0.5 : 1,
+          }}
+          title="Preview what this webhook would send — no messages are actually sent"
+        >
+          {previewing ? 'Loading…' : 'Preview'}
+        </button>
+
         {/* Status */}
         {config.last_triggered && (
           <span style={{ color: '#52525b', fontSize: '12px', marginLeft: '4px' }}>
@@ -454,6 +592,9 @@ function WebhookCard({ config, onSaved }) {
           {feedback.msg}
         </div>
       )}
+
+      {/* Discord preview panel */}
+      {preview && <DiscordPreviewPanel messages={preview} onClose={() => setPreview(null)} />}
     </div>
   )
 }

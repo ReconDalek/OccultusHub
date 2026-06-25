@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
+import { getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS   = [33097, 9728, 9171];
@@ -64,10 +64,25 @@ const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer/i;
 
 function parseArmoryEntry(text) {
   const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
-  const itemM = text.match(/faction's (.+?) items?/);
-  if (!userM || !itemM) return null;
-  if (ARMORY_IGNORE.test(itemM[1].trim())) return null;   // skip beer etc.
-  return { torn_user_id: parseInt(userM[1], 10), username: userM[2].trim(), item_name: itemM[1].trim() };
+  if (!userM) return null;
+
+  let item_name = null;
+  let action_type = 'used';
+
+  // "used one of the faction's Xanax items"
+  const usedM = text.match(/faction's (.+?) items?/);
+  if (usedM) { item_name = usedM[1].trim(); action_type = 'used'; }
+
+  // "filled one of the faction's Empty Blood Bags to create a Blood Bag : A+"
+  if (!item_name) {
+    const fillM = text.match(/create a (.+?)(?:<|$)/);
+    if (fillM && text.includes('filled one of the faction')) { item_name = fillM[1].trim(); action_type = 'used'; }
+  }
+
+  // loaned/gave/returned — ignore, we only track consumed items
+  if (!item_name) return null;
+  if (ARMORY_IGNORE.test(item_name)) return null;
+  return { torn_user_id: parseInt(userM[1], 10), username: userM[2].trim(), item_name };
 }
 
 function categoriseAttack(attack, ourFactionId, opponentFactionId) {
@@ -225,14 +240,14 @@ async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
 
 // ── Cron: check for new war matches (Tuesday 01:00 UTC) ──────────────────────
 
-export async function checkWarMatches(env) {
+export async function checkWarMatches(env, trigger = 'cron') {
   const now          = Math.floor(Date.now() / 1000);
   const sevenDaysAgo = now - 7 * 24 * 3600;
   const results      = [];
 
   for (const factionId of FACTION_IDS) {
     try {
-      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
+      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
       if (!apiKey) { results.push({ factionId, error: 'no API key' }); continue; }
 
       const data = await fetchWithRetry(
@@ -275,7 +290,7 @@ export async function checkWarMatches(env) {
 
 // ── Cron: track matched/active wars (every 30 minutes) ───────────────────────
 
-export async function trackActiveWars(env) {
+export async function trackActiveWars(env, trigger = 'cron') {
   const now          = Math.floor(Date.now() / 1000);
   const fourDaysAgo  = now - 7 * 24 * 3600; // 7 days covers 3-day match window + 3-day war + buffer
 
@@ -291,11 +306,15 @@ export async function trackActiveWars(env) {
   for (const war of wars) {
     const { id: warId, faction_id: factionId, opponent_faction_id: opponentId,
             status, scheduled_start, started_at: warStartedAt,
-            last_attack_fetched: lastAttackId } = war;
+            last_attack_fetched: lastAttackId, created_at } = war;
+    const createdAtUnix = created_at
+      ? Math.floor(new Date(created_at.replace(' ', 'T') + 'Z').getTime() / 1000)
+      : null;
     try {
-      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
+      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
       if (!apiKey) {
         console.warn(`trackActiveWars: no API key for faction ${factionId}`);
+        await logError(env, { category: 'war_cron', event: 'war_poll_error', message: `No API key for faction ${factionId} (war ${warId})`, meta: { warId, factionId } }).catch(() => {});
         errors.push({ warId, factionId, error: `no API key for faction ${factionId}` });
         continue;
       }
@@ -400,30 +419,39 @@ export async function trackActiveWars(env) {
 
       // ── 3. Armory usage ─────────────────────────────────────────────────────
       const currentWar = await env.DB.prepare(`SELECT status, ended_at FROM ranked_wars WHERE id=?`).bind(warId).first();
-      const armoryEndCap   = currentWar?.ended_at ?? now;
-      // scheduled_start = war START time (future), not match announcement time.
-      // For pre-war (matched) use fourDaysAgo; for active use warStartedAt.
-      const armoryStartCap = warStartedAt ?? fourDaysAgo;
+      const armoryEndCap = currentWar?.ended_at ?? now;
+      // from = max(matchmaking detection time, scheduled_start - 3 days)
+      // scheduled_start - 3 days covers the full pre-war announcement window.
+      // createdAtUnix (when we inserted the matched row) is the floor — no items before matchmaking.
+      const armoryEarliest = scheduled_start ? scheduled_start - (3 * 86400) : fourDaysAgo;
+      const armoryFrom = createdAtUnix ? Math.max(armoryEarliest, createdAtUnix) : armoryEarliest;
       let newArmory = 0;
+      let armoryMeta = null;
+      const armoryKeyObj = await getStaffApiKeyForFaction(env, factionId);
+      const armoryKey = armoryKeyObj?.key ?? apiKey;
+      const armoryKeyUser = armoryKeyObj?.username ?? apiKeyObj?.username ?? 'unknown';
+      const armoryKeyType = armoryKeyObj ? 'leadership' : 'fallback';
       try {
         const armoryData = await fetchWithRetry(
-          `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub`,
-          { Authorization: `ApiKey ${apiKey}` }
+          `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&from=${armoryFrom}&cat=armoryAction&comment=OccHub`,
+          { Authorization: `ApiKey ${armoryKey}` }
         );
-        for (const item of armoryData.news || []) {
-          if (item.timestamp < fourDaysAgo) break;
+        const armoryItems = armoryData.news || [];
+        let dupArmory = 0;
+        for (const item of armoryItems) {
           if (item.timestamp > armoryEndCap) continue;
-          if (item.timestamp < armoryStartCap) continue;
           const parsed = parseArmoryEntry(item.text);
           if (!parsed) continue;
           const { meta } = await env.DB.prepare(
             `INSERT OR IGNORE INTO war_armory_usage (ranked_war_id, faction_id, torn_news_id, torn_user_id, username, item_name, used_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)`
           ).bind(warId, factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
-          if (meta?.changes > 0) newArmory++;
+          if (meta?.changes > 0) newArmory++; else dupArmory++;
         }
+        armoryMeta = { fetched: armoryItems.length, newArmory, dupArmory, keyUser: armoryKeyUser, keyType: armoryKeyType };
       } catch (e) {
-        console.warn(`trackActiveWars: war ${warId} armory fetch failed: ${e.message}`);
+        console.error(`trackActiveWars: war ${warId} armory fetch failed (key: ${armoryKeyUser} [${armoryKeyType}]): ${e.message}`);
+        await logError(env, { category: 'war_cron', event: 'war_poll_error', message: `War ${warId} armory fetch failed (key: ${armoryKeyUser} [${armoryKeyType}]): ${e.message}`, meta: { warId, factionId, keyUser: armoryKeyUser, keyType: armoryKeyType } }).catch(() => {});
       }
 
       // ── 4. Fetch attacks (active wars only, isolated to this faction) ───────
@@ -434,14 +462,12 @@ export async function trackActiveWars(env) {
 
       await env.DB.prepare(`UPDATE ranked_wars SET last_checked_at=CURRENT_TIMESTAMP WHERE id=?`).bind(warId).run();
 
-      if (newAttacks > 0 || newArmory > 0) {
-        await logInfo(env, {
-          category: 'war_cron',
-          event: 'war_poll',
-          message: `War ${warId} (faction ${factionId} vs ${opponentId}): status=${currentWar?.status ?? status}, +${newAttacks} attacks, +${newArmory} armory`,
-          meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, newAttacks, newArmory },
-        }).catch(() => {});
-      }
+      await logInfo(env, {
+        category: 'war_cron',
+        event: 'war_poll',
+        message: `[${trigger}] War ${warId} (${factionId} vs ${opponentId}, ${currentWar?.status ?? status}): +${newAttacks} attacks, +${newArmory} new armory (${armoryMeta?.dupArmory ?? 0} already logged, ${armoryMeta?.fetched ?? 0} fetched) via ${armoryKeyUser} [${armoryKeyType}]`,
+        meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, trigger, newAttacks, newArmory, dupArmory: armoryMeta?.dupArmory ?? 0, armoryFetched: armoryMeta?.fetched ?? 0, keyUser: armoryKeyUser, keyType: armoryKeyType },
+      }).catch(() => {});
 
       checked++;
     } catch (err) {
@@ -602,12 +628,12 @@ export async function getWarArmory(request, env) {
       `SELECT
          a.torn_user_id, a.username, a.item_name,
          COUNT(*) AS count,
-         COUNT(CASE WHEN w.started_at IS NOT NULL AND a.used_at < w.started_at THEN 1 END) AS stacking_count,
-         COUNT(CASE WHEN w.started_at IS NULL OR a.used_at >= w.started_at THEN 1 END)     AS war_count,
+         COUNT(CASE WHEN w.started_at IS NULL OR a.used_at < w.started_at THEN 1 END)      AS stacking_count,
+         COUNT(CASE WHEN w.started_at IS NOT NULL AND a.used_at >= w.started_at THEN 1 END) AS war_count,
          MIN(a.used_at) AS first_used, MAX(a.used_at) AS last_used
        FROM war_armory_usage a
        JOIN ranked_wars w ON w.id = a.ranked_war_id
-       WHERE a.ranked_war_id=?
+       WHERE a.ranked_war_id=? AND (a.action_type IS NULL OR a.action_type != 'loaned')
        GROUP BY a.torn_user_id, a.username, a.item_name
        ORDER BY a.torn_user_id, MAX(a.used_at) DESC`
     ).bind(warId).all();
@@ -820,8 +846,8 @@ export async function createManualWar(request, env, user) {
 
 export async function triggerWarCheck(request, env) {
   try {
-    const matchResults  = await checkWarMatches(env);
-    const trackResults  = await trackActiveWars(env);
+    const matchResults  = await checkWarMatches(env, 'manual');
+    const trackResults  = await trackActiveWars(env, 'manual');
     return jsonResponse({ message: 'War check + track complete', matchResults, trackResults });
   } catch (err) {
     console.error('triggerWarCheck error:', err);
@@ -839,7 +865,7 @@ export async function backfillHistoricWars(request, env) {
 
   for (const factionId of FACTION_IDS) {
     try {
-      const apiKeyObj = await getRandomApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
+      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
       if (!apiKey) { summary.push({ factionId, error: 'no API key' }); continue; }
 
       const res = await fetch(

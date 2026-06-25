@@ -197,8 +197,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
 
 // ─── Armory table ─────────────────────────────────────────────────────────────
 
-const BADGE_STACK = { bg: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#fcd34d' }
-const BADGE_WAR   = { bg: 'rgba(159,103,255,0.1)', border: '1px solid rgba(159,103,255,0.25)', color: '#c4b5fd' }
+const BADGE_STACK = { bg: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#fcd34d' }
+const BADGE_WAR   = { bg: 'rgba(159,103,255,0.12)', border: '1px solid rgba(159,103,255,0.3)',  color: '#c4b5fd' }
 
 function ItemBadge({ name, count, style: s }) {
   return (
@@ -206,7 +206,7 @@ function ItemBadge({ name, count, style: s }) {
       padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500',
       background: s.bg, border: s.border, color: s.color, whiteSpace: 'nowrap',
     }}>
-      {name} ×{count}
+      {name}{count > 1 ? ` ×${count}` : ''}
     </span>
   )
 }
@@ -232,7 +232,7 @@ function ArmoryTable({ armory }) {
         <div style={{ display: 'flex', gap: '14px', padding: '4px 2px', fontSize: '11px', color: '#a1a1aa' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-            Stacking (before war)
+            Stacking period
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#9f67ff', display: 'inline-block' }} />
@@ -242,7 +242,7 @@ function ArmoryTable({ armory }) {
       )}
       {Object.values(byMember).map((member) => {
         const stackItems = member.items.filter(it => (it.stacking_count ?? 0) > 0)
-        const warItems   = member.items.filter(it => (it.war_count ?? it.count ?? 0) > 0)
+        const warItems   = member.items.filter(it => (it.war_count ?? 0) > 0)
         return (
           <div key={member.torn_user_id || member.username}
             style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.06)' }}
@@ -255,7 +255,7 @@ function ArmoryTable({ armory }) {
                 <ItemBadge key={`s${i}`} name={item.item_name} count={item.stacking_count} style={BADGE_STACK} />
               ))}
               {warItems.map((item, i) => (
-                <ItemBadge key={`w${i}`} name={item.item_name} count={item.war_count ?? item.count} style={BADGE_WAR} />
+                <ItemBadge key={`w${i}`} name={item.item_name} count={item.war_count} style={BADGE_WAR} />
               ))}
             </div>
           </div>
@@ -758,18 +758,41 @@ function WarDetail({ warId, onPayoutSaved }) {
 
 // ─── War card ─────────────────────────────────────────────────────────────────
 
-// ─── Active war scoreboard ────────────────────────────────────────────────────
+// ─── Active/matched war scoreboard ───────────────────────────────────────────
+
+function useCountdown(targetUnix) {
+  const [label, setLabel] = useState('')
+  useEffect(() => {
+    if (!targetUnix) return
+    const update = () => {
+      const secs = targetUnix - Math.floor(Date.now() / 1000)
+      if (secs <= 0) { setLabel('starting…'); return }
+      const d = Math.floor(secs / 86400)
+      const h = Math.floor((secs % 86400) / 3600)
+      const m = Math.floor((secs % 3600) / 60)
+      const s = secs % 60
+      setLabel(d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`)
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [targetUnix])
+  return label
+}
 
 function ScoreBoard({ war, ourFactionName }) {
   const { our_score = 0, opponent_score = 0, target = 0, our_chain = 0, opponent_chain = 0,
-          opponent_faction_name, started_at } = war
+          opponent_faction_name, started_at, status, scheduled_start } = war
 
+  const isMatched = status === 'matched'
   const total     = our_score + opponent_score
   const weWinning = our_score >= opponent_score
 
   // Progress bars: each side fills towards centre based on score / target
   const ourPct  = target > 0 ? Math.min((our_score / target) * 100, 100) : 0
   const oppPct  = target > 0 ? Math.min((opponent_score / target) * 100, 100) : 0
+
+  const countdown = useCountdown(isMatched ? scheduled_start : null)
 
   // How long the war has been running
   const elapsed = started_at ? Math.floor(Date.now() / 1000) - started_at : 0
@@ -778,16 +801,19 @@ function ScoreBoard({ war, ourFactionName }) {
 
   const scoreStyle = (winning) => ({
     fontSize: '26px', fontWeight: '800', fontFamily: 'Cinzel, serif',
-    color: winning ? '#22c55e' : '#f4f4f5',
-    textShadow: winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
+    color: isMatched ? '#52525b' : (winning ? '#22c55e' : '#f4f4f5'),
+    textShadow: !isMatched && winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
     lineHeight: 1,
   })
+
+  const borderColor = isMatched ? 'rgba(234,179,8,0.12)' : 'rgba(34,197,94,0.12)'
+  const bgColor     = isMatched ? 'rgba(234,179,8,0.02)'  : 'rgba(34,197,94,0.03)'
 
   return (
     <div style={{
       padding: '16px 18px 18px',
-      borderTop: '1px solid rgba(34,197,94,0.12)',
-      background: 'rgba(34,197,94,0.03)',
+      borderTop: `1px solid ${borderColor}`,
+      background: bgColor,
     }}>
       {/* Names + scores */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
@@ -806,9 +832,14 @@ function ScoreBoard({ war, ourFactionName }) {
         <div style={{ textAlign: 'center', padding: '0 8px' }}>
           <p style={{ color: '#71717a', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
           <p style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: '600', margin: 0 }}>
-            {target > 0 ? target.toLocaleString('en-GB') : '—'}
+            {isMatched ? '—' : (target > 0 ? target.toLocaleString('en-GB') : '—')}
           </p>
-          {elapsed > 0 && (
+          {isMatched && countdown && (
+            <p style={{ color: '#eab308', fontSize: '12px', margin: '4px 0 0 0', fontVariantNumeric: 'tabular-nums' }}>
+              {countdown}
+            </p>
+          )}
+          {!isMatched && elapsed > 0 && (
             <p style={{ color: '#52525b', fontSize: '9px', margin: '4px 0 0 0' }}>
               {elH}h {elM}m elapsed
             </p>
@@ -828,7 +859,7 @@ function ScoreBoard({ war, ourFactionName }) {
       </div>
 
       {/* Progress bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '12px', opacity: isMatched ? 0.25 : 1 }}>
         {/* Opponent bar — fills left-to-right */}
         <div style={{ flex: 1, height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px 0 0 4px', overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{
@@ -878,12 +909,13 @@ function WarCard({ war, factionName }) {
   const lastCheckedUnix  = parseD1DateTime(war.last_checked_at)
   const lastUpdatedLabel = lastCheckedUnix ? `Updated ${formatUnixDateTime(lastCheckedUnix)}` : null
 
-  const isActive = war.status === 'active'
+  const isActive  = war.status === 'active'
+  const isMatched = war.status === 'matched'
 
   return (
     <div style={{
       borderRadius: '12px',
-      border: `1px solid ${isActive ? 'rgba(34,197,94,0.3)' : isPaid ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.07)'}`,
+      border: `1px solid ${isActive ? 'rgba(34,197,94,0.3)' : isMatched ? 'rgba(234,179,8,0.3)' : isPaid ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.07)'}`,
       background: isActive ? 'rgba(34,197,94,0.02)' : 'rgba(255,255,255,0.02)',
       overflow: 'hidden',
     }}>
@@ -919,8 +951,8 @@ function WarCard({ war, factionName }) {
         </div>
       </button>
 
-      {/* Live scoreboard — always visible for active wars */}
-      {isActive && <ScoreBoard war={war} ourFactionName={factionName} />}
+      {/* Scoreboard — always visible for active and matched wars */}
+      {(isActive || isMatched) && <ScoreBoard war={war} ourFactionName={factionName} />}
 
       {/* Rank change banner */}
       {war.rank_change && (() => {

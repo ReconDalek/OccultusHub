@@ -229,45 +229,64 @@ export async function getCompanyProfits(request, env, user) {
 
     const whereClause = factionId ? `WHERE c.faction_id = ${parseInt(factionId)}` : '';
 
-    // Compute days in current month for estimated monthly projection
     const now = new Date();
     const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
 
-    const { results } = await env.DB.prepare(
-      `SELECT
-         c.*,
-         COALESCE(s.mtd_profit, 0)        AS mtd_profit,
-         COALESCE(s.ytd_profit, 0)        AS ytd_profit,
-         COALESCE(s.prev_month_profit, 0) AS prev_month_profit,
-         COALESCE(s.month_days, 0)        AS month_snapshot_days,
-         COALESCE(s.avg_daily_profit, 0)  AS avg_daily_profit,
-         COALESCE(s.avg_daily_cut, 0)     AS avg_daily_cut
-       FROM company_profit_cache c
-       LEFT JOIN (
-         SELECT
-           company_id,
-           SUM(CASE WHEN snapshot_date >= date('now', 'start of month')
-                     THEN daily_profit ELSE 0 END)                                                   AS mtd_profit,
-           SUM(CASE WHEN snapshot_date >= date('now', 'start of year')
-                     THEN daily_profit ELSE 0 END)                                                   AS ytd_profit,
-           SUM(CASE WHEN snapshot_date >= date('now', 'start of month', '-1 month')
-                     AND  snapshot_date <  date('now', 'start of month')
-                     THEN daily_profit ELSE 0 END)                                                   AS prev_month_profit,
-           COUNT(CASE WHEN snapshot_date >= date('now', 'start of month') THEN 1 END)               AS month_days,
-           AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
-                     THEN CAST(daily_profit AS REAL) END)                                            AS avg_daily_profit,
-           AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
-                     THEN CAST(faction_cut AS REAL) END)                                             AS avg_daily_cut
-         FROM company_profit_snapshots
-         GROUP BY company_id
-       ) s ON s.company_id = c.company_id
-       ${whereClause}
-       ORDER BY c.daily_profit DESC`
-    ).all();
+    const [{ results }, { results: dateRows }] = await Promise.all([
+      env.DB.prepare(
+        `SELECT
+           c.*,
+           COALESCE(s.mtd_profit, 0)        AS mtd_profit,
+           COALESCE(s.ytd_profit, 0)        AS ytd_profit,
+           COALESCE(s.prev_month_profit, 0) AS prev_month_profit,
+           COALESCE(s.month_days, 0)        AS month_snapshot_days,
+           COALESCE(s.avg_daily_profit, 0)  AS avg_daily_profit,
+           COALESCE(s.avg_daily_cut, 0)     AS avg_daily_cut
+         FROM company_profit_cache c
+         LEFT JOIN (
+           SELECT
+             company_id,
+             SUM(CASE WHEN snapshot_date >= date('now', 'start of month')
+                       THEN daily_profit ELSE 0 END)                                                   AS mtd_profit,
+             SUM(CASE WHEN snapshot_date >= date('now', 'start of year')
+                       THEN daily_profit ELSE 0 END)                                                   AS ytd_profit,
+             SUM(CASE WHEN snapshot_date >= date('now', 'start of month', '-1 month')
+                       AND  snapshot_date <  date('now', 'start of month')
+                       THEN daily_profit ELSE 0 END)                                                   AS prev_month_profit,
+             COUNT(CASE WHEN snapshot_date >= date('now', 'start of month') THEN 1 END)               AS month_days,
+             AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
+                       THEN CAST(daily_profit AS REAL) END)                                            AS avg_daily_profit,
+             AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
+                       THEN CAST(faction_cut AS REAL) END)                                             AS avg_daily_cut
+           FROM company_profit_snapshots
+           GROUP BY company_id
+         ) s ON s.company_id = c.company_id
+         ${whereClause}
+         ORDER BY c.daily_profit DESC`
+      ).all(),
+
+      // All snapshot dates per company from June 2026 onwards for coverage panel
+      env.DB.prepare(
+        `SELECT company_id, GROUP_CONCAT(snapshot_date) AS dates
+         FROM (
+           SELECT company_id, snapshot_date
+           FROM company_profit_snapshots
+           WHERE snapshot_date >= '2026-06-01'
+           ORDER BY snapshot_date
+         )
+         GROUP BY company_id`
+      ).all(),
+    ]);
+
+    const datesMap = {};
+    for (const row of dateRows) {
+      datesMap[row.company_id] = row.dates ? row.dates.split(',') : [];
+    }
 
     const companies = results.map(r => ({
       ...r,
-      est_monthly: Math.round((r.avg_daily_profit ?? 0) * daysInMonth),
+      est_monthly:    Math.round((r.mtd_profit ?? 0) + (r.avg_daily_profit ?? 0) * Math.max(0, daysInMonth - (r.month_snapshot_days ?? 0))),
+      snapshot_dates: datesMap[r.company_id] ?? [],
     }));
 
     return jsonResponse({ companies });
