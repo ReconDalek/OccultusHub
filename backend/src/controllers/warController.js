@@ -90,8 +90,10 @@ function categoriseAttack(attack, ourFactionId, opponentFactionId) {
   const df  = attack.defender?.faction?.id ?? null;
   const res = attack.result;
 
-  // Assist: our member helped another player's attack — no faction on defender side required
-  if (res === 'Assist' && af === ourFactionId) return 'assist';
+  // War assist: our member assisted an attack specifically on the opponent
+  if (res === 'Assist' && af === ourFactionId && df === opponentFactionId) return 'assist';
+  // Any other assist (chain assists, etc.) — ignore
+  if (res === 'Assist') return null;
 
   if (af === ourFactionId  && df === opponentFactionId) return 'war_attack';
   if (af === opponentFactionId && df === ourFactionId)  return 'war_defend';
@@ -130,7 +132,8 @@ async function buildMemberStats(env, warId) {
        COUNT(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN 1 END)              AS defends_lost,
        COUNT(CASE WHEN result IN ('Escape','Lost','Stalemate') OR is_interrupted=1 THEN 1 END)                   AS defends_won,
        COUNT(CASE WHEN is_interrupted=1 THEN 1 END)                                                              AS defends_interrupted,
-       ROUND(SUM(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN respect_loss ELSE 0 END), 2) AS respect_lost_defending
+       -- respect_loss in Torn API v2 is 0 for war_defend rows; respect_gain holds the attacker's gain = our member's loss
+       ROUND(SUM(CASE WHEN result NOT IN ('Escape','Lost','Stalemate') AND is_interrupted=0 THEN respect_gain ELSE 0 END), 2) AS respect_lost_defending
      FROM war_attacks WHERE ranked_war_id=? AND attack_type='war_defend' AND defender_id>0
      GROUP BY defender_id, defender_name`
   ).bind(warId).all();
@@ -159,16 +162,17 @@ async function buildMemberStats(env, warId) {
        ROUND(SUM(CASE WHEN attack_type='war_attack' THEN respect_gain ELSE 0 END), 2)           AS total_respect_gained,
 
        -- Respect we lost when the enemy successfully attacked us
+       -- (Torn API v2 stores attacker's gain in respect_gain; respect_loss is 0 for these rows)
        ROUND(SUM(CASE WHEN attack_type='war_defend'
                        AND result NOT IN ('Escape','Lost','Stalemate')
-                       AND is_interrupted=0 THEN respect_loss ELSE 0 END), 2)                   AS total_respect_lost,
+                       AND is_interrupted=0 THEN respect_gain ELSE 0 END), 2)                   AS total_respect_lost,
 
        -- Net respect across war context
        ROUND(
          SUM(CASE WHEN attack_type='war_attack' THEN respect_gain ELSE 0 END) -
          SUM(CASE WHEN attack_type='war_defend'
                    AND result NOT IN ('Escape','Lost','Stalemate')
-                   AND is_interrupted=0 THEN respect_loss ELSE 0 END)
+                   AND is_interrupted=0 THEN respect_gain ELSE 0 END)
        , 2)                                                                                       AS total_net_respect
      FROM war_attacks WHERE ranked_war_id=?`
   ).bind(warId).first();
@@ -184,10 +188,8 @@ async function summariseAndCleanWar(env, warId, factionId) {
 
   await env.DB.prepare(`UPDATE ranked_wars SET summary_json=? WHERE id=?`).bind(summaryJson, warId).run();
 
-  // Delete raw attack rows for this war
-  await env.DB.prepare(`DELETE FROM war_attacks WHERE ranked_war_id=?`).bind(warId).run();
-
-  // Also purge attacks for any completed wars older than the Nth most-recent per faction
+  // Keep raw attack rows for the N most-recent completed wars per faction.
+  // Do NOT delete immediately — this lets the Attack Log debug tab work after completion.
   await env.DB.prepare(`
     DELETE FROM war_attacks WHERE ranked_war_id IN (
       SELECT id FROM ranked_wars
@@ -197,7 +199,7 @@ async function summariseAndCleanWar(env, warId, factionId) {
     )`
   ).bind(factionId, MAX_COMPLETED_WARS_WITH_ATTACKS).run();
 
-  console.log(`summariseAndCleanWar: war ${warId} — attacks purged, summary stored`);
+  console.log(`summariseAndCleanWar: war ${warId} — summary stored, old war attacks pruned (keeping ${MAX_COMPLETED_WARS_WITH_ATTACKS} most recent)`);
 }
 
 // ── Fetch live scores from rankedwars API and update DB ───────────────────────
