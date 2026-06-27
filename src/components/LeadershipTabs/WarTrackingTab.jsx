@@ -125,21 +125,24 @@ function MemberStatsTable({ attackerStats, defendStats }) {
     return <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attack data recorded yet.</p>
   }
 
+  const STICKY_BG = '#141414'
   const th = {
     padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase',
     letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600',
     borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap',
   }
   const thL = { ...th, textAlign: 'left' }
+  const thSticky = { ...thL, position: 'sticky', left: 0, zIndex: 2, background: STICKY_BG }
   const td  = { padding: '8px 10px', fontSize: '12px', color: '#f4f4f5', textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.04)' }
   const tdL = { ...td, textAlign: 'left', color: '#e4e4e7' }
+  const tdSticky = { ...tdL, position: 'sticky', left: 0, zIndex: 1, background: STICKY_BG }
 
   return (
     <div style={{ overflowX: 'auto', marginTop: '8px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
         <thead>
           <tr>
-            <th style={thL}>Member</th>
+            <th style={thSticky}>Member</th>
             <th style={th}>War Hits</th>
             <th style={th}>Losses</th>
             <th style={th}>Interrupted</th>
@@ -169,7 +172,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
               >
-                <td style={tdL}>{r.attacker_name || `[${r.attacker_id}]`}</td>
+                <td style={tdSticky}>{r.attacker_name || `[${r.attacker_id}]`}</td>
                 <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
                 <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : '#71717a' }}>{fmt(r.war_interrupted)}</td>
@@ -679,6 +682,157 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
   )
 }
 
+// ─── Attack log (debug) ───────────────────────────────────────────────────────
+
+const TYPE_LABELS = {
+  war_attack:     { label: 'War Hit',     color: '#22c55e' },
+  war_defend:     { label: 'Defend',      color: '#f97316' },
+  outside_attack: { label: 'Outside',     color: '#a78bfa' },
+  outside_defend: { label: 'Ext. Defend', color: '#71717a' },
+  friendly_hit:   { label: 'Friendly',    color: '#fb923c' },
+  assist:         { label: 'Assist',      color: '#60a5fa' },
+}
+
+function relativeTime(unix) {
+  const secs = Math.floor(Date.now() / 1000) - unix
+  if (secs < 60)   return `${secs}s ago`
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m ago`
+  const d = Math.floor(secs / 86400)
+  const h = Math.floor((secs % 86400) / 3600)
+  return `${d}d ${h}h ago`
+}
+
+function AttackLogTab({ warId }) {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState('all')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch(`${API_BASE_URL}/api/leadership/war/${warId}/attacks`, { headers: authHeaders(), signal: controller.signal })
+      .then(r => r.json())
+      .then(d => setData(d))
+      .catch(e => { if (e.name !== 'AbortError') console.error('attack log fetch failed', e) })
+      .finally(() => setLoading(false))
+    return () => controller.abort()
+  }, [warId])
+
+  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading attack log…</p>
+  if (!data)   return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>Failed to load attack log.</p>
+
+  const { war, attacks } = data
+  const warStartedAt = war?.started_at ?? null
+
+  const types = ['all', 'war_attack', 'war_defend', 'outside_attack', 'assist', 'friendly_hit']
+  const filtered = filter === 'all' ? attacks : attacks.filter(a => a.attack_type === filter)
+
+  const STICKY_BG = '#141414'
+  const th = { padding: '7px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'left', whiteSpace: 'nowrap', background: STICKY_BG }
+  const thR = { ...th, textAlign: 'right' }
+  const td  = { padding: '6px 10px', fontSize: '11px', color: '#d4d4d8', borderBottom: '1px solid rgba(255,255,255,0.03)', whiteSpace: 'nowrap', textAlign: 'left' }
+  const tdR = { ...td, textAlign: 'right' }
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ color: '#52525b', fontSize: '11px' }}>{attacks.length} total rows — filter:</span>
+        {types.map(t => (
+          <button key={t} onClick={() => setFilter(t)} style={{
+            padding: '3px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+            border: `1px solid ${filter === t ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
+            background: filter === t ? 'rgba(179,18,63,0.15)' : 'transparent',
+            color: filter === t ? '#f4f4f5' : '#71717a',
+          }}>
+            {t === 'all' ? 'All' : (TYPE_LABELS[t]?.label ?? t)}
+          </button>
+        ))}
+        {warStartedAt && (
+          <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#52525b' }}>
+            War started: {formatUnixDateTime(warStartedAt)}
+          </span>
+        )}
+      </div>
+
+      {!filtered.length ? (
+        <p style={{ color: '#71717a', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attacks match this filter.</p>
+      ) : (
+        <div style={{ overflowX: 'auto', maxHeight: '500px', overflowY: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', minWidth: '900px', width: '100%' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
+              <tr>
+                <th style={th}>Time (UTC/TCT)</th>
+                <th style={th}>Relative</th>
+                <th style={th}>Type</th>
+                <th style={th}>Attacker</th>
+                <th style={th}>Defender</th>
+                <th style={th}>Result</th>
+                <th style={{ ...th, textAlign: 'center' }}>Int.</th>
+                <th style={thR}>FF</th>
+                <th style={thR}>Respect +</th>
+                <th style={thR}>Respect −</th>
+                <th style={thR}>Chain</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((a, i) => {
+                const isWarStart = warStartedAt && a.started_at === warStartedAt
+                const beforeWar  = warStartedAt && a.started_at < warStartedAt
+                const typeInfo   = TYPE_LABELS[a.attack_type] || { label: a.attack_type, color: '#a1a1aa' }
+                const rowBg      = beforeWar ? 'rgba(245,158,11,0.04)' : 'transparent'
+                return (
+                  <>
+                    {isWarStart && (
+                      <tr key={`sep-${i}`}>
+                        <td colSpan={11} style={{ padding: '4px 10px', fontSize: '10px', color: '#eab308', background: 'rgba(234,179,8,0.08)', borderTop: '1px solid rgba(234,179,8,0.25)', borderBottom: '1px solid rgba(234,179,8,0.25)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                          ↑ Stacking period &nbsp;·&nbsp; War start: {formatUnixDateTime(warStartedAt)} &nbsp;↓ War period
+                        </td>
+                      </tr>
+                    )}
+                    <tr key={a.torn_attack_id} style={{ background: rowBg }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = rowBg }}
+                    >
+                      <td style={td}>{formatUnixDateTime(a.started_at)}</td>
+                      <td style={{ ...td, color: '#52525b' }}>{relativeTime(a.started_at)}</td>
+                      <td style={td}>
+                        <span style={{ color: typeInfo.color, fontWeight: '600' }}>{typeInfo.label}</span>
+                      </td>
+                      <td style={td}>{a.attacker_name || (a.attacker_id ? `[${a.attacker_id}]` : '—')}</td>
+                      <td style={{ ...td, color: '#a1a1aa' }}>{a.defender_name || (a.defender_id ? `[${a.defender_id}]` : '—')}</td>
+                      <td style={{ ...td, color: a.result === 'Attacked' ? '#22c55e' : a.result === 'Lost' ? '#ef4444' : '#a1a1aa' }}>
+                        {a.result || '—'}
+                      </td>
+                      <td style={{ ...td, textAlign: 'center', color: a.is_interrupted ? '#f97316' : '#3f3f46' }}>
+                        {a.is_interrupted ? '✓' : '·'}
+                      </td>
+                      <td style={tdR}>{(a.fair_fight ?? 1).toFixed(2)}</td>
+                      <td style={{ ...tdR, color: a.respect_gain > 0 ? '#4ade80' : '#3f3f46' }}>
+                        {a.respect_gain > 0 ? `+${(a.respect_gain).toFixed(2)}` : '—'}
+                      </td>
+                      <td style={{ ...tdR, color: a.respect_loss > 0 ? '#f87171' : '#3f3f46' }}>
+                        {a.respect_loss > 0 ? `−${(a.respect_loss).toFixed(2)}` : '—'}
+                      </td>
+                      <td style={{ ...tdR, color: a.chain_count > 0 ? '#f59e0b' : '#3f3f46' }}>
+                        {a.chain_count > 0 ? a.chain_count : '—'}
+                      </td>
+                    </tr>
+                  </>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p style={{ color: '#52525b', fontSize: '10px', marginTop: '10px' }}>
+        Debug view — raw war_attacks rows as stored. Use to verify column counts against the Member Stats table.
+        Orange-tinted rows are pre-war (stacking period).
+      </p>
+    </div>
+  )
+}
+
 // ─── Expanded war detail ──────────────────────────────────────────────────────
 
 function WarDetail({ warId, onPayoutSaved }) {
@@ -712,6 +866,7 @@ function WarDetail({ warId, onPayoutSaved }) {
     { value: 'stats',  label: 'Member Stats' },
     { value: 'armory', label: `Armory (${armory?.length ?? 0} entries)` },
     { value: 'payout', label: '💰 Payout' },
+    { value: 'debug',  label: '🔍 Attack Log' },
   ]
 
   return (
@@ -749,6 +904,7 @@ function WarDetail({ warId, onPayoutSaved }) {
 
       {activeSection === 'stats'  && <MemberStatsTable attackerStats={attackerStats} defendStats={defendStats} />}
       {activeSection === 'armory' && <ArmoryTable armory={armory} />}
+      {activeSection === 'debug'  && <AttackLogTab warId={warId} />}
       {activeSection === 'payout' && (
         <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!data?.war?.hits_saved} onPayoutSaved={onPayoutSaved} />
       )}

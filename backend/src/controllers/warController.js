@@ -842,6 +842,35 @@ export async function createManualWar(request, env, user) {
   }
 }
 
+// ── GET /api/leadership/war/:id/attacks ──────────────────────────────────────
+// Returns raw war_attacks rows for debugging column counts.
+
+export async function getWarAttackLog(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/attacks/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const war = await env.DB.prepare(
+      `SELECT started_at, ended_at, scheduled_start, opponent_faction_name FROM ranked_wars WHERE id=?`
+    ).bind(warId).first();
+    if (!war) return errorResponse('War not found', 404);
+
+    const { results: attacks } = await env.DB.prepare(
+      `SELECT torn_attack_id, attacker_id, attacker_name, defender_id, defender_name,
+              attack_type, result, is_interrupted, respect_gain, respect_loss,
+              fair_fight, chain_count, started_at
+       FROM war_attacks WHERE ranked_war_id=?
+       ORDER BY started_at ASC`
+    ).bind(warId).all();
+
+    return jsonResponse({ war, attacks: attacks || [] });
+  } catch (err) {
+    console.error('getWarAttackLog error:', err);
+    return errorResponse('Failed to fetch attack log', 500);
+  }
+}
+
 // ── POST /api/admin/wars/check  (manual trigger) ─────────────────────────────
 
 export async function triggerWarCheck(request, env) {
