@@ -721,8 +721,16 @@ function AttackLogTab({ warId }) {
   if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading attack log…</p>
   if (!data)   return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>Failed to load attack log.</p>
 
-  const { war, attacks } = data
+  const { war, attacks = [] } = data
   const warStartedAt = war?.started_at ?? null
+
+  if (!attacks.length) {
+    return (
+      <p style={{ color: '#71717a', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>
+        No raw attack rows available — this war's data has been archived into a summary (attacks are purged after completion).
+      </p>
+    )
+  }
 
   const types = ['all', 'war_attack', 'war_defend', 'outside_attack', 'assist', 'friendly_hit']
   const filtered = filter === 'all' ? attacks : attacks.filter(a => a.attack_type === filter)
