@@ -357,6 +357,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/attacks$/) && method === 'GET') {
       return warController.getWarAttackLog(request, env);
     }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/verify\/apply$/) && method === 'POST') {
+      return warController.applyVerifiedWarData(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/verify$/) && method === 'POST') {
+      return warController.verifyWarData(request, env);
+    }
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/armory$/) && method === 'GET') {
       return warController.getWarArmory(request, env);
     }

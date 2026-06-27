@@ -861,6 +861,220 @@ export async function getWarAttackLog(request, env) {
   }
 }
 
+// ── Verify: fetch all attacks in a timestamp range from Torn API ──────────────
+
+async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt, endAt) {
+  const seen       = new Set();
+  const collected  = [];
+  let   fromTs     = startAt;
+  const MAX_PAGES  = 60;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let data;
+    try {
+      data = await fetchWithRetry(
+        `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${fromTs}&comment=OccHub`,
+        { Authorization: `ApiKey ${apiKey}` }
+      );
+    } catch (e) {
+      console.error(`fetchAttacksInRange p${page}: ${e.message}`);
+      break;
+    }
+
+    const attacks = data.attacks || [];
+    if (!attacks.length) break;
+
+    let advanced = false;
+
+    for (const attack of attacks) {
+      if (seen.has(attack.id)) continue;
+      seen.add(attack.id);
+
+      // sort=ASC — first attack past endAt means we are done
+      if (attack.started > endAt) return { attacks: collected, truncated: false };
+
+      if (attack.started > fromTs) { fromTs = attack.started; advanced = true; }
+
+      const attack_type = categoriseAttack(attack, factionId, opponentFactionId);
+      if (attack_type) collected.push({ ...attack, attack_type });
+    }
+
+    if (!advanced) fromTs += 1; // bump past timestamp ties to avoid infinite loop
+  }
+
+  return { attacks: collected, truncated: collected.length > 0 };
+}
+
+// ── Verify: aggregate raw attack objects into member stats (mirrors buildMemberStats) ─
+
+const CHAIN_BONUS_COUNTS = new Set([10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000]);
+
+function aggregateVerifiedAttacks(attacks) {
+  const aMap = {}; // attacker stats keyed by id
+  const dMap = {}; // defender stats keyed by id
+
+  const getA = (id, name) => {
+    if (!aMap[id]) aMap[id] = {
+      attacker_id: id, attacker_name: name,
+      war_hits: 0, war_losses: 0, war_interrupted: 0,
+      war_respect_gained: 0, avg_fair_fight: 0,
+      outside_attacks: 0, assists: 0, friendly_hits: 0,
+      bonus_respect: 0, energy_used: 0,
+      _ff_sum: 0, _ff_count: 0,
+    };
+    return aMap[id];
+  };
+
+  const getD = (id, name) => {
+    if (!dMap[id]) dMap[id] = {
+      defender_id: id, defender_name: name,
+      defends_won: 0, defends_lost: 0, defends_interrupted: 0,
+      respect_lost_defending: 0,
+    };
+    return dMap[id];
+  };
+
+  for (const a of attacks) {
+    const { attack_type, result, is_interrupted, respect_gain = 0, modifiers, chain = 0 } = a;
+    const success = !['Escape','Lost','Stalemate'].includes(result) && !is_interrupted;
+
+    if (attack_type === 'war_attack') {
+      const m = getA(a.attacker?.id ?? 0, a.attacker?.name ?? null);
+      if (success) m.war_hits++; else m.war_losses++;
+      if (is_interrupted) m.war_interrupted++;
+      m.war_respect_gained += respect_gain;
+      if (CHAIN_BONUS_COUNTS.has(chain)) m.bonus_respect += respect_gain;
+      m._ff_sum += modifiers?.fair_fight ?? 1; m._ff_count++;
+      m.energy_used += 25;
+    } else if (attack_type === 'outside_attack') {
+      const m = getA(a.attacker?.id ?? 0, a.attacker?.name ?? null);
+      m.outside_attacks++;
+      m.energy_used += 25;
+    } else if (attack_type === 'assist') {
+      const m = getA(a.attacker?.id ?? 0, a.attacker?.name ?? null);
+      m.assists++;
+      m.energy_used += 25;
+    } else if (attack_type === 'friendly_hit') {
+      const m = getA(a.attacker?.id ?? 0, a.attacker?.name ?? null);
+      m.friendly_hits++;
+      m.energy_used += 25;
+    } else if (attack_type === 'war_defend') {
+      const d = getD(a.defender?.id ?? 0, a.defender?.name ?? null);
+      if (success) { d.defends_lost++; d.respect_lost_defending += respect_gain; }
+      else d.defends_won++;
+      if (is_interrupted) d.defends_interrupted++;
+    }
+  }
+
+  const attackerStats = Object.values(aMap).map(m => ({
+    ...m,
+    avg_fair_fight:      m._ff_count > 0 ? Math.round(m._ff_sum / m._ff_count * 100) / 100 : 0,
+    war_respect_gained:  Math.round(m.war_respect_gained * 100) / 100,
+    bonus_respect:       Math.round(m.bonus_respect * 100) / 100,
+    _ff_sum: undefined, _ff_count: undefined,
+  })).sort((a, b) => b.war_hits - a.war_hits);
+
+  const defendStats = Object.values(dMap).map(d => ({
+    ...d, respect_lost_defending: Math.round(d.respect_lost_defending * 100) / 100,
+  }));
+
+  let total_war_hits = 0, total_defends_won = 0, total_enemy_hits = 0;
+  let total_outside_attacks = 0, total_assists = 0, total_friendly_hits = 0;
+  let total_respect_gained = 0, total_respect_lost = 0;
+
+  for (const a of attacks) {
+    const { attack_type, result, is_interrupted, respect_gain = 0 } = a;
+    const success = !['Escape','Lost','Stalemate'].includes(result) && !is_interrupted;
+    if (attack_type === 'war_attack') {
+      if (success) total_war_hits++;
+      total_respect_gained += respect_gain;
+    } else if (attack_type === 'war_defend') {
+      if (success) { total_enemy_hits++; total_respect_lost += respect_gain; }
+      else total_defends_won++;
+    } else if (attack_type === 'outside_attack') total_outside_attacks++;
+    else if (attack_type === 'assist')           total_assists++;
+    else if (attack_type === 'friendly_hit')     total_friendly_hits++;
+  }
+
+  return {
+    attackerStats,
+    defendStats,
+    totals: {
+      total_war_hits,
+      total_defends_won,
+      total_enemy_hits,
+      total_outside_attacks,
+      total_assists,
+      total_friendly_hits,
+      total_respect_gained: Math.round(total_respect_gained * 100) / 100,
+      total_respect_lost:   Math.round(total_respect_lost   * 100) / 100,
+      total_net_respect:    Math.round((total_respect_gained - total_respect_lost) * 100) / 100,
+    },
+  };
+}
+
+// ── POST /api/leadership/war/:id/verify ──────────────────────────────────────
+// Fetches all attacks in range from Torn API and returns new stats without writing to DB.
+
+export async function verifyWarData(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/verify$/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const war = await env.DB.prepare(
+      `SELECT faction_id, opponent_faction_id, started_at, ended_at FROM ranked_wars WHERE id=?`
+    ).bind(warId).first();
+    if (!war) return errorResponse('War not found', 404);
+
+    const body      = await request.json().catch(() => ({}));
+    const startAt   = body.start_at ?? war.started_at;
+    const endAt     = body.end_at   ?? war.ended_at;
+    if (!startAt || !endAt) return errorResponse('start_at and end_at are required', 400);
+
+    const apiKeyObj = await getStaffApiKeyForFaction(env, war.faction_id);
+    if (!apiKeyObj?.key) return errorResponse('No leadership API key available for this faction', 503);
+
+    const { attacks, truncated } = await fetchAttacksInRange(
+      apiKeyObj.key, war.faction_id, war.opponent_faction_id, startAt, endAt
+    );
+
+    const stats = aggregateVerifiedAttacks(attacks);
+
+    return jsonResponse({
+      ...stats,
+      attack_count: attacks.length,
+      truncated,
+      key_user: apiKeyObj.username,
+      range: { start_at: startAt, end_at: endAt },
+    });
+  } catch (err) {
+    console.error('verifyWarData error:', err);
+    return errorResponse('Verification failed: ' + err.message, 500);
+  }
+}
+
+// ── POST /api/leadership/war/:id/verify/apply ─────────────────────────────────
+// Overwrites summary_json with the verified stats.
+
+export async function applyVerifiedWarData(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/verify\/apply$/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const { attackerStats, defendStats, totals } = await request.json();
+    await env.DB.prepare(
+      `UPDATE ranked_wars SET summary_json=? WHERE id=?`
+    ).bind(JSON.stringify({ attackerStats, defendStats, totals }), warId).run();
+
+    return jsonResponse({ ok: true });
+  } catch (err) {
+    console.error('applyVerifiedWarData error:', err);
+    return errorResponse('Failed to apply verified data: ' + err.message, 500);
+  }
+}
+
 // ── POST /api/admin/wars/check  (manual trigger) ─────────────────────────────
 
 export async function triggerWarCheck(request, env) {

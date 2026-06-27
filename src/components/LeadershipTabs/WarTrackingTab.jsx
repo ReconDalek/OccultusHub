@@ -841,12 +841,201 @@ function AttackLogTab({ warId }) {
   )
 }
 
+// ─── Verify data tab ──────────────────────────────────────────────────────────
+
+function unixToInput(unix) {
+  if (!unix) return ''
+  return new Date(unix * 1000).toISOString().slice(0, 16) // UTC datetime string
+}
+function inputToUnix(val) {
+  if (!val) return null
+  return Math.floor(new Date(val + ':00Z').getTime() / 1000)
+}
+
+function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
+  const [startInput, setStartInput] = useState(() => unixToInput(war?.started_at))
+  const [endInput,   setEndInput]   = useState(() => unixToInput(war?.ended_at))
+  const [running,    setRunning]    = useState(false)
+  const [result,     setResult]     = useState(null)
+  const [applying,   setApplying]   = useState(false)
+  const [msg,        setMsg]        = useState(null)
+  const [error,      setError]      = useState(null)
+
+  const runVerification = async () => {
+    const start_at = inputToUnix(startInput)
+    const end_at   = inputToUnix(endInput)
+    if (!start_at || !end_at) { setError('Both timestamps are required'); return }
+    if (end_at <= start_at)   { setError('End must be after start'); return }
+
+    setRunning(true); setError(null); setResult(null); setMsg(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/verify`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_at, end_at }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Verification failed')
+      setResult(d)
+    } catch (e) { setError(e.message) }
+    finally { setRunning(false) }
+  }
+
+  const applyVerified = async () => {
+    if (!result) return
+    setApplying(true); setMsg(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/verify/apply`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attackerStats: result.attackerStats, defendStats: result.defendStats, totals: result.totals }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Apply failed')
+      setMsg('✓ Verified data applied.')
+      onApplied?.()
+    } catch (e) { setMsg('Error: ' + e.message) }
+    finally { setApplying(false) }
+  }
+
+  const inp = {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px', color: '#f4f4f5', padding: '7px 10px', fontSize: '13px',
+  }
+
+  // Summary stat comparison rows
+  const STAT_ROWS = [
+    ['War Hits',       'total_war_hits',       false],
+    ['Defends Won',    'total_defends_won',     false],
+    ['Enemy Hits',     'total_enemy_hits',      true],
+    ['Outside Atks',   'total_outside_attacks', false],
+    ['Assists',        'total_assists',         false],
+    ['Friendly Hits',  'total_friendly_hits',   true],
+    ['Respect Gained', 'total_respect_gained',  false],
+    ['Respect Lost',   'total_respect_lost',    true],
+    ['Net Respect',    'total_net_respect',     false],
+  ]
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      {/* Timestamp inputs */}
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '16px', marginBottom: '14px' }}>
+        <p style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>
+          Verification Range <span style={{ color: '#52525b', fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>— times are UTC/TCT</span>
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+          <div>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Start</label>
+            <input type="datetime-local" value={startInput} onChange={e => setStartInput(e.target.value)} style={{ ...inp, width: '100%' }} />
+          </div>
+          <div>
+            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War End</label>
+            <input type="datetime-local" value={endInput} onChange={e => setEndInput(e.target.value)} style={{ ...inp, width: '100%' }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button onClick={runVerification} disabled={running} style={{
+            padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: running ? 'not-allowed' : 'pointer',
+            background: running ? 'rgba(255,255,255,0.04)' : 'rgba(99,102,241,0.15)',
+            border: `1px solid ${running ? 'rgba(255,255,255,0.08)' : 'rgba(99,102,241,0.4)'}`,
+            color: running ? '#71717a' : '#a5b4fc', opacity: running ? 0.7 : 1,
+          }}>
+            {running ? 'Fetching from Torn API…' : 'Run Verification'}
+          </button>
+          {running && <span style={{ color: '#52525b', fontSize: '12px' }}>Paginating attack history — this may take 10–30 seconds</span>}
+          {error && <span style={{ color: '#f87171', fontSize: '12px' }}>{error}</span>}
+        </div>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div>
+          {/* Fetch summary */}
+          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '14px', padding: '10px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '8px', alignItems: 'center' }}>
+            <span style={{ color: '#a5b4fc', fontSize: '12px', fontWeight: '600' }}>{result.attack_count} attacks fetched</span>
+            <span style={{ color: '#52525b', fontSize: '11px' }}>via {result.key_user}</span>
+            <span style={{ color: '#52525b', fontSize: '11px' }}>·</span>
+            <span style={{ color: '#52525b', fontSize: '11px' }}>{formatUnixDateTime(result.range?.start_at)} → {formatUnixDateTime(result.range?.end_at)}</span>
+            {result.truncated && <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — range may be incomplete</span>}
+          </div>
+
+          {/* Summary comparison */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px 0' }}>Summary Comparison</p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr>
+                    {['Stat', 'Current (stored)', 'Verified (new)', 'Diff'].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#52525b', textAlign: h === 'Stat' ? 'left' : 'right', borderBottom: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {STAT_ROWS.map(([label, key, lowerIsBetter]) => {
+                    const oldVal = oldSummary?.[key] ?? '—'
+                    const newVal = result.totals?.[key] ?? 0
+                    const diff   = typeof oldVal === 'number' ? newVal - oldVal : null
+                    const diffColor = diff === null ? '#52525b' : diff === 0 ? '#52525b' : (lowerIsBetter ? (diff < 0 ? '#4ade80' : '#f87171') : (diff > 0 ? '#4ade80' : '#f87171'))
+                    const isDecimal = key.includes('respect')
+                    const fmtV = (v) => typeof v === 'number' ? fmt(v, isDecimal ? 2 : 0) : v
+                    return (
+                      <tr key={key}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                      >
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#e4e4e7' }}>{label}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#71717a', textAlign: 'right' }}>{fmtV(oldVal)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f4f4f5', textAlign: 'right', fontWeight: '600' }}>{fmtV(newVal)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: diffColor, textAlign: 'right' }}>
+                          {diff === null ? '—' : diff === 0 ? '=' : (diff > 0 ? '+' : '') + fmtV(diff)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* New member stats */}
+          <div style={{ marginBottom: '14px' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Verified Member Stats</p>
+            <MemberStatsTable attackerStats={result.attackerStats} defendStats={result.defendStats} />
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={applyVerified} disabled={applying || !!msg} style={{
+              padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+              cursor: applying || !!msg ? 'not-allowed' : 'pointer',
+              background: msg?.startsWith('✓') ? 'rgba(34,197,94,0.08)' : 'rgba(34,197,94,0.12)',
+              border: `1px solid ${msg?.startsWith('✓') ? 'rgba(34,197,94,0.25)' : 'rgba(34,197,94,0.4)'}`,
+              color: '#4ade80', opacity: applying ? 0.6 : 1,
+            }}>
+              {applying ? 'Applying…' : 'Apply Verified Data'}
+            </button>
+            <button onClick={() => setResult(null)} style={{
+              padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
+              background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#71717a',
+            }}>
+              Discard
+            </button>
+            {msg && <span style={{ fontSize: '12px', color: msg.startsWith('✓') ? '#4ade80' : '#f87171' }}>{msg}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Expanded war detail ──────────────────────────────────────────────────────
 
 function WarDetail({ warId, onPayoutSaved }) {
-  const [data,    setData]    = useState(null)
-  const [armory,  setArmory]  = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [data,      setData]      = useState(null)
+  const [armory,    setArmory]    = useState(null)
+  const [loading,   setLoading]   = useState(true)
+  const [reloadKey, setReloadKey] = useState(0)
   const [activeSection, setActiveSection] = useState('stats')
 
   useEffect(() => {
@@ -862,19 +1051,20 @@ function WarDetail({ warId, onPayoutSaved }) {
     }).catch((e) => { if (e.name !== 'AbortError') console.error('war detail fetch failed', e) })
       .finally(() => setLoading(false))
     return () => controller.abort()
-  }, [warId])
-
+  }, [warId, reloadKey])
 
   if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading war details…</p>
   if (!data?.war) return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>Failed to load war details.</p>
 
-  const { summary, attackerStats, defendStats } = data
+  const { war, summary, attackerStats, defendStats } = data
+  const isCompleted = war.status === 'completed' || war.status === 'manual'
 
   const sectionBtns = [
     { value: 'stats',  label: 'Member Stats' },
     { value: 'armory', label: `Armory (${armory?.length ?? 0} entries)` },
     { value: 'payout', label: '💰 Payout' },
     { value: 'debug',  label: '🔍 Attack Log' },
+    ...(isCompleted ? [{ value: 'verify', label: '✔ Verify Data' }] : []),
   ]
 
   return (
@@ -895,13 +1085,13 @@ function WarDetail({ warId, onPayoutSaved }) {
       </div>
 
       {/* Section selector */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '12px', flexWrap: 'wrap' }}>
         {sectionBtns.map((s) => (
           <button key={s.value} onClick={() => setActiveSection(s.value)}
             style={{
               padding: '6px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-              border: `1px solid ${activeSection === s.value ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
-              background: activeSection === s.value ? 'rgba(179,18,63,0.15)' : 'transparent',
+              border: `1px solid ${activeSection === s.value ? (s.value === 'verify' ? 'rgba(99,102,241,0.5)' : 'rgba(179,18,63,0.5)') : 'rgba(255,255,255,0.08)'}`,
+              background: activeSection === s.value ? (s.value === 'verify' ? 'rgba(99,102,241,0.15)' : 'rgba(179,18,63,0.15)') : 'transparent',
               color: activeSection === s.value ? '#f4f4f5' : '#a1a1aa',
             }}
           >
@@ -913,8 +1103,16 @@ function WarDetail({ warId, onPayoutSaved }) {
       {activeSection === 'stats'  && <MemberStatsTable attackerStats={attackerStats} defendStats={defendStats} />}
       {activeSection === 'armory' && <ArmoryTable armory={armory} />}
       {activeSection === 'debug'  && <AttackLogTab warId={warId} />}
+      {activeSection === 'verify' && (
+        <VerifyDataTab
+          warId={warId}
+          war={war}
+          oldSummary={summary}
+          onApplied={() => setReloadKey(k => k + 1)}
+        />
+      )}
       {activeSection === 'payout' && (
-        <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!data?.war?.hits_saved} onPayoutSaved={onPayoutSaved} />
+        <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved} />
       )}
     </div>
   )
