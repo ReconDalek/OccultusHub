@@ -5,7 +5,6 @@ import { logInfo, logWarn, logError } from '../services/logger.js';
 const FACTION_IDS   = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
 
-const MAX_COMPLETED_WARS_WITH_ATTACKS = 5; // keep raw attack rows for N most-recent wars per faction
 
 // ── Text parsing helpers ──────────────────────────────────────────────────────
 
@@ -180,26 +179,13 @@ async function buildMemberStats(env, warId) {
   return { attackerStats: attackerStats || [], defendStats: defendStats || [], totals: totals || {} };
 }
 
-// ── Summarise completed war then purge raw attack rows ───────────────────────
+// ── Summarise completed war (raw rows kept until payout is saved to rankings) ─
 
 async function summariseAndCleanWar(env, warId, factionId) {
   const stats = await buildMemberStats(env, warId);
   const summaryJson = JSON.stringify(stats);
-
   await env.DB.prepare(`UPDATE ranked_wars SET summary_json=? WHERE id=?`).bind(summaryJson, warId).run();
-
-  // Keep raw attack rows for the N most-recent completed wars per faction.
-  // Do NOT delete immediately — this lets the Attack Log debug tab work after completion.
-  await env.DB.prepare(`
-    DELETE FROM war_attacks WHERE ranked_war_id IN (
-      SELECT id FROM ranked_wars
-      WHERE faction_id=? AND status='completed'
-      ORDER BY COALESCE(scheduled_start, 0) DESC
-      LIMIT -1 OFFSET ?
-    )`
-  ).bind(factionId, MAX_COMPLETED_WARS_WITH_ATTACKS).run();
-
-  console.log(`summariseAndCleanWar: war ${warId} — summary stored, old war attacks pruned (keeping ${MAX_COMPLETED_WARS_WITH_ATTACKS} most recent)`);
+  console.log(`summariseAndCleanWar: war ${warId} — summary stored (raw attack rows kept until hits_saved)`);
 }
 
 // ── Fetch live scores from rankedwars API and update DB ───────────────────────
@@ -750,6 +736,8 @@ export async function saveWarHits(request, env, user) {
     }
 
     await env.DB.prepare(`UPDATE ranked_wars SET hits_saved=1 WHERE id=?`).bind(id).run();
+    // Raw attack rows are no longer needed once payout is finalised and hits are in rankings
+    await env.DB.prepare(`DELETE FROM war_attacks WHERE ranked_war_id=?`).bind(id).run();
     return jsonResponse({ saved, message: `${saved} member war records saved to rankings` });
   } catch (err) {
     console.error('saveWarHits error:', err);
