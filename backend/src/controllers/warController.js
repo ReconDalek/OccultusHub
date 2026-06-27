@@ -504,6 +504,9 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
       // Skip attacks that occurred after the war ended
       if (warEndedAt && attack.started > warEndedAt) continue;
 
+      // Skip attacks from before the war started (boundary pages mix pre/post-war attacks)
+      if (warStartedAt > 0 && attack.started < warStartedAt) continue;
+
       // If this attack started during the war window, mark page as relevant
       if (attack.started >= warStartedAt) allOlderThanWar = false;
 
