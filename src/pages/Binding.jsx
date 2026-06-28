@@ -909,7 +909,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         </div>
 
         {/* ── Home tab ── */}
-        {tab === 'home' && familiar.dormant && (
+        {tab === 'home' && !!familiar.dormant && (
           <div style={{
             background: 'linear-gradient(135deg, rgba(30,5,5,0.97), rgba(10,5,15,0.98))',
             border: '1px solid rgba(179,18,63,0.25)',
