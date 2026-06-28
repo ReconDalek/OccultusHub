@@ -462,6 +462,14 @@ export async function duelFamiliar(request, env, user) {
   if (!theirs) return errorResponse('That user has no bound familiar', 404);
   if (mine.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
+  const DUEL_LEVEL_CAP = 10;
+  if (Math.abs(mine.level - theirs.level) > DUEL_LEVEL_CAP) {
+    return errorResponse(
+      `Level mismatch — you may only duel familiars within ${DUEL_LEVEL_CAP} levels of your own (you: ${mine.level}, them: ${theirs.level})`,
+      403,
+    );
+  }
+
   const result = resolveBattle(mine, theirs);
   const won    = result.winnerId === mine.id;
 

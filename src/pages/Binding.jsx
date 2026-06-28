@@ -1095,34 +1095,47 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {others.map(f => {
                   const fsc = SPECIES_COLOR[f.species]
+                  const levelGap = Math.abs(familiar.level - f.level)
+                  const eligible = levelGap <= 10
+                  const gapReason = familiar.level > f.level
+                    ? `${levelGap} levels above range`
+                    : `${levelGap} levels below range`
                   return (
                     <div key={f.user_id} className="binding-duel-row" style={{
                       display: 'flex', alignItems: 'center', gap: 16, padding: '16px 18px',
-                      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                      background: eligible ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.01)',
+                      border: `1px solid ${eligible ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)'}`,
                       borderRadius: 12,
+                      opacity: eligible ? 1 : 0.45,
                     }}>
                       <div style={{ filter: `drop-shadow(0 0 8px ${fsc.primary}44)`, flexShrink: 0 }}>
                         <FamiliarSVG species={f.species} stage={f.stage} nature={f.nature} size={56} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#e4e4e7', marginBottom: 2 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: eligible ? '#e4e4e7' : "var(--text-muted)", marginBottom: 2 }}>
                           {f.username}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                           {SPECIES_LABEL[f.species]} · {NATURE_LABEL[f.nature]} · Lvl {f.level} · {f.wins}W {f.losses}L
                         </div>
+                        {!eligible && (
+                          <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 3, letterSpacing: 0.5 }}>
+                            Out of range — {gapReason}
+                          </div>
+                        )}
                       </div>
                       <button
-                        onClick={() => doDuel(f.user_id)}
-                        disabled={loading}
+                        onClick={() => eligible && doDuel(f.user_id)}
+                        disabled={loading || !eligible}
+                        title={!eligible ? `Level gap too large (${levelGap}) — duels limited to ±10 levels` : undefined}
                         style={{
                           padding: '8px 16px', borderRadius: 8,
-                          background: loading ? 'rgba(255,255,255,0.04)' : 'rgba(179,18,63,0.2)',
-                          border: '1px solid rgba(179,18,63,0.35)',
-                          color: loading ? "var(--text-faint)" : '#fca5a5',
-                          fontSize: 12, cursor: loading ? 'not-allowed' : 'pointer',
+                          background: !eligible ? 'rgba(255,255,255,0.02)' : loading ? 'rgba(255,255,255,0.04)' : 'rgba(179,18,63,0.2)',
+                          border: `1px solid ${eligible ? 'rgba(179,18,63,0.35)' : 'rgba(255,255,255,0.05)'}`,
+                          color: !eligible ? "var(--text-ghost)" : loading ? "var(--text-faint)" : '#fca5a5',
+                          fontSize: 12, cursor: eligible && !loading ? 'pointer' : 'not-allowed',
                         }}>
-                        Duel
+                        {eligible ? 'Duel' : 'Locked'}
                       </button>
                     </div>
                   )
