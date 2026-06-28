@@ -1088,7 +1088,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         {tab === 'duel' && (
           <div>
             {others.length === 0 ? (
-              <p style={{ color: "var(--text-faint)", textAlign: 'center', padding: '40px 0', fontSize: 14 }}>
+              <p style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '40px 0', fontSize: 14 }}>
                 No other familiars have been bound yet.
               </p>
             ) : (
@@ -1149,7 +1149,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         {tab === 'history' && (
           <div>
             {battles.length === 0 ? (
-              <p style={{ color: "var(--text-faint)", textAlign: 'center', padding: '40px 0', fontSize: 14 }}>
+              <p style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '40px 0', fontSize: 14 }}>
                 No battles recorded yet.
               </p>
             ) : (
@@ -1327,7 +1327,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#e4e4e7', marginBottom: 3 }}>
                           {item.name}
                         </div>
-                        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
                           {item.desc}
                         </div>
                       </div>
