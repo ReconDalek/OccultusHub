@@ -291,11 +291,12 @@ function EventCard({ event, onDismiss }) {
     omen:               'Omen Received',
     shadow_encounter:   'Shadow Encounter',
     resting_challenger: 'Resting Challenger',
+    challenged:         'Challenged',
   }
 
   const ICONS = {
     void_surge: '⚡', shard_cache: '◆', nature_revelation: '✦',
-    omen: '☽', shadow_encounter: '◈', resting_challenger: '⚔',
+    omen: '☽', shadow_encounter: '◈', resting_challenger: '⚔', challenged: '⚔',
   }
 
   return (
@@ -616,6 +617,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const [loading, setLoading]           = useState(false)
   const [shopMsg, setShopMsg]           = useState(null)
   const [evolutionPending, setEvoPending] = useState(null)  // { fromStage, toStage, species, nature }
+  const [reviving, setReviving]         = useState(false)
 
   const sc = SPECIES_COLOR[familiar.species]
   const naColor = NATURE_ACCENT[familiar.nature]
@@ -756,6 +758,27 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
     }
   }, [tab])
 
+  async function doRevive() {
+    if (reviving) return
+    setReviving(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/binding/revive`, {
+        method: 'POST', headers: authHeaders(),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        showMsg(data.error || 'The rite failed.', '#ef4444')
+        return
+      }
+      setFamiliar(data.familiar)
+      showMsg('The rite is complete. Your familiar stirs back into form.', '#6ee7b7')
+    } catch {
+      showMsg('Connection error.', '#ef4444')
+    } finally {
+      setReviving(false)
+    }
+  }
+
   async function buyShopItem(item) {
     if (loading) return
     setLoading(true)
@@ -886,7 +909,48 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         </div>
 
         {/* ── Home tab ── */}
-        {tab === 'home' && (
+        {tab === 'home' && familiar.dormant && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(30,5,5,0.97), rgba(10,5,15,0.98))',
+            border: '1px solid rgba(179,18,63,0.25)',
+            borderRadius: 16, padding: '40px 28px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 64, marginBottom: 20, filter: 'grayscale(1) opacity(0.4)' }}>
+              <FamiliarSVG species={familiar.species} stage={familiar.stage} nature={familiar.nature} size={140} />
+            </div>
+            <h2 className="font-cinzel" style={{ fontSize: 18, letterSpacing: 5, color: '#7a3040', marginBottom: 12 }}>
+              DORMANT
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.8, maxWidth: 360, margin: '0 auto 28px' }}>
+              The bond has grown cold. Your familiar has retreated into silence — its form dim,
+              its presence barely felt. Only a rite of revival can draw it back.
+            </p>
+            <div style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 24 }}>
+              Cost: <span style={{ color: '#f59e0b' }}>500 Shards</span>
+              &nbsp;·&nbsp; Balance: <span style={{ color: familiar.shards >= 500 ? '#f59e0b' : '#ef4444' }}>{familiar.shards} Shards</span>
+            </div>
+            <button
+              onClick={doRevive}
+              disabled={reviving || familiar.shards < 500}
+              style={{
+                padding: '13px 32px',
+                background: familiar.shards >= 500 ? 'linear-gradient(135deg, rgba(179,18,63,0.8), rgba(100,10,40,0.9))' : 'rgba(60,20,25,0.5)',
+                border: `1px solid ${familiar.shards >= 500 ? 'rgba(179,18,63,0.6)' : 'rgba(100,40,50,0.3)'}`,
+                borderRadius: 10, color: familiar.shards >= 500 ? '#f4f4f5' : "var(--text-ghost)",
+                fontSize: 13, letterSpacing: 2, cursor: familiar.shards >= 500 ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
+              }}>
+              {reviving ? 'PERFORMING RITE...' : 'PERFORM REVIVAL RITE'}
+            </button>
+            {familiar.shards < 500 && (
+              <p style={{ fontSize: 11, color: '#ef4444', marginTop: 12 }}>
+                Insufficient shards. Hunt to accumulate more — but first, another must revive your familiar, or it remains dormant.
+              </p>
+            )}
+          </div>
+        )}
+
+        {tab === 'home' && !familiar.dormant && (
           <>
             {/* Familiar card */}
             <div className="binding-fam-card" style={{
