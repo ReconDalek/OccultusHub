@@ -11,7 +11,7 @@ export default function ProtectedRoute({ children, requiredLevel }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
-        <p style={{ color: '#a1a1aa' }}>Verifying access…</p>
+        <p style={{ color: "var(--text-secondary)" }}>Verifying access…</p>
       </div>
     )
   }

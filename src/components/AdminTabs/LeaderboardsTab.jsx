@@ -16,7 +16,7 @@ export default function LeaderboardsTab() {
     border: 'none',
     cursor: 'pointer',
     background: 'transparent',
-    color: activeBoard === id ? '#f4f4f5' : '#a1a1aa',
+    color: activeBoard === id ? '#f4f4f5' : "var(--text-secondary)",
     borderBottom: activeBoard === id ? '2px solid #b3123f' : '2px solid transparent',
     fontSize: '13px',
     whiteSpace: 'nowrap',
@@ -29,7 +29,7 @@ export default function LeaderboardsTab() {
         <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
           Leaderboards
         </h3>
-        <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>Manage and reset game leaderboards</p>
+        <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: '13px' }}>Manage and reset game leaderboards</p>
       </div>
 
       <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '24px', overflowX: 'auto', scrollbarWidth: 'none' }}>
@@ -40,7 +40,7 @@ export default function LeaderboardsTab() {
               onClick={() => setActiveBoard(b.id)}
               style={subTabStyle(b.id)}
               onMouseEnter={e => { if (activeBoard !== b.id) e.currentTarget.style.color = '#f4f4f5' }}
-              onMouseLeave={e => { if (activeBoard !== b.id) e.currentTarget.style.color = '#a1a1aa' }}
+              onMouseLeave={e => { if (activeBoard !== b.id) e.currentTarget.style.color = "var(--text-secondary)" }}
             >
               {b.label}
             </button>
@@ -67,7 +67,7 @@ function StatCards({ stats }) {
           textAlign: 'center',
         }}>
           <div style={{ fontSize: '22px', fontWeight: 800, color: s.color || '#fbbf24' }}>{s.value}</div>
-          <div style={{ fontSize: '11px', color: '#a1a1aa', marginTop: '4px', letterSpacing: '0.05em' }}>{s.label}</div>
+          <div style={{ fontSize: '11px', color: "var(--text-secondary)", marginTop: '4px', letterSpacing: '0.05em' }}>{s.label}</div>
         </div>
       ))}
     </div>
@@ -115,13 +115,13 @@ function ToggleButton({ onClick, disabled, enabled }) {
 }
 
 function LeaderTable({ loading, rows, columns }) {
-  if (loading) return <div style={{ color: '#a1a1aa', textAlign: 'center', padding: '24px' }}>Loading...</div>
-  if (!rows.length) return <div style={{ color: '#a1a1aa', textAlign: 'center', padding: '24px' }}>No data yet.</div>
+  if (loading) return <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>Loading...</div>
+  if (!rows.length) return <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>No data yet.</div>
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
         <thead>
-          <tr style={{ color: '#a1a1aa', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <tr style={{ color: "var(--text-secondary)", textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <th style={{ padding: '8px 12px', fontWeight: 600 }}>#</th>
             {columns.map(c => (
               <th key={c.key} style={{ padding: '8px 12px', fontWeight: 600, textAlign: c.align || 'left' }}>{c.label}</th>
@@ -131,7 +131,7 @@ function LeaderTable({ loading, rows, columns }) {
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-              <td style={{ padding: '10px 12px', color: i < 3 ? '#fbbf24' : '#a1a1aa' }}>{i + 1}</td>
+              <td style={{ padding: '10px 12px', color: i < 3 ? '#fbbf24' : "var(--text-secondary)" }}>{i + 1}</td>
               {columns.map(c => (
                 <td key={c.key} style={{ padding: '10px 12px', textAlign: c.align || 'left', ...(c.style?.(row, i) || {}) }}>
                   {c.render ? c.render(row, i) : row[c.key]}
@@ -214,9 +214,9 @@ function FishingBoard() {
       ]} />
       <LeaderTable loading={loading} rows={leaderboard} columns={[
         { key: 'username', label: 'Scrier', render: (r) => (
-          <><div style={{ fontWeight: 600 }}>{r.username}</div><div style={{ color: '#a1a1aa', fontSize: '11px' }}>#{r.torn_user_id}</div></>
+          <><div style={{ fontWeight: 600 }}>{r.username}</div><div style={{ color: "var(--text-secondary)", fontSize: '11px' }}>#{r.torn_user_id}</div></>
         )},
-        { key: 'total_catches', label: 'Bindings', style: () => ({ color: '#a1a1aa' }) },
+        { key: 'total_catches', label: 'Bindings', style: () => ({ color: "var(--text-secondary)" }) },
         { key: 'fishing_points', label: 'Essence', align: 'right', style: () => ({ color: '#fbbf24', fontWeight: 700 }), render: (r) => r.fishing_points.toLocaleString() },
       ]} />
     </div>
@@ -292,9 +292,9 @@ function RuneBoard() {
       ]} />
       <LeaderTable loading={loading} rows={leaderboard} columns={[
         { key: 'username', label: 'Caster', render: (r) => (
-          <><div style={{ fontWeight: 600 }}>{r.username}</div><div style={{ color: '#a1a1aa', fontSize: '11px' }}>#{r.torn_user_id}</div></>
+          <><div style={{ fontWeight: 600 }}>{r.username}</div><div style={{ color: "var(--text-secondary)", fontSize: '11px' }}>#{r.torn_user_id}</div></>
         )},
-        { key: 'total_casts', label: 'Casts', style: () => ({ color: '#a1a1aa' }) },
+        { key: 'total_casts', label: 'Casts', style: () => ({ color: "var(--text-secondary)" }) },
         { key: 'rune_points', label: 'Essence', align: 'right', style: () => ({ color: '#a78bfa', fontWeight: 700 }), render: (r) => r.rune_points.toLocaleString() },
       ]} />
     </div>

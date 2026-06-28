@@ -31,7 +31,7 @@ export default function Admin() {
           >
             ADMIN PANEL
           </h1>
-          <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>
             Manage site configuration, users, and system settings
           </p>
         </div>
@@ -48,7 +48,7 @@ export default function Admin() {
               className="px-6 py-3 font-medium border-none cursor-pointer transition-all"
               style={{
                 background: activeTab === tab.id ? 'transparent' : 'transparent',
-                color: activeTab === tab.id ? '#f4f4f5' : '#a1a1aa',
+                color: activeTab === tab.id ? '#f4f4f5' : "var(--text-secondary)",
                 borderBottom: activeTab === tab.id ? '2px solid #b3123f' : 'none',
               }}
               onMouseEnter={(e) => {
@@ -58,7 +58,7 @@ export default function Admin() {
               }}
               onMouseLeave={(e) => {
                 if (activeTab !== tab.id) {
-                  e.target.style.color = '#a1a1aa'
+                  e.target.style.color = "var(--text-secondary)"
                 }
               }}
             >

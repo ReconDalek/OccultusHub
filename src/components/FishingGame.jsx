@@ -326,7 +326,7 @@ export default function FishingGame({ open, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
             <button onClick={onClose} style={{
               background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-              color: '#a1a1aa', borderRadius: '8px', padding: '6px 14px',
+              color: "var(--text-secondary)", borderRadius: '8px', padding: '6px 14px',
               cursor: 'pointer', fontSize: '13px',
             }}>✕ Close</button>
           </div>
@@ -415,7 +415,7 @@ export default function FishingGame({ open, onClose }) {
               }}>
                 <div style={{ fontSize: '40px', marginBottom: '8px', color: 'rgba(139,92,246,0.6)', fontFamily: 'monospace' }}>⊘</div>
                 <div style={{ fontSize: '18px', fontWeight: 700, color: '#f87171', fontFamily: 'Cinzel, serif' }}>It slipped back into the void</div>
-                <div style={{ fontSize: '13px', color: '#a1a1aa', marginTop: '6px' }}>The mirror grows dark once more</div>
+                <div style={{ fontSize: '13px', color: "var(--text-secondary)", marginTop: '6px' }}>The mirror grows dark once more</div>
               </div>
             )}
           </div>

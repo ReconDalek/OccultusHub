@@ -23,7 +23,7 @@ const RANK_TIERS = [
   { name: 'Sentinel',  min: 2500,  color: '#eab308', bg: 'rgba(234,179,8,0.1)',  border: 'rgba(234,179,8,0.28)'   },
   { name: 'Arcanist',  min: 1000,  color: '#9f67ff', bg: 'rgba(109,40,217,0.12)',border: 'rgba(109,40,217,0.3)'   },
   { name: 'Adept',     min: 500,   color: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.25)'  },
-  { name: 'Acolyte',   min: 0,     color: '#a1a1aa', bg: 'rgba(255,255,255,0.03)',border: 'rgba(255,255,255,0.08)' },
+  { name: 'Acolyte',   min: 0,     color: "var(--text-secondary)", bg: 'rgba(255,255,255,0.03)',border: 'rgba(255,255,255,0.08)' },
 ]
 
 // Positions that are never flagged for a rank mismatch
@@ -77,7 +77,7 @@ function ColumnHeaders() {
       {['Member', 'Position', 'Total Hits', 'Earned Rank', ''].map((h) => (
         <span
           key={h}
-          style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+          style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}
         >
           {h}
         </span>
@@ -114,12 +114,12 @@ function MemberRow({ member, showFaction }) {
           {member.username}
         </span>
         {member.level && (
-          <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Lv.{member.level}</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Lv.{member.level}</span>
         )}
         {showFaction && member.faction_id && (
           <span
             style={{
-              color: '#a1a1aa',
+              color: "var(--text-secondary)",
               fontSize: '10px',
               background: 'rgba(255,255,255,0.06)',
               borderRadius: '4px',
@@ -133,7 +133,7 @@ function MemberRow({ member, showFaction }) {
       </div>
 
       {/* Faction position */}
-      <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
+      <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
         {member.faction_position || '—'}
       </span>
 
@@ -219,7 +219,7 @@ function RankSection({ tier, members, showFaction }) {
             background: 'rgba(255,255,255,0.08)',
             borderRadius: '4px',
             padding: '1px 7px',
-            color: '#a1a1aa',
+            color: "var(--text-secondary)",
             fontSize: '11px',
           }}
         >
@@ -269,7 +269,7 @@ function SummaryBar({ members }) {
             border: '1px solid rgba(255,255,255,0.07)',
           }}
         >
-          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
             {label}
           </p>
           <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
@@ -285,7 +285,7 @@ function RanksView({ members, loading, error, showFaction, mismatchOnly = false 
   if (loading) {
     return (
       <div style={{ padding: '40px 0', textAlign: 'center' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Loading member data…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading member data…</p>
       </div>
     )
   }
@@ -301,7 +301,7 @@ function RanksView({ members, loading, error, showFaction, mismatchOnly = false 
   if (!members || members.length === 0) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', marginTop: '16px' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '14px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px', margin: 0 }}>
           No member data yet — run{' '}
           <strong style={{ color: '#f4f4f5' }}>Sync Member Database</strong>
           {' '}from Admin › Cache, or wait for the next automatic 12-hour refresh.
@@ -319,7 +319,7 @@ function RanksView({ members, loading, error, showFaction, mismatchOnly = false 
       <div style={{ marginTop: '16px' }}>
         <SummaryBar members={members} />
         <div style={{ padding: '40px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)', marginTop: '16px' }}>
-          <p style={{ color: '#a1a1aa', fontSize: '14px', margin: 0 }}>No rank mismatches found.</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: '14px', margin: 0 }}>No rank mismatches found.</p>
         </div>
       </div>
     )
@@ -485,23 +485,23 @@ function CustomHitsModal({ onClose, onSaved }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <h3 style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '600', margin: 0 }}>Add Custom Hits</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: "var(--text-muted)", fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
-        <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '18px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '18px' }}>
           Record hits from events, raids, or any other activity. These count towards member rank totals.
         </p>
 
         {/* Faction + Type */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction</label>
             <select value={factionId} onChange={e => setFactionId(Number(e.target.value))} style={{ ...inputStyle, width: '100%' }}>
               {FACTIONS.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Hit Type</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Hit Type</label>
             <input type="text" value={hitType} onChange={e => setHitType(e.target.value)}
               placeholder="e.g. Event, Raid, Other" list="hit-type-suggestions" style={{ ...inputStyle, width: '100%' }} />
             <datalist id="hit-type-suggestions">
@@ -511,7 +511,7 @@ function CustomHitsModal({ onClose, onSaved }) {
         </div>
 
         <div style={{ marginBottom: '14px' }}>
-          <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Notes (optional)</label>
+          <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Notes (optional)</label>
           <input type="text" value={notes} onChange={e => setNotes(e.target.value)}
             placeholder="e.g. Summer event week 1" style={{ ...inputStyle, width: '100%' }} />
         </div>
@@ -519,16 +519,16 @@ function CustomHitsModal({ onClose, onSaved }) {
         {/* Member rows */}
         <div style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Members &amp; Hits</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Members &amp; Hits</label>
             <button onClick={addRow} style={{
               background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-              color: '#a1a1aa', borderRadius: '6px', padding: '3px 12px', fontSize: '12px', cursor: 'pointer',
+              color: "var(--text-secondary)", borderRadius: '6px', padding: '3px 12px', fontSize: '12px', cursor: 'pointer',
             }}>+ Add Row</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 90px 32px', gap: '6px', marginBottom: '4px' }}>
             {['User ID', 'Name (optional)', 'Hits', ''].map(h => (
-              <span key={h} style={{ fontSize: '10px', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '2px' }}>{h}</span>
+              <span key={h} style={{ fontSize: '10px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '2px' }}>{h}</span>
             ))}
           </div>
 
@@ -542,7 +542,7 @@ function CustomHitsModal({ onClose, onSaved }) {
                 <input type="number" min="0" value={r.hits} onChange={e => updateRow(i, 'hits', e.target.value)}
                   placeholder="Hits" style={{ ...inputStyle, textAlign: 'center' }} />
                 <button onClick={() => removeRow(i)} disabled={members.length === 1} style={{
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#52525b',
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: "var(--text-faint)",
                   borderRadius: '6px', cursor: members.length === 1 ? 'default' : 'pointer',
                   fontSize: '14px', lineHeight: 1, padding: '6px',
                 }}>✕</button>
@@ -556,7 +556,7 @@ function CustomHitsModal({ onClose, onSaved }) {
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{
             padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: "var(--text-secondary)",
           }}>Cancel</button>
           <button onClick={submit} disabled={saving} style={{
             padding: '8px 20px', borderRadius: '8px', fontSize: '13px', cursor: saving ? 'not-allowed' : 'pointer',
@@ -592,14 +592,14 @@ function SubTabs({ options, active, onChange }) {
                 : 'transparent',
               color: isActive
                 ? isMismatchTab ? '#fbbf24' : '#f4f4f5'
-                : '#a1a1aa',
+                : "var(--text-secondary)",
               fontSize: '13px',
               fontWeight: isActive ? '600' : '400',
               cursor: 'pointer',
               transition: 'all 0.15s',
             }}
             onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = '#f4f4f5' }}
-            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = '#a1a1aa' }}
+            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = "var(--text-secondary)" }}
           >
             {opt.label}
           </button>
@@ -648,7 +648,7 @@ export default function MemberRanksTab() {
           >
             Member Ranks
           </h2>
-          <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
             Current members ranked by total hits
             ⚠ indicates a rank mismatch.
             Hover a hit count to see the breakdown.
@@ -656,7 +656,7 @@ export default function MemberRanksTab() {
         </div>
         <button onClick={() => setShowCustom(true)} style={{
           padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: "var(--text-secondary)",
         }}>+ Add Custom Hits</button>
       </div>
 

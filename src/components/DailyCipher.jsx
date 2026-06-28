@@ -148,14 +148,14 @@ export default function DailyCipher({ guest = false }) {
                 background: 'none',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 8,
-                color: '#a1a1aa',
+                color: "var(--text-secondary)",
                 fontSize: 12,
                 padding: '6px 14px',
                 cursor: 'pointer',
                 transition: 'border-color 0.2s, color 0.2s',
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = '#f4f4f5' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#a1a1aa' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = "var(--text-secondary)" }}
             >
               {showHint ? '▲ Hide Hint' : '▼ Show Hint'}
             </button>
@@ -188,7 +188,7 @@ export default function DailyCipher({ guest = false }) {
                 {result.isCorrect ? '✓ Correct! Well done.' : '✗ Incorrect — try again.'}
               </p>
               {result.isCorrect && result.plaintext && (
-                <p style={{ margin: '6px 0 0', color: '#a1a1aa', fontSize: 12 }}>
+                <p style={{ margin: '6px 0 0', color: "var(--text-secondary)", fontSize: 12 }}>
                   Answer: <span style={{ color: '#f4f4f5', fontWeight: 600, letterSpacing: 1 }}>{result.plaintext}</span>
                 </p>
               )}

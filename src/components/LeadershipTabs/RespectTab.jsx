@@ -6,7 +6,7 @@ export default function RespectTab() {
       <h2 className="font-cinzel mb-2" style={{ fontSize: '22px', color: '#f4f4f5' }}>
         Respect Tracker
       </h2>
-      <p style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '28px' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '14px', marginBottom: '28px' }}>
         Monitor and track faction respect gains over time.
       </p>
 

@@ -65,7 +65,7 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 36 }}>
           <div>
             <h2 className="font-cinzel" style={{ fontSize: 26, letterSpacing: 5, marginBottom: 4 }}>THE RITE</h2>
-            <p style={{ color: '#71717a', fontSize: 12, letterSpacing: 1 }}>Lobby · Awaiting players</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, letterSpacing: 1 }}>Lobby · Awaiting players</p>
           </div>
           <button onClick={onLeave} style={ghostBtn}>Leave</button>
         </div>
@@ -73,10 +73,10 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
         {/* Player list */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
-            <p style={{ fontSize: 11, color: '#71717a', letterSpacing: 2, textTransform: 'uppercase' }}>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 2, textTransform: 'uppercase' }}>
               The Circle
             </p>
-            <span style={{ fontSize: 11, color: '#52525b' }}>{players.length} / 16</span>
+            <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{players.length} / 16</span>
           </div>
 
           <div style={{ display: 'grid', gap: 6 }}>
@@ -105,7 +105,7 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
                   {p.display_name}
                 </span>
                 {p.is_host && <span style={{ fontSize: 10, color: '#eab308', letterSpacing: 2, textTransform: 'uppercase' }}>Host</span>}
-                {p.is_bot && <span style={{ fontSize: 10, color: '#52525b', letterSpacing: 2, textTransform: 'uppercase' }}>Bot</span>}
+                {p.is_bot && <span style={{ fontSize: 10, color: "var(--text-faint)", letterSpacing: 2, textTransform: 'uppercase' }}>Bot</span>}
                 {p.is_me && !p.is_host && <span style={{ fontSize: 10, color: '#9f67ff', letterSpacing: 2, textTransform: 'uppercase' }}>You</span>}
               </div>
             ))}
@@ -125,7 +125,7 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
             background: secsLeft < 60 ? 'rgba(179,18,63,0.1)' : 'rgba(255,255,255,0.03)',
             border: `1px solid ${secsLeft < 60 ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.06)'}`,
             borderRadius: 8, padding: '10px 14px', fontSize: 12,
-            color: secsLeft < 60 ? '#fb7185' : '#71717a', marginBottom: 16,
+            color: secsLeft < 60 ? '#fb7185' : "var(--text-muted)", marginBottom: 16,
           }}>
             <span>Lobby closes if no game starts</span>
             <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
@@ -145,7 +145,7 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
             <button
               onClick={handleFillBots}
               disabled={filling}
-              style={{ ...ghostBtn, width: '100%', padding: '11px 20px', borderColor: 'rgba(82,82,91,0.4)', color: '#71717a', fontSize: 13 }}
+              style={{ ...ghostBtn, width: '100%', padding: '11px 20px', borderColor: 'rgba(82,82,91,0.4)', color: "var(--text-muted)", fontSize: 13 }}
             >
               {filling ? 'Adding bots...' : `◈ Fill with Bots (${4 - players.length} needed)`}
             </button>
@@ -163,7 +163,7 @@ export default function GameLobby({ gameState, displayName, guestToken, authHead
               {starting ? 'Beginning the Rite...' : '⛧ Begin the Rite'}
             </button>
           ) : (
-            <div style={{ textAlign: 'center', padding: '14px', color: '#71717a', fontSize: 13, background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ textAlign: 'center', padding: '14px', color: "var(--text-muted)", fontSize: 13, background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
               Waiting for the host to begin the rite...
             </div>
           )}
@@ -195,7 +195,7 @@ function RoleScaling({ count }) {
 
   return (
     <div style={{ marginTop: 32, padding: '14px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
-      <p style={{ fontSize: 11, color: '#71717a', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 10 }}>
+      <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 2, textTransform: 'uppercase', marginBottom: 10 }}>
         Role Preview — {c} players
       </p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -252,7 +252,7 @@ const ghostBtn = {
   background: 'rgba(255,255,255,0.04)',
   border: '1px solid rgba(255,255,255,0.1)',
   borderRadius: 8,
-  color: '#a1a1aa',
+  color: "var(--text-secondary)",
   fontSize: 13,
   cursor: 'pointer',
 }

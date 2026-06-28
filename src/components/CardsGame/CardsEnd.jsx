@@ -11,7 +11,7 @@ export default function CardsEnd({ room, players, myPlayerId, onLeave }) {
           fontFamily: 'Cinzel, serif',
           fontSize: 11,
           letterSpacing: '4px',
-          color: '#a1a1aa',
+          color: "var(--text-secondary)",
           marginBottom: 12,
         }}>
           THE RITUAL CONCLUDES
@@ -26,7 +26,7 @@ export default function CardsEnd({ room, players, myPlayerId, onLeave }) {
         }}>
           {isWinner ? 'You have claimed the souls.' : `${room.winner_name} claims victory.`}
         </div>
-        <div style={{ fontSize: 13, color: '#a1a1aa' }}>
+        <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           {isWinner
             ? 'The darkness bows to you.'
             : 'Better luck in the next ritual.'}
@@ -46,7 +46,7 @@ export default function CardsEnd({ room, players, myPlayerId, onLeave }) {
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           fontSize: 11,
           letterSpacing: '2px',
-          color: '#a1a1aa',
+          color: "var(--text-secondary)",
         }}>
           FINAL STANDINGS
         </div>
@@ -61,7 +61,7 @@ export default function CardsEnd({ room, players, myPlayerId, onLeave }) {
           }}>
             <span style={{
               fontSize: 12,
-              color: i === 0 ? '#b3123f' : '#a1a1aa',
+              color: i === 0 ? '#b3123f' : "var(--text-secondary)",
               width: 20,
               flexShrink: 0,
             }}>
@@ -74,7 +74,7 @@ export default function CardsEnd({ room, players, myPlayerId, onLeave }) {
               textAlign: 'left',
             }}>
               {p.display_name}
-              {p.id === myPlayerId && <span style={{ fontSize: 11, color: '#a1a1aa', marginLeft: 6 }}>(you)</span>}
+              {p.id === myPlayerId && <span style={{ fontSize: 11, color: "var(--text-secondary)", marginLeft: 6 }}>(you)</span>}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 16, color: '#b3123f' }}>
@@ -82,7 +82,7 @@ export default function CardsEnd({ room, players, myPlayerId, onLeave }) {
                   <span key={j}>●</span>
                 ))}
               </span>
-              <span style={{ fontSize: 12, color: '#a1a1aa', marginLeft: 4 }}>{p.souls} soul{p.souls !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)", marginLeft: 4 }}>{p.souls} soul{p.souls !== 1 ? 's' : ''}</span>
             </span>
           </div>
         ))}

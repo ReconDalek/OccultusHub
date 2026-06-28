@@ -74,7 +74,7 @@ export default function SeasonalEventsTab() {
           <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
             Seasonal Themes
           </h3>
-          <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>
+          <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: '13px' }}>
             Toggle global event effects. Use <strong style={{ color: '#a78bfa' }}>Test Preview</strong> to see an effect locally — only visible on this browser.
           </p>
         </div>
@@ -150,7 +150,7 @@ export default function SeasonalEventsTab() {
                       }}>PREVIEWING</span>
                     )}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#71717a', marginTop: '1px' }}>{ev.dateDesc}</div>
+                  <div style={{ fontSize: '11px', color: "var(--text-muted)", marginTop: '1px' }}>{ev.dateDesc}</div>
                 </div>
               </div>
 
@@ -177,7 +177,7 @@ export default function SeasonalEventsTab() {
                     fontWeight: 700, fontSize: '11px', letterSpacing: '0.04em',
                     background: isOn ? 'rgba(34,197,94,0.14)' : 'rgba(100,100,120,0.14)',
                     border: `1px solid ${isOn ? 'rgba(34,197,94,0.35)' : 'rgba(100,100,120,0.25)'}`,
-                    color: isOn ? '#86efac' : '#71717a',
+                    color: isOn ? '#86efac' : "var(--text-muted)",
                     cursor: isTogglin ? 'not-allowed' : 'pointer',
                     opacity: isTogglin ? 0.6 : 1,
                   }}
@@ -205,7 +205,7 @@ export default function SeasonalEventsTab() {
         })}
       </div>
 
-      <p style={{ marginTop: '20px', fontSize: '11px', color: '#52525b', textAlign: 'center' }}>
+      <p style={{ marginTop: '20px', fontSize: '11px', color: "var(--text-faint)", textAlign: 'center' }}>
         Global toggles affect all users. Test Preview is local to this browser only and clears on refresh.
       </p>
     </div>

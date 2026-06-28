@@ -54,18 +54,18 @@ export default function PagesTab() {
   }
 
   if (loading) {
-    return <p style={{ color: '#a1a1aa' }}>Loading page settings...</p>
+    return <p style={{ color: "var(--text-secondary)" }}>Loading page settings...</p>
   }
 
   const pageNames = Object.keys(pages)
 
   if (pageNames.length === 0) {
-    return <p style={{ color: '#a1a1aa' }}>No pages found in database.</p>
+    return <p style={{ color: "var(--text-secondary)" }}>No pages found in database.</p>
   }
 
   return (
     <div>
-      <p style={{ color: '#a1a1aa', marginBottom: '24px' }}>
+      <p style={{ color: "var(--text-secondary)", marginBottom: '24px' }}>
         Toggle visibility of pages on the site. Hidden pages will not appear in the navigation and their routes will be disabled.
       </p>
 
@@ -90,10 +90,10 @@ export default function PagesTab() {
             >
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>{meta.icon}</div>
               <h4 style={{ color: '#f4f4f5', marginBottom: '4px' }}>{meta.label}</h4>
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '12px', fontFamily: 'monospace' }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '12px', fontFamily: 'monospace' }}>
                 /{name}
               </p>
-              <p style={{ color: visible ? '#a1a1aa' : '#6b6b6b', fontSize: '14px', marginBottom: '16px' }}>
+              <p style={{ color: visible ? "var(--text-secondary)" : '#6b6b6b', fontSize: '14px', marginBottom: '16px' }}>
                 {visible ? '✓ Visible' : '✗ Hidden'}
               </p>
               <button

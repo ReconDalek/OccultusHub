@@ -116,7 +116,7 @@ export default function EventsTab() {
           <h2 className="font-cinzel" style={{ fontSize: '22px', color: '#f4f4f5', margin: 0 }}>
             Events Calendar
           </h2>
-          <p style={{ color: '#a1a1aa', fontSize: '14px', marginTop: '6px', marginBottom: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '14px', marginTop: '6px', marginBottom: 0 }}>
             Add upcoming events to the member home calendar.
           </p>
         </div>
@@ -175,21 +175,21 @@ export default function EventsTab() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} style={inputStyle} />
-            <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Start date (TCT/UTC) *</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Start date (TCT/UTC) *</span>
           </div>
           <div>
             <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} style={inputStyle} />
-            <span style={{ color: '#a1a1aa', fontSize: '11px' }}>End date (optional)</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>End date (optional)</span>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} style={inputStyle} />
-            <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Start time TCT (optional)</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Start time TCT (optional)</span>
           </div>
           <div>
             <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} style={inputStyle} />
-            <span style={{ color: '#a1a1aa', fontSize: '11px' }}>End time TCT (optional)</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>End time TCT (optional)</span>
           </div>
         </div>
         {error && <p style={{ color: '#b3123f', fontSize: '13px', margin: 0 }}>{error}</p>}
@@ -215,9 +215,9 @@ export default function EventsTab() {
 
       {/* Events list */}
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading…</p>
       ) : events.length === 0 ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>No upcoming events.</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>No upcoming events.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {events.map((ev) => (
@@ -233,21 +233,21 @@ export default function EventsTab() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
                       <input type="date" value={editForm.start_date} onChange={(e) => setEditForm({ ...editForm, start_date: e.target.value })} style={inputStyle} />
-                      <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Start date *</span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Start date *</span>
                     </div>
                     <div>
                       <input type="date" value={editForm.end_date} onChange={(e) => setEditForm({ ...editForm, end_date: e.target.value })} style={inputStyle} />
-                      <span style={{ color: '#a1a1aa', fontSize: '11px' }}>End date</span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>End date</span>
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
                       <input type="time" value={editForm.start_time} onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })} style={inputStyle} />
-                      <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Start time TCT</span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Start time TCT</span>
                     </div>
                     <div>
                       <input type="time" value={editForm.end_time} onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })} style={inputStyle} />
-                      <span style={{ color: '#a1a1aa', fontSize: '11px' }}>End time TCT</span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>End time TCT</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -260,7 +260,7 @@ export default function EventsTab() {
                     </button>
                     <button
                       onClick={() => setEditingId(null)}
-                      style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: '#a1a1aa', fontSize: '13px' }}
+                      style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: "var(--text-secondary)", fontSize: '13px' }}
                     >
                       Cancel
                     </button>
@@ -278,12 +278,12 @@ export default function EventsTab() {
                         </span>
                       )}
                       {ev.category && ev.source !== 'torn' && (
-                        <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '20px', background: 'rgba(255,255,255,0.08)', color: '#a1a1aa', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '20px', background: 'rgba(255,255,255,0.08)', color: "var(--text-secondary)", whiteSpace: 'nowrap' }}>
                           {ev.category}
                         </span>
                       )}
                     </div>
-                    {ev.description && <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '2px' }}>{ev.description}</div>}
+                    {ev.description && <div style={{ color: "var(--text-secondary)", fontSize: '13px', marginTop: '2px' }}>{ev.description}</div>}
                     <div style={{ color: '#9f67ff', fontSize: '12px', marginTop: '4px' }}>
                       {ev.start_date}{ev.end_date && ev.end_date !== ev.start_date ? ` → ${ev.end_date}` : ''}
                       {ev.start_time ? ` · ${ev.start_time} TCT` : ''}

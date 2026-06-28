@@ -138,7 +138,7 @@ export default function ArmoryConfigTab({ armory = [] }) {
 
   const hasDirty = Object.keys(dirty).length > 0
 
-  if (loading) return <p style={{ color: '#52525b', fontSize: '13px', padding: '16px 0' }}>Loading…</p>
+  if (loading) return <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>Loading…</p>
   if (error)   return <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>
 
   const allItems    = buildConfigItems(armory, savedRows)
@@ -156,11 +156,11 @@ export default function ArmoryConfigTab({ armory = [] }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 className="font-cinzel" style={{ fontSize: '20px', color: '#f4f4f5', marginBottom: '4px' }}>Armory Minimums</h2>
-          <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
             Set per-faction minimum quantities. Daily webhook alerts when items fall below threshold.
           </p>
           {configuredCount > 0 && (
-            <p style={{ color: '#52525b', fontSize: '11px', margin: '4px 0 0 0' }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '4px 0 0 0' }}>
               {configuredCount} item{configuredCount !== 1 ? 's' : ''} with minimums configured
             </p>
           )}
@@ -176,7 +176,7 @@ export default function ArmoryConfigTab({ armory = [] }) {
               padding: '7px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', border: 'none',
               cursor: saving || !hasDirty ? 'default' : 'pointer',
               background: saving || !hasDirty ? 'rgba(255,255,255,0.06)' : '#b3123f',
-              color: saving || !hasDirty ? '#52525b' : '#f4f4f5',
+              color: saving || !hasDirty ? "var(--text-faint)" : '#f4f4f5',
               transition: 'all 0.15s',
             }}
           >
@@ -187,9 +187,9 @@ export default function ArmoryConfigTab({ armory = [] }) {
 
       {/* Column header */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px', gap: '8px', padding: '6px 12px', marginBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <span style={{ fontSize: '11px', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Item</span>
+        <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Item</span>
         {FACTION_COLS.map(f => (
-          <span key={f.id} style={{ fontSize: '11px', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>{f.label}</span>
+          <span key={f.id} style={{ fontSize: '11px', color: "var(--text-muted)", textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>{f.label}</span>
         ))}
       </div>
 
@@ -207,12 +207,12 @@ export default function ArmoryConfigTab({ armory = [] }) {
               onClick={() => toggleCollapse(cat)}
               style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: 'none', cursor: 'pointer', textAlign: 'left' }}
             >
-              <span style={{ fontSize: '13px', fontWeight: '600', color: isOpen ? '#f4f4f5' : '#a1a1aa', transition: 'color 0.15s' }}>{catLabel(cat)}</span>
-              <span style={{ fontSize: '11px', color: '#52525b' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: isOpen ? '#f4f4f5' : "var(--text-secondary)", transition: 'color 0.15s' }}>{catLabel(cat)}</span>
+              <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>
                 {items.length} item{items.length !== 1 ? 's' : ''}
                 {catConfigured > 0 && <> · <span style={{ color: '#b3123f' }}>{catConfigured} with min</span></>}
               </span>
-              <span style={{ marginLeft: 'auto', color: '#52525b', fontSize: '11px' }}>{isOpen ? '▲' : '▼'}</span>
+              <span style={{ marginLeft: 'auto', color: "var(--text-faint)", fontSize: '11px' }}>{isOpen ? '▲' : '▼'}</span>
             </button>
 
             {isOpen && items.map(item => (
@@ -250,7 +250,7 @@ export default function ArmoryConfigTab({ armory = [] }) {
       })}
 
       {orderedCats.length === 0 && (
-        <p style={{ color: '#52525b', fontSize: '13px', padding: '16px 0' }}>
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>
           No armory data yet — cache populates on the next 6-hour cron.
         </p>
       )}

@@ -80,7 +80,7 @@ function Stat({ label, value, accent }) {
         padding: '10px 14px',
       }}
     >
-      <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
         {label}
       </p>
       <p style={{ color: accent ? '#ff2f6d' : '#f4f4f5', fontSize: '15px', fontWeight: '700', margin: 0 }}>
@@ -97,7 +97,7 @@ function Section({ title, children }) {
     <div style={{ marginTop: '20px' }}>
       <p
         style={{
-          color: '#a1a1aa',
+          color: "var(--text-secondary)",
           fontSize: '10px',
           textTransform: 'uppercase',
           letterSpacing: '0.1em',
@@ -200,7 +200,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
       {/* ── Member Contributions ── */}
       <Section title="Member Contributions">
         {attackers.length === 0 ? (
-          <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No attacker data available.</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No attacker data available.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {/* Header row */}
@@ -213,7 +213,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
               }}
             >
               {['Member', 'Hits', 'Respect', 'Bonuses'].map((h) => (
-                <span key={h} style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   {h}
                 </span>
               ))}
@@ -242,7 +242,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
                     {isKnown ? (
                       <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
                     ) : (
-                      <span style={{ color: '#a1a1aa', fontSize: '12px', fontFamily: 'monospace' }}>[{a.id}]</span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{a.id}]</span>
                     )}
                   </div>
 
@@ -274,7 +274,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
                       ×{a.attacks.bonuses}
                     </span>
                   ) : (
-                    <span style={{ color: '#a1a1aa', fontSize: '12px' }}>—</span>
+                    <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
                   )}
                 </div>
               )
@@ -325,11 +325,11 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
         )}
 
         {alreadySaved && saveStatus !== 'saving' && (
-          <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
+          <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
             {attackers.length} member{attackers.length !== 1 ? 's' : ''} recorded •{' '}
             <button
               onClick={onSave}
-              style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '12px', padding: 0, textDecoration: 'underline' }}
+              style={{ background: 'none', border: 'none', color: "var(--text-secondary)", cursor: 'pointer', fontSize: '12px', padding: 0, textDecoration: 'underline' }}
             >
               Re-save
             </button>
@@ -340,7 +340,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
         <span
           style={{
             marginLeft: 'auto',
-            color: '#a1a1aa',
+            color: "var(--text-secondary)",
             fontSize: '11px',
             fontFamily: 'monospace',
           }}
@@ -497,7 +497,7 @@ function ChainCard({ chain }) {
               </span>
             )}
           </div>
-          <span style={{ color: '#a1a1aa', fontSize: '11px' }}>{startDate}</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>{startDate}</span>
         </div>
 
         {/* Respect badge */}
@@ -518,7 +518,7 @@ function ChainCard({ chain }) {
         {/* Chevron */}
         <span
           style={{
-            color: '#a1a1aa',
+            color: "var(--text-secondary)",
             fontSize: '11px',
             transition: 'transform 0.2s',
             display: 'inline-block',
@@ -538,7 +538,7 @@ function ChainCard({ chain }) {
           }}
         >
           {reportLoading && (
-            <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
               Loading chain report…
             </p>
           )}
@@ -706,7 +706,7 @@ function ChainImporter() {
   if (!open) return (
     <button onClick={() => setOpen(true)} style={{
       padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
-      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: "var(--text-secondary)",
     }}>+ Load Historic Chain</button>
   )
 
@@ -721,10 +721,10 @@ function ChainImporter() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <h3 style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '600', margin: 0 }}>Load Historic Chain</h3>
-          <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: "var(--text-muted)", fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
-        <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '16px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '16px' }}>
           Import any past chain by ID — no minimum hit count required.
         </p>
 
@@ -817,7 +817,7 @@ function ChainImporter() {
                       {factionName}
                     </span>
                   </div>
-                  <span style={{ color: '#a1a1aa', fontSize: '11px' }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>
                     {formatUnixDate(preview.chain.start_at)}
                   </span>
                 </div>
@@ -926,7 +926,7 @@ function FactionChains({ factionId }) {
   if (loading) {
     return (
       <div style={{ padding: '40px 0', textAlign: 'center' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Loading chains…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading chains…</p>
       </div>
     )
   }
@@ -959,7 +959,7 @@ function FactionChains({ factionId }) {
           marginTop: '16px',
         }}
       >
-        <p style={{ color: '#a1a1aa', fontSize: '14px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px', margin: 0 }}>
           No chains ≥ 1,000 hits yet — the cache refreshes every Monday,
           or force a refresh from Admin › Cache.
         </p>
@@ -972,7 +972,7 @@ function FactionChains({ factionId }) {
       {chains.map((chain) => (
         <ChainCard key={chain.torn_chain_id} chain={chain} />
       ))}
-      <p style={{ color: '#a1a1aa', fontSize: '11px', marginTop: '4px', textAlign: 'right' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '11px', marginTop: '4px', textAlign: 'right' }}>
         Showing last {chains.length} chain{chains.length !== 1 ? 's' : ''} ≥ 1,000 hits
       </p>
     </div>
@@ -994,14 +994,14 @@ function SubTabs({ options, active, onChange }) {
             borderRadius: '8px',
             border: `1px solid ${active === opt.value ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
             background: active === opt.value ? 'rgba(179,18,63,0.15)' : 'transparent',
-            color: active === opt.value ? '#f4f4f5' : '#a1a1aa',
+            color: active === opt.value ? '#f4f4f5' : "var(--text-secondary)",
             fontSize: '13px',
             fontWeight: active === opt.value ? '600' : '400',
             cursor: 'pointer',
             transition: 'all 0.15s',
           }}
           onMouseEnter={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#f4f4f5' }}
-          onMouseLeave={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#a1a1aa' }}
+          onMouseLeave={(e) => { if (active !== opt.value) e.currentTarget.style.color = "var(--text-secondary)" }}
         >
           {opt.label}
         </button>
@@ -1037,7 +1037,7 @@ export default function ChainTrackingTab() {
         >
           Chain & War Tracking
         </h2>
-        {/*<p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+        {/*<p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
           Only chains ≥ 1,000 hits are tracked automatically. 
           Expand a chain to load the full member report and save to the database.
         </p>*/}
@@ -1060,14 +1060,14 @@ export default function ChainTrackingTab() {
               background: 'transparent',
               border: 'none',
               borderBottom: topTab === tab.value ? '2px solid #b3123f' : '2px solid transparent',
-              color: topTab === tab.value ? '#f4f4f5' : '#a1a1aa',
+              color: topTab === tab.value ? '#f4f4f5' : "var(--text-secondary)",
               fontWeight: topTab === tab.value ? '600' : '400',
               fontSize: '14px',
               cursor: 'pointer',
               transition: 'color 0.15s',
             }}
             onMouseEnter={(e) => { if (topTab !== tab.value) e.currentTarget.style.color = '#f4f4f5' }}
-            onMouseLeave={(e) => { if (topTab !== tab.value) e.currentTarget.style.color = '#a1a1aa' }}
+            onMouseLeave={(e) => { if (topTab !== tab.value) e.currentTarget.style.color = "var(--text-secondary)" }}
           >
             {tab.label}
           </button>

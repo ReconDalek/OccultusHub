@@ -52,7 +52,7 @@ function MemberHome({ user }) {
           >
             WELCOME BACK, {user.username?.toUpperCase()}
           </h1>
-          <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}
           </p>
         </div>
@@ -72,7 +72,7 @@ function MemberHome({ user }) {
             className="rounded-2xl p-8"
             style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
+            <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: "var(--text-secondary)" }}>
               UPCOMING EVENTS
             </h2>
             <EventCalendar events={events} calendarStartTime={user.calendarStartTime || null} />
@@ -83,7 +83,7 @@ function MemberHome({ user }) {
             className="rounded-2xl p-8"
             style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
+            <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: "var(--text-secondary)" }}>
               FACTION OPERATIONS
             </h2>
             <FactionEventCards />
@@ -136,7 +136,7 @@ function PublicHome() {
           <p
             className="animate-fade-up-slow"
             style={{
-              color: '#a1a1aa',
+              color: "var(--text-secondary)",
               fontSize: '20px',
               lineHeight: 1.8,
               maxWidth: '700px',
@@ -209,7 +209,7 @@ function PublicHome() {
                 <h3 className="font-cinzel" style={{ fontSize: '30px', marginBottom: '20px' }}>
                   {f.name}
                 </h3>
-                <p style={{ color: '#a1a1aa', lineHeight: 1.7, marginBottom: '24px' }}>
+                <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: '24px' }}>
                   {f.description}
                 </p>
                 <span style={{ color: '#9f67ff', fontSize: '14px' }}>Faction ID: {f.id}</span>

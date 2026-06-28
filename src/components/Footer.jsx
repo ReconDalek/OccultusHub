@@ -28,18 +28,18 @@ export default function Footer() {
     >
       <div
         className="flex items-center"
-        style={{ gap: 'clamp(8px, 2vw, 12px)', color: '#a1a1aa', fontSize: 'clamp(11px, 2vw, 14px)', whiteSpace: 'nowrap' }}
+        style={{ gap: 'clamp(8px, 2vw, 12px)', color: "var(--text-secondary)", fontSize: 'clamp(11px, 2vw, 14px)', whiteSpace: 'nowrap' }}
       >
-        <Link to="/tos" style={{ color: '#a1a1aa', textDecoration: 'none' }}
+        <Link to="/tos" style={{ color: "var(--text-secondary)", textDecoration: 'none' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = '#f4f4f5')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#a1a1aa')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
         >
           Terms of Service
         </Link>
         <span style={{ opacity: 0.4 }}>|</span>
-        <Link to="/privacy" style={{ color: '#a1a1aa', textDecoration: 'none' }}
+        <Link to="/privacy" style={{ color: "var(--text-secondary)", textDecoration: 'none' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = '#f4f4f5')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#a1a1aa')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
         >
           Privacy Policy
         </Link>
@@ -50,9 +50,9 @@ export default function Footer() {
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center transition-colors duration-200"
-        style={{ color: '#a1a1aa', textDecoration: 'none', fontSize: 'clamp(11px, 2vw, 14px)', gap: 'clamp(4px, 1vw, 8px)', whiteSpace: 'nowrap' }}
+        style={{ color: "var(--text-secondary)", textDecoration: 'none', fontSize: 'clamp(11px, 2vw, 14px)', gap: 'clamp(4px, 1vw, 8px)', whiteSpace: 'nowrap' }}
         onMouseEnter={(e) => (e.currentTarget.style.color = '#7289da')}
-        onMouseLeave={(e) => (e.currentTarget.style.color = '#a1a1aa')}
+        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
       >
         <DiscordIcon />
         Discord

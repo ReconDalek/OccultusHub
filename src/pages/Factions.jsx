@@ -54,7 +54,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
         <h3 className="font-cinzel" style={{ fontSize: '30px', marginBottom: '20px' }}>
           {faction.name}
         </h3>
-        <p style={{ color: '#a1a1aa', lineHeight: 1.7, marginBottom: '24px' }}>
+        <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: '24px' }}>
           {faction.description}
         </p>
         <div style={{ color: '#9f67ff', fontSize: '14px' }}>Faction ID: {faction.id}</div>
@@ -100,7 +100,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
       {/* Rackets (always visible if any) */}
       {rackets.length > 0 && (
         <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ color: '#a1a1aa', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
+          <div style={{ color: "var(--text-secondary)", fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
             Rackets ({rackets.length})
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -112,7 +112,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
               }}>
                 <div>
                   <span style={{ color: '#f4f4f5', fontWeight: '500' }}>{r.name}</span>
-                  <span style={{ color: '#a1a1aa', marginLeft: '8px', fontSize: '12px' }}>{r.territory}</span>
+                  <span style={{ color: "var(--text-secondary)", marginLeft: '8px', fontSize: '12px' }}>{r.territory}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                   <span style={{ color: '#9f67ff', fontSize: '12px' }}>Lv {r.level}</span>
@@ -215,7 +215,7 @@ export default function Factions() {
           </h1>
           <p
             className="animate-fade-up-slow"
-            style={{ color: '#a1a1aa', fontSize: '20px', lineHeight: 1.8 }}
+            style={{ color: "var(--text-secondary)", fontSize: '20px', lineHeight: 1.8 }}
           >
             Occultus stands beyond the shadows of Torn.<br />
             Three circles, One sacred order.<br />
@@ -228,11 +228,11 @@ export default function Factions() {
       <section style={{ padding: '60px 48px' }}>
         {loading ? (
           <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
-            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>Loading faction data…</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '15px' }}>Loading faction data…</p>
           </div>
         ) : displayFactions.length === 0 ? (
           <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
-            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>No faction data available.</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '15px' }}>No faction data available.</p>
           </div>
         ) : (
           <div
@@ -257,7 +257,7 @@ export default function Factions() {
         {lastUpdated && (
           <div
             className="max-w-3xl mx-auto mt-8 p-5 rounded-3xl text-center text-sm"
-            style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa' }}
+            style={{ background: 'rgba(255,255,255,0.03)', color: "var(--text-secondary)" }}
           >
             Last updated: {formatUTC(lastUpdated)}
           </div>

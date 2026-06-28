@@ -90,7 +90,7 @@ export default function Navbar() {
     const isActive = to === '/games'
       ? GAME_PATHS.includes(location.pathname)
       : location.pathname === to
-    return { color: isActive ? '#f4f4f5' : '#a1a1aa', textDecoration: 'none' }
+    return { color: isActive ? '#f4f4f5' : "var(--text-secondary)", textDecoration: 'none' }
   }
 
   function NavLink({ to, label }) {
@@ -133,7 +133,7 @@ export default function Navbar() {
               </h1>
               <span
                 className="block"
-                style={{ color: '#a1a1aa', fontSize: '12px', letterSpacing: '3px' }}
+                style={{ color: "var(--text-secondary)", fontSize: '12px', letterSpacing: '3px' }}
               >
                 The Inner Sanctum
               </span>
@@ -184,10 +184,10 @@ export default function Navbar() {
                       />
                       <div>
                         <div className="font-bold text-base">{user.username || 'Unknown'}</div>
-                        <div className="text-sm" style={{ color: '#a1a1aa' }}>
+                        <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
                           {user.factionPosition || 'Visitor'}
                         </div>
-                        <div className="text-sm" style={{ color: '#a1a1aa' }}>
+                        <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
                           {factionLabel}
                         </div>
                         {user.fishingPoints != null && (

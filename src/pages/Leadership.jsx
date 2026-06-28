@@ -27,7 +27,7 @@ export default function Leadership() {
   if (loading) {
     return (
       <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
-        <p style={{ color: '#a1a1aa' }}>Checking access…</p>
+        <p style={{ color: "var(--text-secondary)" }}>Checking access…</p>
       </div>
     )
   }
@@ -43,7 +43,7 @@ export default function Leadership() {
           >
             LEADERSHIP DASHBOARD
           </h1>
-          <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>
             Command controls and leadership tools
           </p>
         </div>
@@ -51,7 +51,7 @@ export default function Leadership() {
         {!user?.isLeader ? (
           <div
             className="max-w-3xl p-10 rounded-3xl text-center"
-            style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa' }}
+            style={{ background: 'rgba(255,255,255,0.03)', color: "var(--text-secondary)" }}
           >
              — Access Restricted — 
           </div>
@@ -81,12 +81,12 @@ export default function Leadership() {
                       transition: 'color 0.15s',
                       whiteSpace: 'nowrap',
                       background: 'transparent',
-                      color: activeTab === tab.id ? '#f4f4f5' : '#a1a1aa',
+                      color: activeTab === tab.id ? '#f4f4f5' : "var(--text-secondary)",
                       borderBottom: activeTab === tab.id ? '2px solid #b3123f' : '2px solid transparent',
                       fontSize: '14px',
                     }}
                     onMouseEnter={(e) => { if (activeTab !== tab.id) e.currentTarget.style.color = '#f4f4f5' }}
-                    onMouseLeave={(e) => { if (activeTab !== tab.id) e.currentTarget.style.color = '#a1a1aa' }}
+                    onMouseLeave={(e) => { if (activeTab !== tab.id) e.currentTarget.style.color = "var(--text-secondary)" }}
                   >
                     {tab.label}
                   </button>

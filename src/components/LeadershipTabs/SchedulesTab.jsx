@@ -64,7 +64,7 @@ export default function SchedulesTab() {
       <h2 className="font-cinzel mb-2" style={{ fontSize: '22px', color: '#f4f4f5' }}>
         Faction Schedules
       </h2>
-      <p style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '28px' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '14px', marginBottom: '28px' }}>
         Schedule upcoming chain or war events per faction. The next one will display as a live countdown on the member home.
       </p>
 
@@ -96,7 +96,7 @@ export default function SchedulesTab() {
             onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })}
             style={inputStyle}
           />
-          <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Enter time in TCT (UTC) — your browser may display local time</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Enter time in TCT (UTC) — your browser may display local time</span>
         </div>
 
         {error && <p style={{ color: '#b3123f', fontSize: '13px', margin: 0 }}>{error}</p>}
@@ -123,9 +123,9 @@ export default function SchedulesTab() {
 
       {/* Schedules list */}
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading…</p>
       ) : schedules.length === 0 ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>No upcoming schedules.</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>No upcoming schedules.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {schedules.map((s) => {
@@ -165,7 +165,7 @@ export default function SchedulesTab() {
                       {isChain ? 'Chain' : 'War'}
                     </span>
                   </div>
-                  <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '4px' }}>{tct} TCT</div>
+                  <div style={{ color: "var(--text-secondary)", fontSize: '13px', marginTop: '4px' }}>{tct} TCT</div>
                 </div>
                 <button
                   onClick={() => handleDelete(s.id)}

@@ -231,14 +231,14 @@ export default function StocksSubTab({ factionId }) {
     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
     color: '#f4f4f5', borderRadius: '6px', padding: '6px 10px', fontSize: '13px', width: '100%',
   }
-  const labelStyle = { color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }
+  const labelStyle = { color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Stock Investments</h3>
-          <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
             Track members holding faction stock investments.
           </p>
         </div>
@@ -317,7 +317,7 @@ export default function StocksSubTab({ factionId }) {
             </div>
           </div>
           {form.member_keeps_amount && form.tier > 1 && (
-            <div style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '10px' }}>
+            <div style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '10px' }}>
               Tier {form.tier} payment: {fmt(calcFactionIncome(parseFloat(form.member_keeps_amount), parseInt(form.tier)))} / payout
             </div>
           )}
@@ -356,7 +356,7 @@ export default function StocksSubTab({ factionId }) {
                 background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: '8px', padding: '10px 14px',
               }}>
-                <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '4px' }}>{label}</div>
+                <div style={{ color: "var(--text-muted)", fontSize: '11px', marginBottom: '4px' }}>{label}</div>
                 <div style={{ color: highlight ? '#22c55e' : '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{value}</div>
               </div>
             ))}
@@ -365,9 +365,9 @@ export default function StocksSubTab({ factionId }) {
       })()}
 
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Loading…</p>
       ) : grouped.length === 0 ? (
-        <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No stock scheme members recorded.</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No stock scheme members recorded.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {grouped.map(group => {
@@ -401,7 +401,7 @@ export default function StocksSubTab({ factionId }) {
                           {FACTION_OPTIONS.find(f => f.id === group.faction_id)?.label}
                         </span>
                       )}
-                      <span style={{ color: '#52525b', fontSize: '11px' }}>
+                      <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>
                         {group.entries.length} stock{group.entries.length > 1 ? 's' : ''}
                       </span>
                       <span style={{ color: '#22c55e', fontSize: '12px', fontWeight: '600' }}>
@@ -461,7 +461,7 @@ export default function StocksSubTab({ factionId }) {
                                     {TIER_OPTIONS.map(t => <option key={t} value={t} style={{ background: '#1a1a2e' }}>T{t}</option>)}
                                   </select>
                                 ) : (
-                                  <span style={{ color: '#a1a1aa', fontSize: '12px' }}>T{s.tier}</span>
+                                  <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>T{s.tier}</span>
                                 )}
                                 {isEditing ? (
                                   <select style={{ ...inputStyle, padding: '4px 6px', width: 'auto' }}
@@ -470,7 +470,7 @@ export default function StocksSubTab({ factionId }) {
                                     {FREQ_OPTIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
                                   </select>
                                 ) : (
-                                  <span style={{ color: '#71717a', fontSize: '12px' }}>{s.payout_frequency}</span>
+                                  <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{s.payout_frequency}</span>
                                 )}
                               </div>
                               <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
@@ -499,19 +499,19 @@ export default function StocksSubTab({ factionId }) {
                             {isEditing ? (
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px' }}>
                                 <div>
-                                  <div style={{ color: '#52525b', fontSize: '10px', marginBottom: '3px' }}>Stock Cost ($)</div>
+                                  <div style={{ color: "var(--text-faint)", fontSize: '10px', marginBottom: '3px' }}>Stock Cost ($)</div>
                                   <input style={{ ...inputStyle, padding: '4px 8px' }} type="number" step="0.01" min="0"
                                     placeholder="Cost" value={editForm.stock_cost}
                                     onChange={e => setEditForm(f => ({ ...f, stock_cost: e.target.value }))} />
                                 </div>
                                 <div>
-                                  <div style={{ color: '#52525b', fontSize: '10px', marginBottom: '3px' }}>T1 Payment ($)</div>
+                                  <div style={{ color: "var(--text-faint)", fontSize: '10px', marginBottom: '3px' }}>T1 Payment ($)</div>
                                   <input style={{ ...inputStyle, padding: '4px 8px' }} type="number" step="0.01" min="0"
                                     placeholder="T1 payment" value={editForm.member_keeps_amount}
                                     onChange={e => setEditForm(f => ({ ...f, member_keeps_amount: e.target.value }))} />
                                 </div>
                                 <div style={{ gridColumn: '1 / -1' }}>
-                                  <div style={{ color: '#52525b', fontSize: '10px', marginBottom: '3px' }}>Notes</div>
+                                  <div style={{ color: "var(--text-faint)", fontSize: '10px', marginBottom: '3px' }}>Notes</div>
                                   <input style={{ ...inputStyle, padding: '4px 8px' }} placeholder="Notes"
                                     value={editForm.notes}
                                     onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
@@ -520,36 +520,36 @@ export default function StocksSubTab({ factionId }) {
                             ) : (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontSize: '12px' }}>
                                 <span>
-                                  <span style={{ color: '#52525b' }}>Cost: </span>
-                                  <span style={{ color: '#71717a' }}>{s.stock_cost ? fmt(s.stock_cost) : '—'}</span>
+                                  <span style={{ color: "var(--text-faint)" }}>Cost: </span>
+                                  <span style={{ color: "var(--text-muted)" }}>{s.stock_cost ? fmt(s.stock_cost) : '—'}</span>
                                 </span>
                                 <span>
-                                  <span style={{ color: '#52525b' }}>Pay/payout: </span>
+                                  <span style={{ color: "var(--text-faint)" }}>Pay/payout: </span>
                                   {hasPayment
-                                    ? <span style={{ color: '#f4f4f5' }}>{fmt(s.member_keeps_amount)}{s.tier > 1 && <span style={{ color: '#52525b' }}> ×T{s.tier}</span>}</span>
-                                    : <span style={{ color: '#3f3f46', fontStyle: 'italic' }}>item value</span>
+                                    ? <span style={{ color: '#f4f4f5' }}>{fmt(s.member_keeps_amount)}{s.tier > 1 && <span style={{ color: "var(--text-faint)" }}> ×T{s.tier}</span>}</span>
+                                    : <span style={{ color: "var(--text-ghost)", fontStyle: 'italic' }}>item value</span>
                                   }
                                 </span>
                                 {hasPayment && (
                                   <span>
-                                    <span style={{ color: '#52525b' }}>Income: </span>
+                                    <span style={{ color: "var(--text-faint)" }}>Income: </span>
                                     <span style={{ color: '#22c55e' }}>{fmt(factionIncomePerPayout)}/payout · {fmt(factionIncomePerMonth)}/mo</span>
                                   </span>
                                 )}
                                 {!hasPayment && (
-                                  <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>pending armory value</span>
+                                  <span style={{ color: "var(--text-ghost)", fontSize: '11px', fontStyle: 'italic' }}>pending armory value</span>
                                 )}
                               </div>
                             )}
 
                             {/* Last collection */}
                             {!isEditing && lastColl && (
-                              <div style={{ marginTop: '4px', fontSize: '11px', color: '#a1a1aa' }}>
+                              <div style={{ marginTop: '4px', fontSize: '11px', color: "var(--text-secondary)" }}>
                                 Last: {lastColl.period_label} · <span style={{ color: '#22c55e' }}>{fmt(lastColl.amount_paid)}</span>
                               </div>
                             )}
                             {!isEditing && !lastColl && (
-                              <div style={{ marginTop: '4px', fontSize: '11px', color: '#3f3f46' }}>No collections yet</div>
+                              <div style={{ marginTop: '4px', fontSize: '11px', color: "var(--text-ghost)" }}>No collections yet</div>
                             )}
                           </div>
                         ) : (
@@ -588,7 +588,7 @@ export default function StocksSubTab({ factionId }) {
                                     ))}
                                   </select>
                                 ) : (
-                                  <span style={{ color: '#a1a1aa', fontSize: '12px' }}>T{s.tier}</span>
+                                  <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>T{s.tier}</span>
                                 )}
                               </div>
 
@@ -603,7 +603,7 @@ export default function StocksSubTab({ factionId }) {
                                     ))}
                                   </select>
                                 ) : (
-                                  <span style={{ color: '#71717a', fontSize: '12px' }}>{s.payout_frequency}</span>
+                                  <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{s.payout_frequency}</span>
                                 )}
                               </div>
 
@@ -615,8 +615,8 @@ export default function StocksSubTab({ factionId }) {
                                     value={editForm.stock_cost}
                                     onChange={e => setEditForm(f => ({ ...f, stock_cost: e.target.value }))} />
                                 ) : (
-                                  <div style={{ color: '#71717a', fontSize: '12px' }}>
-                                    {s.stock_cost ? fmt(s.stock_cost) : <span style={{ color: '#3f3f46' }}>—</span>}
+                                  <div style={{ color: "var(--text-muted)", fontSize: '12px' }}>
+                                    {s.stock_cost ? fmt(s.stock_cost) : <span style={{ color: "var(--text-ghost)" }}>—</span>}
                                   </div>
                                 )}
                               </div>
@@ -633,10 +633,10 @@ export default function StocksSubTab({ factionId }) {
                                     {hasPayment ? (
                                       <div style={{ color: '#f4f4f5', fontSize: '12px' }}>
                                         {fmt(s.member_keeps_amount)}
-                                        {s.tier > 1 && <span style={{ color: '#52525b', fontSize: '10px' }}> ×T{s.tier}</span>}
+                                        {s.tier > 1 && <span style={{ color: "var(--text-faint)", fontSize: '10px' }}> ×T{s.tier}</span>}
                                       </div>
                                     ) : (
-                                      <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>item value</span>
+                                      <span style={{ color: "var(--text-ghost)", fontSize: '11px', fontStyle: 'italic' }}>item value</span>
                                     )}
                                   </div>
                                 )}
@@ -647,10 +647,10 @@ export default function StocksSubTab({ factionId }) {
                                 {hasPayment ? (
                                   <>
                                     <div style={{ color: '#22c55e', fontSize: '12px' }}>{fmt(factionIncomePerPayout)} / payout</div>
-                                    <div style={{ color: '#52525b', fontSize: '11px' }}>{fmt(factionIncomePerMonth)} / mo</div>
+                                    <div style={{ color: "var(--text-faint)", fontSize: '11px' }}>{fmt(factionIncomePerMonth)} / mo</div>
                                   </>
                                 ) : (
-                                  <span style={{ color: '#3f3f46', fontSize: '11px', fontStyle: 'italic' }}>pending armory</span>
+                                  <span style={{ color: "var(--text-ghost)", fontSize: '11px', fontStyle: 'italic' }}>pending armory</span>
                                 )}
                               </div>
 
@@ -658,11 +658,11 @@ export default function StocksSubTab({ factionId }) {
                               <div>
                                 {lastColl ? (
                                   <>
-                                    <div style={{ color: '#a1a1aa', fontSize: '11px' }}>{lastColl.period_label}</div>
+                                    <div style={{ color: "var(--text-secondary)", fontSize: '11px' }}>{lastColl.period_label}</div>
                                     <div style={{ color: '#22c55e', fontSize: '12px' }}>{fmt(lastColl.amount_paid)}</div>
                                   </>
                                 ) : (
-                                  <span style={{ color: '#3f3f46', fontSize: '11px' }}>No collections</span>
+                                  <span style={{ color: "var(--text-ghost)", fontSize: '11px' }}>No collections</span>
                                 )}
                               </div>
 
@@ -729,7 +729,7 @@ export default function StocksSubTab({ factionId }) {
                             }}>Log</button>
                             <button onClick={() => setCollectingId(null)} style={{
                               background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: '6px', color: '#a1a1aa', padding: '6px 10px', fontSize: '12px', cursor: 'pointer',
+                              borderRadius: '6px', color: "var(--text-secondary)", padding: '6px 10px', fontSize: '12px', cursor: 'pointer',
                             }}>Cancel</button>
                           </div>
                         )}
@@ -738,10 +738,10 @@ export default function StocksSubTab({ factionId }) {
                         {isExpanded && (
                           <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.1)' }}>
                             {s.notes && (
-                              <p style={{ color: '#71717a', fontSize: '12px', marginBottom: '8px' }}>{s.notes}</p>
+                              <p style={{ color: "var(--text-muted)", fontSize: '12px', marginBottom: '8px' }}>{s.notes}</p>
                             )}
                             {s.collections.length === 0 ? (
-                              <p style={{ color: '#3f3f46', fontSize: '12px' }}>No collections logged.</p>
+                              <p style={{ color: "var(--text-ghost)", fontSize: '12px' }}>No collections logged.</p>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 {s.collections.map(c => (
@@ -750,9 +750,9 @@ export default function StocksSubTab({ factionId }) {
                                     padding: '5px 8px', background: 'rgba(255,255,255,0.02)', borderRadius: '5px',
                                     fontSize: '12px',
                                   }}>
-                                    <span style={{ color: '#a1a1aa' }}>{c.period_label}</span>
+                                    <span style={{ color: "var(--text-secondary)" }}>{c.period_label}</span>
                                     <span style={{ color: '#22c55e' }}>{fmt(c.amount_paid)}</span>
-                                    {c.notes && <span style={{ color: '#52525b' }}>{c.notes}</span>}
+                                    {c.notes && <span style={{ color: "var(--text-faint)" }}>{c.notes}</span>}
                                     <ActionBtn onClick={() => handleDeleteCollection(c.id)} color="#b3123f">✕</ActionBtn>
                                   </div>
                                 ))}

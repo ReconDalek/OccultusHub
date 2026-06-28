@@ -20,6 +20,24 @@ function inRange(m, s, e) {
 // vignette → fixed overlay on top of the body (additive atmosphere)
 // particles / extras handled by dedicated sub-components
 
+// Text variable overrides per event theme — shift neutral zinc greys
+// toward the theme's hue so they remain readable on the coloured background.
+// Format: CSS custom property declarations injected onto body.
+const TV = {
+  // warm red/crimson → rose-grey
+  red:    '--text-muted:#9e8a8b;--text-faint:#7a6a6b;--text-ghost:#5c4f50;--text-secondary:#c4aaab;',
+  // orange/amber/fire → warm amber-grey
+  fire:   '--text-muted:#9e8e7a;--text-faint:#7a6e5e;--text-ghost:#5c5248;--text-secondary:#c4b49a;',
+  // amber/gold → warm ochre-grey
+  gold:   '--text-muted:#9e9278;--text-faint:#7a7060;--text-ghost:#5c5448;--text-secondary:#c4b898;',
+  // blue/frost/ice → cool slate-grey
+  frost:  '--text-muted:#7a8a9e;--text-faint:#5e6c7a;--text-ghost:#4a545e;--text-secondary:#a0b4c8;',
+  // purple/violet → lavender-grey
+  purple: '--text-muted:#8a7a9e;--text-faint:#6a5e7a;--text-ghost:#504860;--text-secondary:#b0a0c8;',
+  // green → sage-grey
+  green:  '--text-muted:#7a9e84;--text-faint:#5e7a66;--text-ghost:#485c50;--text-secondary:#a0c4a8;',
+}
+
 export const EVENT_DEFS = [
   {
     id: 'blood_moon',
@@ -30,7 +48,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(160,10,20,0.22) 0%, rgba(100,5,12,0.1) 50%, transparent 72%)',
     pulseAnim: 'evBloodPulse 8s ease-in-out infinite',
     banner: { text: 'BLOOD MOON RISES',       color: '#fca5a5', bg: 'rgba(100,5,20,0.6)',  border: 'rgba(179,18,63,0.5)' },
-    extras: 'bloodMoon',
+    extras: 'bloodMoon', textVars: TV.red,
   },
   {
     id: 'new_year',
@@ -41,7 +59,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(251,191,36,0.1) 0%, transparent 70%)',
     pulseAnim: 'evGoldPulse 6s ease-in-out infinite',
     banner: { text: 'A NEW CYCLE BEGINS',      color: '#fde68a', bg: 'rgba(30,20,0,0.65)', border: 'rgba(251,191,36,0.45)' },
-    particles: 'sparkles',
+    particles: 'sparkles', textVars: TV.gold,
   },
   {
     id: 'valentines',
@@ -52,7 +70,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 100%, rgba(160,20,45,0.18) 0%, rgba(100,10,30,0.08) 55%, transparent 72%)',
     pulseAnim: 'evRosePulse 7s ease-in-out infinite',
     banner: { text: 'THE BLOOD PACT BINDS',    color: '#fda4af', bg: 'rgba(80,5,20,0.65)', border: 'rgba(200,30,60,0.5)' },
-    particles: 'petals',
+    particles: 'petals', textVars: TV.red,
   },
   {
     id: 'st_patricks',
@@ -63,6 +81,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(22,163,74,0.14) 0%, rgba(15,120,50,0.07) 55%, transparent 72%)',
     pulseAnim: 'evGreenShimmer 9s ease-in-out infinite',
     banner: { text: 'THE GREEN VEIL LIFTS',    color: '#a7f3d0', bg: 'rgba(5,35,12,0.65)', border: 'rgba(34,197,94,0.5)' },
+    textVars: TV.green,
   },
   {
     id: 'walpurgis',
@@ -73,7 +92,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 100%, rgba(200,60,10,0.18) 0%, rgba(150,30,5,0.09) 55%, transparent 72%)',
     pulseAnim: 'evFirePulse 5s ease-in-out infinite',
     banner: { text: 'THE WITCHES GATHER',      color: '#fdba74', bg: 'rgba(40,10,0,0.7)',  border: 'rgba(200,70,20,0.55)' },
-    particles: 'embers',
+    particles: 'embers', textVars: TV.fire,
   },
   {
     id: 'summer_solstice',
@@ -84,7 +103,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(220,150,20,0.14) 0%, rgba(160,90,10,0.07) 55%, transparent 72%)',
     pulseAnim: 'evSolarPulse 10s ease-in-out infinite',
     banner: { text: 'THE SUN STANDS STILL',    color: '#fde68a', bg: 'rgba(40,25,0,0.65)', border: 'rgba(220,160,20,0.45)' },
-    particles: 'sunmotes',
+    particles: 'sunmotes', textVars: TV.gold,
   },
   {
     id: 'lammas',
@@ -95,7 +114,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(190,100,10,0.16) 0%, rgba(140,60,5,0.08) 55%, transparent 72%)',
     pulseAnim: 'evHarvestPulse 9s ease-in-out infinite',
     banner: { text: 'THE FIRST HARVEST FALLS', color: '#fcd34d', bg: 'rgba(40,18,0,0.7)',  border: 'rgba(210,140,10,0.5)' },
-    particles: 'grain',
+    particles: 'grain', textVars: TV.fire,
   },
   {
     id: 'autumn_equinox',
@@ -106,7 +125,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(180,70,10,0.15) 0%, rgba(120,40,5,0.08) 55%, transparent 72%)',
     pulseAnim: 'evAutumnPulse 9s ease-in-out infinite',
     banner: { text: 'THE LIGHT YIELDS TO DARK',color: '#fdba74', bg: 'rgba(38,12,0,0.7)',  border: 'rgba(200,90,20,0.5)' },
-    particles: 'leaves',
+    particles: 'leaves', textVars: TV.fire,
   },
   {
     id: 'halloween',
@@ -117,7 +136,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(50,10,80,0.22) 0%, rgba(20,5,35,0.12) 65%, transparent 88%)',
     pulseAnim: 'evHexPulse 6s ease-in-out infinite',
     banner: { text: 'THE VEIL THINS',          color: '#d8b4fe', bg: 'rgba(20,5,35,0.7)',  border: 'rgba(109,40,217,0.6)' },
-    extras: 'halloween',
+    extras: 'halloween', textVars: TV.purple,
   },
   {
     id: 'samhain',
@@ -128,8 +147,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(60,10,100,0.2) 0%, rgba(20,0,45,0.1) 65%, transparent 88%)',
     pulseAnim: 'evSamhainPulse 7s ease-in-out infinite',
     banner: { text: 'THE DEAD ARE REMEMBERED', color: '#e9d5ff', bg: 'rgba(15,0,30,0.75)', border: 'rgba(130,60,200,0.55)' },
-    particles: 'wisps',
-    extras: 'candles',
+    particles: 'wisps', extras: 'candles', textVars: TV.purple,
   },
   {
     id: 'day_of_dead',
@@ -140,8 +158,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 100%, rgba(200,120,10,0.15) 0%, rgba(150,80,5,0.07) 55%, transparent 72%)',
     pulseAnim: 'evMarigoldPulse 8s ease-in-out infinite',
     banner: { text: 'LOS MUERTOS WALK',        color: '#fde68a', bg: 'rgba(40,20,0,0.7)',  border: 'rgba(220,150,20,0.5)' },
-    particles: 'marigolds',
-    extras: ['dayOfDead'],
+    particles: 'marigolds', extras: ['dayOfDead'], textVars: TV.gold,
   },
   {
     id: 'anniversary',
@@ -153,8 +170,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(160,10,45,0.2) 0%, rgba(80,5,60,0.1) 65%, transparent 85%)',
     pulseAnim: 'evAnnivPulse 8s ease-in-out infinite',
     banner: { text: 'ANOTHER YEAR IN THE SHADOWS', color: '#fca5a5', bg: 'rgba(50,3,15,0.78)', border: 'rgba(180,20,50,0.55)' },
-    particles: 'sparkles',
-    extras: ['anniversary', 'candles', 'sigil', 'flicker'],
+    particles: 'sparkles', extras: ['anniversary', 'candles', 'sigil', 'flicker'], textVars: TV.red,
   },
   {
     id: 'winter_solstice',
@@ -166,8 +182,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(80,140,255,0.18) 0%, rgba(30,70,180,0.1) 50%, transparent 72%)',
     pulseAnim: 'evFrostPulse 10s ease-in-out infinite',
     banner: { text: 'THE LONGEST NIGHT FALLS', color: '#e0f2fe', bg: 'rgba(2,8,30,0.78)', border: 'rgba(100,160,255,0.55)' },
-    particles: 'frost',
-    extras: 'icicles',
+    particles: 'frost', extras: 'icicles', textVars: TV.frost,
   },
   {
     id: 'yuletide',
@@ -179,8 +194,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 0%, rgba(140,200,255,0.16) 0%, rgba(60,120,220,0.08) 55%, transparent 72%)',
     pulseAnim: 'evFrostPulse 10s ease-in-out infinite',
     banner: { text: 'YULETIDE FALLS UPON US',  color: '#e0f2fe', bg: 'rgba(2,8,30,0.78)', border: 'rgba(120,180,255,0.55)' },
-    particles: 'snow',
-    extras: 'icicles',
+    particles: 'snow', extras: 'icicles', textVars: TV.frost,
   },
   {
     id: 'spring_equinox',
@@ -191,7 +205,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(50,160,80,0.12) 0%, rgba(20,100,40,0.06) 65%, transparent 85%)',
     pulseAnim: 'evSpringPulse 10s ease-in-out infinite',
     banner: { text: 'THE WORLD FINDS BALANCE',  color: '#a7f3d0', bg: 'rgba(4,22,10,0.7)', border: 'rgba(52,211,153,0.45)' },
-    particles: 'blossoms',
+    particles: 'blossoms', textVars: TV.green,
   },
   {
     id: 'beltane',
@@ -202,8 +216,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 100%, rgba(210,70,5,0.2) 0%, rgba(150,35,5,0.1) 55%, transparent 72%)',
     pulseAnim: 'evBeltanePulse 5s ease-in-out infinite',
     banner: { text: 'THE FIRES ARE LIT',        color: '#fed7aa', bg: 'rgba(45,12,0,0.72)', border: 'rgba(220,80,10,0.55)' },
-    particles: 'embers',
-    extras: 'bonfire',
+    particles: 'embers', extras: 'bonfire', textVars: TV.fire,
   },
 ]
 
@@ -745,7 +758,7 @@ export default function SeasonalEvents() {
     const ev = activeEvents[0]
     const el = tag || Object.assign(document.createElement('style'), { id: 'occultus-event-bg' })
     if (!tag) document.head.appendChild(el)
-    el.textContent = `body { background: ${ev.bodyBg} !important; }`
+    el.textContent = `body { background: ${ev.bodyBg} !important; ${ev.textVars || ''} }`
     return () => { document.getElementById('occultus-event-bg')?.remove() }
   }, [activeEvents.map(e => e.id).join(',')])
 

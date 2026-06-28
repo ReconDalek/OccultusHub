@@ -67,7 +67,7 @@ function InlineEditForm({ card, type, onSave, onCancel }) {
         {/* Picks (shadow only) */}
         {type === 'shadow' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#a1a1aa' }}>Picks:</span>
+            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Picks:</span>
             {[1, 2].map(n => (
               <button
                 key={n}
@@ -116,7 +116,7 @@ function InlineEditForm({ card, type, onSave, onCancel }) {
           style={{
             padding: '6px 14px', borderRadius: 7,
             border: '1px solid rgba(255,255,255,0.12)',
-            background: 'transparent', color: '#a1a1aa', fontSize: 12, cursor: 'pointer',
+            background: 'transparent', color: "var(--text-secondary)", fontSize: 12, cursor: 'pointer',
           }}
         >
           Cancel
@@ -197,7 +197,7 @@ function NewCardForm({ defaultType, onSave, onCancel }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 10 }}>
         {form.type === 'shadow' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#a1a1aa' }}>Picks:</span>
+            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Picks:</span>
             {[1, 2].map(n => (
               <button key={n} onClick={() => setForm(f => ({ ...f, picks: n }))} style={{
                 width: 32, height: 28, borderRadius: 5,
@@ -240,7 +240,7 @@ function NewCardForm({ defaultType, onSave, onCancel }) {
           style={{
             padding: '6px 14px', borderRadius: 7,
             border: '1px solid rgba(255,255,255,0.12)',
-            background: 'transparent', color: '#a1a1aa', fontSize: 12, cursor: 'pointer',
+            background: 'transparent', color: "var(--text-secondary)", fontSize: 12, cursor: 'pointer',
           }}
         >
           Cancel
@@ -300,7 +300,7 @@ export default function AdminCardsTab() {
               fontFamily: 'Cinzel, serif', letterSpacing: '1px', cursor: 'pointer',
               border: view === t ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.1)',
               background: view === t ? 'rgba(179,18,63,0.15)' : 'transparent',
-              color: view === t ? '#f4f4f5' : '#a1a1aa',
+              color: view === t ? '#f4f4f5' : "var(--text-secondary)",
             }}
           >
             {t === 'shadow' ? '◻ Shadow Cards' : '◼ Fate Cards'}
@@ -310,7 +310,7 @@ export default function AdminCardsTab() {
 
       {/* Stats + add button */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: '#a1a1aa' }}>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {list.length} cards &nbsp;·&nbsp; {activeCount} active
         </div>
         {!addingNew && (
@@ -338,11 +338,11 @@ export default function AdminCardsTab() {
 
       {/* Card list */}
       {loading ? (
-        <div style={{ color: '#a1a1aa', fontSize: 13, textAlign: 'center', padding: '32px 0' }}>Loading…</div>
+        <div style={{ color: "var(--text-secondary)", fontSize: 13, textAlign: 'center', padding: '32px 0' }}>Loading…</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {list.length === 0 && (
-            <div style={{ color: '#a1a1aa', fontSize: 13, textAlign: 'center', padding: '32px 0' }}>No cards yet.</div>
+            <div style={{ color: "var(--text-secondary)", fontSize: 13, textAlign: 'center', padding: '32px 0' }}>No cards yet.</div>
           )}
 
           {list.map(card => {
@@ -380,7 +380,7 @@ export default function AdminCardsTab() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: '#f4f4f5', lineHeight: 1.55 }}>
                         {card.is_blank
-                          ? <em style={{ color: '#a1a1aa' }}>— blank vessel —</em>
+                          ? <em style={{ color: "var(--text-secondary)" }}>— blank vessel —</em>
                           : card.text}
                       </div>
                       <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
@@ -390,7 +390,7 @@ export default function AdminCardsTab() {
                           </span>
                         )}
                         {card.is_blank && (
-                          <span style={{ fontSize: 10, color: '#a1a1aa', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '1px 6px' }}>
+                          <span style={{ fontSize: 10, color: "var(--text-secondary)", background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '1px 6px' }}>
                             blank vessel
                           </span>
                         )}

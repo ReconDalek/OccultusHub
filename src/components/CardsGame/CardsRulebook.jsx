@@ -28,10 +28,10 @@ export default function CardsRulebook({ onClose }) {
             <div style={{ fontFamily: 'Cinzel, serif', fontSize: 22, color: '#f4f4f5', letterSpacing: '2px' }}>
               Cards Against Occultus
             </div>
-            <div style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4 }}>The Codex of Fate</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>The Codex of Fate</div>
           </div>
           <button onClick={onClose} style={{
-            background: 'none', border: 'none', color: '#a1a1aa', fontSize: 22, cursor: 'pointer',
+            background: 'none', border: 'none', color: "var(--text-secondary)", fontSize: 22, cursor: 'pointer',
           }}>✕</button>
         </div>
 

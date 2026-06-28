@@ -33,7 +33,7 @@ export default function CipherReviewTab() {
       <h2 className="font-cinzel mb-1" style={{ fontSize: 22, color: '#f4f4f5' }}>
         Cipher Review
       </h2>
-      <p style={{ color: '#a1a1aa', fontSize: 13, marginBottom: 24 }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 24 }}>
         Review member cipher submissions by date.
       </p>
 
@@ -71,7 +71,7 @@ export default function CipherReviewTab() {
               borderRadius: 20,
               padding: '4px 12px',
               fontSize: 12,
-              color: '#a1a1aa',
+              color: "var(--text-secondary)",
             }}>
               {data.difficulty}
             </span>
@@ -88,13 +88,13 @@ export default function CipherReviewTab() {
           marginBottom: 24,
           fontSize: 13,
         }}>
-          <span style={{ color: '#a1a1aa' }}>Answer: </span>
+          <span style={{ color: "var(--text-secondary)" }}>Answer: </span>
           <span style={{ color: '#f4f4f5', fontWeight: 600, letterSpacing: 1 }}>{data.plaintext}</span>
         </div>
       )}
 
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: 13 }}>Loading submissions...</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Loading submissions...</p>
       ) : !data?.submissions?.length ? (
         <div style={{
           textAlign: 'center',
@@ -111,7 +111,7 @@ export default function CipherReviewTab() {
           {/* Summary */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
             {[
-              { label: 'Total', value: data.submissions.length, color: '#a1a1aa' },
+              { label: 'Total', value: data.submissions.length, color: "var(--text-secondary)" },
               { label: 'Correct', value: correct.length, color: '#10b981' },
               { label: 'Incorrect', value: incorrect.length, color: '#ef4444' },
             ].map(stat => (

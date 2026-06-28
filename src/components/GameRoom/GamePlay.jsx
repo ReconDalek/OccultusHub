@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
 const ROLE_META = {
-  congregation: { icon: '◌', color: '#a1a1aa', label: 'Congregation' },
+  congregation: { icon: '◌', color: "var(--text-secondary)", label: 'Congregation' },
   cabal:        { icon: '◈', color: '#b3123f', label: 'Cabal Agent' },
   inquisitor:   { icon: '◉', color: '#9f67ff', label: 'Inquisitor' },
   warden:       { icon: '◎', color: '#22c55e', label: 'Warden' },
@@ -325,7 +325,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             : isDay1 ? '☀️ Day 1 — Introduction'
             : `☀️ Day ${Math.ceil(room.phase / 2)} — Discussion`}
         </p>
-        <p style={{ fontSize: 12, color: '#a1a1aa', lineHeight: 1.55 }}>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55 }}>
           {isNight
             ? (hasNightAction
                 ? (isActWindow ? 'Dawn approaches — submit your action now or it will be lost.' : 'Use your ability before dawn. Others sleep.')
@@ -342,7 +342,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       <div style={{ padding: '10px 12px', background: `${roleMeta.color}15`, border: `1px solid ${roleMeta.color}35`, borderRadius: 8 }}>
         <p style={{ fontSize: 10, color: roleMeta.color, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 }}>Your Role</p>
         <p style={{ fontSize: 13, fontWeight: 600, color: roleMeta.color }}>{roleMeta.icon} {roleMeta.label}</p>
-        {!isAlive && <p style={{ fontSize: 11, color: '#71717a', marginTop: 4 }}>Sacrificed — spectating</p>}
+        {!isAlive && <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Sacrificed — spectating</p>}
       </div>
 
       {/* Cabal vote summary (only Cabal members see this at night) */}
@@ -352,7 +352,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             Cabal Vote · {totalCabalVotes} submitted
           </p>
           {totalCabalVotes === 0 ? (
-            <p style={{ fontSize: 11, color: '#71717a' }}>No votes cast yet</p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)" }}>No votes cast yet</p>
           ) : (
             cabalVoteCounts.map(v => {
               const p = players.find(pl => pl.id === v.target_player_id)
@@ -369,7 +369,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
 
       {/* Player list */}
       <div>
-        <p style={{ fontSize: 10, color: '#71717a', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
+        <p style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
           The Circle · {players.filter(p => p.is_alive).length} alive
         </p>
         {players.map(p => {
@@ -398,10 +398,10 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              <span style={{ fontSize: 13, color: pRole?.color || '#52525b', flexShrink: 0 }}>
+              <span style={{ fontSize: 13, color: pRole?.color || "var(--text-faint)", flexShrink: 0 }}>
                 {p.is_alive ? (pRole?.icon || '◌') : '✕'}
               </span>
-              <span style={{ fontSize: isMobile ? 14 : 12, flex: 1, color: p.is_me ? '#c084fc' : p.is_alive ? '#f4f4f5' : '#52525b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: isMobile ? 14 : 12, flex: 1, color: p.is_me ? '#c084fc' : p.is_alive ? '#f4f4f5' : "var(--text-faint)", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {p.display_name}{p.is_me ? ' (you)' : ''}
               </span>
               {voteCount > 0 && isDay && (
@@ -423,7 +423,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       {/* Day vote — only during voting window */}
       {isAlive && isVotingWindow && !myVote && (
         <ActionPanel color="#eab308" title="Cast Your Judgment">
-          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
             {voteTarget ? `Banish: ${players.find(p => p.id === voteTarget)?.display_name}` : 'Select a player above'}
           </p>
           <button onClick={submitVote} disabled={!voteTarget || submitting}
@@ -437,7 +437,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       {/* Cabal kill */}
       {isAlive && isNight && myRole === 'cabal' && !myAction && (
         <ActionPanel color="#b3123f" title="Choose a Sacrifice">
-          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
             {actionTarget ? `Target: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
           </p>
           <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
@@ -450,7 +450,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       {/* Inquisitor investigate */}
       {isAlive && isNight && myRole === 'inquisitor' && canInvestigateNow && !myAction && (
         <ActionPanel color="#9f67ff" title="Investigate">
-          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
             {actionTarget ? `Investigate: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
           </p>
           <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
@@ -461,8 +461,8 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       )}
       {isAlive && isNight && myRole === 'inquisitor' && canInvestigateNow === false && (
         <div style={{ padding: '10px 12px', background: 'rgba(109,40,217,0.05)', border: '1px solid rgba(109,40,217,0.18)', borderRadius: 8 }}>
-          <p style={{ fontSize: 12, color: '#71717a' }}>◉ Your sight rests this night.</p>
-          <p style={{ fontSize: 11, color: '#52525b', marginTop: 4 }}>You may investigate next night.</p>
+          <p style={{ fontSize: 12, color: "var(--text-muted)" }}>◉ Your sight rests this night.</p>
+          <p style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>You may investigate next night.</p>
         </div>
       )}
 
@@ -478,7 +478,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
                 borderRadius: 6,
                 border: `1px solid ${wardenMode === 'guard' ? '#22c55e' : 'rgba(34,197,94,0.25)'}`,
                 background: wardenMode === 'guard' ? 'rgba(34,197,94,0.18)' : 'transparent',
-                color: wardenMode === 'guard' ? '#4ade80' : '#71717a',
+                color: wardenMode === 'guard' ? '#4ade80' : "var(--text-muted)",
                 cursor: 'pointer',
               }}>
               🛡 Guard Self
@@ -490,7 +490,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
                 borderRadius: 6,
                 border: `1px solid ${wardenMode === 'shoot' ? '#f97316' : 'rgba(249,115,22,0.25)'}`,
                 background: wardenMode === 'shoot' ? 'rgba(249,115,22,0.18)' : 'transparent',
-                color: wardenMode === 'shoot' ? '#fb923c' : '#71717a',
+                color: wardenMode === 'shoot' ? '#fb923c' : "var(--text-muted)",
                 cursor: 'pointer',
               }}>
               🔫 Shoot
@@ -499,7 +499,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
 
           {wardenMode === 'guard' ? (
             <>
-              <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.55, marginBottom: 10 }}>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 10 }}>
                 Stand your ground. If the Cabal targets you tonight, your bullet fires back — one attacker falls.
               </p>
               <button onClick={() => submitAction('guard')} disabled={submitting}
@@ -509,10 +509,10 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
             </>
           ) : (
             <>
-              <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.55, marginBottom: 8 }}>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 8 }}>
                 Fire now. Your target always dies — but if they are innocent, the congregation loses one of their own.
               </p>
-              <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
                 {actionTarget ? `Target: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
               </p>
               <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
@@ -525,18 +525,18 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       )}
       {isAlive && isNight && myRole === 'warden' && bulletSpent && (
         <div style={{ padding: '10px 12px', background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 8 }}>
-          <p style={{ fontSize: 12, color: '#52525b' }}>◎ Your bullet has been spent.</p>
-          <p style={{ fontSize: 11, color: '#3f3f46', marginTop: 4 }}>You observe the night.</p>
+          <p style={{ fontSize: 12, color: "var(--text-faint)" }}>◎ Your bullet has been spent.</p>
+          <p style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 4 }}>You observe the night.</p>
         </div>
       )}
 
       {/* Deceiver corrupt */}
       {isAlive && isNight && myRole === 'deceiver' && !myAction && (
         <ActionPanel color="#e879f9" title="Corrupt an Investigation">
-          <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.55, marginBottom: 8 }}>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 8 }}>
             Choose a target. If the Inquisitor investigates them tonight, the result will be inverted.
           </p>
-          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
             {actionTarget ? `Target: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
           </p>
           <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
@@ -549,10 +549,10 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       {/* Acolyte anoint */}
       {isAlive && isNight && myRole === 'acolyte' && !anointSpent && !myAction && (
         <ActionPanel color="#38bdf8" title="Bestow Your Blessing — 1 use">
-          <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.55, marginBottom: 8 }}>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.55, marginBottom: 8 }}>
             Anoint a player. If the Cabal targets them tonight, the sacrifice is turned away. Your blessing is spent on use.
           </p>
-          <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
             {actionTarget ? `Anoint: ${players.find(p => p.id === actionTarget)?.display_name}` : 'Select a player above'}
           </p>
           <button onClick={() => submitAction()} disabled={!actionTarget || submitting}
@@ -563,8 +563,8 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       )}
       {isAlive && isNight && myRole === 'acolyte' && anointSpent && (
         <div style={{ padding: '10px 12px', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 8 }}>
-          <p style={{ fontSize: 12, color: '#52525b' }}>✧ Your blessing has been bestowed.</p>
-          <p style={{ fontSize: 11, color: '#3f3f46', marginTop: 4 }}>You observe the night.</p>
+          <p style={{ fontSize: 12, color: "var(--text-faint)" }}>✧ Your blessing has been bestowed.</p>
+          <p style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 4 }}>You observe the night.</p>
         </div>
       )}
 
@@ -574,7 +574,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       {/* No night action (congregation, apostate, or spent) */}
       {isNight && isAlive && !hasNightAction && (myRole === 'congregation' || myRole === 'apostate') && (
         <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-          <p style={{ fontSize: 12, color: '#52525b', lineHeight: 1.5 }}>You sleep through the Witching Hour.</p>
+          <p style={{ fontSize: 12, color: "var(--text-faint)", lineHeight: 1.5 }}>You sleep through the Witching Hour.</p>
         </div>
       )}
 
@@ -584,7 +584,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
           <p style={{ fontSize: 10, color: '#9f67ff', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>Vision Log</p>
           {inquisitorMsgs.map((m, i) => (
             <p key={i} style={{ fontSize: 11, color: '#c084fc', marginBottom: 5, lineHeight: 1.55 }}>
-              <span style={{ color: '#52525b' }}>Phase {m.phase}: </span>{m.message}
+              <span style={{ color: "var(--text-faint)" }}>Phase {m.phase}: </span>{m.message}
             </p>
           ))}
         </div>
@@ -600,7 +600,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
         borderBottom: `1px solid ${isNight && isCabalFaction ? 'rgba(179,18,63,0.22)' : isNight ? 'rgba(109,40,217,0.18)' : 'rgba(255,255,255,0.07)'}`,
         background: isNight && isCabalFaction ? 'rgba(179,18,63,0.1)' : 'transparent',
         fontSize: 11, letterSpacing: 2,
-        color: isNight && isCabalFaction ? '#fb7185' : '#52525b',
+        color: isNight && isCabalFaction ? '#fb7185' : "var(--text-faint)",
         transition: 'all 1.5s ease',
       }}>
         {isNight && isCabalFaction ? '◈ CABAL CHANNEL — private' : isNight ? '— silence until dawn —' : '◌ PUBLIC CHAT'}
@@ -639,7 +639,7 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
           </div>
         ) : (
           <div style={{ textAlign: 'center', fontSize: 12, padding: '6px 0',
-            color: isVotingWindow ? '#eab308' : isActWindow ? '#fb7185' : '#52525b' }}>
+            color: isVotingWindow ? '#eab308' : isActWindow ? '#fb7185' : "var(--text-faint)" }}>
             {!isAlive
               ? 'The sacrificed observe in silence'
               : isVotingWindow ? '⚖ Voting is open — cast your judgment'
@@ -666,12 +666,12 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
       {showRoleModal && myRole && (
         <div style={modalOverlay} onClick={() => setShowRoleModal(false)}>
           <div style={modalBox} onClick={e => e.stopPropagation()}>
-            <p style={{ fontSize: 11, color: '#71717a', letterSpacing: 3, textTransform: 'uppercase', marginBottom: 14 }}>Your Role</p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 3, textTransform: 'uppercase', marginBottom: 14 }}>Your Role</p>
             <div style={{ fontSize: 48, marginBottom: 10 }}>{roleMeta.icon}</div>
             <h2 className="font-cinzel" style={{ fontSize: isMobile ? 22 : 28, color: roleMeta.color, letterSpacing: 4, marginBottom: 10 }}>
               {roleMeta.label}
             </h2>
-            <p style={{ fontSize: 13, color: '#a1a1aa', maxWidth: 280, margin: '0 auto 20px', lineHeight: 1.7 }}>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", maxWidth: 280, margin: '0 auto 20px', lineHeight: 1.7 }}>
               {roleFlavorText[myRole]}
             </p>
             {isCabalFaction && (
@@ -682,13 +682,13 @@ export default function GamePlay({ gameState, roomCode, displayName, guestToken,
                 {players.filter(p => CABAL_FACTION.includes(p.role) && !p.is_me).map(p => (
                   <div key={p.id} style={{ fontSize: 13, color: '#f87171' }}>
                     {p.display_name}
-                    <span style={{ fontSize: 11, color: '#71717a', marginLeft: 6 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>
                       ({ROLE_META[p.role]?.label})
                     </span>
                   </div>
                 ))}
                 {players.filter(p => CABAL_FACTION.includes(p.role) && !p.is_me).length === 0 && (
-                  <div style={{ fontSize: 12, color: '#71717a' }}>You act alone</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>You act alone</div>
                 )}
               </div>
             )}
@@ -1184,7 +1184,7 @@ function TabBtn({ active, label, badge, onClick }) {
     <button onClick={onClick} style={{
       flex: 1, padding: '13px 8px',
       background: 'none', border: 'none',
-      color: active ? '#c084fc' : '#71717a',
+      color: active ? '#c084fc' : "var(--text-muted)",
       fontSize: 13, fontWeight: active ? 600 : 400,
       cursor: 'pointer', position: 'relative',
       borderBottom: active ? '2px solid #9f67ff' : '2px solid transparent',
@@ -1210,7 +1210,7 @@ function DonePanel({ color, text, sub }) {
   return (
     <div style={{ padding: '10px 12px', background: `${color}10`, border: `1px solid ${color}30`, borderRadius: 8 }}>
       <p style={{ fontSize: 12, color }}>✓ {text}</p>
-      {sub && <p style={{ fontSize: 11, color: '#71717a', marginTop: 4 }}>{sub}</p>}
+      {sub && <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{sub}</p>}
     </div>
   )
 }
@@ -1245,7 +1245,7 @@ function ChatMessage({ msg, isOracle, isNight }) {
         minWidth: 28, height: 28, borderRadius: '50%', flexShrink: 0,
         background: isNight ? 'rgba(109,40,217,0.12)' : 'rgba(255,255,255,0.06)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, color: '#71717a',
+        fontSize: 11, color: "var(--text-muted)",
       }}>
         {msg.display_name[0]?.toUpperCase()}
       </div>
@@ -1302,7 +1302,7 @@ const iconBtn = {
   padding: '7px 10px',
   background: 'rgba(255,255,255,0.05)',
   border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: 6, color: '#a1a1aa', fontSize: 14, cursor: 'pointer',
+  borderRadius: 6, color: "var(--text-secondary)", fontSize: 14, cursor: 'pointer',
 }
 
 const modalOverlay = {

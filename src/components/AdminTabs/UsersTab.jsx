@@ -105,13 +105,13 @@ export default function UsersTab() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Login Time
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   IP Address
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   User Agent
                 </th>
               </tr>
@@ -122,10 +122,10 @@ export default function UsersTab() {
                   <td style={{ padding: '8px', color: '#f4f4f5' }}>
                     {formatUTC(entry.login_at)}
                   </td>
-                  <td style={{ padding: '8px', color: '#a1a1aa' }}>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)" }}>
                     {entry.ip_address}
                   </td>
-                  <td style={{ padding: '8px', color: '#a1a1aa', fontSize: '12px' }}>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)", fontSize: '12px' }}>
                     {entry.user_agent?.substring(0, 50)}...
                   </td>
                 </tr>
@@ -154,28 +154,28 @@ export default function UsersTab() {
       </div>
 
       {loading ? (
-        <p style={{ color: '#a1a1aa' }}>Loading users...</p>
+        <p style={{ color: "var(--text-secondary)" }}>Loading users...</p>
       ) : (
         <div className="overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Username
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Torn ID
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Faction
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Logins
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Status
                 </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: '#a1a1aa' }}>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
                   Actions
                 </th>
               </tr>
@@ -184,18 +184,18 @@ export default function UsersTab() {
               {users.map((u) => (
                 <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                   <td style={{ padding: '8px', color: '#f4f4f5' }}>{u.username}</td>
-                  <td style={{ padding: '8px', color: '#a1a1aa' }}>{u.torn_user_id}</td>
-                  <td style={{ padding: '8px', color: '#a1a1aa' }}>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)" }}>{u.torn_user_id}</td>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)" }}>
                     {u.faction_position || 'Visitor'}
                   </td>
-                  <td style={{ padding: '8px', color: '#a1a1aa' }}>{u.login_count}</td>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)" }}>{u.login_count}</td>
                   <td style={{ padding: '8px' }}>
                     <span
                       style={{
                         padding: '4px 8px',
                         borderRadius: '4px',
                         background: u.is_owner ? 'rgba(218,165,32,0.3)' : u.is_admin ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.08)',
-                        color: u.is_owner ? '#daa520' : u.is_admin ? '#ff2f6d' : '#a1a1aa',
+                        color: u.is_owner ? '#daa520' : u.is_admin ? '#ff2f6d' : "var(--text-secondary)",
                         fontSize: '12px',
                       }}
                     >

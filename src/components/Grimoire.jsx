@@ -281,7 +281,7 @@ export default function Grimoire({ open, onClose, openToPage = null }) {
                 {entry.title}
               </h3>
               <p style={{
-                color: '#a1a1aa', lineHeight: 2, fontSize: '14px',
+                color: "var(--text-secondary)", lineHeight: 2, fontSize: '14px',
                 textAlign: 'center', margin: 0, fontStyle: 'italic',
               }}>
                 {entry.body}

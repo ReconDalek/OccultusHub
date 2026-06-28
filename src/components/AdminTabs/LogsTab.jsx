@@ -33,7 +33,7 @@ function MetaBlock({ meta }) {
     <pre style={{
       marginTop: '6px', padding: '8px 10px',
       background: 'rgba(0,0,0,0.3)', borderRadius: '6px',
-      fontSize: '11px', color: '#71717a', overflowX: 'auto',
+      fontSize: '11px', color: "var(--text-muted)", overflowX: 'auto',
       maxHeight: '160px', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
     }}>
       {JSON.stringify(meta, null, 2)}
@@ -84,18 +84,18 @@ function LogRow({ log, onDelete }) {
         style={{
           position: 'absolute', top: '6px', right: '8px',
           background: 'none', border: 'none', cursor: 'pointer',
-          color: '#52525b', fontSize: '14px', lineHeight: 1, padding: '2px 4px',
+          color: "var(--text-faint)", fontSize: '14px', lineHeight: 1, padding: '2px 4px',
           borderRadius: '4px', zIndex: 1,
         }}
         onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
-        onMouseLeave={e => e.currentTarget.style.color = '#52525b'}
+        onMouseLeave={e => e.currentTarget.style.color = "var(--text-faint)"}
       >
         ✕
       </button>
 
       {/* Main row */}
       <div style={{ display: 'grid', gridTemplateColumns: '160px 90px 110px 1fr auto', gap: '10px', alignItems: 'center', paddingRight: '20px' }}>
-        <span style={{ color: '#52525b', fontSize: '11px', fontFamily: 'monospace' }}>{ts(log.created_at)}</span>
+        <span style={{ color: "var(--text-faint)", fontSize: '11px', fontFamily: 'monospace' }}>{ts(log.created_at)}</span>
 
         <span style={{
           padding: '2px 7px', borderRadius: '4px', fontSize: '11px', fontWeight: '600',
@@ -106,7 +106,7 @@ function LogRow({ log, onDelete }) {
 
         <span style={{
           padding: '2px 7px', borderRadius: '4px', fontSize: '11px',
-          background: 'rgba(255,255,255,0.05)', color: '#a1a1aa', textAlign: 'center',
+          background: 'rgba(255,255,255,0.05)', color: "var(--text-secondary)", textAlign: 'center',
         }}>
           {CATEGORY_LABELS[log.category] || log.category}
         </span>
@@ -115,11 +115,11 @@ function LogRow({ log, onDelete }) {
           <span style={{ color: '#e4e4e7', fontSize: '13px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {log.message}
           </span>
-          <span style={{ color: '#3f3f46', fontSize: '11px' }}>{log.event}</span>
+          <span style={{ color: "var(--text-ghost)", fontSize: '11px' }}>{log.event}</span>
         </div>
 
         {hasDetail && (
-          <span style={{ color: '#52525b', fontSize: '12px', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
+          <span style={{ color: "var(--text-faint)", fontSize: '12px', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
         )}
       </div>
 
@@ -128,13 +128,13 @@ function LogRow({ log, onDelete }) {
         <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: log.meta ? '8px' : 0 }}>
             {log.username && (
-              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
+              <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
                 Key used: <span style={{ color: '#f4f4f5' }}>{log.username}</span>
-                {log.torn_user_id && <span style={{ color: '#52525b' }}> (#{log.torn_user_id})</span>}
+                {log.torn_user_id && <span style={{ color: "var(--text-faint)" }}> (#{log.torn_user_id})</span>}
               </span>
             )}
             {log.faction_id && (
-              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
+              <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
                 Faction: <span style={{ color: '#f4f4f5' }}>{log.faction_id}</span>
               </span>
             )}
@@ -209,7 +209,7 @@ export default function LogsTab() {
         <h2 style={{ fontFamily: 'Cinzel, serif', color: '#f4f4f5', fontSize: '18px', letterSpacing: '1px', margin: '0 0 4px 0' }}>
           System Logs
         </h2>
-        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
           All site events — API calls, auth, cron jobs, errors. API keys are never stored; users are identified by name/ID only.
         </p>
       </div>
@@ -255,14 +255,14 @@ export default function LogsTab() {
             style={{
               padding: '7px 12px', borderRadius: '8px',
               background: 'transparent', border: '1px solid rgba(255,255,255,0.08)',
-              color: '#71717a', fontSize: '12px', cursor: 'pointer',
+              color: "var(--text-muted)", fontSize: '12px', cursor: 'pointer',
             }}
           >
             Clear filters
           </button>
         )}
 
-        {!loading && <span style={{ color: '#52525b', fontSize: '12px', marginLeft: 'auto' }}>{logs.length} entries</span>}
+        {!loading && <span style={{ color: "var(--text-faint)", fontSize: '12px', marginLeft: 'auto' }}>{logs.length} entries</span>}
       </div>
 
       {/* Column headers */}
@@ -271,7 +271,7 @@ export default function LogsTab() {
         gap: '10px', padding: '4px 14px 8px', marginBottom: '4px',
       }}>
         {['Timestamp (TCT)', 'Level', 'Category', 'Message / Event'].map(h => (
-          <span key={h} style={{ color: '#52525b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+          <span key={h} style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
         ))}
       </div>
 
@@ -283,11 +283,11 @@ export default function LogsTab() {
       )}
 
       {loading && !logs.length && (
-        <div style={{ padding: '48px', textAlign: 'center', color: '#52525b', fontSize: '14px' }}>Loading…</div>
+        <div style={{ padding: '48px', textAlign: 'center', color: "var(--text-faint)", fontSize: '14px' }}>Loading…</div>
       )}
 
       {!loading && !logs.length && !error && (
-        <div style={{ padding: '48px', textAlign: 'center', color: '#52525b', fontSize: '14px' }}>No logs found.</div>
+        <div style={{ padding: '48px', textAlign: 'center', color: "var(--text-faint)", fontSize: '14px' }}>No logs found.</div>
       )}
 
       {logs.map(log => <LogRow key={log.id} log={log} onDelete={id => setLogs(prev => prev.filter(l => l.id !== id))} />)}
@@ -300,7 +300,7 @@ export default function LogsTab() {
             style={{
               padding: '9px 24px', borderRadius: '8px',
               background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-              color: loading ? '#52525b' : '#a1a1aa', fontSize: '13px', cursor: loading ? 'default' : 'pointer',
+              color: loading ? "var(--text-faint)" : "var(--text-secondary)", fontSize: '13px', cursor: loading ? 'default' : 'pointer',
             }}
           >
             {loading ? 'Loading…' : 'Load more'}

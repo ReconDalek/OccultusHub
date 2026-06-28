@@ -54,7 +54,7 @@ function StatusBadge({ status, result }) {
     completed: result === 'won'
       ? { label: 'WON',     bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.4)',   color: '#22c55e' }
       : { label: 'LOST',    bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)',   color: '#ef4444' },
-  }[status] || { label: status?.toUpperCase(), bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.15)', color: '#a1a1aa' }
+  }[status] || { label: status?.toUpperCase(), bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.15)', color: "var(--text-secondary)" }
 
   return (
     <span style={{
@@ -74,7 +74,7 @@ function Stat({ label, value, accent, red }) {
   const bdr   = accent ? 'rgba(34,197,94,0.2)'  : red ? 'rgba(239,68,68,0.2)'  : 'rgba(255,255,255,0.07)'
   return (
     <div style={{ background: bg, border: `1px solid ${bdr}`, borderRadius: '8px', padding: '10px 14px' }}>
-      <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>
         {label}
       </p>
       <p style={{ color, fontSize: '15px', fontWeight: '700', margin: 0 }}>{value}</p>
@@ -87,7 +87,7 @@ function Stat({ label, value, accent, red }) {
 function Section({ title, children }) {
   return (
     <div style={{ marginTop: '20px' }}>
-      <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.07)', display: 'inline-block' }} />
         {title}
         <span style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.07)', display: 'inline-block' }} />
@@ -122,13 +122,13 @@ function MemberStatsTable({ attackerStats, defendStats }) {
   }
 
   if (!rows.length) {
-    return <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attack data recorded yet.</p>
+    return <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attack data recorded yet.</p>
   }
 
   const STICKY_BG = '#141414'
   const th = {
     padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase',
-    letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600',
+    letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600',
     borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap',
   }
   const thL = { ...th, textAlign: 'left' }
@@ -173,22 +173,22 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
               >
                 <td style={tdSticky}>{r.attacker_name || `[${r.attacker_id}]`}</td>
-                <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
-                <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
-                <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : '#71717a' }}>{fmt(r.war_interrupted)}</td>
+                <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(r.war_hits)}</td>
+                <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.war_losses)}</td>
+                <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : "var(--text-muted)" }}>{fmt(r.war_interrupted)}</td>
                 <td style={{ ...td, color: '#22c55e' }}>{fmt(gained, 2)}</td>
-                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : '#71717a' }}>{fmt(bonus, 2)}</td>
-                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : '#71717a' }}>{fmt(respectLost, 2)}</td>
+                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : "var(--text-muted)" }}>{fmt(bonus, 2)}</td>
+                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(respectLost, 2)}</td>
                 <td style={{ ...td, color: netPos ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
                   {netPos ? '+' : ''}{fmt(net, 2)}
                 </td>
                 <td style={td}>{fmt(r.avg_fair_fight, 2)}</td>
-                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : '#71717a' }}>{fmt(def.defends_won)}</td>
-                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : '#71717a' }}>{fmt(def.defends_lost)}</td>
+                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(def.defends_won)}</td>
+                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(def.defends_lost)}</td>
                 <td style={td}>{fmt(r.outside_attacks)}</td>
-                <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : '#71717a' }}>{fmt(r.assists)}</td>
-                <td style={{ ...td, color: (r.friendly_hits || 0) > 0 ? '#fb923c' : '#71717a' }}>{fmt(r.friendly_hits || 0)}</td>
-                <td style={{ ...td, color: '#a1a1aa' }}>{fmt(r.energy_used)}</td>
+                <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : "var(--text-muted)" }}>{fmt(r.assists)}</td>
+                <td style={{ ...td, color: (r.friendly_hits || 0) > 0 ? '#fb923c' : "var(--text-muted)" }}>{fmt(r.friendly_hits || 0)}</td>
+                <td style={{ ...td, color: "var(--text-secondary)" }}>{fmt(r.energy_used)}</td>
               </tr>
             )
           })}
@@ -216,7 +216,7 @@ function ItemBadge({ name, count, style: s }) {
 
 function ArmoryTable({ armory }) {
   if (!armory?.length) {
-    return <p style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No armory data recorded.</p>
+    return <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No armory data recorded.</p>
   }
 
   const hasSplit = armory.some(r => (r.stacking_count ?? 0) > 0)
@@ -232,7 +232,7 @@ function ArmoryTable({ armory }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
       {hasSplit && (
-        <div style={{ display: 'flex', gap: '14px', padding: '4px 2px', fontSize: '11px', color: '#a1a1aa' }}>
+        <div style={{ display: 'flex', gap: '14px', padding: '4px 2px', fontSize: '11px', color: "var(--text-secondary)" }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
             Stacking period
@@ -275,14 +275,14 @@ const PCT_OPTIONS = [0, 25, 50, 75, 100]
 function PctToggle({ label, value, onChange, disabled }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', opacity: disabled ? 0.4 : 1 }}>
-      <span style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+      <span style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
       <div style={{ display: 'flex', gap: '3px' }}>
         {PCT_OPTIONS.map(p => (
           <button key={p} onClick={() => !disabled && onChange(p)} style={{
             padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: disabled ? 'default' : 'pointer',
             border: `1px solid ${value === p ? 'rgba(179,18,63,0.6)' : 'rgba(255,255,255,0.08)'}`,
             background: value === p ? 'rgba(179,18,63,0.2)' : 'transparent',
-            color: value === p ? '#f4f4f5' : '#71717a', fontWeight: value === p ? '600' : '400',
+            color: value === p ? '#f4f4f5' : "var(--text-muted)", fontWeight: value === p ? '600' : '400',
           }}>{p}%</button>
         ))}
       </div>
@@ -326,7 +326,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '20px', width: '320px', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }}>
         <p style={{ color: '#e4e4e7', fontWeight: '600', fontSize: '14px', margin: '0 0 4px 0' }}>Edit Attack Data</p>
-        <p style={{ color: '#71717a', fontSize: '12px', margin: '0 0 18px 0' }}>{row.attacker_name || `[${row.attacker_id}]`}</p>
+        <p style={{ color: "var(--text-muted)", fontSize: '12px', margin: '0 0 18px 0' }}>{row.attacker_name || `[${row.attacker_id}]`}</p>
         {[
           ['War Hits',       'war_hits',           0],
           ['Outside / Chain','outside_attacks',     0],
@@ -335,7 +335,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
           ['Respect Gained', 'war_respect_gained',  2],
         ].map(([label, key, decimals]) => (
           <div key={key} style={{ marginBottom: '12px' }}>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>{label}</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>{label}</label>
             <input type="number" min="0" step={decimals ? '0.01' : '1'}
               value={vals[key]}
               onChange={e => set(key, decimals ? parseFloat(e.target.value) || 0 : parseInt(e.target.value) || 0)}
@@ -349,7 +349,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
           }}>Save</button>
           <button onClick={onClose} style={{
             flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#71717a',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: "var(--text-muted)",
           }}>Cancel</button>
         </div>
       </div>
@@ -481,8 +481,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '8px', color: '#f4f4f5', padding: '7px 10px', fontSize: '13px', width: '100%',
   }
-  const th = (align = 'right') => ({ padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: align, whiteSpace: 'nowrap' })
-  const td = (align = 'right') => ({ padding: '8px 10px', fontSize: '12px', color: '#a1a1aa', textAlign: align, borderBottom: '1px solid rgba(255,255,255,0.04)' })
+  const th = (align = 'right') => ({ padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: align, whiteSpace: 'nowrap' })
+  const td = (align = 'right') => ({ padding: '8px 10px', fontSize: '12px', color: "var(--text-secondary)", textAlign: align, borderBottom: '1px solid rgba(255,255,255,0.04)' })
 
   return (
     <div style={{ marginTop: '8px' }}>
@@ -494,7 +494,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
 
       {/* ── Settings ── */}
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '16px', marginBottom: '16px', opacity: hitsSaved ? 0.6 : 1, pointerEvents: hitsSaved ? 'none' : 'auto' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>Payout Settings</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>Payout Settings</p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
           <PctToggle label="War Hits"        value={warPct}      onChange={setWarPct}      disabled={useRespect} />
@@ -505,11 +505,11 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Total Payout ($)</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Total Payout ($)</label>
             <input type="number" min="0" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="e.g. 500000000" style={inputStyle} />
           </div>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction Share ({factionShare}%)</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction Share ({factionShare}%)</label>
             <input type="range" min="0" max="50" step="1" value={factionShare} onChange={e => setFactionShare(Number(e.target.value))}
               style={{ width: '100%', accentColor: '#b3123f', marginTop: '6px' }} />
           </div>
@@ -520,7 +520,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             padding: '5px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
             border: `1px solid ${capEnabled ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}`,
             background: capEnabled ? 'rgba(234,179,8,0.1)' : 'transparent',
-            color: capEnabled ? '#eab308' : '#71717a',
+            color: capEnabled ? '#eab308' : "var(--text-muted)",
           }}>{capEnabled ? '⚡ Cap ON' : 'Cap OFF'}</button>
 
           {capEnabled && <>
@@ -530,7 +530,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                   padding: '5px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer',
                   border: `1px solid ${capType === t ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
                   background: capType === t ? 'rgba(179,18,63,0.15)' : 'transparent',
-                  color: capType === t ? '#f4f4f5' : '#71717a',
+                  color: capType === t ? '#f4f4f5' : "var(--text-muted)",
                 }}>{t === 'attacks' ? 'Attack Cap' : 'Respect Cap'}</button>
               ))}
             </div>
@@ -547,7 +547,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
               ['Per unit',    `$${Math.floor(perUnit).toLocaleString('en-GB')}`, '#f4f4f5'],
               ['Remaining',   `$${totalRemaining.toLocaleString('en-GB')}`, totalRemaining > 0 ? '#eab308' : '#22c55e'],
             ].map(([l, v, c]) => (
-              <span key={l} style={{ fontSize: '11px', color: '#a1a1aa' }}>{l}: <strong style={{ color: c }}>{v}</strong></span>
+              <span key={l} style={{ fontSize: '11px', color: "var(--text-secondary)" }}>{l}: <strong style={{ color: c }}>{v}</strong></span>
             ))}
           </div>
         )}
@@ -555,7 +555,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
 
       {/* ── Member table ── */}
       {rows.length === 0 ? (
-        <p style={{ color: '#71717a', fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
@@ -592,7 +592,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                               padding: '1px 5px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', lineHeight: 1,
                               background: hasOverride ? 'rgba(159,103,255,0.15)' : 'transparent',
                               border: `1px solid ${hasOverride ? 'rgba(159,103,255,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                              color: hasOverride ? '#c4b5fd' : '#52525b',
+                              color: hasOverride ? '#c4b5fd' : "var(--text-faint)",
                             }}>✎</button>
                             {hasOverride && (
                               <button onClick={() => clearOverride(r.attacker_id)} title="Clear overrides" style={{
@@ -607,7 +607,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                     <td style={td()}>{r.war_hits || 0}</td>
                     <td style={td()}>{r.outside_attacks || 0}</td>
                     <td style={td()}>{r.assists || 0}</td>
-                    <td style={{ ...td(), color: (r.friendly_hits || 0) > 0 ? '#fb923c' : '#52525b' }}>{r.friendly_hits || 0}</td>
+                    <td style={{ ...td(), color: (r.friendly_hits || 0) > 0 ? '#fb923c' : "var(--text-faint)" }}>{r.friendly_hits || 0}</td>
                     <td style={{ ...td(), color: '#a78bfa' }}>{(parseFloat(r.war_respect_gained) || 0).toFixed(2)}</td>
                     <td style={{ ...td(), color: '#f4f4f5', fontWeight: '600' }}>{r.units.toFixed(useRespect ? 2 : 1)}</td>
                     <td style={{ ...td(), color: '#22c55e', fontWeight: '700', fontSize: '13px' }}>
@@ -615,7 +615,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                     </td>
                     <td style={{ ...td('center') }}>
                       {paid || hitsSaved ? (
-                        <span style={{ fontSize: '10px', color: '#52525b', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>Paid</span>
+                        <span style={{ fontSize: '10px', color: "var(--text-faint)", padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>Paid</span>
                       ) : (
                         <a href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${r.attacker_id}&money=${r.payout}`}
                           target="_blank" rel="noreferrer"
@@ -630,7 +630,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                         cursor: hitsSaved ? 'default' : 'pointer',
                         border: `1px solid ${paid ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.15)'}`,
                         background: paid ? 'rgba(34,197,94,0.2)' : 'transparent',
-                        color: paid ? '#4ade80' : '#52525b', fontSize: '13px', lineHeight: 1,
+                        color: paid ? '#4ade80' : "var(--text-faint)", fontSize: '13px', lineHeight: 1,
                       }}>{paid ? '✓' : ''}</button>
                     </td>
                   </tr>
@@ -639,7 +639,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="6" style={{ padding: '10px', fontSize: '11px', color: '#a1a1aa', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <td colSpan="6" style={{ padding: '10px', fontSize: '11px', color: "var(--text-secondary)", borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                   {paidSet.size} of {rows.length} paid
                 </td>
                 <td style={{ padding: '10px', fontSize: '12px', fontWeight: '700', color: '#f4f4f5', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totalUnits.toFixed(1)}</td>
@@ -658,7 +658,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
           <button onClick={saveDraft} disabled={saving} style={{
             padding: '7px 18px', borderRadius: '8px', fontSize: '12px', cursor: saving ? 'not-allowed' : 'pointer',
-            background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#a1a1aa',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: "var(--text-secondary)",
             opacity: saving ? 0.6 : 1,
           }}>{saving ? 'Saving…' : 'Save Draft'}</button>
 
@@ -667,7 +667,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             cursor: (!allPaid || rankSaving) ? 'not-allowed' : 'pointer',
             background: allPaid ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)',
             border: `1px solid ${allPaid ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.1)'}`,
-            color: allPaid ? '#4ade80' : '#52525b', fontWeight: '600',
+            color: allPaid ? '#4ade80' : "var(--text-faint)", fontWeight: '600',
             opacity: rankSaving ? 0.6 : 1,
           }}>
             {rankSaving ? 'Saving…' : allPaid ? '✓ Save to Rankings' : `Save to Rankings (${paidSet.size}/${rows.length} paid)`}
@@ -688,7 +688,7 @@ const TYPE_LABELS = {
   war_attack:     { label: 'War Hit',     color: '#22c55e' },
   war_defend:     { label: 'Defend',      color: '#f97316' },
   outside_attack: { label: 'Outside',     color: '#a78bfa' },
-  outside_defend: { label: 'Ext. Defend', color: '#71717a' },
+  outside_defend: { label: 'Ext. Defend', color: "var(--text-muted)" },
   friendly_hit:   { label: 'Friendly',    color: '#fb923c' },
   assist:         { label: 'Assist',      color: '#60a5fa' },
 }
@@ -718,7 +718,7 @@ function AttackLogTab({ warId }) {
     return () => controller.abort()
   }, [warId])
 
-  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading attack log…</p>
+  if (loading) return <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '20px 0' }}>Loading attack log…</p>
   if (!data)   return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>Failed to load attack log.</p>
 
   const { war, attacks = [] } = data
@@ -726,7 +726,7 @@ function AttackLogTab({ warId }) {
 
   if (!attacks.length) {
     return (
-      <p style={{ color: '#71717a', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>
+      <p style={{ color: "var(--text-muted)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>
         No raw attack rows available — this war's data has been archived into a summary (attacks are purged after completion).
       </p>
     )
@@ -736,7 +736,7 @@ function AttackLogTab({ warId }) {
   const filtered = filter === 'all' ? attacks : attacks.filter(a => a.attack_type === filter)
 
   const STICKY_BG = '#141414'
-  const th = { padding: '7px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'left', whiteSpace: 'nowrap', background: STICKY_BG }
+  const th = { padding: '7px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'left', whiteSpace: 'nowrap', background: STICKY_BG }
   const thR = { ...th, textAlign: 'right' }
   const td  = { padding: '6px 10px', fontSize: '11px', color: '#d4d4d8', borderBottom: '1px solid rgba(255,255,255,0.03)', whiteSpace: 'nowrap', textAlign: 'left' }
   const tdR = { ...td, textAlign: 'right' }
@@ -744,26 +744,26 @@ function AttackLogTab({ warId }) {
   return (
     <div style={{ marginTop: '8px' }}>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ color: '#52525b', fontSize: '11px' }}>{attacks.length} total rows — filter:</span>
+        <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>{attacks.length} total rows — filter:</span>
         {types.map(t => (
           <button key={t} onClick={() => setFilter(t)} style={{
             padding: '3px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
             border: `1px solid ${filter === t ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
             background: filter === t ? 'rgba(179,18,63,0.15)' : 'transparent',
-            color: filter === t ? '#f4f4f5' : '#71717a',
+            color: filter === t ? '#f4f4f5' : "var(--text-muted)",
           }}>
             {t === 'all' ? 'All' : (TYPE_LABELS[t]?.label ?? t)}
           </button>
         ))}
         {warStartedAt && (
-          <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#52525b' }}>
+          <span style={{ marginLeft: 'auto', fontSize: '11px', color: "var(--text-faint)" }}>
             War started: {formatUnixDateTime(warStartedAt)}
           </span>
         )}
       </div>
 
       {!filtered.length ? (
-        <p style={{ color: '#71717a', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attacks match this filter.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attacks match this filter.</p>
       ) : (
         <div style={{ overflowX: 'auto', maxHeight: '500px', overflowY: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', minWidth: '900px', width: '100%' }}>
@@ -786,7 +786,7 @@ function AttackLogTab({ warId }) {
               {filtered.map((a, i) => {
                 const isWarStart = warStartedAt && a.started_at === warStartedAt
                 const beforeWar  = warStartedAt && a.started_at < warStartedAt
-                const typeInfo   = TYPE_LABELS[a.attack_type] || { label: a.attack_type, color: '#a1a1aa' }
+                const typeInfo   = TYPE_LABELS[a.attack_type] || { label: a.attack_type, color: "var(--text-secondary)" }
                 const rowBg      = beforeWar ? 'rgba(245,158,11,0.04)' : 'transparent'
                 return (
                   <>
@@ -802,26 +802,26 @@ function AttackLogTab({ warId }) {
                       onMouseLeave={e => { e.currentTarget.style.background = rowBg }}
                     >
                       <td style={td}>{formatUnixDateTime(a.started_at)}</td>
-                      <td style={{ ...td, color: '#52525b' }}>{relativeTime(a.started_at)}</td>
+                      <td style={{ ...td, color: "var(--text-faint)" }}>{relativeTime(a.started_at)}</td>
                       <td style={td}>
                         <span style={{ color: typeInfo.color, fontWeight: '600' }}>{typeInfo.label}</span>
                       </td>
                       <td style={td}>{a.attacker_name || (a.attacker_id ? `[${a.attacker_id}]` : '—')}</td>
-                      <td style={{ ...td, color: '#a1a1aa' }}>{a.defender_name || (a.defender_id ? `[${a.defender_id}]` : '—')}</td>
-                      <td style={{ ...td, color: a.result === 'Attacked' ? '#22c55e' : a.result === 'Lost' ? '#ef4444' : '#a1a1aa' }}>
+                      <td style={{ ...td, color: "var(--text-secondary)" }}>{a.defender_name || (a.defender_id ? `[${a.defender_id}]` : '—')}</td>
+                      <td style={{ ...td, color: a.result === 'Attacked' ? '#22c55e' : a.result === 'Lost' ? '#ef4444' : "var(--text-secondary)" }}>
                         {a.result || '—'}
                       </td>
-                      <td style={{ ...td, textAlign: 'center', color: a.is_interrupted ? '#f97316' : '#3f3f46' }}>
+                      <td style={{ ...td, textAlign: 'center', color: a.is_interrupted ? '#f97316' : "var(--text-ghost)" }}>
                         {a.is_interrupted ? '✓' : '·'}
                       </td>
                       <td style={tdR}>{(a.fair_fight ?? 1).toFixed(2)}</td>
-                      <td style={{ ...tdR, color: a.respect_gain > 0 ? '#4ade80' : '#3f3f46' }}>
+                      <td style={{ ...tdR, color: a.respect_gain > 0 ? '#4ade80' : "var(--text-ghost)" }}>
                         {a.respect_gain > 0 ? `+${(a.respect_gain).toFixed(2)}` : '—'}
                       </td>
-                      <td style={{ ...tdR, color: a.respect_loss > 0 ? '#f87171' : '#3f3f46' }}>
+                      <td style={{ ...tdR, color: a.respect_loss > 0 ? '#f87171' : "var(--text-ghost)" }}>
                         {a.respect_loss > 0 ? `−${(a.respect_loss).toFixed(2)}` : '—'}
                       </td>
-                      <td style={{ ...tdR, color: a.chain_count > 0 ? '#f59e0b' : '#3f3f46' }}>
+                      <td style={{ ...tdR, color: a.chain_count > 0 ? '#f59e0b' : "var(--text-ghost)" }}>
                         {a.chain_count > 0 ? a.chain_count : '—'}
                       </td>
                     </tr>
@@ -833,7 +833,7 @@ function AttackLogTab({ warId }) {
         </div>
       )}
 
-      <p style={{ color: '#52525b', fontSize: '10px', marginTop: '10px' }}>
+      <p style={{ color: "var(--text-faint)", fontSize: '10px', marginTop: '10px' }}>
         Debug view — raw war_attacks rows as stored. Use to verify column counts against the Member Stats table.
         Orange-tinted rows are pre-war (stacking period).
       </p>
@@ -920,16 +920,16 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
     <div style={{ marginTop: '8px' }}>
       {/* Timestamp inputs */}
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '16px', marginBottom: '14px' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>
-          Verification Range <span style={{ color: '#52525b', fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>— times are UTC/TCT</span>
+        <p style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>
+          Verification Range <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>— times are UTC/TCT</span>
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Start</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Start</label>
             <input type="datetime-local" value={startInput} onChange={e => setStartInput(e.target.value)} style={{ ...inp, width: '100%' }} />
           </div>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War End</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War End</label>
             <input type="datetime-local" value={endInput} onChange={e => setEndInput(e.target.value)} style={{ ...inp, width: '100%' }} />
           </div>
         </div>
@@ -938,11 +938,11 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: running ? 'not-allowed' : 'pointer',
             background: running ? 'rgba(255,255,255,0.04)' : 'rgba(99,102,241,0.15)',
             border: `1px solid ${running ? 'rgba(255,255,255,0.08)' : 'rgba(99,102,241,0.4)'}`,
-            color: running ? '#71717a' : '#a5b4fc', opacity: running ? 0.7 : 1,
+            color: running ? "var(--text-muted)" : '#a5b4fc', opacity: running ? 0.7 : 1,
           }}>
             {running ? 'Fetching from Torn API…' : 'Run Verification'}
           </button>
-          {running && <span style={{ color: '#52525b', fontSize: '12px' }}>Paginating attack history — this may take 10–30 seconds</span>}
+          {running && <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>Paginating attack history — this may take 10–30 seconds</span>}
           {error && <span style={{ color: '#f87171', fontSize: '12px' }}>{error}</span>}
         </div>
       </div>
@@ -953,21 +953,21 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
           {/* Fetch summary */}
           <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '14px', padding: '10px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '8px', alignItems: 'center' }}>
             <span style={{ color: '#a5b4fc', fontSize: '12px', fontWeight: '600' }}>{result.attack_count} attacks fetched</span>
-            <span style={{ color: '#52525b', fontSize: '11px' }}>via {result.key_user}</span>
-            <span style={{ color: '#52525b', fontSize: '11px' }}>·</span>
-            <span style={{ color: '#52525b', fontSize: '11px' }}>{formatUnixDateTime(result.range?.start_at)} → {formatUnixDateTime(result.range?.end_at)}</span>
+            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>via {result.key_user}</span>
+            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>·</span>
+            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>{formatUnixDateTime(result.range?.start_at)} → {formatUnixDateTime(result.range?.end_at)}</span>
             {result.truncated && <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — range may be incomplete</span>}
           </div>
 
           {/* Summary comparison */}
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
-            <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px 0' }}>Summary Comparison</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px 0' }}>Summary Comparison</p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
                   <tr>
                     {['Stat', 'Current (stored)', 'Verified (new)', 'Diff'].map(h => (
-                      <th key={h} style={{ padding: '6px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#52525b', textAlign: h === 'Stat' ? 'left' : 'right', borderBottom: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '6px 10px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: "var(--text-faint)", textAlign: h === 'Stat' ? 'left' : 'right', borderBottom: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -976,7 +976,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
                     const oldVal = oldSummary?.[key] ?? '—'
                     const newVal = result.totals?.[key] ?? 0
                     const diff   = typeof oldVal === 'number' ? newVal - oldVal : null
-                    const diffColor = diff === null ? '#52525b' : diff === 0 ? '#52525b' : (lowerIsBetter ? (diff < 0 ? '#4ade80' : '#f87171') : (diff > 0 ? '#4ade80' : '#f87171'))
+                    const diffColor = diff === null ? "var(--text-faint)" : diff === 0 ? "var(--text-faint)" : (lowerIsBetter ? (diff < 0 ? '#4ade80' : '#f87171') : (diff > 0 ? '#4ade80' : '#f87171'))
                     const isDecimal = key.includes('respect')
                     const fmtV = (v) => typeof v === 'number' ? fmt(v, isDecimal ? 2 : 0) : v
                     return (
@@ -985,7 +985,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                       >
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#e4e4e7' }}>{label}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#71717a', textAlign: 'right' }}>{fmtV(oldVal)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: "var(--text-muted)", textAlign: 'right' }}>{fmtV(oldVal)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f4f4f5', textAlign: 'right', fontWeight: '600' }}>{fmtV(newVal)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: diffColor, textAlign: 'right' }}>
                           {diff === null ? '—' : diff === 0 ? '=' : (diff > 0 ? '+' : '') + fmtV(diff)}
@@ -1000,7 +1000,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
 
           {/* New member stats */}
           <div style={{ marginBottom: '14px' }}>
-            <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Verified Member Stats</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Verified Member Stats</p>
             <MemberStatsTable attackerStats={result.attackerStats} defendStats={result.defendStats} />
           </div>
 
@@ -1017,7 +1017,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             </button>
             <button onClick={() => setResult(null)} style={{
               padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-              background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#71717a',
+              background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: "var(--text-muted)",
             }}>
               Discard
             </button>
@@ -1053,7 +1053,7 @@ function WarDetail({ warId, onPayoutSaved }) {
     return () => controller.abort()
   }, [warId, reloadKey])
 
-  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading war details…</p>
+  if (loading) return <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '20px 0' }}>Loading war details…</p>
   if (!data?.war) return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>Failed to load war details.</p>
 
   const { war, summary, attackerStats, defendStats } = data
@@ -1092,7 +1092,7 @@ function WarDetail({ warId, onPayoutSaved }) {
               padding: '6px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
               border: `1px solid ${activeSection === s.value ? (s.value === 'verify' ? 'rgba(99,102,241,0.5)' : 'rgba(179,18,63,0.5)') : 'rgba(255,255,255,0.08)'}`,
               background: activeSection === s.value ? (s.value === 'verify' ? 'rgba(99,102,241,0.15)' : 'rgba(179,18,63,0.15)') : 'transparent',
-              color: activeSection === s.value ? '#f4f4f5' : '#a1a1aa',
+              color: activeSection === s.value ? '#f4f4f5' : "var(--text-secondary)",
             }}
           >
             {s.label}
@@ -1163,7 +1163,7 @@ function ScoreBoard({ war, ourFactionName }) {
 
   const scoreStyle = (winning) => ({
     fontSize: '26px', fontWeight: '800', fontFamily: 'Cinzel, serif',
-    color: isMatched ? '#52525b' : (winning ? '#22c55e' : '#f4f4f5'),
+    color: isMatched ? "var(--text-faint)" : (winning ? '#22c55e' : '#f4f4f5'),
     textShadow: !isMatched && winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
     lineHeight: 1,
   })
@@ -1181,7 +1181,7 @@ function ScoreBoard({ war, ourFactionName }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
         {/* Opponent side */}
         <div style={{ textAlign: 'left' }}>
-          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
             {opponent_faction_name || 'Opponent'}
           </p>
           <span style={scoreStyle(!weWinning)}>{(opponent_score || 0).toLocaleString('en-GB')}</span>
@@ -1192,8 +1192,8 @@ function ScoreBoard({ war, ourFactionName }) {
 
         {/* Centre: target */}
         <div style={{ textAlign: 'center', padding: '0 8px' }}>
-          <p style={{ color: '#71717a', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
-          <p style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: '600', margin: 0 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px', fontWeight: '600', margin: 0 }}>
             {isMatched ? '—' : (target > 0 ? target.toLocaleString('en-GB') : '—')}
           </p>
           {isMatched && countdown && (
@@ -1202,7 +1202,7 @@ function ScoreBoard({ war, ourFactionName }) {
             </p>
           )}
           {!isMatched && elapsed > 0 && (
-            <p style={{ color: '#52525b', fontSize: '9px', margin: '4px 0 0 0' }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '9px', margin: '4px 0 0 0' }}>
               {elH}h {elM}m elapsed
             </p>
           )}
@@ -1210,7 +1210,7 @@ function ScoreBoard({ war, ourFactionName }) {
 
         {/* Our side */}
         <div style={{ textAlign: 'right' }}>
-          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
             {ourFactionName}
           </p>
           <span style={scoreStyle(weWinning)}>{(our_score || 0).toLocaleString('en-GB')}</span>
@@ -1246,7 +1246,7 @@ function ScoreBoard({ war, ourFactionName }) {
 
       {/* Lead indicator */}
       {total > 0 && (
-        <p style={{ textAlign: 'center', color: '#52525b', fontSize: '10px', margin: '6px 0 0 0' }}>
+        <p style={{ textAlign: 'center', color: "var(--text-faint)", fontSize: '10px', margin: '6px 0 0 0' }}>
           {weWinning
             ? `+${(our_score - opponent_score).toLocaleString('en-GB')} lead — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more to win`
             : `${(opponent_score - our_score).toLocaleString('en-GB')} behind — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more to win`}
@@ -1294,8 +1294,8 @@ function WarCard({ war, factionName }) {
           <p style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', margin: '0 0 2px 0' }}>
             vs {war.opponent_faction_name || `Faction #${war.opponent_faction_id}`}
           </p>
-          <p style={{ color: '#71717a', fontSize: '11px', margin: '0 0 1px 0' }}>{dateLabel}</p>
-          {lastUpdatedLabel && <p style={{ color: '#52525b', fontSize: '10px', margin: 0 }}>{lastUpdatedLabel}</p>}
+          <p style={{ color: "var(--text-muted)", fontSize: '11px', margin: '0 0 1px 0' }}>{dateLabel}</p>
+          {lastUpdatedLabel && <p style={{ color: "var(--text-faint)", fontSize: '10px', margin: 0 }}>{lastUpdatedLabel}</p>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {isPaid && (
@@ -1304,12 +1304,12 @@ function WarCard({ war, factionName }) {
             </span>
           )}
           {war.status === 'completed' && war.our_score > 0 && (
-            <span style={{ color: '#71717a', fontSize: '11px' }}>
+            <span style={{ color: "var(--text-muted)", fontSize: '11px' }}>
               {(war.our_score || 0).toLocaleString('en-GB')} — {(war.opponent_score || 0).toLocaleString('en-GB')}
             </span>
           )}
           <StatusBadge status={war.status} result={war.result} />
-          <span style={{ color: '#a1a1aa', fontSize: '16px', lineHeight: 1 }}>{expanded ? '▲' : '▼'}</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: '16px', lineHeight: 1 }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
@@ -1331,7 +1331,7 @@ function WarCard({ war, factionName }) {
             {(war.bonus_respect || rewards.length > 0) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
                 {war.bonus_respect > 0 && (
-                  <span style={{ color: '#a1a1aa', fontSize: '10px' }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '10px' }}>
                     +{war.bonus_respect.toLocaleString('en-GB')} bonus respect
                   </span>
                 )}
@@ -1376,10 +1376,10 @@ function FactionWars({ factionId }) {
     return () => controller.abort()
   }, [factionId])
 
-  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px', padding: '20px 0' }}>Loading wars…</p>
+  if (loading) return <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '20px 0' }}>Loading wars…</p>
   if (error)   return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>{error}</p>
   if (!wars.length) return (
-    <p style={{ color: '#71717a', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
+    <p style={{ color: "var(--text-muted)", fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
       No ranked wars tracked yet. Wars are detected automatically on Tuesdays at 01:00 UTC.
     </p>
   )
@@ -1444,40 +1444,40 @@ function ManualWarEntry({ onClose, onSaved }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <h3 style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '600', margin: 0 }}>Add Historic War</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#71717a', fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: "var(--text-muted)", fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
         {/* Faction + Date */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction</label>
             <select value={factionId} onChange={e => setFactionId(Number(e.target.value))} style={{ ...inputStyle, width: '100%' }}>
               {FACTIONS.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Date</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
           </div>
         </div>
 
         <div style={{ marginBottom: '14px' }}>
-          <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Opponent Name (optional)</label>
+          <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Opponent Name (optional)</label>
           <input type="text" value={opponentName} onChange={e => setOpponentName(e.target.value)} placeholder="e.g. Enemy Faction" style={{ ...inputStyle, width: '100%' }} />
         </div>
 
         {/* Member rows */}
         <div style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <label style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Members &amp; War Hits</label>
+            <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Members &amp; War Hits</label>
             <button onClick={addRow} style={{
               background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-              color: '#a1a1aa', borderRadius: '6px', padding: '3px 12px', fontSize: '12px', cursor: 'pointer',
+              color: "var(--text-secondary)", borderRadius: '6px', padding: '3px 12px', fontSize: '12px', cursor: 'pointer',
             }}>+ Add Row</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 90px 32px', gap: '6px', marginBottom: '4px' }}>
             {['User ID', 'Name (optional)', 'War Hits', ''].map(h => (
-              <span key={h} style={{ fontSize: '10px', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '2px' }}>{h}</span>
+              <span key={h} style={{ fontSize: '10px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '2px' }}>{h}</span>
             ))}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1490,7 +1490,7 @@ function ManualWarEntry({ onClose, onSaved }) {
                 <input type="number" min="0" value={r.hits} onChange={e => updateRow(i, 'hits', e.target.value)}
                   placeholder="Hits" style={{ ...inputStyle, textAlign: 'center' }} />
                 <button onClick={() => removeRow(i)} disabled={members.length === 1} style={{
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#52525b',
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: "var(--text-faint)",
                   borderRadius: '6px', cursor: members.length === 1 ? 'default' : 'pointer',
                   fontSize: '14px', lineHeight: 1, padding: '6px',
                 }}>✕</button>
@@ -1504,7 +1504,7 @@ function ManualWarEntry({ onClose, onSaved }) {
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{
             padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
-            background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+            background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: "var(--text-secondary)",
           }}>Cancel</button>
           <button onClick={submit} disabled={saving} style={{
             padding: '8px 20px', borderRadius: '8px', fontSize: '13px', cursor: saving ? 'not-allowed' : 'pointer',
@@ -1528,11 +1528,11 @@ function SubTabs({ options, active, onChange }) {
             padding: '7px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s',
             border: `1px solid ${active === opt.value ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
             background: active === opt.value ? 'rgba(179,18,63,0.15)' : 'transparent',
-            color: active === opt.value ? '#f4f4f5' : '#a1a1aa',
+            color: active === opt.value ? '#f4f4f5' : "var(--text-secondary)",
             fontWeight: active === opt.value ? '600' : '400',
           }}
           onMouseEnter={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#f4f4f5' }}
-          onMouseLeave={(e) => { if (active !== opt.value) e.currentTarget.style.color = '#a1a1aa' }}
+          onMouseLeave={(e) => { if (active !== opt.value) e.currentTarget.style.color = "var(--text-secondary)" }}
         >
           {opt.label}
         </button>
@@ -1558,13 +1558,13 @@ export default function WarTrackingTab() {
         />
       )}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
           Wars are auto-detected weekly and attack data
           is tracked every 10 minutes during active wars.
         </p>
         <button onClick={() => setShowManual(true)} style={{
           padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
-          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
+          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: "var(--text-secondary)",
         }}>+ Add Historic War</button>
       </div>
       <SubTabs options={factionTabs} active={factionId} onChange={setFactionId} />

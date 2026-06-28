@@ -16,7 +16,7 @@ export default function About() {
         >
           <p
             style={{
-              color: '#a1a1aa',
+              color: "var(--text-secondary)",
               fontSize: '20px',
               lineHeight: 1.8,
             }}

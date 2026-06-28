@@ -14,8 +14,15 @@
   --red-glow:        #ff2f6d;
   --purple-primary:  #6d28d9;
   --purple-glow:     #9f67ff;
-  --text-primary:    #f4f4f5;
-  --text-secondary:  #a1a1aa;
+
+  /* Text tiers — all theme-aware, overridden per seasonal event */
+  --text-primary:    #f4f4f5;   /* headings, names, values */
+  --text-secondary:  #a1a1aa;   /* descriptions, body copy */
+  --text-muted:      #71717a;   /* labels, sublabels, supporting info */
+  --text-faint:      #52525b;   /* timestamps, separators, hints */
+  --text-ghost:      #3f3f46;   /* purely decorative / near-invisible */
+
+  --border-subtle:   rgba(255,255,255,0.07);
   --border-glow:     rgba(255,255,255,0.08);
 }
 

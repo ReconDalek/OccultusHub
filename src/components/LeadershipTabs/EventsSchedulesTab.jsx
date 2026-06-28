@@ -213,7 +213,7 @@ function EventsSection({ token }) {
       </div>
 
       {/* Monthly event quick-add */}
-      <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#a1a1aa', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>
+      <h3 style={{ fontSize: '14px', fontWeight: 600, color: "var(--text-secondary)", letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>
         Monthly Events
       </h3>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
@@ -231,7 +231,7 @@ function EventsSection({ token }) {
               background: form.category === p.category
                 ? 'rgba(179,18,63,0.15)'
                 : 'rgba(255,255,255,0.04)',
-              color: form.category === p.category ? '#f4f4f5' : '#a1a1aa',
+              color: form.category === p.category ? '#f4f4f5' : "var(--text-secondary)",
               cursor: 'pointer',
               fontSize: '13px',
               fontWeight: form.category === p.category ? 600 : 400,
@@ -248,7 +248,7 @@ function EventsSection({ token }) {
             borderRadius: '8px',
             border: !form.category ? '1px solid rgba(179,18,63,0.5)' : '1px solid rgba(255,255,255,0.1)',
             background: !form.category ? 'rgba(179,18,63,0.15)' : 'rgba(255,255,255,0.04)',
-            color: !form.category ? '#f4f4f5' : '#a1a1aa',
+            color: !form.category ? '#f4f4f5' : "var(--text-secondary)",
             cursor: 'pointer',
             fontSize: '13px',
             fontWeight: !form.category ? 600 : 400,
@@ -259,7 +259,7 @@ function EventsSection({ token }) {
       </div>
 
       {/* Add event form */}
-      <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#a1a1aa', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '14px' }}>
+      <h3 style={{ fontSize: '14px', fontWeight: 600, color: "var(--text-secondary)", letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '14px' }}>
         Add Event
       </h3>
       <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '480px', marginBottom: '28px' }}>
@@ -279,7 +279,7 @@ function EventsSection({ token }) {
         />
 
         {/* Multi-day toggle */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: '#a1a1aa' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: "var(--text-secondary)" }}>
           <input
             type="checkbox"
             checked={form.isMultiDay}
@@ -292,12 +292,12 @@ function EventsSection({ token }) {
         {/* Dates */}
         <div style={{ display: 'grid', gridTemplateColumns: form.isMultiDay ? '1fr 1fr' : '1fr', gap: '10px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{form.isMultiDay ? 'Start date' : 'Date'}</span>
+            <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>{form.isMultiDay ? 'Start date' : 'Date'}</span>
             <input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} style={inputStyle} />
           </div>
           {form.isMultiDay && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '11px', color: '#a1a1aa' }}>End date</span>
+              <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>End date</span>
               <input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} style={inputStyle} />
             </div>
           )}
@@ -306,11 +306,11 @@ function EventsSection({ token }) {
         {/* Times */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Start time (TCT, optional)</span>
+            <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>Start time (TCT, optional)</span>
             <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} style={inputStyle} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>End time (TCT, optional)</span>
+            <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>End time (TCT, optional)</span>
             <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} style={inputStyle} />
           </div>
         </div>
@@ -322,9 +322,9 @@ function EventsSection({ token }) {
 
       {/* Events list */}
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading…</p>
       ) : events.length === 0 ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>No upcoming events.</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>No upcoming events.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {events.map((ev) => {
@@ -339,29 +339,29 @@ function EventsSection({ token }) {
                       <input type="text" placeholder="Title *" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} style={inputStyle} />
                       <input type="text" placeholder="Description" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} style={inputStyle} />
                     </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#a1a1aa' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: "var(--text-secondary)" }}>
                       <input type="checkbox" checked={editForm.isMultiDay} onChange={(e) => setEditForm({ ...editForm, isMultiDay: e.target.checked, end_date: '' })} style={{ accentColor: '#b3123f' }} />
                       Multi-day event
                     </label>
                     <div style={{ display: 'grid', gridTemplateColumns: editForm.isMultiDay ? '1fr 1fr' : '1fr', gap: '8px' }}>
                       <div>
-                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{editForm.isMultiDay ? 'Start date' : 'Date'}</span>
+                        <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>{editForm.isMultiDay ? 'Start date' : 'Date'}</span>
                         <input type="date" value={editForm.start_date} onChange={(e) => setEditForm({ ...editForm, start_date: e.target.value })} style={inputStyle} />
                       </div>
                       {editForm.isMultiDay && (
                         <div>
-                          <span style={{ fontSize: '11px', color: '#a1a1aa' }}>End date</span>
+                          <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>End date</span>
                           <input type="date" value={editForm.end_date} onChange={(e) => setEditForm({ ...editForm, end_date: e.target.value })} style={inputStyle} />
                         </div>
                       )}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <div>
-                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Start time (TCT)</span>
+                        <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>Start time (TCT)</span>
                         <input type="time" value={editForm.start_time} onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })} style={inputStyle} />
                       </div>
                       <div>
-                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>End time (TCT)</span>
+                        <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>End time (TCT)</span>
                         <input type="time" value={editForm.end_time} onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })} style={inputStyle} />
                       </div>
                     </div>
@@ -370,7 +370,7 @@ function EventsSection({ token }) {
                       <button onClick={() => handleSaveEdit(ev.id)} disabled={saving} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #b3123f, #6d28d9)', color: '#f4f4f5', fontWeight: 600, fontSize: '13px' }}>
                         {saving ? 'Saving…' : 'Save'}
                       </button>
-                      <button onClick={() => setEditingId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: '#a1a1aa', fontSize: '13px' }}>
+                      <button onClick={() => setEditingId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: "var(--text-secondary)", fontSize: '13px' }}>
                         Cancel
                       </button>
                     </div>
@@ -401,10 +401,10 @@ function EventsSection({ token }) {
                           </span>
                         )}
                       </div>
-                      {ev.description && <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '2px' }}>{ev.description}</div>}
+                      {ev.description && <div style={{ color: "var(--text-secondary)", fontSize: '13px', marginTop: '2px' }}>{ev.description}</div>}
                       <div style={{ color: '#9f67ff', fontSize: '12px', marginTop: '4px' }}>
                         {formatEventLabel(ev)}
-                        {ev.fixed_start_time === 0 && <span style={{ color: '#a1a1aa' }}> · flexible start</span>}
+                        {ev.fixed_start_time === 0 && <span style={{ color: "var(--text-secondary)" }}> · flexible start</span>}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
@@ -538,7 +538,7 @@ function SchedulesSection({ token }) {
 
   return (
     <div>
-      <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#a1a1aa', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '14px' }}>
+      <h3 style={{ fontSize: '14px', fontWeight: 600, color: "var(--text-secondary)", letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '14px' }}>
         Add Faction Schedule
       </h3>
       <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '480px', marginBottom: '28px' }}>
@@ -567,7 +567,7 @@ function SchedulesSection({ token }) {
                   borderRadius: '10px',
                   border: form.stage === s ? '1px solid rgba(179,18,63,0.5)' : '1px solid rgba(255,255,255,0.08)',
                   background: form.stage === s ? 'rgba(179,18,63,0.15)' : 'rgba(255,255,255,0.04)',
-                  color: form.stage === s ? '#f4f4f5' : '#a1a1aa',
+                  color: form.stage === s ? '#f4f4f5' : "var(--text-secondary)",
                   cursor: 'pointer', fontSize: '13px', fontWeight: form.stage === s ? 600 : 400,
                   textTransform: 'capitalize',
                 }}
@@ -603,7 +603,7 @@ function SchedulesSection({ token }) {
         {/* Enlisting war: date only (time fixed at 00:00 UTC) */}
         {isWar && !isActive && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Enlistment date — starts 12:00 TCT (noon)</span>
+            <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>Enlistment date — starts 12:00 TCT (noon)</span>
             <input type="date" value={form.enlist_date} onChange={(e) => setForm({ ...form, enlist_date: e.target.value })} style={inputStyle} />
           </div>
         )}
@@ -612,7 +612,7 @@ function SchedulesSection({ token }) {
         {(!isWar || isActive) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <input type="datetime-local" value={form.scheduled_at} onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} style={inputStyle} />
-            <span style={{ color: '#a1a1aa', fontSize: '11px' }}>Enter time in TCT (UTC)</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Enter time in TCT (UTC)</span>
           </div>
         )}
 
@@ -624,9 +624,9 @@ function SchedulesSection({ token }) {
 
       {/* Schedules list */}
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading…</p>
       ) : schedules.length === 0 ? (
-        <p style={{ color: '#a1a1aa', fontSize: '14px' }}>No upcoming schedules.</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>No upcoming schedules.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {schedules.map((s) => {
@@ -654,7 +654,7 @@ function SchedulesSection({ token }) {
                         {isChain ? 'Chain' : isEnlisting ? 'Enlisting' : 'War'}
                       </span>
                       {s.chain_target && (
-                        <span style={{ fontSize: '12px', color: '#a1a1aa' }}>— {s.chain_target}</span>
+                        <span style={{ fontSize: '12px', color: "var(--text-secondary)" }}>— {s.chain_target}</span>
                       )}
                       {s.opponent_faction_id && (
                         <a
@@ -666,7 +666,7 @@ function SchedulesSection({ token }) {
                         </a>
                       )}
                     </div>
-                    <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '4px' }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: '13px', marginTop: '4px' }}>
                       {tct ?? 'Awaiting start time'}
                     </div>
                   </div>
@@ -709,7 +709,7 @@ function SchedulesSection({ token }) {
                     </p>
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>War start (TCT / UTC)</span>
+                        <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>War start (TCT / UTC)</span>
                         <input
                           type="datetime-local"
                           value={advanceForm.scheduled_at}
@@ -718,7 +718,7 @@ function SchedulesSection({ token }) {
                         />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Opponent faction ID (optional)</span>
+                        <span style={{ fontSize: '11px', color: "var(--text-secondary)" }}>Opponent faction ID (optional)</span>
                         <input
                           type="number"
                           placeholder="e.g. 12345"
@@ -769,7 +769,7 @@ export default function EventsSchedulesTab() {
       <h2 className="font-cinzel mb-2" style={{ fontSize: '22px', color: '#f4f4f5' }}>
         Events & Schedules
       </h2>
-      <p style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '24px' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '14px', marginBottom: '24px' }}>
         Manage the member calendar and faction chain/war countdowns.
       </p>
 
@@ -784,7 +784,7 @@ export default function EventsSchedulesTab() {
               borderRadius: '8px',
               border: section === s.id ? '1px solid rgba(179,18,63,0.5)' : '1px solid rgba(255,255,255,0.08)',
               background: section === s.id ? 'rgba(179,18,63,0.15)' : 'rgba(255,255,255,0.04)',
-              color: section === s.id ? '#f4f4f5' : '#a1a1aa',
+              color: section === s.id ? '#f4f4f5' : "var(--text-secondary)",
               cursor: 'pointer',
               fontSize: '14px',
               fontWeight: section === s.id ? 600 : 400,

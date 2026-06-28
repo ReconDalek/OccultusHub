@@ -77,7 +77,7 @@ function ScoreBoard({ war, ourFactionName }) {
 
   const scoreStyle = (winning) => ({
     fontSize: '24px', fontWeight: '800', fontFamily: 'Cinzel, serif',
-    color: isMatched ? '#52525b' : (winning ? '#22c55e' : '#f4f4f5'),
+    color: isMatched ? "var(--text-faint)" : (winning ? '#22c55e' : '#f4f4f5'),
     textShadow: !isMatched && winning ? '0 0 20px rgba(34,197,94,0.4)' : 'none',
     lineHeight: 1,
   })
@@ -89,15 +89,15 @@ function ScoreBoard({ war, ourFactionName }) {
     <div style={{ padding: '14px 16px 16px', borderTop: `1px solid ${borderColor}`, background: bgColor }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
         <div style={{ textAlign: 'left' }}>
-          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
             {opponent_faction_name || 'Opponent'}
           </p>
           <span style={scoreStyle(!weWinning)}>{(opponent_score || 0).toLocaleString('en-GB')}</span>
           {opponent_chain > 0 && <p style={{ color: '#f97316', fontSize: '10px', margin: '3px 0 0 0' }}>⛓ chain ×{opponent_chain}</p>}
         </div>
         <div style={{ textAlign: 'center', padding: '0 8px' }}>
-          <p style={{ color: '#71717a', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
-          <p style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: '600', margin: 0 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px 0' }}>target</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px', fontWeight: '600', margin: 0 }}>
             {isMatched ? '—' : (target > 0 ? target.toLocaleString('en-GB') : '—')}
           </p>
           {isMatched && countdown && (
@@ -106,11 +106,11 @@ function ScoreBoard({ war, ourFactionName }) {
             </p>
           )}
           {!isMatched && elapsed > 0 && (
-            <p style={{ color: '#52525b', fontSize: '9px', margin: '4px 0 0 0' }}>{elH}h {elM}m elapsed</p>
+            <p style={{ color: "var(--text-faint)", fontSize: '9px', margin: '4px 0 0 0' }}>{elH}h {elM}m elapsed</p>
           )}
         </div>
         <div style={{ textAlign: 'right' }}>
-          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px 0' }}>
             {ourFactionName}
           </p>
           <span style={scoreStyle(weWinning)}>{(our_score || 0).toLocaleString('en-GB')}</span>
@@ -129,7 +129,7 @@ function ScoreBoard({ war, ourFactionName }) {
       </div>
 
       {!isMatched && (our_score + opponent_score) > 0 && (
-        <p style={{ textAlign: 'center', color: '#52525b', fontSize: '10px', margin: '6px 0 0 0' }}>
+        <p style={{ textAlign: 'center', color: "var(--text-faint)", fontSize: '10px', margin: '6px 0 0 0' }}>
           {weWinning
             ? `+${(our_score - opponent_score).toLocaleString('en-GB')} lead — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more`
             : `${(opponent_score - our_score).toLocaleString('en-GB')} behind — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more`}
@@ -143,7 +143,7 @@ function ScoreBoard({ war, ourFactionName }) {
 
 function MemberStatsTable({ attackerStats, defendStats }) {
   if (!attackerStats?.length && !defendStats?.length) {
-    return <p style={{ color: '#a1a1aa', fontSize: '12px', textAlign: 'center', padding: '16px 0' }}>No attack data recorded yet.</p>
+    return <p style={{ color: "var(--text-secondary)", fontSize: '12px', textAlign: 'center', padding: '16px 0' }}>No attack data recorded yet.</p>
   }
 
   const defendMap = {}
@@ -160,7 +160,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
     }
   }
 
-  const th = { padding: '7px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a1a1aa', fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap' }
+  const th = { padding: '7px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap' }
   const td = { padding: '7px 8px', fontSize: '11px', color: '#f4f4f5', textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.04)' }
 
   return (
@@ -195,19 +195,19 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
               >
                 <td style={{ ...td, textAlign: 'left', color: '#e4e4e7' }}>{r.attacker_name || `[${r.attacker_id}]`}</td>
-                <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : '#71717a' }}>{fmt(r.war_hits)}</td>
-                <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : '#71717a' }}>{fmt(r.war_losses)}</td>
+                <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(r.war_hits)}</td>
+                <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.war_losses)}</td>
                 <td style={{ ...td, color: '#22c55e' }}>{fmt(gained, 2)}</td>
-                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : '#71717a' }}>{fmt(bonus, 2)}</td>
-                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : '#71717a' }}>{fmt(respectLost, 2)}</td>
+                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : "var(--text-muted)" }}>{fmt(bonus, 2)}</td>
+                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(respectLost, 2)}</td>
                 <td style={{ ...td, color: net >= 0 ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
                   {net >= 0 ? '+' : ''}{fmt(net, 2)}
                 </td>
-                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : '#71717a' }}>{fmt(def.defends_won)}</td>
-                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : '#71717a' }}>{fmt(def.defends_lost)}</td>
+                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(def.defends_won)}</td>
+                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(def.defends_lost)}</td>
                 <td style={td}>{fmt(r.outside_attacks)}</td>
-                <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : '#71717a' }}>{fmt(r.assists)}</td>
-                <td style={{ ...td, color: '#a1a1aa' }}>{fmt(r.energy_used)}</td>
+                <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : "var(--text-muted)" }}>{fmt(r.assists)}</td>
+                <td style={{ ...td, color: "var(--text-secondary)" }}>{fmt(r.energy_used)}</td>
               </tr>
             )
           })}
@@ -269,15 +269,15 @@ function WarCard({ war, factionName }) {
           <p style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', margin: '0 0 2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             vs {war.opponent_faction_name || `Faction #${war.opponent_faction_id}`}
           </p>
-          <p style={{ color: '#71717a', fontSize: '11px', margin: '0 0 1px 0' }}>{dateLabel}</p>
-          {lastUpdatedLabel && <p style={{ color: '#52525b', fontSize: '10px', margin: 0 }}>{lastUpdatedLabel}</p>}
+          <p style={{ color: "var(--text-muted)", fontSize: '11px', margin: '0 0 1px 0' }}>{dateLabel}</p>
+          {lastUpdatedLabel && <p style={{ color: "var(--text-faint)", fontSize: '10px', margin: 0 }}>{lastUpdatedLabel}</p>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           <span style={{
             padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700',
             letterSpacing: '0.08em', background: statusCfg.bg, border: `1px solid ${statusCfg.border}`, color: statusCfg.color,
           }}>{statusCfg.label}</span>
-          <span style={{ color: '#a1a1aa', fontSize: '14px' }}>{expanded ? '▲' : '▼'}</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: '14px' }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
@@ -287,7 +287,7 @@ function WarCard({ war, factionName }) {
       {/* Expanded member stats */}
       {expanded && (
         <div style={{ padding: '0 16px 16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          {loading && <p style={{ color: '#a1a1aa', fontSize: '12px', padding: '16px 0', textAlign: 'center' }}>Loading stats…</p>}
+          {loading && <p style={{ color: "var(--text-secondary)", fontSize: '12px', padding: '16px 0', textAlign: 'center' }}>Loading stats…</p>}
           {detail?.error && <p style={{ color: '#ef4444', fontSize: '12px', padding: '16px 0' }}>Failed to load stats.</p>}
           {detail && !detail.error && (
             <MemberStatsTable
@@ -341,7 +341,7 @@ export default function WarSummary() {
       className="rounded-2xl p-8"
       style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
     >
-      <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: '#a1a1aa' }}>
+      <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: "var(--text-secondary)" }}>
         ACTIVE WARS
       </h2>
 

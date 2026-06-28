@@ -229,7 +229,7 @@ export default function GameRoom() {
             <h1 className="font-cinzel" style={{ fontSize: 38, letterSpacing: 8, marginBottom: 10 }}>
               THE RITE
             </h1>
-            <p style={{ color: '#a1a1aa', fontSize: 14, lineHeight: 1.6 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.6 }}>
               An occult game of deception, loyalty, and sacrifice
             </p>
           </div>
@@ -242,17 +242,17 @@ export default function GameRoom() {
                   <span style={{ fontSize: 16 }}>🌑</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#eab308' }}>A Rite Is In Progress</span>
                 </div>
-                <p style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 10 }}>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
                   Phase {lobbyPreview.phase} · {lobbyPreview.phase_type === 'night' ? 'The Witching Hour' : 'The Reckoning'} · {lobbyPreview.player_count} players
                 </p>
-                <p style={{ fontSize: 11, color: '#71717a' }}>Wait for this rite to conclude before joining.</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Wait for this rite to conclude before joining.</p>
               </div>
             ) : hasLobby ? (
               <div style={statusCard('#9f67ff', 'rgba(109,40,217,0.08)')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <span style={{ fontSize: 16 }}>◈</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#9f67ff' }}>Lobby Open</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 12, color: '#71717a' }}>{lobbyPreview.player_count} / 16</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: "var(--text-muted)" }}>{lobbyPreview.player_count} / 16</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {lobbyPreview.players?.map((p, i) => (
@@ -263,10 +263,10 @@ export default function GameRoom() {
                 </div>
               </div>
             ) : (
-              <div style={statusCard('#52525b', 'rgba(255,255,255,0.03)')}>
+              <div style={statusCard("var(--text-faint)", 'rgba(255,255,255,0.03)')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 16 }}>◌</span>
-                  <span style={{ fontSize: 13, color: '#71717a' }}>No active lobby — be the first to open one</span>
+                  <span style={{ fontSize: 13, color: "var(--text-muted)" }}>No active lobby — be the first to open one</span>
                 </div>
               </div>
             )}
@@ -275,7 +275,7 @@ export default function GameRoom() {
           {/* Guest name input */}
           {!user && (
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, color: '#a1a1aa', marginBottom: 6, letterSpacing: 2, textTransform: 'uppercase' }}>
+              <label style={{ display: 'block', fontSize: 11, color: "var(--text-secondary)", marginBottom: 6, letterSpacing: 2, textTransform: 'uppercase' }}>
                 Your Name
               </label>
               <input
@@ -327,7 +327,7 @@ export default function GameRoom() {
 
 function RoleReference() {
   const roles = [
-    { name: 'Congregation', icon: '◌', color: '#a1a1aa', desc: 'Discuss and vote to banish the Cabal' },
+    { name: 'Congregation', icon: '◌', color: "var(--text-secondary)", desc: 'Discuss and vote to banish the Cabal' },
     { name: 'The Cabal', icon: '◈', color: '#b3123f', desc: 'Sacrifice the Congregation under cover of night' },
     { name: 'Inquisitor', icon: '◉', color: '#9f67ff', desc: 'Investigate one player on odd-numbered nights' },
     { name: 'Warden', icon: '◎', color: '#22c55e', desc: 'One bullet — guard yourself or shoot a suspect' },
@@ -337,14 +337,14 @@ function RoleReference() {
   ]
   return (
     <div style={{ marginTop: 48 }}>
-      <p style={{ fontSize: 11, color: '#71717a', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>Roles</p>
+      <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>Roles</p>
       <div style={{ display: 'grid', gap: 8 }}>
         {roles.map(r => (
           <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
             <span style={{ fontSize: 18, color: r.color, width: 24, textAlign: 'center' }}>{r.icon}</span>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: r.color }}>{r.name}</div>
-              <div style={{ fontSize: 12, color: '#71717a' }}>{r.desc}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{r.desc}</div>
             </div>
           </div>
         ))}

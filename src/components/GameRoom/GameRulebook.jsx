@@ -6,7 +6,7 @@ export default function GameRulebook({ onClose }) {
           <h2 className="font-cinzel" style={{ fontSize: 20, letterSpacing: 4, color: '#f4f4f5' }}>
             CODEX OF THE RITE
           </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#71717a', fontSize: 18, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: "var(--text-muted)", fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
 
         <div style={{ overflowY: 'auto', maxHeight: 'calc(85vh - 100px)', paddingRight: 8 }}>
@@ -64,7 +64,7 @@ export default function GameRulebook({ onClose }) {
               <thead>
                 <tr>
                   {['Players', 'Cabal', 'Inq.', 'Warden', 'Apostate', 'Deceiver', 'Acolyte', 'Cong.'].map(h => (
-                    <th key={h} style={{ padding: '5px 6px', textAlign: 'left', color: '#71717a', borderBottom: '1px solid rgba(255,255,255,0.08)', letterSpacing: 1 }}>{h}</th>
+                    <th key={h} style={{ padding: '5px 6px', textAlign: 'left', color: "var(--text-muted)", borderBottom: '1px solid rgba(255,255,255,0.08)', letterSpacing: 1 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -83,11 +83,11 @@ export default function GameRulebook({ onClose }) {
                     {row.map((cell, i) => (
                       <td key={i} style={{ padding: '5px 6px', color: '#d4d4d8', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                         {i === 1 ? <span style={{ color: '#b3123f' }}>{cell}</span> :
-                         i === 2 ? <span style={{ color: cell ? '#9f67ff' : '#52525b' }}>{cell || '—'}</span> :
-                         i === 3 ? <span style={{ color: cell ? '#22c55e' : '#52525b' }}>{cell || '—'}</span> :
-                         i === 4 ? <span style={{ color: cell ? '#f59e0b' : '#52525b' }}>{cell || '—'}</span> :
-                         i === 5 ? <span style={{ color: cell ? '#e879f9' : '#52525b' }}>{cell || '—'}</span> :
-                         i === 6 ? <span style={{ color: cell ? '#38bdf8' : '#52525b' }}>{cell || '—'}</span> : cell}
+                         i === 2 ? <span style={{ color: cell ? '#9f67ff' : "var(--text-faint)" }}>{cell || '—'}</span> :
+                         i === 3 ? <span style={{ color: cell ? '#22c55e' : "var(--text-faint)" }}>{cell || '—'}</span> :
+                         i === 4 ? <span style={{ color: cell ? '#f59e0b' : "var(--text-faint)" }}>{cell || '—'}</span> :
+                         i === 5 ? <span style={{ color: cell ? '#e879f9' : "var(--text-faint)" }}>{cell || '—'}</span> :
+                         i === 6 ? <span style={{ color: cell ? '#38bdf8' : "var(--text-faint)" }}>{cell || '—'}</span> : cell}
                       </td>
                     ))}
                   </tr>
@@ -126,7 +126,7 @@ function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 28 }}>
       <h3 className="font-cinzel" style={{ fontSize: 13, letterSpacing: 3, color: '#9f67ff', marginBottom: 12, textTransform: 'uppercase' }}>{title}</h3>
-      <div style={{ fontSize: 13, color: '#a1a1aa', lineHeight: 1.7 }}>{children}</div>
+      <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>{children}</div>
     </div>
   )
 }

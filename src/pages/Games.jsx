@@ -34,6 +34,22 @@ const GAMES = [
     cta: 'Enter the Sanctum',
   },
   {
+    to: '/binding',
+    title: 'The Binding',
+    symbol: '⚉',
+    symbolColor: '#534AB7',
+    accentColor: '#534AB7',
+    gradientFrom: 'rgba(83,74,183,0.12)',
+    gradientTo:   'rgba(179,18,63,0.06)',
+    border:       'rgba(83,74,183,0.3)',
+    tag: 'Occult Game',
+    tagColor: '#AFA9EC',
+    players: 'Members only',
+    description:
+      'Something stirs beyond the veil. A rite older than the faction — older than the names we use for it. Perform the Binding, and see what answers.',
+    cta: 'Perform the Rite',
+  },
+  {
     to: '/cards',
     title: 'Cards Against Occultus',
     symbol: '◈',
@@ -65,7 +81,7 @@ export default function Games() {
           >
             GAME ROOM
           </h1>
-          <p style={{ color: '#71717a', fontSize: 14, letterSpacing: 1 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: 14, letterSpacing: 1 }}>
             Choose your rite. More games will be added in time.
           </p>
         </div>
@@ -111,7 +127,7 @@ export default function Games() {
                         {g.tag}
                       </span>
                     </div>
-                    <p style={{ fontSize: 11, color: '#71717a', letterSpacing: 1, margin: 0 }}>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 1, margin: 0 }}>
                       {g.players}
                     </p>
                   </div>
@@ -119,7 +135,7 @@ export default function Games() {
 
                 {/* Description */}
                 <p style={{
-                  fontSize: 14, color: '#a1a1aa', lineHeight: 1.75,
+                  fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.75,
                   marginBottom: 20, marginLeft: 54,
                 }}>
                   {g.description}
@@ -162,7 +178,7 @@ export default function Games() {
           borderRadius: 12,
           textAlign: 'center',
         }}>
-          <p style={{ fontSize: 12, color: '#3f3f46', letterSpacing: 2, textTransform: 'uppercase' }}>
+          <p style={{ fontSize: 12, color: "var(--text-ghost)", letterSpacing: 2, textTransform: 'uppercase' }}>
             More rites are being prepared
           </p>
         </div>

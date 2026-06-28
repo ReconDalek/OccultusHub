@@ -18,11 +18,11 @@ export default function Respect() {
           <div className="font-cinzel text-white" style={{ fontSize: '18px', letterSpacing: '1px' }}>
             Respect Tracker
           </div>
-          <div className="text-xs" style={{ color: '#a1a1aa' }}>
+          <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
             Embedded operational monitoring tool
           </div>
         </div>
-        <div className="text-xs" style={{ color: '#a1a1aa' }}>
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
           External module (read-only embed)
         </div>
       </div>

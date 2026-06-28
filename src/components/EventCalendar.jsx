@@ -140,14 +140,14 @@ export default function EventCalendar({ events = [], calendarStartTime = null })
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <button
           onClick={() => { setCurrentDate(new Date(year, month - 1, 1)); setSelectedDay(null) }}
-          style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '22px', lineHeight: 1, padding: '4px 8px' }}
+          style={{ background: 'none', border: 'none', color: "var(--text-secondary)", cursor: 'pointer', fontSize: '22px', lineHeight: 1, padding: '4px 8px' }}
         >‹</button>
         <h3 className="font-cinzel" style={{ fontSize: '15px', letterSpacing: '2px', margin: 0 }}>
           {monthLabel.toUpperCase()}
         </h3>
         <button
           onClick={() => { setCurrentDate(new Date(year, month + 1, 1)); setSelectedDay(null) }}
-          style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '22px', lineHeight: 1, padding: '4px 8px' }}
+          style={{ background: 'none', border: 'none', color: "var(--text-secondary)", cursor: 'pointer', fontSize: '22px', lineHeight: 1, padding: '4px 8px' }}
         >›</button>
       </div>
 
@@ -205,7 +205,7 @@ export default function EventCalendar({ events = [], calendarStartTime = null })
         {DAY_LABELS.map((d, i) => (
           <div key={d} style={{
             textAlign: 'center',
-            color: '#a1a1aa',
+            color: "var(--text-secondary)",
             fontSize: '11px',
             fontWeight: 500,
             padding: '5px 0',
@@ -349,11 +349,11 @@ export default function EventCalendar({ events = [], calendarStartTime = null })
       {/* Selected day detail */}
       {selectedDay && (
         <div style={{ marginTop: '12px', padding: '14px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${LINE}` }}>
-          <div style={{ fontSize: '12px', color: '#a1a1aa', marginBottom: '10px' }}>
+          <div style={{ fontSize: '12px', color: "var(--text-secondary)", marginBottom: '10px' }}>
             {ds(year, month, selectedDay)}
           </div>
           {selectedEvents.length === 0 ? (
-            <p style={{ color: '#a1a1aa', fontSize: '14px', margin: 0 }}>No events on this day.</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '14px', margin: 0 }}>No events on this day.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {selectedEvents.map(ev => {
@@ -380,8 +380,8 @@ export default function EventCalendar({ events = [], calendarStartTime = null })
                         )}
                       </div>
                       {timeRange   && <div style={{ color: '#9f67ff', fontSize: '12px', marginTop: '2px' }}>{timeRange}</div>}
-                      {isMultiDay  && <div style={{ color: '#a1a1aa', fontSize: '12px', marginTop: '2px' }}>{ev.start_date} → {ev.end_date}</div>}
-                      {ev.description && <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '3px' }}>{ev.description}</div>}
+                      {isMultiDay  && <div style={{ color: "var(--text-secondary)", fontSize: '12px', marginTop: '2px' }}>{ev.start_date} → {ev.end_date}</div>}
+                      {ev.description && <div style={{ color: "var(--text-secondary)", fontSize: '13px', marginTop: '3px' }}>{ev.description}</div>}
                     </div>
                   </div>
                 )

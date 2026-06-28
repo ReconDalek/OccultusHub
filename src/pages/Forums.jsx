@@ -72,7 +72,7 @@ function ShowCodeModal({ html, onClose }) {
             <button
               onClick={onClose}
               style={{
-                background: 'rgba(255,255,255,0.08)', border: 'none', color: '#a1a1aa',
+                background: 'rgba(255,255,255,0.08)', border: 'none', color: "var(--text-secondary)",
                 padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
               }}
             >
@@ -81,7 +81,7 @@ function ShowCodeModal({ html, onClose }) {
           </div>
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
-          <p style={{ color: '#71717a', fontSize: '12px', marginBottom: '12px' }}>
+          <p style={{ color: "var(--text-muted)", fontSize: '12px', marginBottom: '12px' }}>
             Paste this into Torn's forum source editor (the &lt;/&gt; button) to recreate this post.
           </p>
           <pre style={{
@@ -120,7 +120,7 @@ function PostView({ post, user, onBack, onEdit, onDelete }) {
           onClick={onBack}
           style={{
             background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-            color: '#a1a1aa', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
+            color: "var(--text-secondary)", padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
           }}
         >
           ← Back to Forums
@@ -166,7 +166,7 @@ function PostView({ post, user, onBack, onEdit, onDelete }) {
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#a1a1aa', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}
+                    style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: "var(--text-secondary)", padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}
                   >
                     Cancel
                   </button>
@@ -193,7 +193,7 @@ function PostView({ post, user, onBack, onEdit, onDelete }) {
           <h1 className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '22px', letterSpacing: '2px', margin: '0 0 10px 0' }}>
             {post.title}
           </h1>
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '12px', color: '#71717a' }}>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '12px', color: "var(--text-muted)" }}>
             <span>By <span style={{ color: '#a78bfa' }}>{post.author_name}</span></span>
             <span>{formatDate(post.created_at)}</span>
             {post.updated_at !== post.created_at && (
@@ -259,7 +259,7 @@ function PostForm({ initial, onSubmit, onCancel, saving }) {
         </h2>
         <button
           type="button" onClick={onCancel}
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#a1a1aa', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: "var(--text-secondary)", padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}
         >
           Cancel
         </button>
@@ -267,7 +267,7 @@ function PostForm({ initial, onSubmit, onCancel, saving }) {
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '240px' }}>
-          <label style={{ display: 'block', color: '#a1a1aa', fontSize: '12px', marginBottom: '6px', letterSpacing: '1px' }}>
+          <label style={{ display: 'block', color: "var(--text-secondary)", fontSize: '12px', marginBottom: '6px', letterSpacing: '1px' }}>
             TITLE
           </label>
           <input
@@ -284,7 +284,7 @@ function PostForm({ initial, onSubmit, onCancel, saving }) {
           />
         </div>
         <div>
-          <label style={{ display: 'block', color: '#a1a1aa', fontSize: '12px', marginBottom: '6px', letterSpacing: '1px' }}>
+          <label style={{ display: 'block', color: "var(--text-secondary)", fontSize: '12px', marginBottom: '6px', letterSpacing: '1px' }}>
             CATEGORY
           </label>
           <select
@@ -302,7 +302,7 @@ function PostForm({ initial, onSubmit, onCancel, saving }) {
       </div>
 
       <div style={{ marginBottom: '20px' }}>
-        <label style={{ display: 'block', color: '#a1a1aa', fontSize: '12px', marginBottom: '6px', letterSpacing: '1px' }}>
+        <label style={{ display: 'block', color: "var(--text-secondary)", fontSize: '12px', marginBottom: '6px', letterSpacing: '1px' }}>
           CONTENT
         </label>
         <ForumEditor content={content} onChange={setContent} />
@@ -360,7 +360,7 @@ function PostsList({ posts, onSelect, onNew, loading }) {
             style={{
               background: categoryFilter === c ? 'rgba(109,40,217,0.25)' : 'rgba(255,255,255,0.04)',
               border: categoryFilter === c ? '1px solid rgba(109,40,217,0.5)' : '1px solid rgba(255,255,255,0.08)',
-              color: categoryFilter === c ? '#a78bfa' : '#71717a',
+              color: categoryFilter === c ? '#a78bfa' : "var(--text-muted)",
               padding: '6px 14px', borderRadius: '20px', cursor: 'pointer', fontSize: '12px',
               textTransform: 'capitalize', letterSpacing: '0.5px',
             }}
@@ -384,7 +384,7 @@ function PostsList({ posts, onSelect, onNew, loading }) {
           padding: '10px 20px',
           background: 'rgba(0,0,0,0.3)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
-          fontSize: '11px', color: '#52525b', letterSpacing: '1.5px',
+          fontSize: '11px', color: "var(--text-faint)", letterSpacing: '1.5px',
           fontFamily: "'Cinzel', serif",
         }}>
           <span>THREAD</span>
@@ -393,13 +393,13 @@ function PostsList({ posts, onSelect, onNew, loading }) {
         </div>
 
         {loading && (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#52525b', fontSize: '14px' }}>
+          <div style={{ padding: '40px', textAlign: 'center', color: "var(--text-faint)", fontSize: '14px' }}>
             Loading posts...
           </div>
         )}
 
         {!loading && filtered.length === 0 && (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#52525b', fontSize: '14px' }}>
+          <div style={{ padding: '40px', textAlign: 'center', color: "var(--text-faint)", fontSize: '14px' }}>
             No posts yet. Be the first to create one.
           </div>
         )}
@@ -437,7 +437,7 @@ function PostsList({ posts, onSelect, onNew, loading }) {
             <div style={{ textAlign: 'center', color: '#a78bfa', fontSize: '12px' }}>
               {post.author_name}
             </div>
-            <div style={{ textAlign: 'right', color: '#52525b', fontSize: '11px' }}>
+            <div style={{ textAlign: 'right', color: "var(--text-faint)", fontSize: '11px' }}>
               {formatDate(post.created_at)}
             </div>
           </div>
@@ -548,7 +548,7 @@ export default function Forums() {
 
   if (sessionLoading) {
     return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b' }}>
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: "var(--text-faint)" }}>
         Loading...
       </div>
     )
@@ -557,10 +557,10 @@ export default function Forums() {
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '40px 24px' }}>
       {/* Breadcrumbs */}
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '32px', fontSize: '12px', color: '#52525b' }}>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '32px', fontSize: '12px', color: "var(--text-faint)" }}>
         <span
           onClick={() => setView('list')}
-          style={{ cursor: view !== 'list' ? 'pointer' : 'default', color: view !== 'list' ? '#a78bfa' : '#52525b' }}
+          style={{ cursor: view !== 'list' ? 'pointer' : 'default', color: view !== 'list' ? '#a78bfa' : "var(--text-faint)" }}
         >
           Forums
         </span>
@@ -569,14 +569,14 @@ export default function Forums() {
             <span>›</span>
             <span
               onClick={() => setView('post')}
-              style={{ cursor: view === 'edit' ? 'pointer' : 'default', color: view === 'edit' ? '#a78bfa' : '#52525b', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ cursor: view === 'edit' ? 'pointer' : 'default', color: view === 'edit' ? '#a78bfa' : "var(--text-faint)", maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
               {selectedPost.title}
             </span>
           </>
         )}
-        {view === 'new' && <><span>›</span><span style={{ color: '#52525b' }}>New Post</span></>}
-        {view === 'edit' && <><span>›</span><span style={{ color: '#52525b' }}>Edit</span></>}
+        {view === 'new' && <><span>›</span><span style={{ color: "var(--text-faint)" }}>New Post</span></>}
+        {view === 'edit' && <><span>›</span><span style={{ color: "var(--text-faint)" }}>Edit</span></>}
       </div>
 
       {/* Error banner */}

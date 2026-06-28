@@ -24,6 +24,7 @@ import * as stocksController from './controllers/stocksController.js'
 import * as armoryController from './controllers/armoryController.js';
 import * as companyProfitController from './controllers/companyProfitController.js';
 import * as webhookController from './controllers/webhookController.js';
+import * as bindingController from './controllers/bindingController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -626,6 +627,60 @@ export async function handleRequest(request, env, ctx) {
   if (pathname.match(/^\/api\/stocks\/\d+$/) && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     return stocksController.getStockDetail(request, env);
+  }
+
+  // The Binding — familiar game (auth required)
+  if (pathname === '/api/binding/familiar' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.getFamiliar(request, env, user);
+  }
+  if (pathname === '/api/binding/create' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.createFamiliar(request, env, user);
+  }
+  if (pathname === '/api/binding/train' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.trainFamiliar(request, env, user);
+  }
+  if (pathname === '/api/binding/hunt' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.huntFamiliar(request, env, user);
+  }
+  if (pathname === '/api/binding/rest' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.restFamiliar(request, env, user);
+  }
+  if (pathname === '/api/binding/duel' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.duelFamiliar(request, env, user);
+  }
+  if (pathname === '/api/binding/allocate' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.allocateStat(request, env, user);
+  }
+  if (pathname.match(/^\/api\/binding\/events\/\d+\/seen$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.markEventSeen(request, env, user);
+  }
+  if (pathname === '/api/binding/leaderboard' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.getLeaderboard(request, env, user);
+  }
+  if (pathname === '/api/binding/others' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.getOtherFamiliars(request, env, user);
+  }
+  if (pathname === '/api/binding/battles' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.getRecentBattles(request, env, user);
+  }
+  if (pathname === '/api/binding/shop' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.getShopItems(request, env, user);
+  }
+  if (pathname === '/api/binding/shop/buy' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return bindingController.shopBuy(request, env, user);
   }
 
   // The Sanctum — idle RPG (auth required)

@@ -35,7 +35,7 @@ function useIsMobile() {
 function tabStyle(active) {
   return {
     padding: '7px 16px', fontWeight: '500', border: 'none', cursor: 'pointer',
-    background: 'transparent', color: active ? '#f4f4f5' : '#a1a1aa',
+    background: 'transparent', color: active ? '#f4f4f5' : "var(--text-secondary)",
     borderBottom: active ? '2px solid #b3123f' : '2px solid transparent',
     fontSize: '13px', whiteSpace: 'nowrap', transition: 'color 0.15s', flexShrink: 0,
   }
@@ -92,7 +92,7 @@ function LoanExpandedRow({ item, members, colTemplate, isSimple }) {
         for (const id of ids) { const t = id.trim(); counts[t] = (counts[t] || 0) + 1 }
         return (
           <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 14px 5px 36px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '11px', color: '#71717a', minWidth: '70px' }}>{f.label}</span>
+            <span style={{ fontSize: '11px', color: "var(--text-muted)", minWidth: '70px' }}>{f.label}</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
               {Object.entries(counts).map(([id, qty]) => (
                 <a key={id} href={`https://www.torn.com/profiles.php?XID=${id}`} target="_blank" rel="noopener noreferrer"
@@ -142,7 +142,7 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
           <span style={{ color: '#d4d4d8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
         </div>
         {!isSimple && (
-          <span style={{ color: '#71717a', fontSize: '12px' }}>{item.type}</span>
+          <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{item.type}</span>
         )}
         {FACTIONS.map(f => {
           const fd  = item.factions[f.id]
@@ -153,7 +153,7 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
             // Not in this faction's armory at all — treat as 0
             return (
               <span key={f.id} style={{
-                color: low ? '#f87171' : '#3f3f46',
+                color: low ? '#f87171' : "var(--text-ghost)",
                 fontWeight: low ? '600' : '400',
                 fontSize: '13px', textAlign: 'center',
                 background: low ? 'rgba(248,113,113,0.08)' : 'transparent',
@@ -168,7 +168,7 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
           if (isSimple) {
             return (
               <span key={f.id} style={{
-                color: low ? '#f87171' : qty ? '#f4f4f5' : '#52525b',
+                color: low ? '#f87171' : qty ? '#f4f4f5' : "var(--text-faint)",
                 fontWeight: '600', fontSize: '13px', textAlign: 'center',
                 background: low ? 'rgba(248,113,113,0.08)' : 'transparent',
                 borderRadius: '4px', padding: low ? '1px 6px' : '0',
@@ -183,7 +183,7 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
           return (
             <div key={f.id} style={{ textAlign: 'center' }}>
               <span style={{
-                color: availLow ? '#f87171' : fd.available === 0 ? '#52525b' : '#4ade80',
+                color: availLow ? '#f87171' : fd.available === 0 ? "var(--text-faint)" : '#4ade80',
                 fontWeight: '600', fontSize: '13px',
                 background: availLow ? 'rgba(248,113,113,0.08)' : 'transparent',
                 borderRadius: '4px', padding: availLow ? '1px 6px' : '0',
@@ -191,7 +191,7 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
               }}>
                 {fd.available}
               </span>
-              {fd.loaned > 0 && <span style={{ color: '#52525b', fontSize: '11px' }}>/{fd.quantity}</span>}
+              {fd.loaned > 0 && <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>/{fd.quantity}</span>}
             </div>
           )
         })}
@@ -218,9 +218,9 @@ function SubTypeGroup({ type, items, isSimple, members, colTemplate, expandedLoa
           border: 'none', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: '11px', fontWeight: '600', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{type}</span>
-        <span style={{ fontSize: '11px', color: '#3f3f46' }}>{items.length}</span>
-        <span style={{ marginLeft: 'auto', color: '#3f3f46', fontSize: '10px' }}>{isOpen ? '▲' : '▼'}</span>
+        <span style={{ fontSize: '11px', fontWeight: '600', color: "var(--text-muted)", textTransform: 'uppercase', letterSpacing: '0.06em' }}>{type}</span>
+        <span style={{ fontSize: '11px', color: "var(--text-ghost)" }}>{items.length}</span>
+        <span style={{ marginLeft: 'auto', color: "var(--text-ghost)", fontSize: '10px' }}>{isOpen ? '▲' : '▼'}</span>
       </button>
       {isOpen && items.map(item => (
         <ItemRow key={item.ID} item={item} isSimple={isSimple} members={members} colTemplate={colTemplate}
@@ -253,10 +253,10 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
   // Table header
   const header = (
     <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
-      <span style={{ fontSize: '11px', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name</span>
-      {!isSimple && <span style={{ fontSize: '11px', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</span>}
+      <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name</span>
+      {!isSimple && <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</span>}
       {FACTIONS.map(f => (
-        <span key={f.id} style={{ fontSize: '11px', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>{f.label}</span>
+        <span key={f.id} style={{ fontSize: '11px', color: "var(--text-muted)", textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>{f.label}</span>
       ))}
     </div>
   )
@@ -264,7 +264,7 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
   if (!items.length) return (
     <div>
       {header}
-      <p style={{ color: '#52525b', fontSize: '13px', padding: '12px 14px', margin: 0 }}>No items.</p>
+      <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '12px 14px', margin: 0 }}>No items.</p>
     </div>
   )
 
@@ -355,11 +355,11 @@ export default function ArmoryTab() {
           {/* Header */}
           <div style={{ marginBottom: '20px' }}>
             <h2 className="font-cinzel" style={{ fontSize: '20px', color: '#f4f4f5', marginBottom: '4px' }}>Armory</h2>
-            <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
               Faction inventory — weapons, armor, supplies, and loan status. Click a loaned row to see who has it.
             </p>
             {fetchedAt && (
-              <p style={{ color: '#52525b', fontSize: '11px', margin: '4px 0 0 0' }}>
+              <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '4px 0 0 0' }}>
                 Updated {new Date(fetchedAt + 'Z').toLocaleString()}
               </p>
             )}
@@ -369,12 +369,12 @@ export default function ArmoryTab() {
           {!loading && !error && armory.length > 0 && (
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
               <div className="p-3 rounded-lg" style={{ background: 'rgba(179,18,63,0.08)', border: '1px solid rgba(179,18,63,0.2)', minWidth: '140px' }}>
-                <p style={{ color: '#71717a', fontSize: '11px', margin: '0 0 3px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Value</p>
+                <p style={{ color: "var(--text-muted)", fontSize: '11px', margin: '0 0 3px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Value</p>
                 <p style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '700', margin: 0 }}>{formatValue(totalValue)}</p>
               </div>
               {armory.map(b => (
                 <div key={b.faction_id} className="p-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', minWidth: '130px' }}>
-                  <p style={{ color: '#71717a', fontSize: '11px', margin: '0 0 3px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <p style={{ color: "var(--text-muted)", fontSize: '11px', margin: '0 0 3px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {FACTIONS.find(f => f.id === b.faction_id)?.label ?? b.faction_id}
                   </p>
                   <p style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '600', margin: 0 }}>{formatValue(b.totalValue ?? 0)}</p>
@@ -383,7 +383,7 @@ export default function ArmoryTab() {
             </div>
           )}
 
-          {loading && <p style={{ color: '#52525b', fontSize: '13px' }}>Loading armory data…</p>}
+          {loading && <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>Loading armory data…</p>}
           {!loading && error && <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>}
 
           {!loading && !error && (

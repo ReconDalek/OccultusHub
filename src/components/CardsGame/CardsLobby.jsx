@@ -59,7 +59,7 @@ export default function CardsLobby({
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '0 16px' }}>
       {/* Room code */}
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '2px', marginBottom: 6 }}>ROOM CODE</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", letterSpacing: '2px', marginBottom: 6 }}>ROOM CODE</div>
         <div style={{
           fontFamily: 'Cinzel, serif',
           fontSize: 40,
@@ -69,7 +69,7 @@ export default function CardsLobby({
         }}>
           {room.code}
         </div>
-        <div style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4 }}>Share this code with friends</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>Share this code with friends</div>
       </div>
 
       {/* Players */}
@@ -80,7 +80,7 @@ export default function CardsLobby({
         padding: '20px 24px',
         marginBottom: 20,
       }}>
-        <div style={{ fontSize: 12, letterSpacing: '2px', color: '#a1a1aa', marginBottom: 16 }}>
+        <div style={{ fontSize: 12, letterSpacing: '2px', color: "var(--text-secondary)", marginBottom: 16 }}>
           PLAYERS — {players.length}/20
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
@@ -98,13 +98,13 @@ export default function CardsLobby({
             }}>
               {p.is_host && <span style={{ color: '#b3123f', fontSize: 12 }}>◈</span>}
               {p.display_name}
-              {p.is_bot && <span style={{ fontSize: 10, color: '#52525b', marginLeft: 2 }}>[bot]</span>}
-              {p.id === myPlayerId && <span style={{ fontSize: 10, color: '#a1a1aa' }}>(you)</span>}
+              {p.is_bot && <span style={{ fontSize: 10, color: "var(--text-faint)", marginLeft: 2 }}>[bot]</span>}
+              {p.id === myPlayerId && <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>(you)</span>}
             </div>
           ))}
         </div>
         {players.length < 3 && (
-          <div style={{ marginTop: 12, fontSize: 12, color: '#a1a1aa' }}>
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-secondary)" }}>
             Waiting for {3 - players.length} more player{3 - players.length !== 1 ? 's' : ''}…
           </div>
         )}
@@ -119,7 +119,7 @@ export default function CardsLobby({
           padding: '20px 24px',
           marginBottom: 20,
         }}>
-          <div style={{ fontSize: 12, letterSpacing: '2px', color: '#a1a1aa', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, letterSpacing: '2px', color: "var(--text-secondary)", marginBottom: 16 }}>
             GAME SETTINGS
           </div>
 
@@ -183,7 +183,7 @@ export default function CardsLobby({
               <div>
                 <div style={{ fontSize: 13, color: '#f4f4f5' }}>Omens</div>
                 {settings.omens_enabled && (
-                  <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
                     {OMEN_EXAMPLES.join(' · ')}
                   </div>
                 )}
@@ -204,7 +204,7 @@ export default function CardsLobby({
           display: 'flex',
           gap: 24,
           fontSize: 13,
-          color: '#a1a1aa',
+          color: "var(--text-secondary)",
         }}>
           <span>🩸 {room.souls_to_win} souls to win</span>
           <span>{room.omens_enabled ? '✦ Omens enabled' : '○ No omens'}</span>
@@ -218,7 +218,7 @@ export default function CardsLobby({
           background: secsLeft < 60 ? 'rgba(179,18,63,0.08)' : 'rgba(255,255,255,0.03)',
           border: `1px solid ${secsLeft < 60 ? 'rgba(179,18,63,0.25)' : 'rgba(255,255,255,0.07)'}`,
           borderRadius: 10, padding: '10px 16px', fontSize: 12,
-          color: secsLeft < 60 ? '#fb7185' : '#a1a1aa', marginBottom: 16,
+          color: secsLeft < 60 ? '#fb7185' : "var(--text-secondary)", marginBottom: 16,
         }}>
           <span>Lobby closes if no game starts</span>
           <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
@@ -239,7 +239,7 @@ export default function CardsLobby({
               borderRadius: 10,
               border: '1px solid rgba(82,82,91,0.4)',
               background: 'rgba(255,255,255,0.03)',
-              color: '#71717a',
+              color: "var(--text-muted)",
               fontSize: 13,
               cursor: filling ? 'not-allowed' : 'pointer',
             }}
@@ -263,7 +263,7 @@ export default function CardsLobby({
               background: canStart
                 ? 'linear-gradient(135deg, #b3123f, #6d28d9)'
                 : 'rgba(255,255,255,0.08)',
-              color: canStart ? '#f4f4f5' : '#a1a1aa',
+              color: canStart ? '#f4f4f5' : "var(--text-secondary)",
               fontFamily: 'Cinzel, serif',
               fontSize: 14,
               letterSpacing: '1px',
@@ -282,7 +282,7 @@ export default function CardsLobby({
             borderRadius: 10,
             border: '1px solid rgba(255,255,255,0.12)',
             background: 'transparent',
-            color: '#a1a1aa',
+            color: "var(--text-secondary)",
             fontSize: 13,
             cursor: 'pointer',
           }}
@@ -292,7 +292,7 @@ export default function CardsLobby({
       </div>
 
       {!isHost && (
-        <p style={{ textAlign: 'center', marginTop: 16, color: '#a1a1aa', fontSize: 12 }}>
+        <p style={{ textAlign: 'center', marginTop: 16, color: "var(--text-secondary)", fontSize: 12 }}>
           Waiting for the host to begin…
         </p>
       )}

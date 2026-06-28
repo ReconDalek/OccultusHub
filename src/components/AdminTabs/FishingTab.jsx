@@ -83,7 +83,7 @@ export default function FishingTab() {
           <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontFamily: 'Cinzel, serif', letterSpacing: '1px' }}>
             Void Scrying Leaderboard
           </h3>
-          <p style={{ margin: 0, color: '#a1a1aa', fontSize: '13px' }}>Manage the Scrying the Abyss leaderboard</p>
+          <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: '13px' }}>Manage the Scrying the Abyss leaderboard</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
@@ -137,21 +137,21 @@ export default function FishingTab() {
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '22px', fontWeight: 800, color: '#fbbf24' }}>{s.value}</div>
-            <div style={{ fontSize: '11px', color: '#a1a1aa', marginTop: '4px', letterSpacing: '0.05em' }}>{s.label}</div>
+            <div style={{ fontSize: '11px', color: "var(--text-secondary)", marginTop: '4px', letterSpacing: '0.05em' }}>{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Table */}
       {loading ? (
-        <div style={{ color: '#a1a1aa', textAlign: 'center', padding: '24px' }}>Loading...</div>
+        <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>Loading...</div>
       ) : leaderboard.length === 0 ? (
-        <div style={{ color: '#a1a1aa', textAlign: 'center', padding: '24px' }}>No scrying data yet.</div>
+        <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>No scrying data yet.</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
-              <tr style={{ color: '#a1a1aa', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <tr style={{ color: "var(--text-secondary)", textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                 <th style={{ padding: '8px 12px', fontWeight: 600 }}>#</th>
                 <th style={{ padding: '8px 12px', fontWeight: 600 }}>Scrier</th>
                 <th style={{ padding: '8px 12px', fontWeight: 600 }}>Bindings</th>
@@ -161,12 +161,12 @@ export default function FishingTab() {
             <tbody>
               {leaderboard.map((entry, i) => (
                 <tr key={entry.torn_user_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <td style={{ padding: '10px 12px', color: i < 3 ? '#fbbf24' : '#a1a1aa' }}>{i + 1}</td>
+                  <td style={{ padding: '10px 12px', color: i < 3 ? '#fbbf24' : "var(--text-secondary)" }}>{i + 1}</td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ fontWeight: 600 }}>{entry.username}</div>
-                    <div style={{ color: '#a1a1aa', fontSize: '11px' }}>#{entry.torn_user_id}</div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: '11px' }}>#{entry.torn_user_id}</div>
                   </td>
-                  <td style={{ padding: '10px 12px', color: '#a1a1aa' }}>{entry.total_catches}</td>
+                  <td style={{ padding: '10px 12px', color: "var(--text-secondary)" }}>{entry.total_catches}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#fbbf24', fontWeight: 700 }}>
                     {entry.fishing_points.toLocaleString()}
                   </td>

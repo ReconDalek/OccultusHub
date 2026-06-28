@@ -84,7 +84,7 @@ function CompanyCard({ company, membershipTier }) {
             {profile.director.name || `#${profile.director.id}`}
           </a>
         ) : (
-          <span style={{ color: '#a1a1aa' }}>Unknown</span>
+          <span style={{ color: "var(--text-secondary)" }}>Unknown</span>
         )}
       </div>
 
@@ -179,7 +179,7 @@ function CompanyCard({ company, membershipTier }) {
                   )}
                 </div>
                 <span>{emp.position?.name}</span>
-                <span style={{ color: '#71717a', fontSize: '13px' }}>{emp.last_action?.relative}</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '13px' }}>{emp.last_action?.relative}</span>
                 {eff != null ? <EffectivenessBar value={eff} /> : <span />}
               </div>
             )
@@ -238,7 +238,7 @@ export default function Companies() {
           </h1>
           <p
             className="animate-fade-up-slow"
-            style={{ color: '#a1a1aa', fontSize: '20px', lineHeight: 1.8 }}
+            style={{ color: "var(--text-secondary)", fontSize: '20px', lineHeight: 1.8 }}
           >
             Industry powers the collective.<br />
             Every enterprise strengthens the order.
@@ -250,11 +250,11 @@ export default function Companies() {
       <section style={{ padding: '60px 48px' }}>
         {loading ? (
           <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
-            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>Loading company data…</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '15px' }}>Loading company data…</p>
           </div>
         ) : companies.length === 0 ? (
           <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
-            <p style={{ color: '#a1a1aa', fontSize: '15px' }}>No company data available.</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '15px' }}>No company data available.</p>
           </div>
         ) : (
           <div
@@ -275,7 +275,7 @@ export default function Companies() {
         {cacheStatus && (
           <div
             className="max-w-3xl mx-auto mt-8 p-5 rounded-3xl text-center"
-            style={{ background: 'rgba(255,255,255,0.03)', color: '#a1a1aa', fontSize: '14px' }}
+            style={{ background: 'rgba(255,255,255,0.03)', color: "var(--text-secondary)", fontSize: '14px' }}
           >
             {cacheStatus}
           </div>

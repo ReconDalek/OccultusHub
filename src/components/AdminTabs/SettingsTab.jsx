@@ -53,7 +53,7 @@ export default function SettingsTab() {
   }
 
   if (loading) {
-    return <p style={{ color: '#a1a1aa' }}>Loading settings...</p>
+    return <p style={{ color: "var(--text-secondary)" }}>Loading settings...</p>
   }
 
   const settingsList = [
@@ -64,7 +64,7 @@ export default function SettingsTab() {
 
   return (
     <div>
-      <p style={{ color: '#a1a1aa', marginBottom: '24px' }}>
+      <p style={{ color: "var(--text-secondary)", marginBottom: '24px' }}>
         Configure system-wide settings and defaults.
       </p>
 
@@ -94,7 +94,7 @@ export default function SettingsTab() {
                   }}
                 />
               ) : (
-                <p style={{ color: '#a1a1aa', fontSize: '14px' }}>
+                <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>
                   {settings[setting.key]}
                 </p>
               )}
@@ -118,7 +118,7 @@ export default function SettingsTab() {
                     className="px-4 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80"
                     style={{
                       background: 'rgba(255,255,255,0.08)',
-                      color: '#a1a1aa',
+                      color: "var(--text-secondary)",
                     }}
                   >
                     Cancel
@@ -130,7 +130,7 @@ export default function SettingsTab() {
                   className="px-4 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80"
                   style={{
                     background: 'rgba(255,255,255,0.08)',
-                    color: '#a1a1aa',
+                    color: "var(--text-secondary)",
                   }}
                 >
                   Edit

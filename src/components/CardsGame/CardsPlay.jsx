@@ -148,7 +148,7 @@ export default function CardsPlay({
               padding: '5px 12px', borderRadius: 24,
               border: p.is_harbinger ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.08)',
               background: p.is_harbinger ? 'rgba(179,18,63,0.12)' : 'rgba(255,255,255,0.04)',
-              fontSize: 12, color: p.id === myPlayerId ? '#f4f4f5' : '#a1a1aa',
+              fontSize: 12, color: p.id === myPlayerId ? '#f4f4f5' : "var(--text-secondary)",
             }}>
               {p.is_harbinger && <span style={{ color: '#ff6b6b', fontSize: 10 }}>◈</span>}
               <span>{p.display_name}</span>
@@ -156,7 +156,7 @@ export default function CardsPlay({
                 {Array.from({ length: p.souls }).map((_, i) => <span key={i}>●</span>)}
                 {p.souls === 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>○</span>}
               </span>
-              <span style={{ fontSize: 10, color: '#a1a1aa' }}>{p.souls}/{room.souls_to_win}</span>
+              <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>{p.souls}/{room.souls_to_win}</span>
             </div>
           ))}
         </div>
@@ -165,7 +165,7 @@ export default function CardsPlay({
           <div style={{ fontFamily: 'Cinzel, serif', fontSize: 20, letterSpacing: '3px', marginBottom: 12 }}>
             Entering the Circle
           </div>
-          <p style={{ color: '#a1a1aa', fontSize: 14, maxWidth: 320, margin: '0 auto 32px', lineHeight: 1.7 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 320, margin: '0 auto 32px', lineHeight: 1.7 }}>
             A ritual is in progress. You will join at the start of the next round.
           </p>
           <div style={{
@@ -191,7 +191,7 @@ export default function CardsPlay({
             style={{
               padding: '7px 18px', borderRadius: 8,
               border: '1px solid rgba(255,255,255,0.1)',
-              background: 'transparent', color: '#a1a1aa',
+              background: 'transparent', color: "var(--text-secondary)",
               fontSize: 12, cursor: 'pointer',
             }}
           >
@@ -226,7 +226,7 @@ export default function CardsPlay({
               : '1px solid rgba(255,255,255,0.08)',
             background: p.is_harbinger ? 'rgba(179,18,63,0.12)' : 'rgba(255,255,255,0.04)',
             fontSize: 12,
-            color: p.id === myPlayerId ? '#f4f4f5' : '#a1a1aa',
+            color: p.id === myPlayerId ? '#f4f4f5' : "var(--text-secondary)",
           }}>
             {p.is_harbinger && <span style={{ color: '#ff6b6b', fontSize: 10 }}>◈</span>}
             <span>{p.display_name}</span>
@@ -236,7 +236,7 @@ export default function CardsPlay({
               ))}
               {p.souls === 0 && <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>○</span>}
             </span>
-            <span style={{ fontSize: 10, color: '#a1a1aa' }}>{p.souls}/{room.souls_to_win}</span>
+            <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>{p.souls}/{room.souls_to_win}</span>
           </div>
         ))}
       </div>
@@ -278,13 +278,13 @@ export default function CardsPlay({
           {round?.status === 'picking' && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", letterSpacing: '1px' }}>
                   {isHarbinger ? 'You are the Harbinger — await the fates.' : 'AWAITING SUBMISSIONS'}
                 </div>
                 {timeLeft !== null && (
                   <div style={{
                     fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 600,
-                    color: timeLeft <= 15 ? '#fb7185' : timeLeft <= 30 ? '#fbbf24' : '#a1a1aa',
+                    color: timeLeft <= 15 ? '#fb7185' : timeLeft <= 30 ? '#fbbf24' : "var(--text-secondary)",
                     padding: '2px 8px', borderRadius: 6,
                     background: timeLeft <= 15 ? 'rgba(179,18,63,0.12)' : 'rgba(255,255,255,0.05)',
                     border: `1px solid ${timeLeft <= 15 ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.08)'}`,
@@ -303,7 +303,7 @@ export default function CardsPlay({
                       fontSize: 12,
                       border: `1px solid ${s.submitted ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.1)'}`,
                       background: s.submitted ? 'rgba(179,18,63,0.1)' : 'transparent',
-                      color: s.submitted ? '#f4a0b0' : '#a1a1aa',
+                      color: s.submitted ? '#f4a0b0' : "var(--text-secondary)",
                     }}>
                       {p?.display_name || '?'} {s.submitted ? '✓' : '…'}
                     </div>
@@ -352,7 +352,7 @@ export default function CardsPlay({
               return (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", letterSpacing: '1px' }}>
                       {isHarbinger ? 'BLOOD MOON — CROWN ONE CARD TO CLAIM A SOUL' : `Waiting for ${harbinger?.display_name} to judge…`}
                     </div>
                     {timerEl}
@@ -402,7 +402,7 @@ export default function CardsPlay({
             return (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div style={{ fontSize: 12, color: '#a1a1aa', letterSpacing: '1px' }}>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", letterSpacing: '1px' }}>
                     {isHarbinger ? 'CHOOSE THE WINNER — TAP A CARD TO CROWN IT' : `Waiting for ${harbinger?.display_name} to judge…`}
                   </div>
                   {timerEl}
@@ -462,7 +462,7 @@ export default function CardsPlay({
               ))}
               {/* Countdown to next round */}
               <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                <div style={{ fontSize: 12, color: '#71717a', letterSpacing: 1 }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", letterSpacing: 1 }}>
                   Next round in
                 </div>
                 {timeLeft !== null && (
@@ -488,12 +488,12 @@ export default function CardsPlay({
       {round?.status === 'picking' && !isHarbinger && (
         <div style={{ marginTop: 24 }}>
           {alreadySubmitted ? (
-            <div style={{ textAlign: 'center', padding: '20px 0', color: '#a1a1aa', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: '20px 0', color: "var(--text-secondary)", fontSize: 13 }}>
               ✓ Fate submitted — awaiting judgment
             </div>
           ) : (
             <div>
-              <div style={{ textAlign: 'center', fontSize: 12, color: '#a1a1aa', marginBottom: 12, letterSpacing: '1px' }}>
+              <div style={{ textAlign: 'center', fontSize: 12, color: "var(--text-secondary)", marginBottom: 12, letterSpacing: '1px' }}>
                 YOUR HAND — PICK {effectivePicks > 1 ? `${effectivePicks} CARDS` : 'A CARD'}
               </div>
               <CardHand
@@ -542,7 +542,7 @@ export default function CardsPlay({
             borderRadius: 8,
             border: '1px solid rgba(255,255,255,0.1)',
             background: 'transparent',
-            color: '#a1a1aa',
+            color: "var(--text-secondary)",
             fontSize: 12,
             cursor: 'pointer',
           }}

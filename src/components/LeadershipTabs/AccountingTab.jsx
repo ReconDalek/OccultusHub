@@ -28,7 +28,7 @@ export default function AccountingTab() {
     border: 'none',
     cursor: 'pointer',
     background: 'transparent',
-    color: activeSubTab === id ? '#f4f4f5' : '#a1a1aa',
+    color: activeSubTab === id ? '#f4f4f5' : "var(--text-secondary)",
     borderBottom: activeSubTab === id ? '2px solid #b3123f' : '2px solid transparent',
     fontSize: '13px',
     whiteSpace: 'nowrap',
@@ -43,7 +43,7 @@ export default function AccountingTab() {
           <h2 className="font-cinzel" style={{ fontSize: '20px', color: '#f4f4f5', marginBottom: '4px' }}>
             Accounting
           </h2>
-          <p style={{ color: '#a1a1aa', fontSize: '13px' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>
             Track faction bank and stock investment payouts.
           </p>
         </div>
@@ -64,11 +64,11 @@ export default function AccountingTab() {
                   cursor: 'pointer',
                   border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
                   background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
-                  color: active ? '#f4f4f5' : '#a1a1aa',
+                  color: active ? '#f4f4f5' : "var(--text-secondary)",
                   transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => { if (!active) { e.currentTarget.style.color = '#f4f4f5'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' } }}
-                onMouseLeave={e => { if (!active) { e.currentTarget.style.color = '#a1a1aa'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' } }}
+                onMouseLeave={e => { if (!active) { e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' } }}
               >
                 {f.label}
               </button>
@@ -86,7 +86,7 @@ export default function AccountingTab() {
               onClick={() => setActiveSubTab(t.id)}
               style={subTabStyle(t.id)}
               onMouseEnter={e => { if (activeSubTab !== t.id) e.currentTarget.style.color = '#f4f4f5' }}
-              onMouseLeave={e => { if (activeSubTab !== t.id) e.currentTarget.style.color = '#a1a1aa' }}
+              onMouseLeave={e => { if (activeSubTab !== t.id) e.currentTarget.style.color = "var(--text-secondary)" }}
             >
               {t.label}
             </button>
@@ -218,7 +218,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', margin: 0, marginBottom: '2px' }}>Faction Networth Overview</h3>
-          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
             Per-faction monthly financial overview.
           </p>
         </div>
@@ -226,7 +226,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
         {/* Global value settings */}
         {!editSettings ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ color: '#a1a1aa', fontSize: '12px' }}>
+            <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
               Respect: ${(settings.respect_value || 0).toLocaleString()}/pt
               &nbsp;·&nbsp;
               Points: ${(settings.points_value || 0).toLocaleString()}/pt
@@ -235,7 +235,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               onClick={() => setEditSettings(true)}
               style={{
                 background: 'transparent', border: '1px solid rgba(255,255,255,0.15)',
-                borderRadius: '6px', color: '#a1a1aa', padding: '5px 12px',
+                borderRadius: '6px', color: "var(--text-secondary)", padding: '5px 12px',
                 fontSize: '12px', cursor: 'pointer',
               }}
             >
@@ -245,7 +245,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
         ) : (
           <form onSubmit={handleSaveSettings} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>$ per Respect</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '3px' }}>$ per Respect</label>
               <input
                 style={inputStyle} type="number" step="0.01" min="0"
                 value={settingsForm.respect_value}
@@ -253,7 +253,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '3px' }}>$ per Point</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '3px' }}>$ per Point</label>
               <input
                 style={inputStyle} type="number" step="0.01" min="0"
                 value={settingsForm.points_value}
@@ -270,7 +270,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               </button>
               <button type="button" onClick={() => setEditSettings(false)} style={{
                 background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: '6px', color: '#a1a1aa', padding: '6px 12px', fontSize: '12px', cursor: 'pointer',
+                borderRadius: '6px', color: "var(--text-secondary)", padding: '6px 12px', fontSize: '12px', cursor: 'pointer',
               }}>
                 Cancel
               </button>
@@ -280,7 +280,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
       </div>
 
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Loading…</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {displayFactions.map(faction => (
@@ -294,7 +294,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
 
           ))}
           {displayFactions.length === 0 && (
-            <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No faction data available. The 12-hour cache may not have run yet.</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No faction data available. The 12-hour cache may not have run yet.</p>
           )}
 
           {/* Investment summary card */}
@@ -325,7 +325,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               }}>
                 <div style={{ padding: '14px 16px 12px' }}>
                   <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Combined Overview</span>
-                  <div style={{ color: '#71717a', fontSize: '11px', marginTop: '3px' }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: '11px', marginTop: '3px' }}>
                     {displayFactions.map(f => f.basic?.name).join(' + ')}
                   </div>
                 </div>
@@ -333,48 +333,48 @@ function OverviewSubTab({ factionId, onNavigate }) {
                 {/* Two big figures */}
                 <div style={{ padding: '0 16px 14px', display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
                   <div>
-                    <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Combined Networth</div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Combined Networth</div>
                     <div style={{ color: '#f4f4f5', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedNetworth)}</div>
-                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>faction assets + all investment principal</div>
+                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>faction assets + all investment principal</div>
                   </div>
                   <div>
-                    <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
-                    <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedMonthly)}<span style={{ color: '#52525b', fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
-                    <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>rackets + investments + stocks + companies</div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+                    <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
+                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>rackets + investments + stocks + companies</div>
                   </div>
                 </div>
 
                 {/* Breakdown */}
                 <div style={{ borderTop: '1px solid rgba(109,40,217,0.15)', padding: '8px 16px 12px' }}>
-                  <div style={{ color: '#52525b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Networth Breakdown</div>
+                  <div style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Networth Breakdown</div>
                   <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                     {displayFactions.map(f => (
                       <div key={f.basic?.id} style={{ fontSize: '12px' }}>
-                        <span style={{ color: '#71717a' }}>{f.basic?.name}: </span>
+                        <span style={{ color: "var(--text-muted)" }}>{f.basic?.name}: </span>
                         <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(calcFactionNetworth(f, settings, armoryValues[f.basic?.id] ?? 0))}</span>
                       </div>
                     ))}
                     <div style={{ fontSize: '12px' }}>
-                      <span style={{ color: '#71717a' }}>Investments: </span>
+                      <span style={{ color: "var(--text-muted)" }}>Investments: </span>
                       <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(investmentPrincipal)}</span>
                     </div>
                   </div>
-                  <div style={{ color: '#52525b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', marginTop: '10px' }}>Monthly Profit Breakdown</div>
+                  <div style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', marginTop: '10px' }}>Monthly Profit Breakdown</div>
                   <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                     <div style={{ fontSize: '12px' }}>
-                      <span style={{ color: '#71717a' }}>Rackets: </span>
+                      <span style={{ color: "var(--text-muted)" }}>Rackets: </span>
                       <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(totalRackets)}/mo</span>
                     </div>
                     <div style={{ fontSize: '12px' }}>
-                      <span style={{ color: '#71717a' }}>Bank investments: </span>
+                      <span style={{ color: "var(--text-muted)" }}>Bank investments: </span>
                       <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(invMonthly)}/mo</span>
                     </div>
                     <div style={{ fontSize: '12px' }}>
-                      <span style={{ color: '#71717a' }}>Stocks: </span>
+                      <span style={{ color: "var(--text-muted)" }}>Stocks: </span>
                       <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(stockMonthly)}/mo</span>
                     </div>
                     <div style={{ fontSize: '12px' }}>
-                      <span style={{ color: '#71717a' }}>Companies: </span>
+                      <span style={{ color: "var(--text-muted)" }}>Companies: </span>
                       <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(companyMonthly)}/mo</span>
                     </div>
                   </div>
@@ -453,7 +453,7 @@ function InvestmentCard({ summaries, shownIds }) {
         }}
       >
         <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Investments</span>
-        <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+        <span style={{ color: "var(--text-faint)", fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
       </div>
 
       {!collapsed && (
@@ -465,15 +465,15 @@ function InvestmentCard({ summaries, shownIds }) {
               borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
             }}>
               <div style={{ flex: '1 1 0', minWidth: 0 }}>
-                <div style={{ color: '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
-                <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{row.label}</div>
+                <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 <div style={{ color: row.partial ? '#f97316' : '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
-                  {fmt(row.monthly)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span>
+                  {fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
                   {row.partial && <span style={{ color: '#f97316', fontSize: '10px', marginLeft: '4px' }}>partial</span>}
                 </div>
-                <div style={{ color: '#71717a', fontSize: '11px' }}>principal {fmt(row.principal)}</div>
+                <div style={{ color: "var(--text-muted)", fontSize: '11px' }}>principal {fmt(row.principal)}</div>
               </div>
             </div>
           ))}
@@ -489,12 +489,12 @@ function InvestmentCard({ summaries, shownIds }) {
       }}>
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
           <div>
-            <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
+            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Principal</div>
             <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
           </div>
           <div>
-            <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
-            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalMonthly)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
+            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
           </div>
         </div>
       </div>
@@ -588,8 +588,8 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 0', minWidth: 0,
         }}>{basic.name}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-          <span style={{ color: '#a1a1aa', fontSize: '12px', whiteSpace: 'nowrap' }}>ID: {basic.id}</span>
-          <span style={{ color: '#52525b', fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+          <span style={{ color: "var(--text-secondary)", fontSize: '12px', whiteSpace: 'nowrap' }}>ID: {basic.id}</span>
+          <span style={{ color: "var(--text-faint)", fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
         </div>
       </div>
 
@@ -603,13 +603,13 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
             background: row.derived ? 'rgba(255,255,255,0.015)' : 'transparent',
           }}>
             <div style={{ flex: '1 1 0', minWidth: 0, paddingRight: '8px' }}>
-              <div style={{ color: row.derived ? '#71717a' : '#a1a1aa', fontSize: '13px' }}>{row.label}</div>
+              <div style={{ color: row.derived ? "var(--text-muted)" : "var(--text-secondary)", fontSize: '13px' }}>{row.label}</div>
               {row.sub && (
-                <div style={{ color: '#52525b', fontSize: '11px', marginTop: '2px', overflowWrap: 'break-word', wordBreak: 'break-word' }}>{row.sub}</div>
+                <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px', overflowWrap: 'break-word', wordBreak: 'break-word' }}>{row.sub}</div>
               )}
             </div>
             <div style={{
-              color: row.placeholder ? '#3f3f46' : (row.color || '#f4f4f5'),
+              color: row.placeholder ? "var(--text-ghost)" : (row.color || '#f4f4f5'),
               fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
               fontStyle: row.placeholder ? 'italic' : 'normal',
               textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap',
@@ -628,13 +628,13 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
         display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center',
       }}>
         <div>
-          <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Networth</div>
+          <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Networth</div>
           <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalNetworth)}</div>
         </div>
         <div>
-          <div style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+          <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
           <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>
-            {fmt(monthlyProfit)}<span style={{ color: '#52525b', fontSize: '11px', fontWeight: '400' }}>/mo</span>
+            {fmt(monthlyProfit)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
           </div>
         </div>
       </div>

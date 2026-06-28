@@ -16,14 +16,14 @@ function ScrollToTop() {
         position: 'fixed', bottom: '28px', right: '28px', zIndex: 999,
         width: '40px', height: '40px', borderRadius: '50%',
         background: 'rgba(20,20,30,0.85)', border: '1px solid rgba(255,255,255,0.12)',
-        color: '#a1a1aa', fontSize: '18px', cursor: 'pointer',
+        color: "var(--text-secondary)", fontSize: '18px', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         backdropFilter: 'blur(6px)',
         transition: 'opacity 0.2s, color 0.2s',
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}
       onMouseEnter={e => { e.currentTarget.style.color = '#f4f4f5'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }}
-      onMouseLeave={e => { e.currentTarget.style.color = '#a1a1aa'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
+      onMouseLeave={e => { e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
       title="Back to top"
     >
       ↑
@@ -83,7 +83,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
             borderRadius: '8px',
             border: `1px solid ${mode === m ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
             background: mode === m ? 'rgba(179,18,63,0.15)' : 'transparent',
-            color: mode === m ? '#f4f4f5' : '#a1a1aa',
+            color: mode === m ? '#f4f4f5' : "var(--text-secondary)",
             fontSize: '13px',
             fontWeight: mode === m ? '600' : '400',
             cursor: 'pointer',
@@ -113,7 +113,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
                 key={`${year}-${month}`}
                 value={`${year}-${month}`}
                 disabled={noData}
-                style={{ color: noData ? '#52525b' : '#f4f4f5' }}
+                style={{ color: noData ? "var(--text-faint)" : '#f4f4f5' }}
               >
                 {monthLabel(year, month)}{isCurrent ? ' (current)' : ''}{noData ? ' — no data' : ''}
               </option>
@@ -124,7 +124,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
 
       {mode === 'day' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <label style={{ color: '#71717a', fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Date (UTC)</label>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Date (UTC)</label>
           <input
             type="date"
             value={customDay}
@@ -138,7 +138,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
       {mode === 'custom' && (
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <label style={{ color: '#71717a', fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>From (UTC)</label>
+            <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>From (UTC)</label>
             <input
               type="date"
               value={customFrom}
@@ -148,7 +148,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
             />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <label style={{ color: '#71717a', fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>To (UTC)</label>
+            <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>To (UTC)</label>
             <input
               type="date"
               value={customTo}
@@ -189,7 +189,7 @@ function EnergyToggles({ includeRevives, setIncludeRevives, includeAttacks, setI
         padding: '6px 12px', borderRadius: '8px', cursor: hasData ? 'pointer' : 'not-allowed',
         border: `1px solid ${active ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
         background: active ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
-        color: hasData ? (active ? '#c4b5fd' : '#a1a1aa') : '#3f3f46',
+        color: hasData ? (active ? '#c4b5fd' : "var(--text-secondary)") : "var(--text-ghost)",
         fontSize: '12px', fontWeight: active ? '600' : '400',
         transition: 'background 0.15s, border-color 0.15s, color 0.15s',
         opacity: hasData ? 1 : 0.5,
@@ -204,13 +204,13 @@ function EnergyToggles({ includeRevives, setIncludeRevives, includeAttacks, setI
       }}>
         {active && hasData && <span style={{ color: '#fff', fontSize: '9px', lineHeight: 1 }}>✓</span>}
       </span>
-      {label} <span style={{ color: active && hasData ? '#a78bfa' : '#52525b', fontSize: '11px' }}>+25 ea</span>
+      {label} <span style={{ color: active && hasData ? '#a78bfa' : "var(--text-faint)", fontSize: '11px' }}>+25 ea</span>
     </button>
   )
 
   return (
     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px' }}>
-      <span style={{ color: '#52525b', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Include:</span>
+      <span style={{ color: "var(--text-faint)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Include:</span>
       {toggle(includeRevives, hasRevives, 'Revives', () => setIncludeRevives(v => !v))}
       {toggle(includeAttacks, hasAttacks, 'Attacks', () => setIncludeAttacks(v => !v))}
     </div>
@@ -239,7 +239,7 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) 
           gap: '8px', padding: '6px 12px', marginBottom: '4px',
         }}>
           {['#', 'Member', 'Energy Used', ...(showBreakdown ? ['Breakdown'] : []), 'Avg / Day'].map(h => (
-            <span key={h} style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {h}
             </span>
           ))}
@@ -260,7 +260,7 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) 
                 border: '1px solid transparent',
               }}
             >
-              <span style={{ color: '#52525b', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
+              <span style={{ color: "var(--text-faint)", fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '3px' }}>
                   {m.username}
@@ -275,13 +275,13 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) 
               </div>
               <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.displayEnergy)}</span>
               {showBreakdown && (
-                <span style={{ color: '#52525b', fontSize: '11px', lineHeight: '1.6' }}>
-                  {m.energy > 0 && <span style={{ color: '#71717a', display: 'block' }}>gym {fmt(m.energy)}</span>}
+                <span style={{ color: "var(--text-faint)", fontSize: '11px', lineHeight: '1.6' }}>
+                  {m.energy > 0 && <span style={{ color: "var(--text-muted)", display: 'block' }}>gym {fmt(m.energy)}</span>}
                   {m.reviveEnergy > 0 && <span style={{ color: '#34d399', display: 'block' }}>revives {fmt(m.reviveEnergy)}</span>}
                   {m.attackEnergy > 0 && <span style={{ color: '#f87171', display: 'block' }}>attacks {fmt(m.attackEnergy)}</span>}
                 </span>
               )}
-              <span style={{ color: '#a1a1aa', fontSize: '12px' }}>{fmt(avgDay)} / day</span>
+              <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{fmt(avgDay)} / day</span>
             </div>
           )
         })}
@@ -316,7 +316,7 @@ function SummaryBar({ members, extras, includeRevives, includeAttacks, days }) {
           padding: '10px 14px', borderRadius: '8px',
           background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
         }}>
-          <p style={{ color: '#a1a1aa', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>{label}</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>{label}</p>
           <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
         </div>
       ))}
@@ -397,7 +397,7 @@ export default function EnergyActivityPanel() {
         <h3 style={{ fontFamily: 'Cinzel, serif', color: '#f4f4f5', fontSize: '16px', letterSpacing: '1px', margin: '0 0 4px 0' }}>
           Gym Energy
         </h3>
-        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
           Energy trained across all three factions. Snapshots taken daily — data available from tomorrow onwards.
         </p>
       </div>
@@ -413,7 +413,7 @@ export default function EnergyActivityPanel() {
       />
 
       {loading && (
-        <div style={{ padding: '48px', textAlign: 'center', color: '#a1a1aa', fontSize: '14px' }}>
+        <div style={{ padding: '48px', textAlign: 'center', color: "var(--text-secondary)", fontSize: '14px' }}>
           Loading…
         </div>
       )}
@@ -441,10 +441,10 @@ export default function EnergyActivityPanel() {
           )}
 
           <div style={{ marginBottom: '12px' }}>
-            <span style={{ color: '#52525b', fontSize: '12px' }}>
-              Period: <span style={{ color: '#a1a1aa' }}>{periodLabel()}</span>
+            <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>
+              Period: <span style={{ color: "var(--text-secondary)" }}>{periodLabel()}</span>
               {data.coverage?.days_covered > 0 && (
-                <> · <span style={{ color: '#a1a1aa' }}>{data.coverage.days_covered} snapshot{data.coverage.days_covered !== 1 ? 's' : ''} ({data.coverage.earliest} to {data.coverage.latest})</span></>
+                <> · <span style={{ color: "var(--text-secondary)" }}>{data.coverage.days_covered} snapshot{data.coverage.days_covered !== 1 ? 's' : ''} ({data.coverage.earliest} to {data.coverage.latest})</span></>
               )}
             </span>
           </div>
@@ -454,9 +454,9 @@ export default function EnergyActivityPanel() {
               padding: '48px', textAlign: 'center',
               background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)',
             }}>
-              <p style={{ color: '#52525b', fontSize: '14px', margin: '0 0 6px 0' }}>No energy data for this period.</p>
+              <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: '0 0 6px 0' }}>No energy data for this period.</p>
               {data.coverage?.days_covered === 0 && (
-                <p style={{ color: '#3f3f46', fontSize: '12px', margin: 0 }}>
+                <p style={{ color: "var(--text-ghost)", fontSize: '12px', margin: 0 }}>
                   Snapshots are taken daily at 01:00 UTC — check back tomorrow.
                 </p>
               )}

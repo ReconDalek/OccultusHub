@@ -73,7 +73,7 @@ export default function LoginModal({ open, onClose }) {
 
         <h2 className="font-cinzel text-2xl mb-4">Member Authentication</h2>
 
-        <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>
+        <p className="text-sm mb-6" style={{ color: "var(--text-secondary)" }}>
           Enter your Torn API key to access the inner sanctum.
         </p>
 
@@ -89,7 +89,7 @@ export default function LoginModal({ open, onClose }) {
         />
 
         {/* Options */}
-        <div className="flex flex-col gap-2.5 mb-5 text-sm" style={{ color: '#a1a1aa' }}>
+        <div className="flex flex-col gap-2.5 mb-5 text-sm" style={{ color: "var(--text-secondary)" }}>
           <label className="flex items-start gap-2 cursor-pointer leading-tight">
             <input
               type="checkbox"
@@ -114,12 +114,12 @@ export default function LoginModal({ open, onClose }) {
         </button>
 
         {status && (
-          <p className="mt-3 text-sm text-center" style={{ color: '#a1a1aa' }}>
+          <p className="mt-3 text-sm text-center" style={{ color: "var(--text-secondary)" }}>
             {status}
           </p>
         )}
 
-        <p className="text-xs italic mt-10" style={{ color: '#a1a1aa' }}>
+        <p className="text-xs italic mt-10" style={{ color: "var(--text-secondary)" }}>
           By submitting your API key, you consent to it being saved securely and used
           for faction data collection. Your key will never be shared or stored in
           plaintext and you can revoke access at any time.

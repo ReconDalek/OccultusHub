@@ -36,14 +36,14 @@ function TimeUnit({ value, label }) {
       <div style={{ fontSize: '28px', fontWeight: 700, fontFamily: 'monospace', lineHeight: 1, color: '#f4f4f5' }}>
         {String(value).padStart(2, '0')}
       </div>
-      <div style={{ fontSize: '11px', color: '#a1a1aa', marginTop: '3px', letterSpacing: '0.5px' }}>{label}</div>
+      <div style={{ fontSize: '11px', color: "var(--text-secondary)", marginTop: '3px', letterSpacing: '0.5px' }}>{label}</div>
     </div>
   )
 }
 
 function CountdownDisplay({ targetDate }) {
   const t = useCountdown(targetDate)
-  if (!t) return <span style={{ color: '#a1a1aa', fontSize: '14px' }}>Starting soon…</span>
+  if (!t) return <span style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Starting soon…</span>
   return (
     <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-end' }}>
       {t.days > 0 && <TimeUnit value={t.days} label="d" />}
@@ -115,7 +115,7 @@ function FactionCard({ faction, schedules }) {
       flexDirection: 'column',
       gap: '12px',
     }}>
-      <div style={{ fontSize: '11px', color: '#a1a1aa', letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 500 }}>
+      <div style={{ fontSize: '11px', color: "var(--text-secondary)", letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 500 }}>
         {faction.name}
       </div>
 
@@ -125,14 +125,14 @@ function FactionCard({ faction, schedules }) {
 
           {/* Chain target */}
           {next.type === 'chain' && next.chain_target && (
-            <div style={{ fontSize: '13px', color: '#a1a1aa' }}>
+            <div style={{ fontSize: '13px', color: "var(--text-secondary)" }}>
               Target: <span style={{ color: '#f4f4f5', fontWeight: 600 }}>{next.chain_target}</span>
             </div>
           )}
 
           {/* War opponent */}
           {next.type === 'war' && next.stage === 'active' && next.opponent_faction_id && (
-            <div style={{ fontSize: '13px', color: '#a1a1aa' }}>
+            <div style={{ fontSize: '13px', color: "var(--text-secondary)" }}>
               vs{' '}
               <a
                 href={`https://www.torn.com/factions.php?step=profile&ID=${next.opponent_faction_id}`}
@@ -158,17 +158,17 @@ function FactionCard({ faction, schedules }) {
                   })}
                 </div>
               )}
-              <div style={{ fontSize: '12px', color: '#a1a1aa' }}>Awaiting opponent &amp; start time.</div>
+              <div style={{ fontSize: '12px', color: "var(--text-secondary)" }}>Awaiting opponent &amp; start time.</div>
             </div>
           ) : (
             <>
               <CountdownDisplay targetDate={next.scheduled_at} />
-              {tct && <div style={{ fontSize: '12px', color: '#a1a1aa' }}>{tct}</div>}
+              {tct && <div style={{ fontSize: '12px', color: "var(--text-secondary)" }}>{tct}</div>}
             </>
           )}
         </>
       ) : (
-        <p style={{ color: '#a1a1aa', fontSize: '14px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '14px', margin: 0 }}>
           No upcoming events scheduled.
         </p>
       )}

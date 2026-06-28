@@ -261,7 +261,7 @@ export default function CacheTab() {
     }
   }
 
-  if (loading) return <p style={{ color: '#a1a1aa' }}>Loading cache status...</p>
+  if (loading) return <p style={{ color: "var(--text-secondary)" }}>Loading cache status...</p>
 
   return (
     <div className="space-y-8">
@@ -277,13 +277,13 @@ export default function CacheTab() {
               { label: 'Last 7 Days',  value: analytics.loginsLastWeek,color: '#f4f4f5', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' },
             ].map(({ label, value, color, bg, border }) => (
               <div key={label} className="p-4 rounded-lg" style={{ background: bg, border: `1px solid ${border}` }}>
-                <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+                <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>{label}</p>
                 <p style={{ color, fontSize: '28px', fontWeight: 'bold' }}>{value}</p>
               </div>
             ))}
           </div>
         ) : (
-          <p style={{ color: '#a1a1aa' }}>Failed to load analytics</p>
+          <p style={{ color: "var(--text-secondary)" }}>Failed to load analytics</p>
         )}
       </div>
 
@@ -302,12 +302,12 @@ export default function CacheTab() {
                   <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>Faction Cache</span>
                 </div>
                 <div className="flex justify-between mb-1">
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Cached entries</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Cached entries</span>
                   <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.count ?? '—'}</span>
                 </div>
                 <div className="flex justify-between mb-4">
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Last updated</span>
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }} title={info?.lastUpdated ?? ''}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last updated</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.lastUpdated ?? ''}>
                     {timeAgo(info?.lastUpdated)}
                   </span>
                 </div>
@@ -323,7 +323,7 @@ export default function CacheTab() {
             )
           })()}
         </div>
-        <p style={{ color: '#a1a1aa', fontSize: '12px', marginTop: '10px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginTop: '10px' }}>
           Auto-refreshes every 12 hours (00:00 and 12:00 UTC/TCT). Company cache is updated by the daily director-key fetch.
         </p>
       </div>
@@ -345,12 +345,12 @@ export default function CacheTab() {
                   <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
                 </div>
                 <div className="flex justify-between mb-1">
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Stored chains</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Stored chains</span>
                   <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.totalChains ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Last updated</span>
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }} title={info?.lastFetched ?? ''}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last updated</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.lastFetched ?? ''}>
                     {info?.lastFetched ? timeAgo(info.lastFetched) : '—'}
                   </span>
                 </div>
@@ -372,7 +372,7 @@ export default function CacheTab() {
           >
             {refreshing === 'chains' ? 'Refreshing…' : 'Refresh Chain Cache'}
           </button>
-          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
             Auto-refreshes every Tuesday 14:00 UTC/TCT.
           </p>
         </div>
@@ -395,10 +395,10 @@ export default function CacheTab() {
             {refreshing === 'war-check' ? 'Checking…' : 'Check War Matches'}
           </button>
           <div>
-            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
               Auto-runs every Tuesday 14:00 UTC (matchups announced at 14:00 UTC / midnight NZT).
             </p>
-            <p style={{ color: '#52525b', fontSize: '11px', margin: '2px 0 0 0' }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
               Run manually if a matchup may have been missed by the weekly cron.
             </p>
           </div>
@@ -414,12 +414,12 @@ export default function CacheTab() {
             { label: 'Currently Active',value: memberStatus?.activeMembers ?? '—', color: '#4ade80' },
             { label: 'Departed',        value: memberStatus
                 ? (memberStatus.totalMembers - memberStatus.activeMembers)
-                : '—',                                                               color: '#a1a1aa' },
+                : '—',                                                               color: "var(--text-secondary)" },
           ].map(({ label, value, color }) => (
             <div key={label} className="p-4 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>{label}</p>
               <p style={{ color, fontSize: '24px', fontWeight: 'bold' }}>{value}</p>
             </div>
           ))}
@@ -434,11 +434,11 @@ export default function CacheTab() {
                 <div key={fid} className="p-3 rounded-lg"
                   style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}
                 >
-                  <p style={{ color: '#a1a1aa', fontSize: '11px', marginBottom: '3px' }}>{FACTION_NAMES[fid]}</p>
+                  <p style={{ color: "var(--text-secondary)", fontSize: '11px', marginBottom: '3px' }}>{FACTION_NAMES[fid]}</p>
                   <p style={{ color: '#f4f4f5', fontSize: '13px', margin: 0 }}>
                     <span style={{ color: '#4ade80', fontWeight: '600' }}>{fb.active}</span>
-                    <span style={{ color: '#a1a1aa' }}> / {fb.total}</span>
-                    <span style={{ color: '#a1a1aa', fontSize: '11px' }}> active</span>
+                    <span style={{ color: "var(--text-secondary)" }}> / {fb.total}</span>
+                    <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}> active</span>
                   </p>
                 </div>
               )
@@ -460,11 +460,11 @@ export default function CacheTab() {
             {refreshing === 'members' ? 'Syncing…' : 'Sync Member Database'}
           </button>
           <div>
-            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
               Auto-syncs every 12 hours after faction cache refresh.
             </p>
             {memberStatus?.lastSynced && (
-              <p style={{ color: '#a1a1aa', fontSize: '11px', margin: '2px 0 0 0' }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: '2px 0 0 0' }}>
                 Last synced: {timeAgo(memberStatus.lastSynced)}
               </p>
             )}
@@ -483,7 +483,7 @@ export default function CacheTab() {
             <div key={label} className="p-4 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>{label}</p>
               <p style={{ color, fontSize: '24px', fontWeight: 'bold' }}>{value}</p>
             </div>
           ))}
@@ -491,10 +491,10 @@ export default function CacheTab() {
             <div className="p-4 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Date Range</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>Date Range</p>
               <p style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600', lineHeight: '1.6' }}>
                 {personalStatsStatus.earliest}<br />
-                <span style={{ color: '#a1a1aa' }}>to</span> {personalStatsStatus.latest}
+                <span style={{ color: "var(--text-secondary)" }}>to</span> {personalStatsStatus.latest}
               </p>
             </div>
           )}
@@ -538,11 +538,11 @@ export default function CacheTab() {
             {snapshotRunning ? 'Running…' : 'Run Snapshot Now'}
           </button>
           <div>
-            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
               Auto-runs daily at 01:00 UTC/TCT — may take 3–5 minutes.
             </p>
             {personalStatsStatus?.today > 0 && !snapshotRunning && (
-              <p style={{ color: '#a1a1aa', fontSize: '11px', margin: '2px 0 0 0' }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: '2px 0 0 0' }}>
                 {personalStatsStatus.today} members snapshotted for {personalStatsStatus.today_date}
               </p>
             )}
@@ -568,8 +568,8 @@ export default function CacheTab() {
                   <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }}>Last updated</span>
-                  <span style={{ color: '#a1a1aa', fontSize: '13px' }} title={info?.fetched_at ?? ''}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last updated</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.fetched_at ?? ''}>
                     {info?.fetched_at ? timeAgo(info.fetched_at) : '—'}
                   </span>
                 </div>
@@ -591,7 +591,7 @@ export default function CacheTab() {
           >
             {refreshing === 'armory' ? 'Refreshing…' : 'Refresh Armory Cache'}
           </button>
-          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
             Auto-refreshes every 6 hours (00:00, 06:00, 12:00, 18:00 UTC/TCT).
           </p>
         </div>
@@ -607,14 +607,14 @@ export default function CacheTab() {
             <div key={label} className="p-4 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>{label}</p>
               <p style={{ color, fontSize: '24px', fontWeight: 'bold' }}>{value}</p>
             </div>
           ))}
           <div className="p-4 rounded-lg"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Last Updated</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>Last Updated</p>
             <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
               {itemPricesStatus?.fetched_at ? timeAgo(itemPricesStatus.fetched_at) : '—'}
             </p>
@@ -633,7 +633,7 @@ export default function CacheTab() {
           >
             {refreshing === 'item-prices' ? 'Refreshing…' : 'Refresh Item Prices'}
           </button>
-          <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
             Auto-refreshes every 6 hours alongside armory. Used for armory valuation.
           </p>
         </div>
@@ -655,25 +655,25 @@ export default function CacheTab() {
             <div key={label} className="p-4 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>{label}</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>{label}</p>
               <p style={{ color, fontSize: '22px', fontWeight: 'bold' }}>{value}</p>
             </div>
           ))}
           <div className="p-4 rounded-lg"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Snapshot Range</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>Snapshot Range</p>
             <p style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600', lineHeight: '1.7' }}>
               {companyProfitStatus?.earliest_snapshot ?? '—'}
               <br />
-              <span style={{ color: '#a1a1aa' }}>to</span>{' '}
+              <span style={{ color: "var(--text-secondary)" }}>to</span>{' '}
               {companyProfitStatus?.latest_snapshot ?? '—'}
             </p>
           </div>
           <div className="p-4 rounded-lg"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: '4px' }}>Last Fetched</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>Last Fetched</p>
             <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
               {companyProfitStatus?.fetched_at ? timeAgo(companyProfitStatus.fetched_at) : '—'}
             </p>
@@ -693,10 +693,10 @@ export default function CacheTab() {
             {refreshing === 'company-profits' ? 'Refreshing…' : 'Run Company Snapshot'}
           </button>
           <div>
-            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: 0 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
               Auto-runs daily at 01:00 UTC using each director's API key. Also updates the public company cache.
             </p>
-            <p style={{ color: '#52525b', fontSize: '11px', margin: '2px 0 0 0' }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
               Manual run is safe — today's snapshot uses INSERT OR IGNORE so it won't duplicate if already run.
             </p>
           </div>
@@ -713,7 +713,7 @@ export default function CacheTab() {
             {lastResult.message}
           </p>
           {lastResult.refreshedAt && (
-            <p style={{ color: '#a1a1aa', fontSize: '12px', marginBottom: lastResult.errors?.length ? '8px' : 0 }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: lastResult.errors?.length ? '8px' : 0 }}>
               {formatUTC(lastResult.refreshedAt)}
             </p>
           )}

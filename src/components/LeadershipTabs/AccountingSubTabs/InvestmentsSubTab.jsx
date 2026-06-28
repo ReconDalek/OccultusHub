@@ -16,10 +16,10 @@ const EMPTY_FORM = {
 }
 
 function daysLabel(days) {
-  if (days < 0) return { text: 'Ended', color: '#a1a1aa' }
+  if (days < 0) return { text: 'Ended', color: "var(--text-secondary)" }
   if (days === 0) return { text: 'Ends today', color: '#ff6b8a' }
   if (days <= 7) return { text: `${days}d left`, color: '#f97316' }
-  return { text: `${days}d left`, color: '#a1a1aa' }
+  return { text: `${days}d left`, color: "var(--text-secondary)" }
 }
 
 // Rate is a flat percentage for the full duration, not annual
@@ -162,7 +162,7 @@ export default function InvestmentsSubTab({ factionId }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', marginBottom: '2px' }}>Bank Investments</h3>
-          <p style={{ color: '#a1a1aa', fontSize: '12px' }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
             Track member bank investments. TCI should be purchased 7 days before the investment ends.
           </p>
         </div>
@@ -186,7 +186,7 @@ export default function InvestmentsSubTab({ factionId }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginBottom: '12px' }}>
             {factionId == null && (
               <div>
-                <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Faction *</label>
+                <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Faction *</label>
                 <select style={inputStyle} value={form.faction_id}
                   onChange={e => setForm(f => ({ ...f, faction_id: parseInt(e.target.value) }))}>
                   {FACTION_OPTIONS.map(o => <option key={o.id} value={o.id} style={{ background: '#1a1a2e' }}>{o.label}</option>)}
@@ -194,44 +194,44 @@ export default function InvestmentsSubTab({ factionId }) {
               </div>
             )}
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Torn ID *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Torn ID *</label>
               <input style={inputStyle} type="number" required placeholder="e.g. 123456" value={form.torn_user_id}
                 onChange={e => setForm(f => ({ ...f, torn_user_id: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Discord ID</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Discord ID</label>
               <input style={inputStyle} placeholder="Optional" value={form.discord_id}
                 onChange={e => setForm(f => ({ ...f, discord_id: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Principal ($) *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Principal ($) *</label>
               <input style={inputStyle} type="number" step="0.01" required placeholder="0" value={form.amount}
                 onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Rate (%) *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Rate (%) *</label>
               <input style={inputStyle} type="number" step="0.01" required placeholder="e.g. 10.5" value={form.rate}
                 onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Duration *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Duration *</label>
               <select style={inputStyle} value={form.duration_months}
                 onChange={e => setForm(f => ({ ...f, duration_months: parseInt(e.target.value) }))}>
                 {DURATION_OPTIONS.map(d => <option key={d} value={d} style={{ background: '#1a1a2e' }}>{d} month{d > 1 ? 's' : ''}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Member Keeps (%) *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Member Keeps (%) *</label>
               <input style={inputStyle} type="number" step="0.01" min="0" max="100" required placeholder="100" value={form.member_profit_pct}
                 onChange={e => setForm(f => ({ ...f, member_profit_pct: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Start Date *</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Start Date *</label>
               <input style={inputStyle} type="date" required value={form.start_date}
                 onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
             </div>
             <div>
-              <label style={{ color: '#a1a1aa', fontSize: '11px', display: 'block', marginBottom: '4px' }}>Notes</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Notes</label>
               <input style={inputStyle} placeholder="Optional" value={form.notes}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
@@ -244,9 +244,9 @@ export default function InvestmentsSubTab({ factionId }) {
               background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 14px',
               marginBottom: '12px', fontSize: '12px',
             }}>
-              <span style={{ color: '#a1a1aa' }}>Est. Profit: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formProfit)}</span></span>
-              <span style={{ color: '#a1a1aa' }}>Member keeps: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formMemberKeeps)}</span></span>
-              <span style={{ color: '#a1a1aa' }}>Faction income: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formFactionIncome)}</span></span>
+              <span style={{ color: "var(--text-secondary)" }}>Est. Profit: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formProfit)}</span></span>
+              <span style={{ color: "var(--text-secondary)" }}>Member keeps: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formMemberKeeps)}</span></span>
+              <span style={{ color: "var(--text-secondary)" }}>Faction income: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(formFactionIncome)}</span></span>
             </div>
           )}
 
@@ -277,7 +277,7 @@ export default function InvestmentsSubTab({ factionId }) {
                 background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: '8px', padding: '10px 14px',
               }}>
-                <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '4px' }}>{label}</div>
+                <div style={{ color: "var(--text-muted)", fontSize: '11px', marginBottom: '4px' }}>{label}</div>
                 <div style={{ color: highlight ? '#22c55e' : '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{value}</div>
               </div>
             ))}
@@ -286,16 +286,16 @@ export default function InvestmentsSubTab({ factionId }) {
       })()}
 
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Loading…</p>
       ) : sorted.length === 0 ? (
-        <p style={{ color: '#a1a1aa', fontSize: '13px' }}>No active investments recorded.</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No active investments recorded.</p>
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>
                 {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'End', 'Days Left', 'TCI Purchased', ''].map(h => (
-                  <th key={h} style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.06)', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.06)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -326,7 +326,7 @@ export default function InvestmentsSubTab({ factionId }) {
                       ) : fmt(inv.amount)}
                     </td>
                     {/* Rate */}
-                    <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '10px', color: "var(--text-secondary)", fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {isEditing ? (
                         <input style={{ ...inputStyle, width: '70px' }} type="number" step="0.01"
                           value={editForm.rate ?? inv.rate}
@@ -334,7 +334,7 @@ export default function InvestmentsSubTab({ factionId }) {
                       ) : `${inv.rate}%`}
                     </td>
                     {/* Duration */}
-                    <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px' }}>
+                    <td style={{ padding: '10px', color: "var(--text-secondary)", fontSize: '13px' }}>
                       {isEditing ? (
                         <select style={{ ...inputStyle, width: '80px' }}
                           value={editForm.duration_months ?? inv.duration_months}
@@ -356,7 +356,7 @@ export default function InvestmentsSubTab({ factionId }) {
                       ) : (
                         <span style={{ color: '#f4f4f5' }}>
                           {fmt(inv.member_keeps)}
-                          <span style={{ color: '#52525b', fontSize: '10px', marginLeft: '4px' }}>{inv.member_profit_pct}%</span>
+                          <span style={{ color: "var(--text-faint)", fontSize: '10px', marginLeft: '4px' }}>{inv.member_profit_pct}%</span>
                         </span>
                       )}
                     </td>
@@ -365,7 +365,7 @@ export default function InvestmentsSubTab({ factionId }) {
                       {fmt(inv.faction_income)}
                     </td>
                     {/* End */}
-                    <td style={{ padding: '10px', color: '#a1a1aa', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '10px', color: "var(--text-secondary)", fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {isEditing ? (
                         <input style={{ ...inputStyle, width: '120px' }} type="date"
                           value={editForm.start_date ?? inv.start_date}

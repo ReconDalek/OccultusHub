@@ -242,7 +242,7 @@ export default function CardsGame() {
               fontFamily: 'Cinzel, serif',
               fontSize: 11,
               letterSpacing: '5px',
-              color: '#a1a1aa',
+              color: "var(--text-secondary)",
               marginBottom: 12,
             }}>
               GAME ROOM
@@ -257,14 +257,14 @@ export default function CardsGame() {
             }}>
               Cards Against Occultus
             </h1>
-            <p style={{ color: '#a1a1aa', fontSize: 14, maxWidth: 440, margin: '0 auto 20px' }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 440, margin: '0 auto 20px' }}>
               A dark card game of prompts, fates, and poor decisions. For 3–20 players.
             </p>
             <button
               onClick={() => setShowRules(true)}
               style={{
                 background: 'none', border: '1px solid rgba(255,255,255,0.15)',
-                color: '#a1a1aa', borderRadius: 8, padding: '6px 16px',
+                color: "var(--text-secondary)", borderRadius: 8, padding: '6px 16px',
                 fontSize: 12, cursor: 'pointer', letterSpacing: '1px',
               }}
             >
@@ -286,7 +286,7 @@ export default function CardsGame() {
             <div style={{ flex: 1, minWidth: 280, maxWidth: 380 }}>
               {!user && (
                 <div style={{ marginBottom: 20 }}>
-                  <label style={{ fontSize: 12, color: '#a1a1aa', display: 'block', marginBottom: 8, letterSpacing: '1px' }}>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", display: 'block', marginBottom: 8, letterSpacing: '1px' }}>
                     YOUR NAME
                   </label>
                   <input
@@ -478,7 +478,7 @@ export default function CardsGame() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: "var(--text-secondary)" }}>
       Loading…
     </div>
   )

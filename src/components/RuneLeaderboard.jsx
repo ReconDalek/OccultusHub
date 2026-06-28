@@ -72,7 +72,7 @@ export default function RuneLeaderboard({ open, onClose }) {
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#7c3aed', fontSize: '13px', letterSpacing: '0.1em' }}>Reading the runes...</div>
           ) : leaderboard.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#a1a1aa' }}>
+            <div style={{ padding: '40px', textAlign: 'center', color: "var(--text-secondary)" }}>
               <div style={{ fontSize: '40px', marginBottom: '12px', fontFamily: 'monospace', color: '#6d28d9' }}>ᚠ</div>
               <p style={{ fontFamily: 'Cinzel, serif', fontSize: '13px', letterSpacing: '1px' }}>No runes have been cast yet.</p>
             </div>

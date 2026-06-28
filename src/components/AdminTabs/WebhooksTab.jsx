@@ -97,7 +97,7 @@ function renderDiscordMarkdown(text) {
 
     // -# small subtext
     if (line.startsWith('-# ')) {
-      return <div key={key} style={{ fontSize: '11px', color: '#71717a', marginBottom: '2px' }}>{renderInline(line.slice(3))}</div>
+      return <div key={key} style={{ fontSize: '11px', color: "var(--text-muted)", marginBottom: '2px' }}>{renderInline(line.slice(3))}</div>
     }
     // > blockquote
     if (line.startsWith('> ')) {
@@ -144,7 +144,7 @@ function DiscordPreviewPanel({ messages, onClose }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '12px', fontWeight: '600', color: '#b5bac1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Discord Preview</span>
           {messages.length > 1 && (
-            <span style={{ fontSize: '11px', color: '#71717a' }}>({idx + 1} of {messages.length})</span>
+            <span style={{ fontSize: '11px', color: "var(--text-muted)" }}>({idx + 1} of {messages.length})</span>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -166,7 +166,7 @@ function DiscordPreviewPanel({ messages, onClose }) {
 
       {/* Message label */}
       {msg.label && (
-        <div style={{ padding: '6px 14px', background: '#2b2d31', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '11px', color: '#71717a' }}>
+        <div style={{ padding: '6px 14px', background: '#2b2d31', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '11px', color: "var(--text-muted)" }}>
           {msg.label}
         </div>
       )}
@@ -180,7 +180,7 @@ function DiscordPreviewPanel({ messages, onClose }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
             <span style={{ fontWeight: '600', color: '#f2f3f5', fontSize: '14px' }}>OccultusHub</span>
-            <span style={{ fontSize: '11px', color: '#71717a' }}>Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span style={{ fontSize: '11px', color: "var(--text-muted)" }}>Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             <span style={{ fontSize: '10px', padding: '1px 4px', background: '#5865f2', borderRadius: '3px', color: '#fff', fontWeight: '600' }}>BOT</span>
           </div>
           <div style={{ lineHeight: '1.5' }}>
@@ -320,12 +320,12 @@ function WebhookCard({ config, onSaved }) {
             <span style={{ fontSize: '18px' }}>{meta.icon}</span>
             <span style={{ color: '#f4f4f5', fontWeight: '700', fontSize: '15px' }}>{meta.label}</span>
             {meta.comingSoon && (
-              <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '99px', background: 'rgba(255,255,255,0.08)', color: '#71717a', fontWeight: '600' }}>
+              <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '99px', background: 'rgba(255,255,255,0.08)', color: "var(--text-muted)", fontWeight: '600' }}>
                 LOGIC COMING SOON
               </span>
             )}
           </div>
-          <p style={{ color: '#71717a', fontSize: '12px', margin: 0 }}>{meta.schedule}</p>
+          <p style={{ color: "var(--text-muted)", fontSize: '12px', margin: 0 }}>{meta.schedule}</p>
         </div>
 
         {/* Enable toggle */}
@@ -344,19 +344,19 @@ function WebhookCard({ config, onSaved }) {
               transition: 'left 0.2s',
             }} />
           </div>
-          <span style={{ color: enabled ? '#f4f4f5' : '#71717a', fontSize: '13px' }}>
+          <span style={{ color: enabled ? '#f4f4f5' : "var(--text-muted)", fontSize: '13px' }}>
             {enabled ? 'Enabled' : 'Disabled'}
           </span>
         </label>
       </div>
 
-      <p style={{ color: '#a1a1aa', fontSize: '13px', marginBottom: '20px' }}>{meta.description}</p>
+      <p style={{ color: "var(--text-secondary)", fontSize: '13px', marginBottom: '20px' }}>{meta.description}</p>
 
       {/* Fields */}
       <div style={{ display: 'grid', gap: '14px' }}>
         {/* Webhook URL */}
         <div>
-          <label style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+          <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
             Webhook URL
           </label>
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -373,7 +373,7 @@ function WebhookCard({ config, onSaved }) {
             />
             <button
               onClick={() => setShowUrl(v => !v)}
-              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: '#a1a1aa', cursor: 'pointer', fontSize: '12px' }}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: "var(--text-secondary)", cursor: 'pointer', fontSize: '12px' }}
             >
               {showUrl ? 'Hide' : 'Show'}
             </button>
@@ -382,8 +382,8 @@ function WebhookCard({ config, onSaved }) {
 
         {/* Mention user ID */}
         <div>
-          <label style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
-            Discord User ID to Mention <span style={{ color: '#52525b', fontWeight: '400', textTransform: 'none' }}>(optional — treasurer / officer to ping)</span>
+          <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+            Discord User ID to Mention <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(optional — treasurer / officer to ping)</span>
           </label>
           <input
             type="text"
@@ -401,9 +401,9 @@ function WebhookCard({ config, onSaved }) {
         {/* Message template */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <label style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               {meta.defaultLateTemplate ? 'Reminder Template (7–10 days)' : 'Message Template'}{' '}
-              <span style={{ color: '#52525b', fontWeight: '400', textTransform: 'none' }}>(leave blank to use default)</span>
+              <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(leave blank to use default)</span>
             </label>
             <button
               onClick={() => setShowTemplate(v => !v)}
@@ -429,7 +429,7 @@ function WebhookCard({ config, onSaved }) {
               {messageTemplate && (
                 <button
                   onClick={() => setMessageTemplate('')}
-                  style={{ marginTop: '4px', background: 'none', border: 'none', color: '#52525b', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                  style={{ marginTop: '4px', background: 'none', border: 'none', color: "var(--text-faint)", fontSize: '11px', cursor: 'pointer', padding: 0 }}
                 >
                   Reset to default
                 </button>
@@ -438,9 +438,9 @@ function WebhookCard({ config, onSaved }) {
               {/* Payout row template — stock_monthly only */}
               {meta.defaultRowTemplate && (
                 <div style={{ marginTop: '16px' }}>
-                  <label style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+                  <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
                     Payout Row Template{' '}
-                    <span style={{ color: '#52525b', fontWeight: '400', textTransform: 'none' }}>(controls each member line inside {'{payout_list}'} — leave blank for default)</span>
+                    <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(controls each member line inside {'{payout_list}'} — leave blank for default)</span>
                   </label>
                   <input
                     type="text"
@@ -456,7 +456,7 @@ function WebhookCard({ config, onSaved }) {
                   {payoutRowTemplate && (
                     <button
                       onClick={() => setPayoutRowTemplate('')}
-                      style={{ marginTop: '4px', background: 'none', border: 'none', color: '#52525b', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                      style={{ marginTop: '4px', background: 'none', border: 'none', color: "var(--text-faint)", fontSize: '11px', cursor: 'pointer', padding: 0 }}
                     >
                       Reset to default
                     </button>
@@ -465,7 +465,7 @@ function WebhookCard({ config, onSaved }) {
                     {meta.rowVars?.map(([v, desc]) => (
                       <div key={v} style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
                         <code style={{ color: '#9f67ff', minWidth: '160px', flexShrink: 0 }}>{v}</code>
-                        <span style={{ color: '#71717a' }}>{desc}</span>
+                        <span style={{ color: "var(--text-muted)" }}>{desc}</span>
                       </div>
                     ))}
                   </div>
@@ -475,9 +475,9 @@ function WebhookCard({ config, onSaved }) {
               {/* Late template — investment_tci only */}
               {meta.defaultLateTemplate && (
                 <div style={{ marginTop: '16px' }}>
-                  <label style={{ color: '#a1a1aa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+                  <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
                     Late Warning Template (1–6 days){' '}
-                    <span style={{ color: '#52525b', fontWeight: '400', textTransform: 'none' }}>(leave blank to use default)</span>
+                    <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(leave blank to use default)</span>
                   </label>
                   <textarea
                     value={lateMessageTemplate}
@@ -493,7 +493,7 @@ function WebhookCard({ config, onSaved }) {
                   {lateMessageTemplate && (
                     <button
                       onClick={() => setLateMessageTemplate('')}
-                      style={{ marginTop: '4px', background: 'none', border: 'none', color: '#52525b', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                      style={{ marginTop: '4px', background: 'none', border: 'none', color: "var(--text-faint)", fontSize: '11px', cursor: 'pointer', padding: 0 }}
                     >
                       Reset to default
                     </button>
@@ -503,12 +503,12 @@ function WebhookCard({ config, onSaved }) {
 
               {/* Variable reference */}
               <div style={{ marginTop: '12px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <p style={{ color: '#71717a', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>Available Variables</p>
+                <p style={{ color: "var(--text-muted)", fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>Available Variables</p>
                 <div style={{ display: 'grid', gap: '4px' }}>
                   {meta.vars?.map(([v, desc]) => (
                     <div key={v} style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
                       <code style={{ color: '#9f67ff', minWidth: '160px', flexShrink: 0 }}>{v}</code>
-                      <span style={{ color: '#71717a' }}>{desc}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{desc}</span>
                     </div>
                   ))}
                 </div>
@@ -526,7 +526,7 @@ function WebhookCard({ config, onSaved }) {
           style={{
             padding: '8px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer',
             background: dirty ? 'rgba(179,18,63,0.25)' : 'rgba(255,255,255,0.06)',
-            color: dirty ? '#ff2f6d' : '#71717a',
+            color: dirty ? '#ff2f6d' : "var(--text-muted)",
             fontSize: '13px', fontWeight: '600', opacity: saving ? 0.5 : 1,
           }}
         >
@@ -538,7 +538,7 @@ function WebhookCard({ config, onSaved }) {
           disabled={testing || !webhookUrl}
           style={{
             padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
-            background: 'transparent', color: '#a1a1aa', fontSize: '13px', cursor: 'pointer',
+            background: 'transparent', color: "var(--text-secondary)", fontSize: '13px', cursor: 'pointer',
             opacity: testing || !webhookUrl ? 0.4 : 1,
           }}
         >
@@ -550,7 +550,7 @@ function WebhookCard({ config, onSaved }) {
           disabled={triggering || !enabled || meta.comingSoon}
           style={{
             padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
-            background: 'transparent', color: '#a1a1aa', fontSize: '13px', cursor: 'pointer',
+            background: 'transparent', color: "var(--text-secondary)", fontSize: '13px', cursor: 'pointer',
             opacity: triggering || !enabled || meta.comingSoon ? 0.4 : 1,
           }}
           title={meta.comingSoon ? 'Logic not yet implemented' : !enabled ? 'Enable first' : 'Run now (safe — dedup prevents duplicate sends)'}
@@ -574,9 +574,9 @@ function WebhookCard({ config, onSaved }) {
 
         {/* Status */}
         {config.last_triggered && (
-          <span style={{ color: '#52525b', fontSize: '12px', marginLeft: '4px' }}>
+          <span style={{ color: "var(--text-faint)", fontSize: '12px', marginLeft: '4px' }}>
             Last run: {timeAgo(config.last_triggered)}
-            {config.last_status && <span style={{ color: '#71717a' }}> — {config.last_status}</span>}
+            {config.last_status && <span style={{ color: "var(--text-muted)" }}> — {config.last_status}</span>}
           </span>
         )}
       </div>
@@ -624,7 +624,7 @@ export default function WebhooksTab() {
     }
   }
 
-  if (loading) return <p style={{ color: '#a1a1aa' }}>Loading webhook configs…</p>
+  if (loading) return <p style={{ color: "var(--text-secondary)" }}>Loading webhook configs…</p>
 
   const ordered = ['investment_tci', 'stock_monthly', 'armory_low']
   const sorted  = ordered.map(t => configs.find(c => c.event_type === t)).filter(Boolean)
@@ -632,11 +632,11 @@ export default function WebhooksTab() {
   return (
     <div>
       <div style={{ marginBottom: '24px' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '13px', lineHeight: '1.6' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', lineHeight: '1.6' }}>
           Configure Discord webhook notifications for faction events. Each webhook URL is tied to a specific Discord channel — create a webhook in your Discord server under <em>Channel Settings → Integrations → Webhooks</em>.
         </p>
-        <p style={{ color: '#52525b', fontSize: '12px', marginTop: '6px' }}>
-          The <strong style={{ color: '#71717a' }}>Discord User ID to Mention</strong> is the 18-digit user ID (enable Developer Mode in Discord → right-click a user → Copy User ID). Leave blank to send without a mention. Individual investment alerts also mention the member directly if their Discord ID is set on their investment record.
+        <p style={{ color: "var(--text-faint)", fontSize: '12px', marginTop: '6px' }}>
+          The <strong style={{ color: "var(--text-muted)" }}>Discord User ID to Mention</strong> is the 18-digit user ID (enable Developer Mode in Discord → right-click a user → Copy User ID). Leave blank to send without a mention. Individual investment alerts also mention the member directly if their Discord ID is set on their investment record.
         </p>
       </div>
 

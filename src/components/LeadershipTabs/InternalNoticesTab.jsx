@@ -75,7 +75,7 @@ export default function InternalNoticesTab() {
       <h2 className="font-cinzel mb-1" style={{ fontSize: 22, color: '#f4f4f5' }}>
         Internal Notices
       </h2>
-      <p style={{ color: '#a1a1aa', fontSize: 13, marginBottom: 28 }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 28 }}>
         Post updates for all leadership. Newest notices appear at the top — maximum 10 displayed.
       </p>
 
@@ -89,7 +89,7 @@ export default function InternalNoticesTab() {
           marginBottom: 28,
         }}
       >
-        <label style={{ display: 'block', fontSize: 12, color: '#a1a1aa', marginBottom: 8, fontWeight: 500 }}>
+        <label style={{ display: 'block', fontSize: 12, color: "var(--text-secondary)", marginBottom: 8, fontWeight: 500 }}>
           Post a Notice
         </label>
         <textarea
@@ -141,7 +141,7 @@ export default function InternalNoticesTab() {
 
       {/* Notices list */}
       {loading ? (
-        <p style={{ color: '#a1a1aa', fontSize: 13 }}>Loading notices...</p>
+        <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Loading notices...</p>
       ) : notices.length === 0 ? (
         <div
           style={{

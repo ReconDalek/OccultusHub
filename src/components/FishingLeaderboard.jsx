@@ -81,7 +81,7 @@ export default function FishingLeaderboard({ open, onClose }) {
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', color: '#7c3aed', letterSpacing: '0.1em', fontSize: '13px' }}>Consulting the void...</div>
           ) : leaderboard.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#a1a1aa' }}>
+            <div style={{ padding: '40px', textAlign: 'center', color: "var(--text-secondary)" }}>
               <div style={{ fontSize: '40px', marginBottom: '12px', fontFamily: 'monospace', color: '#6d28d9' }}>⊕</div>
               <p style={{ fontFamily: 'Cinzel, serif', letterSpacing: '1px', fontSize: '13px' }}>The abyss remains unscried.</p>
               <p style={{ color: '#6d28d9', fontSize: '12px' }}>Be the first to peer into the void.</p>

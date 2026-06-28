@@ -21,7 +21,7 @@ function SubTabs({ options, active, onChange }) {
               borderRadius: '8px',
               border: `1px solid ${isActive ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
               background: isActive ? 'rgba(179,18,63,0.15)' : 'transparent',
-              color: disabled ? '#52525b' : isActive ? '#f4f4f5' : '#a1a1aa',
+              color: disabled ? "var(--text-faint)" : isActive ? '#f4f4f5' : "var(--text-secondary)",
               fontSize: '13px',
               fontWeight: isActive ? '600' : '400',
               cursor: disabled ? 'default' : 'pointer',
@@ -31,7 +31,7 @@ function SubTabs({ options, active, onChange }) {
               gap: '6px',
             }}
             onMouseEnter={(e) => { if (!isActive && !disabled) e.currentTarget.style.color = '#f4f4f5' }}
-            onMouseLeave={(e) => { if (!isActive && !disabled) e.currentTarget.style.color = '#a1a1aa' }}
+            onMouseLeave={(e) => { if (!isActive && !disabled) e.currentTarget.style.color = "var(--text-secondary)" }}
           >
             {opt.label}
             {opt.badge && (
@@ -40,7 +40,7 @@ function SubTabs({ options, active, onChange }) {
                 padding: '1px 6px',
                 borderRadius: '10px',
                 background: opt.badgeColor ?? 'rgba(255,255,255,0.06)',
-                color: opt.badgeText ?? '#a1a1aa',
+                color: opt.badgeText ?? "var(--text-secondary)",
                 fontWeight: '600',
                 letterSpacing: '0.4px',
               }}>
@@ -117,7 +117,7 @@ export default function LeaderToolsTab() {
         >
           Tools
         </h2>
-        <p style={{ color: '#a1a1aa', fontSize: '13px', margin: 0 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0 }}>
           Command-level resources for managing the order.
         </p>
       </div>

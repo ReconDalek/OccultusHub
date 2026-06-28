@@ -83,7 +83,7 @@ function buildCoverage(companies, monthRange) {
 const TH = ({ children, right }) => (
   <th style={{
     padding: '8px 12px', textAlign: right ? 'right' : 'left',
-    color: '#71717a', fontWeight: '500', fontSize: '11px',
+    color: "var(--text-muted)", fontWeight: '500', fontSize: '11px',
     textTransform: 'uppercase', letterSpacing: '0.05em',
   }}>{children}</th>
 )
@@ -91,7 +91,7 @@ const TH = ({ children, right }) => (
 const TD = ({ children, right, muted, color }) => (
   <td style={{
     padding: '10px 12px', textAlign: right ? 'right' : 'left',
-    color: color || (muted ? '#71717a' : '#f4f4f5'), fontSize: '13px',
+    color: color || (muted ? "var(--text-muted)" : '#f4f4f5'), fontSize: '13px',
   }}>{children}</td>
 )
 
@@ -176,7 +176,7 @@ export default function CompanySubTab({ factionId }) {
   const totalPrevMonth      = companies.reduce((s, c) => s + (c.prev_month_profit ?? 0), 0)
   const withKey             = companies.filter(c => c.has_api_key).length
 
-  if (loading) return <p style={{ color: '#a1a1aa', fontSize: '13px' }}>Loading…</p>
+  if (loading) return <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Loading…</p>
 
   const daysColor = daysTracked === daysExpected ? '#4ade80' : daysTracked === 0 ? '#f87171' : '#f97316'
 
@@ -188,7 +188,7 @@ export default function CompanySubTab({ factionId }) {
           { label: 'Companies',          value: companies.length,                               color: '#f4f4f5' },
           { label: 'API Keys',           value: `${withKey} / ${companies.length}`,             color: withKey === companies.length ? '#4ade80' : '#f97316' },
           { label: 'Principal Invested', value: fmtShort(totalPrincipalPaid),                   color: '#f4f4f5' },
-          { label: 'Principal Owing',    value: fmtShort(totalPrincipalOwing),                  color: totalPrincipalOwing > 0 ? '#f97316' : '#71717a' },
+          { label: 'Principal Owing',    value: fmtShort(totalPrincipalOwing),                  color: totalPrincipalOwing > 0 ? '#f97316' : "var(--text-muted)" },
           { label: 'MTD Profit',         value: fmtShort(totalMtd),                             color: '#4ade80' },
           { label: 'Current Month Est.', value: fmtShort(totalEstMonthly),                      color: '#a78bfa' },
           { label: 'Days Tracked',       value: `${daysTracked} / ${daysExpected}`,             color: daysColor },
@@ -196,7 +196,7 @@ export default function CompanySubTab({ factionId }) {
           <div key={label} className="p-4 rounded-lg" style={{
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', minWidth: '130px',
           }}>
-            <p style={{ color: '#a1a1aa', fontSize: '11px', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
             <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
           </div>
         ))}
@@ -211,7 +211,7 @@ export default function CompanySubTab({ factionId }) {
               display: 'flex', alignItems: 'center', gap: '8px',
               background: 'none', border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '8px', padding: '10px 14px', cursor: 'pointer',
-              color: '#a1a1aa', fontSize: '12px', fontWeight: '600',
+              color: "var(--text-secondary)", fontSize: '12px', fontWeight: '600',
               textTransform: 'uppercase', letterSpacing: '0.05em', width: '100%',
             }}
           >
@@ -246,7 +246,7 @@ export default function CompanySubTab({ factionId }) {
                         textAlign: 'left',
                       }}
                     >
-                      <span style={{ color: '#71717a', fontSize: '10px' }}>{open ? '▼' : '▶'}</span>
+                      <span style={{ color: "var(--text-muted)", fontSize: '10px' }}>{open ? '▼' : '▶'}</span>
                       <span style={{ color: '#e4e4e7', fontSize: '13px', flex: 1 }}>{label}</span>
                       <span style={{ fontSize: '12px', color: allGood ? '#4ade80' : '#f97316' }}>
                         {fullDays} / {expected} days fully covered
@@ -259,11 +259,11 @@ export default function CompanySubTab({ factionId }) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {perCompany.map(c => c.missing.length > 0 && (
                               <div key={c.company_id} style={{ fontSize: '12px' }}>
-                                <span style={{ color: '#a1a1aa', marginRight: '8px' }}>{c.name}</span>
+                                <span style={{ color: "var(--text-secondary)", marginRight: '8px' }}>{c.name}</span>
                                 <span style={{ color: '#f97316' }}>
                                   {c.tracked} / {expected} days —
                                 </span>
-                                <span style={{ color: '#71717a' }}> missing: </span>
+                                <span style={{ color: "var(--text-muted)" }}> missing: </span>
                                 <span style={{ color: '#f87171' }}>{c.missing.map(fmtDay).join(', ')}</span>
                               </div>
                             ))}
@@ -315,13 +315,13 @@ export default function CompanySubTab({ factionId }) {
                   </TD>
                   <TD muted>{c.director_name ?? `#${c.director_id}`}</TD>
                   <TD right>{c.has_api_key ? fmt(c.daily_income) : '—'}</TD>
-                  <TD right color={c.daily_wages > 0 ? '#f87171' : '#71717a'}>{c.has_api_key ? fmt(c.daily_wages) : '—'}</TD>
-                  <TD right color={c.daily_advert > 0 ? '#f87171' : '#71717a'}>{c.has_api_key ? fmt(c.daily_advert) : '—'}</TD>
-                  <TD right color={c.daily_profit > 0 ? '#4ade80' : '#71717a'}>{c.has_api_key ? fmt(c.daily_profit) : '—'}</TD>
-                  <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : '#71717a'}>{(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}</TD>
-                  <TD right color={hasDays ? '#4ade80' : '#71717a'}>{hasDays ? fmt(c.mtd_profit) : '—'}</TD>
-                  <TD right color={hasDays ? '#60a5fa' : '#71717a'}>{hasDays ? fmt(c.ytd_profit) : '—'}</TD>
-                  <TD right color={hasDays ? '#a78bfa' : '#71717a'}>
+                  <TD right color={c.daily_wages > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_wages) : '—'}</TD>
+                  <TD right color={c.daily_advert > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_advert) : '—'}</TD>
+                  <TD right color={c.daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_profit) : '—'}</TD>
+                  <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : "var(--text-muted)"}>{(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}</TD>
+                  <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.mtd_profit) : '—'}</TD>
+                  <TD right color={hasDays ? '#60a5fa' : "var(--text-muted)"}>{hasDays ? fmt(c.ytd_profit) : '—'}</TD>
+                  <TD right color={hasDays ? '#a78bfa' : "var(--text-muted)"}>
                     {hasDays
                       ? <span title={`${c.month_snapshot_days} day${c.month_snapshot_days === 1 ? '' : 's'} of data`}>{fmt(c.est_monthly)}</span>
                       : '—'}
@@ -347,7 +347,7 @@ export default function CompanySubTab({ factionId }) {
           </tbody>
           <tfoot>
             <tr style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <td colSpan={6} style={{ padding: '10px 12px', color: '#a1a1aa', fontSize: '12px', fontWeight: '600' }}>
+              <td colSpan={6} style={{ padding: '10px 12px', color: "var(--text-secondary)", fontSize: '12px', fontWeight: '600' }}>
                 Total ({withKey}/{companies.length} with key · {companies.filter(c => c.principal_paid).length}/{companies.length} principal paid)
               </td>
               <TD right color='#94a3b8'>{totalPrevMonth > 0 ? fmt(totalPrevMonth) : '—'}</TD>
@@ -357,7 +357,7 @@ export default function CompanySubTab({ factionId }) {
               <td />
             </tr>
             <tr style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <td colSpan={6} style={{ padding: '6px 12px', color: '#52525b', fontSize: '11px', fontWeight: '600' }}>
+              <td colSpan={6} style={{ padding: '6px 12px', color: "var(--text-faint)", fontSize: '11px', fontWeight: '600' }}>
                 Faction 30%
               </td>
               <TD right color='#64748b'>{totalPrevMonth > 0 ? fmt(totalPrevMonth * 0.3) : '—'}</TD>
@@ -372,7 +372,7 @@ export default function CompanySubTab({ factionId }) {
 
       {/* Add company */}
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '20px' }}>
-        <p style={{ color: '#a1a1aa', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
           Add Company
         </p>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -400,12 +400,12 @@ export default function CompanySubTab({ factionId }) {
           </button>
           {addError && <span style={{ color: '#f87171', fontSize: '12px' }}>{addError}</span>}
         </div>
-        <p style={{ color: '#52525b', fontSize: '11px', marginTop: '8px' }}>
+        <p style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '8px' }}>
           Adds to the daily company cron. The director must log in to provide their API key for profit data.
         </p>
       </div>
 
-      <p style={{ color: '#52525b', fontSize: '11px', marginTop: '16px' }}>
+      <p style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '16px' }}>
         Principal: {fmt(PRINCIPAL)} per company · Profit = daily income − wages − advert ·
         MTD / YTD / Prev Month = sum of daily profit snapshots · Current Month Est. = daily average × days in month ·
         Days Tracked = days where all companies with API keys have data · Only paid principal counts toward networth

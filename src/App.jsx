@@ -31,10 +31,11 @@ import Games          from './pages/Games'
 import GameRoom       from './pages/GameRoom'
 import CardsGame      from './pages/CardsGame'
 import Sanctum        from './pages/Sanctum'
+import Binding        from './pages/Binding'
 import Stocks         from './pages/Stocks'
 import NotFound       from './pages/NotFound'
 
-const GAME_ROUTES = ['/rite', '/cards', '/sanctum'] // active gameplay routes — suppress easter egg overlays
+const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding'] // active gameplay routes — suppress easter egg overlays
 
 function Layout({ children }) {
   const { pathname } = useLocation()
@@ -110,7 +111,7 @@ function AppRoutes() {
     return (
       <div
         className="flex items-center justify-center"
-        style={{ minHeight: '100vh', color: '#a1a1aa' }}
+        style={{ minHeight: '100vh', color: "var(--text-secondary)" }}
       >
         Loading...
       </div>
@@ -202,6 +203,7 @@ function AppRoutes() {
       <Route path="/rite" element={<Layout><GameRoom /></Layout>} />
       <Route path="/cards" element={<Layout><CardsGame /></Layout>} />
       <Route path="/sanctum" element={<Layout><Sanctum /></Layout>} />
+      <Route path="/binding" element={<Layout><Binding /></Layout>} />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
       <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />

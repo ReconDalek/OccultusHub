@@ -1,5 +1,5 @@
 const ROLE_META = {
-  congregation: { icon: '◌', color: '#a1a1aa', label: 'Congregation' },
+  congregation: { icon: '◌', color: "var(--text-secondary)", label: 'Congregation' },
   cabal:        { icon: '◈', color: '#b3123f', label: 'Cabal Agent' },
   inquisitor:   { icon: '◉', color: '#9f67ff', label: 'Inquisitor' },
   warden:       { icon: '◎', color: '#22c55e', label: 'Warden' },
@@ -33,25 +33,25 @@ export default function GameEnd({ gameState, displayName, onPlayAgain }) {
           {winTitle}
         </h1>
 
-        <p style={{ color: '#71717a', fontSize: 13, maxWidth: 380, margin: '0 auto 32px', lineHeight: 1.6 }}>
+        <p style={{ color: "var(--text-muted)", fontSize: 13, maxWidth: 380, margin: '0 auto 32px', lineHeight: 1.6 }}>
           {lastOracleMsg}
         </p>
 
         {/* Player reveal */}
         <div style={{ marginBottom: 32 }}>
-          <p style={{ fontSize: 11, color: '#71717a', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>The Circle Revealed</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>The Circle Revealed</p>
           <div style={{ display: 'grid', gap: 6 }}>
             {players.map(p => {
-              const meta = ROLE_META[p.role] || { icon: '?', color: '#71717a', label: 'Unknown' }
+              const meta = ROLE_META[p.role] || { icon: '?', color: "var(--text-muted)", label: 'Unknown' }
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: `${meta.color}10`, border: `1px solid ${meta.color}30`, borderRadius: 8 }}>
                   <span style={{ fontSize: 16, color: meta.color }}>{meta.icon}</span>
-                  <span style={{ fontSize: 14, flex: 1, textAlign: 'left', color: p.is_alive ? '#f4f4f5' : '#52525b' }}>
+                  <span style={{ fontSize: 14, flex: 1, textAlign: 'left', color: p.is_alive ? '#f4f4f5' : "var(--text-faint)" }}>
                     {p.display_name}
                     {p.is_me && <span style={{ color: '#9f67ff', fontSize: 11 }}> (you)</span>}
                   </span>
                   <span style={{ fontSize: 12, color: meta.color }}>{meta.label}</span>
-                  {!p.is_alive && <span style={{ fontSize: 11, color: '#52525b' }}>fallen</span>}
+                  {!p.is_alive && <span style={{ fontSize: 11, color: "var(--text-faint)" }}>fallen</span>}
                 </div>
               )
             })}

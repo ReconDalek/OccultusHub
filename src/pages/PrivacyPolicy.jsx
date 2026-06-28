@@ -7,7 +7,7 @@ export default function PrivacyPolicy() {
       >
         Privacy Policy
       </h1>
-      <p className="text-center" style={{ color: '#a1a1aa', fontSize: '13px', marginBottom: '56px' }}>
+      <p className="text-center" style={{ color: "var(--text-secondary)", fontSize: '13px', marginBottom: '56px' }}>
         Effective date: 1 June 2026
       </p>
 
@@ -139,7 +139,7 @@ function Section({ title, children }) {
       >
         {title}
       </h2>
-      <div style={{ color: '#a1a1aa', lineHeight: 1.8, fontSize: '15px' }}>
+      <div style={{ color: "var(--text-secondary)", lineHeight: 1.8, fontSize: '15px' }}>
         {children}
       </div>
     </div>

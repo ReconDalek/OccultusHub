@@ -264,7 +264,7 @@ export default function RuneCastingGame({ open, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
             <button onClick={onClose} style={{
               background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-              color: '#a1a1aa', borderRadius: '8px', padding: '6px 14px',
+              color: "var(--text-secondary)", borderRadius: '8px', padding: '6px 14px',
               cursor: 'pointer', fontSize: '13px',
             }}>✕ Close</button>
           </div>
@@ -335,7 +335,7 @@ export default function RuneCastingGame({ open, onClose }) {
                   <div style={{ fontFamily: 'Cinzel, serif', fontSize: '15px', color: '#e9d5ff', letterSpacing: '1px', marginBottom: '6px' }}>
                     {reading.name}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#a1a1aa', fontStyle: 'italic', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: "var(--text-secondary)", fontStyle: 'italic', marginBottom: '10px' }}>
                     {reading.flavour}
                   </div>
                   <div style={{ fontSize: '13px', color: '#7c3aed', marginBottom: '4px' }}>

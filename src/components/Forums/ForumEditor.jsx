@@ -29,7 +29,7 @@ const FONT_SIZES = [
 ]
 
 const COLORS = [
-  '#f4f4f5', '#a1a1aa', '#f76707', '#e03131', '#2f9e44',
+  '#f4f4f5', "var(--text-secondary)", '#f76707', '#e03131', '#2f9e44',
   '#1971c2', '#ae3ec9', '#f08c00', '#0c8599', '#ffffff',
 ]
 

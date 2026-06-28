@@ -16,14 +16,14 @@ function ScrollToTop() {
         position: 'fixed', bottom: '28px', right: '28px', zIndex: 999,
         width: '40px', height: '40px', borderRadius: '50%',
         background: 'rgba(20,20,30,0.85)', border: '1px solid rgba(255,255,255,0.12)',
-        color: '#a1a1aa', fontSize: '18px', cursor: 'pointer',
+        color: "var(--text-secondary)", fontSize: '18px', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         backdropFilter: 'blur(6px)',
         transition: 'opacity 0.2s, color 0.2s',
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}
       onMouseEnter={e => { e.currentTarget.style.color = '#f4f4f5'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }}
-      onMouseLeave={e => { e.currentTarget.style.color = '#a1a1aa'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
+      onMouseLeave={e => { e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
       title="Back to top"
     >
       ↑
@@ -167,7 +167,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
           padding: '7px 16px', borderRadius: '8px',
           border: `1px solid ${mode === m ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
           background: mode === m ? 'rgba(179,18,63,0.15)' : 'transparent',
-          color: mode === m ? '#f4f4f5' : '#a1a1aa', fontSize: '13px',
+          color: mode === m ? '#f4f4f5' : "var(--text-secondary)", fontSize: '13px',
           fontWeight: mode === m ? '600' : '400', cursor: 'pointer',
         }}>
           {label}
@@ -175,7 +175,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
       ))}
 
       {mode === 'latest' && (
-        <span style={{ color: '#52525b', fontSize: '12px', alignSelf: 'center' }}>
+        <span style={{ color: "var(--text-faint)", fontSize: '12px', alignSelf: 'center' }}>
           Showing totals from each member's most recent snapshot
         </span>
       )}
@@ -190,7 +190,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
             const isCurrent = year === now.getUTCFullYear() && month === now.getUTCMonth()
             const noData = isMonthBeforeData(year, month)
             return (
-              <option key={`${year}-${month}`} value={`${year}-${month}`} disabled={noData} style={{ color: noData ? '#52525b' : '#f4f4f5' }}>
+              <option key={`${year}-${month}`} value={`${year}-${month}`} disabled={noData} style={{ color: noData ? "var(--text-faint)" : '#f4f4f5' }}>
                 {monthLabel(year, month)}{isCurrent ? ' (this month)' : ''}{noData ? ' — no data' : ''}
               </option>
             )
@@ -200,7 +200,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
 
       {mode === 'day' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <label style={{ color: '#a1a1aa', fontSize: '12px' }}>Date (UTC)</label>
+          <label style={{ color: "var(--text-secondary)", fontSize: '12px' }}>Date (UTC)</label>
           <input type="date" value={customDay} min={minDate} onChange={e => setCustomDay(e.target.value)} style={psDateInput} />
         </div>
       )}
@@ -209,7 +209,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
         <>
           {[['From', customFrom, setCustomFrom], ['To', customTo, setCustomTo]].map(([lbl, val, setter]) => (
             <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <label style={{ color: '#a1a1aa', fontSize: '12px' }}>{lbl}</label>
+              <label style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{lbl}</label>
               <input type="date" value={val} min={minDate} onChange={e => setter(e.target.value)} style={psDateInput} />
             </div>
           ))}
@@ -236,7 +236,7 @@ function FactionFilter({ value, onChange }) {
           padding: '5px 14px', borderRadius: '8px',
           border: `1px solid ${value === v ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
           background: value === v ? 'rgba(179,18,63,0.12)' : 'transparent',
-          color: value === v ? '#f4f4f5' : '#a1a1aa', fontSize: '12px', cursor: 'pointer',
+          color: value === v ? '#f4f4f5' : "var(--text-secondary)", fontSize: '12px', cursor: 'pointer',
         }}>{l}</button>
       ))}
     </div>
@@ -255,7 +255,7 @@ function CategoryTabs({ activeCat, onChangeCat, activeSub, onChangeSub }) {
             padding: '5px 12px', borderRadius: '8px',
             border: `1px solid ${activeCat === c.id ? 'rgba(109,40,217,0.5)' : 'rgba(255,255,255,0.08)'}`,
             background: activeCat === c.id ? 'rgba(109,40,217,0.15)' : 'transparent',
-            color: activeCat === c.id ? '#f4f4f5' : '#a1a1aa', fontSize: '12px',
+            color: activeCat === c.id ? '#f4f4f5' : "var(--text-secondary)", fontSize: '12px',
             fontWeight: activeCat === c.id ? '600' : '400', cursor: 'pointer',
           }}>{c.label}</button>
         ))}
@@ -267,7 +267,7 @@ function CategoryTabs({ activeCat, onChangeCat, activeSub, onChangeSub }) {
               padding: '3px 12px', borderRadius: '6px',
               border: `1px solid ${activeSub === s.id ? 'rgba(34,211,238,0.4)' : 'rgba(255,255,255,0.06)'}`,
               background: activeSub === s.id ? 'rgba(34,211,238,0.08)' : 'transparent',
-              color: activeSub === s.id ? '#22d3ee' : '#71717a', fontSize: '11px',
+              color: activeSub === s.id ? '#22d3ee' : "var(--text-muted)", fontSize: '11px',
               fontWeight: activeSub === s.id ? '600' : '400', cursor: 'pointer',
             }}>{s.label}</button>
           ))}
@@ -297,12 +297,12 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '500px' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#71717a', fontWeight: '500', width: '32px' }}>#</th>
-            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#71717a', fontWeight: '500' }}>Member</th>
+            <th style={{ textAlign: 'left', padding: '8px 12px', color: "var(--text-muted)", fontWeight: '500', width: '32px' }}>#</th>
+            <th style={{ textAlign: 'left', padding: '8px 12px', color: "var(--text-muted)", fontWeight: '500' }}>Member</th>
             {visibleFields.map(f => (
               <th key={f.key} onClick={() => handleSort(f.key)} style={{
                 textAlign: 'right', padding: '8px 12px',
-                color: sortKey === f.key ? '#c084fc' : '#71717a',
+                color: sortKey === f.key ? '#c084fc' : "var(--text-muted)",
                 fontWeight: sortKey === f.key ? '600' : '500',
                 cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none',
               }}>
@@ -315,13 +315,13 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
           {sorted.map((m, i) => {
             return (
               <tr key={m.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                <td style={{ padding: '8px 12px', color: '#52525b', fontSize: '11px' }}>{i + 1}</td>
+                <td style={{ padding: '8px 12px', color: "var(--text-faint)", fontSize: '11px' }}>{i + 1}</td>
                 <td style={{ padding: '8px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div>
                       <div style={{ color: '#f4f4f5', fontWeight: '500' }}>{m.username}</div>
                       {m.faction_id && (
-                        <div style={{ fontSize: '10px', color: FACTION_COLORS[m.faction_id] ?? '#52525b', marginTop: '1px' }}>
+                        <div style={{ fontSize: '10px', color: FACTION_COLORS[m.faction_id] ?? "var(--text-faint)", marginTop: '1px' }}>
                           {FACTION_NAMES[m.faction_id] ?? `Faction ${m.faction_id}`}
                         </div>
                       )}
@@ -331,7 +331,7 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
                 {visibleFields.map(f => (
                   <td key={f.key} style={{
                     padding: '8px 12px', textAlign: 'right',
-                    color: (m.stats[f.key] ?? 0) > 0 ? '#f4f4f5' : '#3f3f46',
+                    color: (m.stats[f.key] ?? 0) > 0 ? '#f4f4f5' : "var(--text-ghost)",
                     fontWeight: sortKey === f.key ? '600' : '400',
                   }}>
                     {TIME_KEYS.has(f.key) ? fmtTime(m.stats[f.key] ?? 0) : fmt(m.stats[f.key] ?? 0)}
@@ -366,7 +366,7 @@ function SummaryBar({ members, coverage, isLatest }) {
     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
       {tiles.map(([l, v]) => (
         <div key={l} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 16px', minWidth: '110px' }}>
-          <div style={{ color: '#a1a1aa', fontSize: '11px', marginBottom: '4px' }}>{l}</div>
+          <div style={{ color: "var(--text-secondary)", fontSize: '11px', marginBottom: '4px' }}>{l}</div>
           <div style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: '600' }}>{v}</div>
         </div>
       ))}
@@ -387,7 +387,7 @@ function LineChart({ series, statLabel }) {
   // Collect all dates across all series
   const allDates = [...new Set(series.flatMap(s => s.points.map(p => p.date)))].sort()
   if (!allDates.length) return (
-    <div style={{ color: '#52525b', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
+    <div style={{ color: "var(--text-faint)", fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
       No data points in range.
     </div>
   )
@@ -527,19 +527,19 @@ function LineChart({ series, statLabel }) {
           whiteSpace: 'nowrap',
         }}>
           <div style={{ color: tooltip.color, fontWeight: '600', marginBottom: '4px' }}>{tooltip.username}</div>
-          <div style={{ color: '#71717a', fontSize: '11px' }}>{tooltip.date}</div>
+          <div style={{ color: "var(--text-muted)", fontSize: '11px' }}>{tooltip.date}</div>
           <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-              <span style={{ color: '#71717a', fontSize: '11px' }}>Total</span>
+              <span style={{ color: "var(--text-muted)", fontSize: '11px' }}>Total</span>
               <span style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '12px' }}>{fmt(tooltip.total)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-              <span style={{ color: '#71717a', fontSize: '11px' }}>Period gain</span>
+              <span style={{ color: "var(--text-muted)", fontSize: '11px' }}>Period gain</span>
               <span style={{ color: tooltip.color, fontWeight: '600', fontSize: '12px' }}>+{fmt(tooltip.delta)}</span>
             </div>
             {tooltip.day_gain > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-                <span style={{ color: '#71717a', fontSize: '11px' }}>Day gain</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '11px' }}>Day gain</span>
                 <span style={{ color: '#34d399', fontWeight: '600', fontSize: '12px' }}>+{fmt(tooltip.day_gain)}</span>
               </div>
             )}
@@ -554,7 +554,7 @@ function LineChart({ series, statLabel }) {
             <div style={{ width: '12px', height: '3px', background: SERIES_COLORS[si % SERIES_COLORS.length], borderRadius: '2px' }} />
             <span style={{ color: '#d4d4d8' }}>{s.username ?? `ID ${s.id}`}</span>
             {s.faction_id && (
-              <span style={{ color: FACTION_COLORS[s.faction_id] ?? '#52525b', fontSize: '10px' }}>
+              <span style={{ color: FACTION_COLORS[s.faction_id] ?? "var(--text-faint)", fontSize: '10px' }}>
                 {FACTION_NAMES[s.faction_id] ?? ''}
               </span>
             )}
@@ -689,7 +689,7 @@ function SnapshotGapsPanel() {
           padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
           border: `1px solid ${open || totalGaps > 0 ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.1)'}`,
           background: open ? 'rgba(251,191,36,0.08)' : 'transparent',
-          color: totalGaps > 0 ? '#fbbf24' : '#a1a1aa',
+          color: totalGaps > 0 ? '#fbbf24' : "var(--text-secondary)",
           transition: 'all 0.15s',
         }}
       >
@@ -711,7 +711,7 @@ function SnapshotGapsPanel() {
               style={{
                 padding: '5px 14px', borderRadius: '8px', cursor: loading ? 'default' : 'pointer',
                 border: '1px solid rgba(255,255,255,0.1)', background: 'transparent',
-                color: '#a1a1aa', fontSize: '12px',
+                color: "var(--text-secondary)", fontSize: '12px',
               }}
             >
               {loading ? 'Loading…' : '↻ Refresh'}
@@ -725,14 +725,14 @@ function SnapshotGapsPanel() {
           )}
 
           {!loading && gaps && gaps.gaps.length === 0 && (
-            <div style={{ color: '#52525b', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
+            <div style={{ color: "var(--text-faint)", fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
               No gaps detected — all active members have snapshots for every recorded date.
             </div>
           )}
 
           {!loading && gaps && gaps.gaps.length > 0 && (
             <div>
-              <p style={{ color: '#71717a', fontSize: '12px', margin: '0 0 16px' }}>
+              <p style={{ color: "var(--text-muted)", fontSize: '12px', margin: '0 0 16px' }}>
                 {gaps.total} missing snapshot{gaps.total !== 1 ? 's' : ''} across {gaps.gaps.length} date{gaps.gaps.length !== 1 ? 's' : ''}.
                 Each backfill fetches that member's stats at 01:00 UTC on the missing date.
               </p>
@@ -754,12 +754,12 @@ function SnapshotGapsPanel() {
                     }}>
                       <div>
                         <span style={{ color: '#fbbf24', fontWeight: '600', fontSize: '13px' }}>{group.date}</span>
-                        <span style={{ color: '#52525b', fontSize: '11px', marginLeft: '10px' }}>
+                        <span style={{ color: "var(--text-faint)", fontSize: '11px', marginLeft: '10px' }}>
                           {group.missing.length} missing
                           {doneCount > 0 && !allDone && <span style={{ color: '#34d399' }}> · {doneCount} backfilled</span>}
                           {allDone && <span style={{ color: '#34d399' }}> · all backfilled ✓</span>}
                         </span>
-                        <span style={{ color: '#3f3f46', fontSize: '10px', marginLeft: '10px' }}>
+                        <span style={{ color: "var(--text-ghost)", fontSize: '10px', marginLeft: '10px' }}>
                           ts: {group.timestamp}
                         </span>
                       </div>
@@ -794,7 +794,7 @@ function SnapshotGapsPanel() {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{m.username}</span>
                               {m.faction_id && (
-                                <span style={{ color: FACTION_COLORS_GAP[m.faction_id] ?? '#52525b', fontSize: '10px', marginLeft: '8px' }}>
+                                <span style={{ color: FACTION_COLORS_GAP[m.faction_id] ?? "var(--text-faint)", fontSize: '10px', marginLeft: '8px' }}>
                                   {FACTION_NAMES_GAP[m.faction_id] ?? `Faction ${m.faction_id}`}
                                 </span>
                               )}
@@ -817,8 +817,8 @@ function SnapshotGapsPanel() {
                                   border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.08)', color: '#c4b5fd',
                                 }}>Backfill</button>
                               )}
-                              {st === 'loading'  && <span style={{ color: '#a1a1aa', fontSize: '11px' }}>fetching…</span>}
-                              {st === 'deleting' && <span style={{ color: '#a1a1aa', fontSize: '11px' }}>deleting…</span>}
+                              {st === 'loading'  && <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>fetching…</span>}
+                              {st === 'deleting' && <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>deleting…</span>}
                               {st === 'inflation' && (
                                 <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
                                   padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
@@ -889,12 +889,12 @@ function ManualSnapshotDelete({ onDelete }) {
 
   return (
     <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
-      <p style={{ color: '#52525b', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
+      <p style={{ color: "var(--text-faint)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
         Delete a specific snapshot
       </p>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          <label style={{ color: '#71717a', fontSize: '10px' }}>Torn User ID</label>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px' }}>Torn User ID</label>
           <input
             type="number"
             value={userId}
@@ -907,7 +907,7 @@ function ManualSnapshotDelete({ onDelete }) {
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          <label style={{ color: '#71717a', fontSize: '10px' }}>Snapshot Date</label>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px' }}>Snapshot Date</label>
           <input
             type="date"
             value={date}
@@ -1023,7 +1023,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
 
         {/* Member search + chips */}
         <div style={{ flex: '1 1 260px' }}>
-          <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '6px' }}>
+          <div style={{ color: "var(--text-muted)", fontSize: '11px', marginBottom: '6px' }}>
             Members ({pickedMembers.length}/4)
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
@@ -1038,7 +1038,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: SERIES_COLORS[i], flexShrink: 0 }} />
                 {m.username}
                 <button onClick={() => removeMember(m.id)} style={{
-                  background: 'none', border: 'none', color: '#71717a',
+                  background: 'none', border: 'none', color: "var(--text-muted)",
                   cursor: 'pointer', padding: '0', lineHeight: 1, fontSize: '13px',
                 }}>×</button>
               </div>
@@ -1073,7 +1073,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
                     >
                       <span>{m.username}</span>
                       {m.faction_id && (
-                        <span style={{ color: FACTION_COLORS[m.faction_id] ?? '#52525b', fontSize: '11px' }}>
+                        <span style={{ color: FACTION_COLORS[m.faction_id] ?? "var(--text-faint)", fontSize: '11px' }}>
                           {FACTION_NAMES[m.faction_id]}
                         </span>
                       )}
@@ -1087,7 +1087,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
 
         {/* Stat selector */}
         <div style={{ flex: '1 1 180px' }}>
-          <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '6px' }}>Stat</div>
+          <div style={{ color: "var(--text-muted)", fontSize: '11px', marginBottom: '6px' }}>Stat</div>
           <select
             value={selectedStat}
             onChange={e => setSelectedStat(e.target.value)}
@@ -1105,7 +1105,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
 
         {/* Period */}
         <div style={{ flex: '2 1 300px' }}>
-          <div style={{ color: '#71717a', fontSize: '11px', marginBottom: '6px' }}>Period</div>
+          <div style={{ color: "var(--text-muted)", fontSize: '11px', marginBottom: '6px' }}>Period</div>
           <PeriodPicker
             mode={mode} setMode={setMode}
             selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth}
@@ -1120,12 +1120,12 @@ function ComparePanel({ allMembers, allFields, minDate }) {
 
       {/* Chart area */}
       {pickedMembers.length < 2 && (
-        <div style={{ color: '#52525b', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>
+        <div style={{ color: "var(--text-faint)", fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>
           Select at least 2 members to compare.
         </div>
       )}
       {pickedMembers.length >= 2 && loading && (
-        <div style={{ color: '#a1a1aa', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>Loading…</div>
+        <div style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>Loading…</div>
       )}
       {error && (
         <div style={{ color: '#f87171', fontSize: '13px', padding: '12px', background: 'rgba(248,113,113,0.06)', borderRadius: '8px' }}>
@@ -1135,7 +1135,7 @@ function ComparePanel({ allMembers, allFields, minDate }) {
       {!loading && chartData && (
         <div style={{ marginTop: '8px' }}>
           {chartData.series.every(s => !s.points.length) ? (
-            <div style={{ color: '#52525b', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ color: "var(--text-faint)", fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>
               No snapshot data for these members in this period.
             </div>
           ) : (
@@ -1235,7 +1235,7 @@ export default function PersonalStatsPanel() {
       <FactionFilter value={factionFilter} onChange={setFactionFilter} />
 
       {loading && (
-        <div style={{ color: '#a1a1aa', fontSize: '13px', padding: '40px 0', textAlign: 'center' }}>
+        <div style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '40px 0', textAlign: 'center' }}>
           Loading personal stats…
         </div>
       )}
@@ -1250,16 +1250,16 @@ export default function PersonalStatsPanel() {
         <>
           {(!data.members?.length) ? (
             <div style={{ padding: '32px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', background: 'rgba(22,22,32,0.6)' }}>
-              <div style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '8px' }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: '14px', marginBottom: '8px' }}>
                 {mode === 'latest' ? 'No snapshot data yet.' : 'No snapshot data for this period.'}
               </div>
-              <div style={{ color: '#52525b', fontSize: '12px' }}>Personal stats are snapshotted daily at 01:00 UTC. Data will appear from the next cron run.</div>
+              <div style={{ color: "var(--text-faint)", fontSize: '12px' }}>Personal stats are snapshotted daily at 01:00 UTC. Data will appear from the next cron run.</div>
             </div>
           ) : (
             <>
               <SummaryBar members={members} coverage={data.coverage} isLatest={mode === 'latest' || mode === 'day'} />
               {data.coverage && (
-                <div style={{ color: '#52525b', fontSize: '11px', marginBottom: '12px' }}>
+                <div style={{ color: "var(--text-faint)", fontSize: '11px', marginBottom: '12px' }}>
                   {mode === 'latest'
                     ? `Latest snapshot: ${data.coverage.latest} — ${data.coverage.days_covered} day${data.coverage.days_covered !== 1 ? 's' : ''} of history`
                     : `Snapshots: ${data.coverage.earliest} → ${data.coverage.latest} (${data.coverage.days_covered} day${data.coverage.days_covered !== 1 ? 's' : ''})`}
@@ -1277,7 +1277,7 @@ export default function PersonalStatsPanel() {
                     padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
                     border: `1px solid ${showCompare ? 'rgba(192,132,252,0.5)' : 'rgba(255,255,255,0.1)'}`,
                     background: showCompare ? 'rgba(192,132,252,0.1)' : 'transparent',
-                    color: showCompare ? '#c084fc' : '#a1a1aa',
+                    color: showCompare ? '#c084fc' : "var(--text-secondary)",
                     transition: 'all 0.15s',
                   }}
                 >
@@ -1297,7 +1297,7 @@ export default function PersonalStatsPanel() {
               />
 
               {members.length === 0 ? (
-                <div style={{ color: '#a1a1aa', fontSize: '13px', padding: '24px 0', textAlign: 'center' }}>No members match the current filter.</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '24px 0', textAlign: 'center' }}>No members match the current filter.</div>
               ) : (
                 <StatsTable
                   members={members}
