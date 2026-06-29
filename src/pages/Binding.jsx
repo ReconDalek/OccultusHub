@@ -913,8 +913,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                   </p>
                   <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                     Condition: <span style={{ color: '#ef4444' }}>{data.grade}</span>
-                    {' · '}HP {data.condition.hp}/{data.condition.max_hp}
-                    {' · '}Happiness {data.condition.happiness}/100
+                    {data.condition && <>{' · '}HP {data.condition.hp}/{data.condition.max_hp}{' · '}Happiness {data.condition.happiness}/100</>}
                   </div>
                 </div>
               ) : (
@@ -978,8 +977,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                   {/* Condition footer */}
                   <div style={{ fontSize: 11, color: "var(--text-muted)", borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 10 }}>
                     Condition: <span style={{ color: gradeColor }}>{data.grade}</span>
-                    {' · '}HP {data.condition.hp}/{data.condition.max_hp}
-                    {' · '}Happiness {data.condition.happiness}/100
+                    {data.condition && <>{' · '}HP {data.condition.hp}/{data.condition.max_hp}{' · '}Happiness {data.condition.happiness}/100</>}
                   </div>
                 </div>
               )}
