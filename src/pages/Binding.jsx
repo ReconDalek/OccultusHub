@@ -1347,30 +1347,13 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                   </div>
                 </div>
 
-                {/* Bond bar */}
-                {(() => {
-                  const bt = bondTier(familiar.bond || 0)
-                  return (
-                    <div style={{ marginBottom: 4 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10,
-                        color: "var(--text-faint)", marginBottom: 4 }}>
-                        <span>BOND — <span style={{ color: bt.color }}>{bt.label.toUpperCase()}</span></span>
-                        <span>{familiar.bond || 0}/100</span>
-                      </div>
-                      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2 }}>
-                        <div style={{ height: '100%', borderRadius: 2,
-                          width: `${((familiar.bond || 0) / 100) * 100}%`,
-                          background: `linear-gradient(90deg, ${bt.color}, ${bt.color}99)`,
-                          transition: 'width 0.4s ease' }} />
-                      </div>
-                    </div>
-                  )
-                })()}
-
-                {/* Happiness + shards row */}
+                {/* Happiness + shards + bond tier row */}
                 <div className="binding-happiness-shards" style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
                   <span>☽ {familiar.happiness}/100 Happiness</span>
                   <span>◆ {familiar.shards} Shards</span>
+                  <span style={{ color: bondTier(familiar.bond || 0).color }}>
+                    ♥ {bondTier(familiar.bond || 0).label}
+                  </span>
                 </div>
               </div>
             </div>
