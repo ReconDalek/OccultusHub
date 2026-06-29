@@ -614,6 +614,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const [expandedBattle, setExpandedBattle] = useState(null)  // battle index expanded for round view
   const [tab, setTab]                   = useState('home')
   const [actionMsg, setActionMsg]       = useState(null)
+  const [actionResult, setActionResult] = useState(null)  // rich result panel for train/hunt
   const [loading, setLoading]           = useState(false)
   const [shopMsg, setShopMsg]           = useState(null)
   const [evolutionPending, setEvoPending] = useState(null)  // { fromStage, toStage, species, nature }
@@ -640,45 +641,34 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   async function doAction(endpoint) {
     if (loading) return
     setLoading(true)
+    setActionResult(null)
     try {
       const res = await fetch(`${API_BASE_URL}/api/binding/${endpoint}`, {
-        method: 'POST',
-        headers: authHeaders(),
+        method: 'POST', headers: authHeaders(),
       })
       const data = await res.json()
       if (!res.ok) {
         showMsg(data.error || 'Something went wrong.', '#ef4444')
         return
       }
-      // refresh familiar
       const fresh = await fetch(`${API_BASE_URL}/api/binding/familiar`, { headers: authHeaders() })
       const freshData = await fresh.json()
       const prevStage = familiar.stage
       setFamiliar(freshData.familiar)
       if (freshData.events?.length) setEvents(e => [...freshData.events, ...e])
 
-      // Trigger evolution overlay before showing action message
       if (data.evolved && data.newStage > prevStage) {
         setEvoPending({ fromStage: prevStage, toStage: data.newStage, species: familiar.species, nature: familiar.nature })
         return
       }
 
-      if (endpoint === 'train') {
-        const lvMsg = data.levelsGained > 0 ? ` Level up! Now level ${data.newLevel}.` : ''
-        showMsg(`Training complete. +${data.xp} XP.${lvMsg}`, '#a78bfa')
-      }
-      if (endpoint === 'hunt') {
-        let msg = `Hunt complete. +${data.xp} XP, +${data.shards} Shards.`
-        if (data.encounter) {
-          msg += data.encounter.won ? ` Encountered a wild ${data.encounter.wildSpecies} — and won.` :
-                                       ` Encountered a wild ${data.encounter.wildSpecies} — and lost.`
-        }
-        showMsg(msg, '#f59e0b')
+      if (endpoint === 'train' || endpoint === 'hunt') {
+        setActionResult({ type: endpoint, data })
       }
       if (endpoint === 'rest') {
-        showMsg(`Your familiar has rested. HP restored, happiness +10.`, '#6ee7b7')
+        showMsg('Your familiar has rested. HP restored, happiness +10.', '#6ee7b7')
       }
-    } catch (e) {
+    } catch {
       showMsg('Connection error.', '#ef4444')
     } finally {
       setLoading(false)
@@ -883,7 +873,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
           </div>
         )}
 
-        {/* Action message */}
+        {/* Action message (rest / errors) */}
         {actionMsg && (
           <div style={{ padding: '12px 16px', borderRadius: 8, marginBottom: 16,
             background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
@@ -891,6 +881,111 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
             {actionMsg.text}
           </div>
         )}
+
+        {/* Rich action result panel */}
+        {actionResult && tab === 'home' && (() => {
+          const { type, data } = actionResult
+          const GRADE_COLOR = {
+            Excellent: '#6ee7b7', Good: '#a78bfa', Fair: '#f59e0b', Poor: '#fb923c', Critical: '#ef4444',
+          }
+          const gradeColor = GRADE_COLOR[data.grade] || "var(--text-secondary)"
+          const isTrain = type === 'train'
+          const accent  = isTrain ? '#a78bfa' : '#f59e0b'
+          const title   = isTrain ? 'TRAINING REPORT' : 'HUNT REPORT'
+          return (
+            <div style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: `1px solid ${accent}28`,
+              borderRadius: 12, padding: '18px 20px', marginBottom: 16, position: 'relative',
+            }}>
+              <button onClick={() => setActionResult(null)}
+                style={{ position: 'absolute', top: 10, right: 14, background: 'none', border: 'none',
+                  color: "var(--text-faint)", cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>✕</button>
+
+              <div className="font-cinzel" style={{ fontSize: 11, letterSpacing: 3, color: accent, marginBottom: 14 }}>
+                {title}
+              </div>
+
+              {data.failed ? (
+                <div>
+                  <p style={{ fontSize: 14, color: '#ef4444', marginBottom: 10 }}>
+                    Your familiar was too weary to respond. The attempt was wasted.
+                  </p>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    Condition: <span style={{ color: '#ef4444' }}>{data.grade}</span>
+                    {' · '}HP {data.condition.hp}/{data.condition.max_hp}
+                    {' · '}Happiness {data.condition.happiness}/100
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                  {/* XP row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Experience</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {data.lvMult > 100 && (
+                        <span style={{ fontSize: 10, color: '#6ee7b7', background: 'rgba(16,185,129,0.1)',
+                          border: '1px solid rgba(16,185,129,0.25)', borderRadius: 20, padding: '1px 7px' }}>
+                          Lv ×{(data.lvMult / 100).toFixed(2)}
+                        </span>
+                      )}
+                      {data.efficiency < 100 && (
+                        <span style={{ fontSize: 10, color: gradeColor, background: `${gradeColor}18`,
+                          border: `1px solid ${gradeColor}35`, borderRadius: 20, padding: '1px 7px' }}>
+                          {data.grade} {data.efficiency}%
+                        </span>
+                      )}
+                      <span style={{ fontSize: 15, fontWeight: 600, color: '#a78bfa' }}>+{data.xp} XP</span>
+                    </div>
+                  </div>
+
+                  {/* Shards row (hunt only) */}
+                  {!isTrain && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Shards</span>
+                      <span style={{ fontSize: 15, fontWeight: 600, color: '#f59e0b' }}>+{data.shards} ◆</span>
+                    </div>
+                  )}
+
+                  {/* Level up */}
+                  {data.levelsGained > 0 && (
+                    <div style={{ padding: '8px 12px', borderRadius: 8,
+                      background: 'rgba(109,40,217,0.12)', border: '1px solid rgba(109,40,217,0.3)',
+                      fontSize: 13, color: '#c4b5fd', textAlign: 'center' }}>
+                      ✦ Level up — now level {data.newLevel}
+                    </div>
+                  )}
+
+                  {/* Wild encounter (hunt only) */}
+                  {data.encounter && (
+                    <div style={{ padding: '10px 14px', borderRadius: 8,
+                      background: data.encounter.won ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)',
+                      border: `1px solid ${data.encounter.won ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4,
+                        color: data.encounter.won ? '#6ee7b7' : '#fca5a5' }}>
+                        {data.encounter.won ? 'Encounter — Victory' : 'Encounter — Defeated'}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                        Wild {data.encounter.wildSpecies} ({data.encounter.wildNature})
+                        {data.encounter.bonusXp > 0 && <> · +{data.encounter.bonusXp} XP</>}
+                        {data.encounter.bonusShards > 0 && <> · +{data.encounter.bonusShards} ◆</>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Condition footer */}
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 10 }}>
+                    Condition: <span style={{ color: gradeColor }}>{data.grade}</span>
+                    {' · '}HP {data.condition.hp}/{data.condition.max_hp}
+                    {' · '}Happiness {data.condition.happiness}/100
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Tabs */}
         <div className="binding-tabs" style={{ display: 'flex', gap: 2, marginBottom: 24, background: 'rgba(255,255,255,0.03)',

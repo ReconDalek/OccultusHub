@@ -93,6 +93,24 @@ function maxHp(vit) {
   return vit * 10;
 }
 
+function conditionEfficiency(familiar) {
+  const hpRatio        = familiar.hp / familiar.max_hp;
+  const happinessRatio = familiar.happiness / 100;
+  return hpRatio * 0.4 + happinessRatio * 0.6;
+}
+
+function levelMultiplier(level) {
+  return 1 + (level - 1) * 0.04;
+}
+
+function conditionGrade(efficiency) {
+  if (efficiency >= 0.85) return 'Excellent';
+  if (efficiency >= 0.65) return 'Good';
+  if (efficiency >= 0.45) return 'Fair';
+  if (efficiency >= 0.25) return 'Poor';
+  return 'Critical';
+}
+
 function pickWeighted(items) {
   const total = items.reduce((s, i) => s + i.weight, 0);
   let r = Math.random() * total;
@@ -373,11 +391,36 @@ export async function trainFamiliar(request, env, user) {
     return errorResponse('Your familiar is still recovering from training', 429, { remaining });
   }
 
-  const xp = rand(XP_GAIN.train.min, XP_GAIN.train.max);
-  const { levelsGained, newLevel, evolved, newStage } = await applyXp(env.DB, familiar, xp);
+  const efficiency = conditionEfficiency(familiar);
+  const lvMult     = levelMultiplier(familiar.level);
+  const grade      = conditionGrade(efficiency);
+  const failed     = efficiency < 0.15;
+
+  // Always stamp cooldown — failure means the familiar tried and couldn't
   await env.DB.prepare(`UPDATE familiars SET last_trained_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(familiar.id).run();
 
-  return jsonResponse({ xp, levelsGained, newLevel, evolved, newStage });
+  if (failed) {
+    return jsonResponse({
+      failed: true, xp: 0, levelsGained: 0, newLevel: familiar.level,
+      evolved: false, newStage: familiar.stage,
+      efficiency: Math.round(efficiency * 100),
+      grade,
+      condition: { hp: familiar.hp, max_hp: familiar.max_hp, happiness: familiar.happiness },
+    });
+  }
+
+  const baseXp  = rand(XP_GAIN.train.min, XP_GAIN.train.max);
+  const scaledXp = Math.max(1, Math.round(baseXp * lvMult * efficiency));
+  const { levelsGained, newLevel, evolved, newStage } = await applyXp(env.DB, familiar, scaledXp);
+
+  return jsonResponse({
+    failed: false, xp: scaledXp, baseXp,
+    efficiency: Math.round(efficiency * 100),
+    lvMult: Math.round(lvMult * 100),
+    grade,
+    condition: { hp: familiar.hp, max_hp: familiar.max_hp, happiness: familiar.happiness },
+    levelsGained, newLevel, evolved, newStage,
+  });
 }
 
 export async function huntFamiliar(request, env, user) {
@@ -395,32 +438,55 @@ export async function huntFamiliar(request, env, user) {
     return errorResponse('Your familiar is still out in the void', 429, { remaining });
   }
 
-  const xp     = rand(XP_GAIN.hunt.min, XP_GAIN.hunt.max);
-  const shards = rand(SHARD_GAIN.hunt_base.min, SHARD_GAIN.hunt_base.max);
-  let { levelsGained, newLevel, evolved, newStage } = await applyXp(env.DB, familiar, xp);
+  const efficiency = conditionEfficiency(familiar);
+  const lvMult     = levelMultiplier(familiar.level);
+  const grade      = conditionGrade(efficiency);
+  const failed     = efficiency < 0.15;
 
+  if (failed) {
+    await env.DB.prepare(`UPDATE familiars SET omen_active = 0, last_hunted_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(familiar.id).run();
+    return jsonResponse({
+      failed: true, xp: 0, shards: 0, levelsGained: 0, newLevel: familiar.level,
+      evolved: false, newStage: familiar.stage, encounter: null,
+      efficiency: Math.round(efficiency * 100), grade,
+      condition: { hp: familiar.hp, max_hp: familiar.max_hp, happiness: familiar.happiness },
+    });
+  }
+
+  const baseXp    = rand(XP_GAIN.hunt.min, XP_GAIN.hunt.max);
+  const baseShards = rand(SHARD_GAIN.hunt_base.min, SHARD_GAIN.hunt_base.max);
+  const scaledXp    = Math.max(1, Math.round(baseXp    * lvMult * efficiency));
+  const scaledShards = Math.max(1, Math.round(baseShards * lvMult * efficiency));
+
+  let { levelsGained, newLevel, evolved, newStage } = await applyXp(env.DB, familiar, scaledXp);
   let encounter = null;
 
-  // 20% encounter chance
-  if (Math.random() < 0.2) {
-    const wild      = makeWildFamiliar(familiar.level);
-    const result    = resolveBattle(familiar, wild);
-    const won       = result.winnerId === familiar.id;
+  // Encounter chance scales with condition — poor condition reduces encounter rate
+  if (Math.random() < 0.2 * efficiency) {
+    const wild        = makeWildFamiliar(familiar.level);
+    const result      = resolveBattle(familiar, wild);
+    const won         = result.winnerId === familiar.id;
     const bonusShards = won ? rand(SHARD_GAIN.wild_win.min, SHARD_GAIN.wild_win.max) : 0;
     const bonusXp     = won ? rand(XP_GAIN.duel_win.min, XP_GAIN.duel_win.max) : rand(XP_GAIN.duel_loss.min, XP_GAIN.duel_loss.max);
     encounter = { won, wildSpecies: wild.species, wildNature: wild.nature, bonusShards, bonusXp, rounds: result.rounds };
-    // Re-fetch familiar with updated level before second applyXp
     const refreshed = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
     const bonusResult = await applyXp(env.DB, refreshed, bonusXp);
     if (bonusResult.evolved) { evolved = true; newStage = bonusResult.newStage; }
     await env.DB.prepare(`UPDATE familiars SET shards = shards + ?, omen_active = 0, last_hunted_at = CURRENT_TIMESTAMP WHERE id = ?`)
-      .bind(shards + bonusShards, familiar.id).run();
+      .bind(scaledShards + bonusShards, familiar.id).run();
   } else {
     await env.DB.prepare(`UPDATE familiars SET shards = shards + ?, omen_active = 0, last_hunted_at = CURRENT_TIMESTAMP WHERE id = ?`)
-      .bind(shards, familiar.id).run();
+      .bind(scaledShards, familiar.id).run();
   }
 
-  return jsonResponse({ xp, shards, levelsGained, newLevel, evolved, newStage, encounter });
+  return jsonResponse({
+    failed: false, xp: scaledXp, baseXp, shards: scaledShards, baseShards,
+    efficiency: Math.round(efficiency * 100),
+    lvMult: Math.round(lvMult * 100),
+    grade,
+    condition: { hp: familiar.hp, max_hp: familiar.max_hp, happiness: familiar.happiness },
+    levelsGained, newLevel, evolved, newStage, encounter,
+  });
 }
 
 export async function restFamiliar(request, env, user) {
