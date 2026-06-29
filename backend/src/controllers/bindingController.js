@@ -47,6 +47,26 @@ const SHARD_GAIN = {
 
 const STAGE_THRESHOLDS = { 1: 1, 2: 16, 3: 36 };
 
+// Bond system
+const NATURE_BOND_RATE = {
+  feisty:  0.75,
+  timid:   0.70,
+  cunning: 0.90,
+  stoic:   0.85,
+  feral:   0.60,
+};
+
+const BOND_GAIN_RANGE = {
+  train:     { min: 2, max: 4 },
+  hunt:      { min: 1, max: 3 },
+  rest:      { min: 3, max: 5 },
+  duel_win:  { min: 2, max: 3 },
+  duel_loss: { min: 0, max: 1 },
+};
+
+const SCROLL_REQUIRE_LEVEL = 5;
+const SCROLL_REQUIRE_BOND  = 40; // Trusted tier
+
 const LOGIN_EVENT_TYPES = [
   { type: 'void_surge',          weight: 35 },
   { type: 'shadow_encounter',    weight: 20 },
@@ -111,6 +131,18 @@ function conditionGrade(efficiency) {
   return 'Critical';
 }
 
+async function applyBond(db, familiar, action) {
+  const range = BOND_GAIN_RANGE[action];
+  const base  = rand(range.min, range.max);
+  const rate  = NATURE_BOND_RATE[familiar.nature] ?? 1;
+  const gain  = Math.max(0, Math.round(base * rate));
+  const newBond = Math.min(100, (familiar.bond || 0) + gain);
+  if (gain > 0) {
+    await db.prepare(`UPDATE familiars SET bond = ? WHERE id = ?`).bind(newBond, familiar.id).run();
+  }
+  return { bondGain: gain, newBond };
+}
+
 function pickWeighted(items) {
   const total = items.reduce((s, i) => s + i.weight, 0);
   let r = Math.random() * total;
@@ -146,22 +178,57 @@ function resolveBattle(a, b) {
     const attacker = order[turn % 2];
     const target   = attacker === fc ? fd : fc;
 
-    // Cunning dodge
-    if (target.nature === 'cunning' && Math.random() < 0.15) {
-      rounds.push({ turn: turn + 1, attacker: attacker.id, type: 'dodge', targetHp: target.hp, targetMaxHp: target.maxHp });
+    // Timid: defensive dodge when HP below 50%
+    if (target.nature === 'timid' && target.hp < target.maxHp * 0.5 && Math.random() < 0.12) {
+      rounds.push({ turn: turn + 1, attacker: attacker.id, type: 'dodge', passive: 'timid_evasion', targetHp: target.hp, targetMaxHp: target.maxHp });
       continue;
     }
 
-    let dmg = Math.max(1, attacker.str - Math.floor(target.res / 2));
+    // Cunning: dodge
+    if (target.nature === 'cunning' && Math.random() < 0.15) {
+      rounds.push({ turn: turn + 1, attacker: attacker.id, type: 'dodge', passive: 'cunning_dodge', targetHp: target.hp, targetMaxHp: target.maxHp });
+      continue;
+    }
+
+    let effectiveStr = attacker.str;
+    let effectiveRes = target.res;
+    let passive = null;
+
+    // Feisty: +25% STR when HP < 40%
+    if (attacker.nature === 'feisty' && attacker.hp < attacker.maxHp * 0.4) {
+      effectiveStr = Math.floor(effectiveStr * 1.25);
+      passive = 'feisty_rage';
+    }
+    // Cunning: +15% STR when HP > 60% (patient precision)
+    if (attacker.nature === 'cunning' && attacker.hp > attacker.maxHp * 0.6) {
+      effectiveStr = Math.floor(effectiveStr * 1.15);
+      if (!passive) passive = 'cunning_precision';
+    }
+    // Stoic: 1.4x RES
+    if (target.nature === 'stoic') {
+      effectiveRes = Math.floor(effectiveRes * 1.4);
+      if (!passive) passive = 'stoic_fortified';
+    }
+
+    let dmg = Math.max(1, effectiveStr - Math.floor(effectiveRes / 2));
     dmg = Math.round(dmg * happinessBonus(attacker));
 
-    // Feral variance ±30%
+    // Feral: ±30% variance + first 3 rounds +20%
     if (attacker.nature === 'feral') {
       dmg = Math.max(1, Math.round(dmg * (0.7 + Math.random() * 0.6)));
+      if (turn < 3) {
+        dmg = Math.max(1, Math.round(dmg * 1.2));
+        passive = 'feral_frenzy';
+      }
+    }
+
+    // Timid: 15% dmg reduction when HP < 50%
+    if (target.nature === 'timid' && target.hp < target.maxHp * 0.5) {
+      dmg = Math.max(1, Math.round(dmg * 0.85));
     }
 
     target.hp = Math.max(0, target.hp - dmg);
-    rounds.push({ turn: turn + 1, attacker: attacker.id, type: 'attack', damage: dmg, targetHp: target.hp, targetMaxHp: target.maxHp });
+    rounds.push({ turn: turn + 1, attacker: attacker.id, type: 'attack', damage: dmg, passive, targetHp: target.hp, targetMaxHp: target.maxHp });
   }
 
   let winnerId;
@@ -360,8 +427,10 @@ export async function createFamiliar(request, env, user) {
   if (existing) return errorResponse('You have already bound a familiar', 409);
 
   const body = await request.json().catch(() => ({}));
-  const { species } = body;
+  const { species, name: rawName } = body;
   if (!SPECIES.includes(species)) return errorResponse('Invalid species', 400);
+
+  const givenName = rawName ? rawName.trim().slice(0, 24) : null;
 
   const nature = NATURES[rand(0, NATURES.length - 1)];
   const stats  = rollStats(species, nature);
@@ -369,9 +438,9 @@ export async function createFamiliar(request, env, user) {
 
   await env.DB.prepare(`
     INSERT INTO familiars
-      (user_id, species, nature, stat_str, stat_agi, stat_vit, stat_arc, stat_res, stat_ess, hp, max_hp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(user.userId, species, nature, stats.str, stats.agi, stats.vit, stats.arc, stats.res, stats.ess, hp, hp).run();
+      (user_id, species, nature, name, stat_str, stat_agi, stat_vit, stat_arc, stat_res, stat_ess, hp, max_hp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(user.userId, species, nature, givenName, stats.str, stats.agi, stats.vit, stats.arc, stats.res, stats.ess, hp, hp).run();
 
   const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
   return jsonResponse({ familiar }, 201);
@@ -412,6 +481,7 @@ export async function trainFamiliar(request, env, user) {
   const baseXp  = rand(XP_GAIN.train.min, XP_GAIN.train.max);
   const scaledXp = Math.max(1, Math.round(baseXp * lvMult * efficiency));
   const { levelsGained, newLevel, evolved, newStage } = await applyXp(env.DB, familiar, scaledXp);
+  const { bondGain, newBond } = await applyBond(env.DB, familiar, 'train');
 
   return jsonResponse({
     failed: false, xp: scaledXp, baseXp,
@@ -419,7 +489,7 @@ export async function trainFamiliar(request, env, user) {
     lvMult: Math.round(lvMult * 100),
     grade,
     condition: { hp: familiar.hp, max_hp: familiar.max_hp, happiness: familiar.happiness },
-    levelsGained, newLevel, evolved, newStage,
+    levelsGained, newLevel, evolved, newStage, bondGain, newBond,
   });
 }
 
@@ -479,13 +549,15 @@ export async function huntFamiliar(request, env, user) {
       .bind(scaledShards, familiar.id).run();
   }
 
+  const { bondGain, newBond } = await applyBond(env.DB, familiar, 'hunt');
+
   return jsonResponse({
     failed: false, xp: scaledXp, baseXp, shards: scaledShards, baseShards,
     efficiency: Math.round(efficiency * 100),
     lvMult: Math.round(lvMult * 100),
     grade,
     condition: { hp: familiar.hp, max_hp: familiar.max_hp, happiness: familiar.happiness },
-    levelsGained, newLevel, evolved, newStage, encounter,
+    levelsGained, newLevel, evolved, newStage, encounter, bondGain, newBond,
   });
 }
 
@@ -509,9 +581,12 @@ export async function restFamiliar(request, env, user) {
     `UPDATE familiars SET hp = max_hp, happiness = ?, last_rested_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).bind(newHappiness, familiar.id).run();
 
+  const { bondGain, newBond } = await applyBond(env.DB, familiar, 'rest');
+
   return jsonResponse({
     hpRestored, newHp: familiar.max_hp, maxHp: familiar.max_hp,
     happinessGained: newHappiness - familiar.happiness, newHappiness,
+    bondGain, newBond,
   });
 }
 
@@ -576,10 +651,13 @@ export async function duelFamiliar(request, env, user) {
       : `${mine.username}'s familiar challenged yours while you were away — and claimed victory.`,
   })).run();
 
+  const { bondGain, newBond } = await applyBond(env.DB, mine, won ? 'duel_win' : 'duel_loss');
+
   return jsonResponse({
     won, xp, shards, levelsGained, newLevel, evolved, newStage,
     rounds: result.rounds,
     opponent: { username: theirs.username, species: theirs.species, nature: theirs.nature },
+    bondGain, newBond,
   });
 }
 
@@ -629,6 +707,28 @@ export async function reviveFamiliar(request, env, user) {
   return jsonResponse({ familiar: updated, revived: true });
 }
 
+export async function renameFamiliar(request, env, user) {
+  if (!user) return errorResponse('Unauthorised', 401);
+
+  const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
+  if (!familiar) return errorResponse('No familiar bound', 404);
+
+  if (familiar.level < SCROLL_REQUIRE_LEVEL)
+    return errorResponse(`Your familiar must reach level ${SCROLL_REQUIRE_LEVEL} before it can be named`, 403);
+  if ((familiar.bond || 0) < SCROLL_REQUIRE_BOND)
+    return errorResponse('Your familiar does not yet trust you enough to accept a name', 403);
+
+  const body = await request.json().catch(() => ({}));
+  const { name } = body;
+  if (!name || typeof name !== 'string') return errorResponse('Name required', 400);
+  const cleaned = name.trim().slice(0, 24);
+  if (cleaned.length < 2) return errorResponse('Name must be at least 2 characters', 400);
+
+  await env.DB.prepare(`UPDATE familiars SET name = ? WHERE id = ?`).bind(cleaned, familiar.id).run();
+  const updated = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
+  return jsonResponse({ familiar: updated });
+}
+
 export async function markEventSeen(request, env, user) {
   if (!user) return errorResponse('Unauthorised', 401);
 
@@ -650,7 +750,7 @@ export async function getLeaderboard(request, env, user) {
   if (!user) return errorResponse('Unauthorised', 401);
 
   const rows = await env.DB.prepare(`
-    SELECT f.species, f.nature, f.stage, f.level, f.wins, f.losses, f.happiness,
+    SELECT f.species, f.nature, f.name, f.stage, f.level, f.wins, f.losses, f.happiness, f.bond,
            u.username, u.image_url
     FROM familiars f
     JOIN users u ON u.id = f.user_id
@@ -665,7 +765,7 @@ export async function getOtherFamiliars(request, env, user) {
   if (!user) return errorResponse('Unauthorised', 401);
 
   const rows = await env.DB.prepare(`
-    SELECT f.id, f.species, f.nature, f.stage, f.level, f.wins, f.losses,
+    SELECT f.id, f.species, f.nature, f.name, f.stage, f.level, f.wins, f.losses,
            u.id as user_id, u.username, u.image_url
     FROM familiars f
     JOIN users u ON u.id = f.user_id
@@ -699,6 +799,13 @@ const SHOP_ITEMS = {
     cost: 150,
     desc: 'Restores 20 HP and eases unrest — raises happiness by 10.',
   },
+  scroll_of_binding: {
+    name: 'Scroll of Binding',
+    cost: 400,
+    desc: 'Bestow a name upon your familiar, or change the one already given. Requires trust (level 5 · Trusted bond).',
+    requireLevel: SCROLL_REQUIRE_LEVEL,
+    requireBond:  SCROLL_REQUIRE_BOND,
+  },
 };
 
 export async function shopBuy(request, env, user) {
@@ -713,6 +820,18 @@ export async function shopBuy(request, env, user) {
 
   const shopItem = SHOP_ITEMS[item];
   if (familiar.shards < shopItem.cost) return errorResponse('Not enough shards', 400);
+
+  // Scroll of Binding: validate requirements, deduct, return name_scroll effect (no rename here)
+  if (item === 'scroll_of_binding') {
+    if (familiar.level < shopItem.requireLevel)
+      return errorResponse(`Your familiar must reach level ${shopItem.requireLevel} before it can be named`, 403);
+    if ((familiar.bond || 0) < shopItem.requireBond)
+      return errorResponse('Your familiar does not yet trust you enough to accept a name', 403);
+    await env.DB.prepare(`UPDATE familiars SET shards = shards - ? WHERE id = ?`).bind(shopItem.cost, familiar.id).run();
+    await env.DB.prepare(`INSERT INTO familiar_items (familiar_id, item_key, qty) VALUES (?, ?, 1) ON CONFLICT(familiar_id, item_key) DO UPDATE SET qty = qty + 1`).bind(familiar.id, item).run();
+    const updated = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
+    return jsonResponse({ familiar: updated, item, effect: { type: 'name_scroll' } });
+  }
 
   // Deduct shards first
   await env.DB.prepare(`UPDATE familiars SET shards = shards - ? WHERE id = ?`).bind(shopItem.cost, familiar.id).run();

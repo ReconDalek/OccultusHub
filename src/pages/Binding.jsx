@@ -8,6 +8,24 @@ import {
   NATURE_ACCENT, NATURE_LABEL, SPECIES_LABEL, STAT_LABELS, STAGE_LABEL, SPECIES_COLOR,
 } from '../components/Binding/familiarColors'
 
+// ── Bond helpers ─────────────────────────────────────────────────────────────
+
+function bondTier(bond) {
+  if (bond >= 80) return { label: 'Bound',         color: '#f0abfc' }
+  if (bond >= 60) return { label: 'Devoted',        color: '#6ee7b7' }
+  if (bond >= 40) return { label: 'Trusted',        color: '#a78bfa' }
+  if (bond >= 20) return { label: 'Acknowledged',   color: '#f59e0b' }
+  return                  { label: 'Wary',           color: '#ef4444' }
+}
+
+const NATURE_PASSIVE = {
+  feisty:  { name: 'Berserker Rage',       desc: '+25% strength when HP drops below 40%' },
+  timid:   { name: 'Defensive Instinct',   desc: 'Dodge chance + reduced damage when HP drops below 50%' },
+  cunning: { name: 'Patient Precision',    desc: '15% dodge chance, +15% damage at high HP' },
+  stoic:   { name: 'Fortified Resolve',    desc: '+40% effective resistance at all times' },
+  feral:   { name: 'Frenzy Burst',         desc: '+20% damage first 3 rounds, high damage variance' },
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function authHeaders() {
@@ -359,6 +377,7 @@ function RitualIntro({ onComplete }) {
   const [summoning, setSummoning]   = useState(false)
   const [revealed, setRevealed]     = useState(false)
   const [creating, setCreating]     = useState(false)
+  const [familiarName, setFamiliarName] = useState('')
 
   const fadeTransition = (cb) => {
     setFadingOut(true)
@@ -397,10 +416,11 @@ function RitualIntro({ onComplete }) {
   const confirmBinding = async () => {
     setCreating(true)
     try {
+      const name = familiarName.trim().slice(0, 24)
       const res = await fetch(`${API_BASE_URL}/api/binding/create`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ species }),
+        body: JSON.stringify({ species, ...(name.length >= 2 ? { name } : {}) }),
       })
       const data = await res.json()
       if (res.ok) onComplete(data.familiar)
@@ -573,13 +593,39 @@ function RitualIntro({ onComplete }) {
           "{NATURE_REVELATION[nature]}"
         </p>
 
-        <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 28, letterSpacing: 1 }}>
+        <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 20, letterSpacing: 1 }}>
           The bond is formed. What happens next is yours to write.
         </p>
 
+        <div style={{ marginBottom: 28, textAlign: 'left' }}>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 2, marginBottom: 10, textAlign: 'center' }}>
+            BESTOW A NAME <span style={{ color: "var(--text-ghost)" }}>— OPTIONAL</span>
+          </p>
+          <input
+            type="text"
+            value={familiarName}
+            onChange={e => setFamiliarName(e.target.value)}
+            maxLength={24}
+            placeholder="Leave empty to name later..."
+            style={{
+              width: '100%', padding: '11px 14px',
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${sc.primary}30`,
+              borderRadius: 8, color: '#f4f4f5', fontSize: 14,
+              outline: 'none', textAlign: 'center',
+              boxSizing: 'border-box',
+            }}
+          />
+          {familiarName.trim().length === 1 && (
+            <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 6, textAlign: 'center' }}>
+              Name must be at least 2 characters
+            </p>
+          )}
+        </div>
+
         <button
           onClick={confirmBinding}
-          disabled={creating}
+          disabled={creating || familiarName.trim().length === 1}
           className="font-cinzel"
           style={{
             padding: '14px 36px',
@@ -589,8 +635,8 @@ function RitualIntro({ onComplete }) {
             color: '#f4f4f5',
             fontSize: 13,
             letterSpacing: 3,
-            cursor: creating ? 'not-allowed' : 'pointer',
-            opacity: creating ? 0.6 : 1,
+            cursor: creating || familiarName.trim().length === 1 ? 'not-allowed' : 'pointer',
+            opacity: creating || familiarName.trim().length === 1 ? 0.6 : 1,
           }}
         >
           {creating ? 'SEALING THE BOND...' : 'ENTER THE BINDING'}
@@ -688,6 +734,17 @@ function ActionResultOverlay({ result, onDismiss }) {
                   {data.happinessGained > 0 ? `+${data.happinessGained}` : 'Already at max'} · {data.newHappiness}/100
                 </span>
               </div>
+              {data.bondGain > 0 && (() => {
+                const bt = bondTier(data.newBond)
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Bond</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: bt.color }}>
+                      +{data.bondGain} · {bt.label} ({data.newBond}/100)
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
           ) : data.failed ? (
             <div>
@@ -756,6 +813,10 @@ function ActionResultOverlay({ result, onDismiss }) {
               <div style={{ fontSize: 11, color: "var(--text-muted)", borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 10 }}>
                 Condition: <span style={{ color: gradeColor }}>{data.grade}</span>
                 {data.condition && <>{' · '}HP {data.condition.hp}/{data.condition.max_hp}{' · '}Happiness {data.condition.happiness}/100</>}
+                {data.bondGain > 0 && (() => {
+                  const bt = bondTier(data.newBond)
+                  return <span style={{ color: bt.color }}>{' · '}+{data.bondGain} bond ({bt.label})</span>
+                })()}
               </div>
             </div>
           )}
@@ -780,6 +841,9 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const [shopMsg, setShopMsg]           = useState(null)
   const [evolutionPending, setEvoPending] = useState(null)  // { fromStage, toStage, species, nature }
   const [reviving, setReviving]         = useState(false)
+  const [nameModal, setNameModal]       = useState(false)
+  const [nameInput, setNameInput]       = useState('')
+  const [nameSaving, setNameSaving]     = useState(false)
 
   const sc = SPECIES_COLOR[familiar.species]
   const naColor = NATURE_ACCENT[familiar.nature]
@@ -943,7 +1007,10 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         return
       }
       setFamiliar(data.familiar)
-      if (data.effect?.evolved && data.effect.newStage > familiar.stage) {
+      if (data.effect?.type === 'name_scroll') {
+        setNameInput(data.familiar.name || '')
+        setNameModal(true)
+      } else if (data.effect?.evolved && data.effect.newStage > familiar.stage) {
         setEvoPending({ fromStage: familiar.stage, toStage: data.effect.newStage, species: familiar.species, nature: familiar.nature })
       } else {
         const ITEM_NAMES = { feast: 'Void Feast', elixir: 'Growth Elixir', shadow_charm: 'Shadow Charm', tonic: 'Binding Tonic' }
@@ -954,6 +1021,32 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
       setShopMsg({ text: 'Connection error.', color: '#ef4444' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function doRename() {
+    const name = nameInput.trim()
+    if (name.length < 2 || nameSaving) return
+    setNameSaving(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/binding/rename`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setFamiliar(data.familiar)
+        setNameModal(false)
+        setNameInput('')
+        showMsg(`Your familiar is now known as ${data.familiar.name}.`, '#a78bfa')
+      } else {
+        showMsg(data.error || 'Rename failed.', '#ef4444')
+      }
+    } catch {
+      showMsg('Connection error.', '#ef4444')
+    } finally {
+      setNameSaving(false)
     }
   }
 
@@ -984,6 +1077,67 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         toStage={evolutionPending.toStage}
         onDismiss={() => setEvoPending(null)}
       />
+    )}
+    {nameModal && (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 1300,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(2,0,8,0.88)', padding: '0 20px',
+      }}>
+        <div style={{
+          width: '100%', maxWidth: 400,
+          background: 'rgba(10,8,20,0.98)',
+          border: `1px solid ${naColor}30`,
+          borderRadius: 16, padding: '28px 24px',
+          boxShadow: `0 8px 48px rgba(0,0,0,0.7)`,
+        }}>
+          <h3 className="font-cinzel" style={{ fontSize: 15, letterSpacing: 4, color: naColor, marginBottom: 8 }}>
+            NAME YOUR FAMILIAR
+          </h3>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 20 }}>
+            The scroll burns away as the name is spoken into the bond. This cannot be undone without another scroll.
+          </p>
+          <input
+            type="text"
+            value={nameInput}
+            onChange={e => setNameInput(e.target.value)}
+            maxLength={24}
+            placeholder="Enter a name..."
+            autoFocus
+            style={{
+              width: '100%', padding: '11px 14px',
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${naColor}30`,
+              borderRadius: 8, color: '#f4f4f5', fontSize: 14,
+              outline: 'none', marginBottom: 16, boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => { setNameModal(false); setNameInput('') }}
+              style={{
+                flex: 1, padding: '11px', borderRadius: 8,
+                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                color: "var(--text-muted)", fontSize: 13, cursor: 'pointer',
+              }}>
+              Cancel
+            </button>
+            <button
+              onClick={doRename}
+              disabled={nameInput.trim().length < 2 || nameSaving}
+              style={{
+                flex: 2, padding: '11px', borderRadius: 8,
+                background: nameInput.trim().length >= 2 ? `linear-gradient(135deg, ${naColor}cc, ${naColor}66)` : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${nameInput.trim().length >= 2 ? naColor + '60' : 'rgba(255,255,255,0.07)'}`,
+                color: nameInput.trim().length >= 2 ? '#f4f4f5' : "var(--text-ghost)",
+                fontSize: 13, letterSpacing: 2, cursor: nameInput.trim().length >= 2 ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
+              }}>
+              {nameSaving ? 'BINDING...' : 'BESTOW NAME'}
+            </button>
+          </div>
+        </div>
+      </div>
     )}
     <style>{`
       .binding-tabs button { font-size: 11px; padding: 7px 6px; letter-spacing: 0; }
@@ -1131,10 +1285,22 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                   <FamiliarSVG species={familiar.species} stage={familiar.stage} nature={familiar.nature} size={180} />
                 </div>
 
-                <h2 className="font-cinzel"
-                  style={{ fontSize: 22, letterSpacing: 5, color: sc.accent, margin: '16px 0 4px' }}>
-                  {SPECIES_LABEL[familiar.species].toUpperCase()}
-                </h2>
+                {familiar.name ? (
+                  <>
+                    <h2 className="font-cinzel"
+                      style={{ fontSize: 22, letterSpacing: 5, color: sc.accent, margin: '16px 0 2px' }}>
+                      {familiar.name.toUpperCase()}
+                    </h2>
+                    <p style={{ fontSize: 12, letterSpacing: 2, color: "var(--text-muted)", marginBottom: 4 }}>
+                      {SPECIES_LABEL[familiar.species].toUpperCase()}
+                    </p>
+                  </>
+                ) : (
+                  <h2 className="font-cinzel"
+                    style={{ fontSize: 22, letterSpacing: 5, color: sc.accent, margin: '16px 0 4px' }}>
+                    {SPECIES_LABEL[familiar.species].toUpperCase()}
+                  </h2>
+                )}
 
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: naColor }} />
@@ -1181,6 +1347,26 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                   </div>
                 </div>
 
+                {/* Bond bar */}
+                {(() => {
+                  const bt = bondTier(familiar.bond || 0)
+                  return (
+                    <div style={{ marginBottom: 4 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10,
+                        color: "var(--text-faint)", marginBottom: 4 }}>
+                        <span>BOND — <span style={{ color: bt.color }}>{bt.label.toUpperCase()}</span></span>
+                        <span>{familiar.bond || 0}/100</span>
+                      </div>
+                      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', borderRadius: 2,
+                          width: `${((familiar.bond || 0) / 100) * 100}%`,
+                          background: `linear-gradient(90deg, ${bt.color}, ${bt.color}99)`,
+                          transition: 'width 0.4s ease' }} />
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 {/* Happiness + shards row */}
                 <div className="binding-happiness-shards" style={{ display: 'flex', justifyContent: 'center', gap: 20, marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
                   <span>☽ {familiar.happiness}/100 Happiness</span>
@@ -1220,6 +1406,23 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                 </div>
               ))}
             </div>
+
+            {/* Nature passive */}
+            {(() => {
+              const p = NATURE_PASSIVE[familiar.nature]
+              const nc = NATURE_ACCENT[familiar.nature]
+              return p ? (
+                <div style={{ background: `${nc}0a`, border: `1px solid ${nc}22`,
+                  borderRadius: 10, padding: '12px 16px', marginBottom: 16,
+                  display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ fontSize: 16, marginTop: 1 }}>✦</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: nc, marginBottom: 3 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{p.desc}</div>
+                  </div>
+                </div>
+              ) : null
+            })()}
 
             {/* Actions */}
             <div className="binding-actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
@@ -1264,7 +1467,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: eligible ? '#e4e4e7' : "var(--text-muted)", marginBottom: 2 }}>
-                          {f.username}
+                          {f.name ? <>{f.name} <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>({f.username})</span></> : f.username}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                           {SPECIES_LABEL[f.species]} · {NATURE_LABEL[f.nature]} · Lvl {f.level} · {f.wins}W {f.losses}L
@@ -1430,14 +1633,17 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         {/* ── Shop tab ── */}
         {tab === 'shop' && (() => {
           const ITEMS = [
-            { key: 'feast',        name: 'Void Feast',      cost: 200, icon: '◈', color: '#10b981',
+            { key: 'feast',             name: 'Void Feast',          cost: 200, icon: '◈', color: '#10b981',
               desc: 'Restores your familiar to full HP and raises happiness by 15.' },
-            { key: 'tonic',        name: 'Binding Tonic',   cost: 150, icon: '◇', color: '#6ee7b7',
+            { key: 'tonic',             name: 'Binding Tonic',       cost: 150, icon: '◇', color: '#6ee7b7',
               desc: 'Restores 20 HP and raises happiness by 10.' },
-            { key: 'elixir',       name: 'Growth Elixir',   cost: 300, icon: '✦', color: '#a78bfa',
+            { key: 'elixir',            name: 'Growth Elixir',       cost: 300, icon: '✦', color: '#a78bfa',
               desc: 'Infuses your familiar with raw essence, granting 150 XP instantly.' },
-            { key: 'shadow_charm', name: 'Shadow Charm',    cost: 400, icon: '⛧', color: '#f59e0b',
+            { key: 'shadow_charm',      name: 'Shadow Charm',        cost: 400, icon: '⛧', color: '#f59e0b',
               desc: 'Activates the omen — halves your hunt cooldown until next hunt.' },
+            { key: 'scroll_of_binding', name: 'Scroll of Binding',   cost: 400, icon: '📜', color: '#f0abfc',
+              desc: 'Bestow a name upon your familiar, or change the one already given.',
+              requireLevel: 5, requireBond: 40 },
           ]
           return (
             <div>
@@ -1463,15 +1669,24 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {ITEMS.map(item => {
                   const canAfford = familiar.shards >= item.cost
+                  const meetsLevel = !item.requireLevel || familiar.level >= item.requireLevel
+                  const meetsBond  = !item.requireBond  || (familiar.bond || 0) >= item.requireBond
+                  const meetsReqs  = meetsLevel && meetsBond
+                  const canBuy     = canAfford && meetsReqs
+                  const lockReason = !meetsLevel
+                    ? `Requires level ${item.requireLevel}`
+                    : !meetsBond
+                    ? `Requires ${bondTier(item.requireBond).label} bond (${item.requireBond}/100)`
+                    : null
                   return (
                     <div key={item.key} className="binding-shop-item" style={{
                       display: 'flex', alignItems: 'center', gap: 16, padding: '16px 18px',
                       background: 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${canAfford ? `${item.color}28` : 'rgba(255,255,255,0.05)'}`,
-                      borderRadius: 12, opacity: canAfford ? 1 : 0.5,
+                      border: `1px solid ${canBuy ? `${item.color}28` : 'rgba(255,255,255,0.05)'}`,
+                      borderRadius: 12, opacity: canBuy ? 1 : 0.5,
                     }}>
                       <span style={{ fontSize: 28, color: item.color, flexShrink: 0,
-                        filter: canAfford ? `drop-shadow(0 0 8px ${item.color}66)` : 'none' }}>
+                        filter: canBuy ? `drop-shadow(0 0 8px ${item.color}66)` : 'none' }}>
                         {item.icon}
                       </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1481,20 +1696,23 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                         <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
                           {item.desc}
                         </div>
+                        {lockReason && (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>⚠ {lockReason}</div>
+                        )}
                       </div>
                       <div className="binding-shop-price" style={{ flexShrink: 0, textAlign: 'right' }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginBottom: 6 }}>
                           {item.cost.toLocaleString()} ◆
                         </div>
                         <button
-                          onClick={() => buyShopItem(item.key)}
-                          disabled={!canAfford || loading}
+                          onClick={() => canBuy && buyShopItem(item.key)}
+                          disabled={!canBuy || loading}
                           style={{
                             padding: '7px 16px', borderRadius: 8, fontSize: 12, letterSpacing: 1,
-                            background: canAfford ? `${item.color}22` : 'rgba(255,255,255,0.04)',
-                            border: `1px solid ${canAfford ? `${item.color}50` : 'rgba(255,255,255,0.08)'}`,
-                            color: canAfford ? item.color : "var(--text-faint)",
-                            cursor: canAfford && !loading ? 'pointer' : 'not-allowed',
+                            background: canBuy ? `${item.color}22` : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${canBuy ? `${item.color}50` : 'rgba(255,255,255,0.08)'}`,
+                            color: canBuy ? item.color : "var(--text-faint)",
+                            cursor: canBuy && !loading ? 'pointer' : 'not-allowed',
                             transition: 'all 0.15s',
                           }}>
                           {loading ? '...' : 'Buy'}
@@ -1545,11 +1763,11 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                       {/* Info */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#e4e4e7', marginBottom: 2 }}>
-                          {f.username}
+                          {f.name || f.username}
                           {isMe && <span style={{ marginLeft: 8, fontSize: 10, color: sc.accent, letterSpacing: 1 }}>YOU</span>}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {SPECIES_LABEL[f.species]} · {STAGE_LABEL[f.stage]} · {NATURE_LABEL[f.nature]}
+                          {f.name ? `${f.username} · ` : ''}{SPECIES_LABEL[f.species]} · {STAGE_LABEL[f.stage]} · {NATURE_LABEL[f.nature]}
                         </div>
                       </div>
                       {/* Stats */}
