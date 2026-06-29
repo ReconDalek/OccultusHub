@@ -270,7 +270,7 @@ function Particles({ type }) {
 
     if (type === 'snow' || type === 'frost') {
       return <div key={i} style={{
-        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size, height:size, borderRadius:'50%',
         background: type==='snow' ? 'rgba(215,225,255,0.75)' : 'rgba(140,170,255,0.7)',
         animation:`evSnowFall ${dur}s ${delay}s linear infinite`,
@@ -278,7 +278,7 @@ function Particles({ type }) {
     }
     if (type === 'petals') {
       return <div key={i} style={{
-        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*1.6, height:size, borderRadius:'50% 50% 50% 0',
         background:`rgba(${175+Math.random()*45},${18+Math.random()*28},${35+Math.random()*28},0.65)`,
         animation:`evPetalFall ${dur}s ${delay}s linear infinite`,
@@ -287,7 +287,7 @@ function Particles({ type }) {
     if (type === 'blossoms') {
       const lx = (Math.random()-0.5)*80
       return <div key={i} style={{
-        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*1.4, height:size*1.2, borderRadius:'50% 40% 50% 40%',
         background:`rgba(${210+Math.random()*40},${170+Math.random()*50},${185+Math.random()*40},0.6)`,
         '--lx':`${lx}px`,
@@ -297,9 +297,9 @@ function Particles({ type }) {
     if (type === 'leaves') {
       const lx = (Math.random()-0.5)*100
       const r  = Math.random()*360
-      const hue = 15+Math.random()*25  // orange-red range
+      const hue = 15+Math.random()*25
       return <div key={i} style={{
-        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*1.8, height:size*1.1,
         borderRadius:'20% 80% 20% 80%',
         background:`hsla(${hue},85%,${40+Math.random()*20}%,0.7)`,
@@ -311,7 +311,7 @@ function Particles({ type }) {
       const lx = (Math.random()-0.5)*60
       const gr = Math.random()*360
       return <div key={i} style={{
-        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*0.5, height:size*1.8,
         borderRadius:'40%',
         background:`rgba(${200+Math.random()*50},${150+Math.random()*60},${20+Math.random()*30},0.65)`,
@@ -321,7 +321,7 @@ function Particles({ type }) {
     }
     if (type === 'marigolds') {
       return <div key={i} style={{
-        position:'fixed', top:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*1.5, height:size*1.5, borderRadius:'50%',
         background:`rgba(${220+Math.random()*35},${120+Math.random()*60},5,0.65)`,
         animation:`evPetalFall ${dur}s ${delay}s linear infinite`,
@@ -329,7 +329,7 @@ function Particles({ type }) {
     }
     if (type === 'embers') {
       return <div key={i} style={{
-        position:'fixed', bottom:0, left:`${left}%`, zIndex:2, pointerEvents:'none',
+        position:'fixed', bottom:'var(--ev-footer-h, 58px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
         width:size*0.65, height:size*0.65, borderRadius:'50%',
         background:`rgba(${215+Math.random()*40},${55+Math.random()*85},8,0.8)`,
         animation:`evEmberRise ${dur}s ${delay}s linear infinite`,
@@ -375,7 +375,7 @@ function Particles({ type }) {
 function BloodMoonOrb() {
   return (
     <div style={{
-      position:'fixed', top:'clamp(80px,12vh,130px)', right:'clamp(12px,3vw,40px)',
+      position:'fixed', top:'calc(var(--ev-header-h, 64px) + clamp(10px,2vh,24px))', right:'clamp(12px,3vw,40px)',
       zIndex:3, pointerEvents:'none',
       animation:'evMoonPulse 8s ease-in-out infinite',
     }}>
@@ -454,7 +454,7 @@ function SpiderWeb({ side }) {
   const pos  = side === 'right' ? { right: 0, top: 0 } : { left: 0, top: 0 }
   return (
     <div style={{
-      position:'fixed', ...pos, zIndex:3, pointerEvents:'none',
+      position:'fixed', ...pos, top:'var(--ev-header-h, 64px)', zIndex:3, pointerEvents:'none',
       transform: flip,
       width:'clamp(160px,24vw,290px)', height:'clamp(160px,24vw,290px)',
     }}>
@@ -493,7 +493,7 @@ function Candles() {
   return (
     <>
       {candles.map((c, i) => (
-        <div key={i} style={{ position:'fixed', bottom:0, left:c.left, zIndex:3, pointerEvents:'none', display:'flex', flexDirection:'column', alignItems:'center' }}>
+        <div key={i} style={{ position:'fixed', bottom:'var(--ev-footer-h, 58px)', left:c.left, zIndex:3, pointerEvents:'none', display:'flex', flexDirection:'column', alignItems:'center' }}>
           {/* Flame */}
           <div style={{
             width:10, height:18,
@@ -517,7 +517,7 @@ function Candles() {
 // ── Anniversary gold crown flourish ─────────────────────────────────────────
 function AnniversaryOrb() {
   return (
-    <div style={{ position:'fixed', top:'clamp(80px,12vh,130px)', right:'clamp(12px,3vw,40px)', zIndex:3, pointerEvents:'none' }}>
+    <div style={{ position:'fixed', top:'calc(var(--ev-header-h, 64px) + clamp(10px,2vh,24px))', right:'clamp(12px,3vw,40px)', zIndex:3, pointerEvents:'none' }}>
       <svg viewBox="0 0 160 160" style={{ width:'clamp(60px,8vw,110px)', height:'clamp(60px,8vw,110px)', display:'block' }}>
         <defs>
           <radialGradient id="annivGlow" cx="50%" cy="50%" r="50%">
@@ -559,7 +559,7 @@ function Icicles() {
     <>
       {icicles.map((ic, i) => (
         <div key={i} style={{
-          position:'fixed', top:0, left:ic.left, zIndex:3, pointerEvents:'none',
+          position:'fixed', top:'var(--ev-header-h, 64px)', left:ic.left, zIndex:3, pointerEvents:'none',
           width:ic.width, height:ic.height,
           background:'linear-gradient(to bottom, rgba(180,210,255,0.65), rgba(140,180,255,0.15), transparent)',
           clipPath:'polygon(30% 0%, 70% 0%, 100% 100%, 0% 100%)',
@@ -574,7 +574,7 @@ function Icicles() {
 // ── Bonfire (Beltane) ────────────────────────────────────────────────────────
 function Bonfire() {
   return (
-    <div style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)', zIndex:3, pointerEvents:'none', display:'flex', flexDirection:'column', alignItems:'center' }}>
+    <div style={{ position:'fixed', bottom:'var(--ev-footer-h, 58px)', left:'50%', transform:'translateX(-50%)', zIndex:3, pointerEvents:'none', display:'flex', flexDirection:'column', alignItems:'center' }}>
       {[
         { w:60, h:90, c:'rgba(255,80,10,0.55)',  delay:0   },
         { w:44, h:72, c:'rgba(255,140,20,0.6)',  delay:0.2 },
@@ -605,7 +605,7 @@ function DayOfDead() {
   return (
     <>
       {/* Marigold garland along top */}
-      <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:3, pointerEvents:'none', height:'clamp(18px,3vh,28px)', overflow:'hidden' }}>
+      <div style={{ position:'fixed', top:'var(--ev-header-h, 64px)', left:0, right:0, zIndex:3, pointerEvents:'none', height:'clamp(18px,3vh,28px)', overflow:'hidden' }}>
         <svg viewBox="0 0 1200 28" preserveAspectRatio="none" width="100%" height="100%" style={{ animation:'evGarlandSway 4s ease-in-out infinite' }}>
           {Array.from({ length: 30 }, (_, i) => {
             const cx = (i / 29) * 1200
@@ -626,7 +626,7 @@ function DayOfDead() {
       {/* Sugar skull corner decorations */}
       {skulls.map((sk, i) => (
         <div key={i} style={{
-          position:'fixed', top:'clamp(32px,5vh,60px)',
+          position:'fixed', top:'calc(var(--ev-header-h, 64px) + 8px)',
           [sk.side]: sk.x,
           zIndex:3, pointerEvents:'none',
           animation:`evSkullBob ${3+i*0.4}s ${sk.delay}s ease-in-out infinite`,
@@ -671,7 +671,7 @@ function Sigil() {
   })
   const star = `M${pts[0]} L${pts[2]} L${pts[4]} L${pts[1]} L${pts[3]} Z`
   return (
-    <div style={{ position:'fixed', bottom:'clamp(90px,14vh,130px)', left:'50%', transform:'translateX(-50%)', zIndex:2, pointerEvents:'none' }}>
+    <div style={{ position:'fixed', bottom:'calc(var(--ev-footer-h, 58px) + clamp(20px,4vh,50px))', left:'50%', transform:'translateX(-50%)', zIndex:2, pointerEvents:'none' }}>
       <svg viewBox="0 0 180 180" style={{ width:'clamp(90px,12vw,150px)', height:'clamp(90px,12vw,150px)', display:'block', animation:'evSigilPulse 5s ease-in-out infinite' }}>
         <defs>
           <radialGradient id="sigilGlow" cx="50%" cy="50%" r="50%">
@@ -738,6 +738,25 @@ export default function SeasonalEvents() {
   const [shownBanners, setShownBanners]   = useState(new Set())
   const [visibleBanners, setVisibleBanners] = useState(new Set())
   const bannerTimers = useRef({})
+
+  // Measure nav + footer, expose as CSS vars so all fixed overlays stay inside them
+  useEffect(() => {
+    function measure() {
+      const nav    = document.querySelector('nav')
+      const footer = document.querySelector('footer')
+      const hh = nav    ? nav.offsetHeight    : 64
+      const fh = footer ? footer.offsetHeight : 58
+      document.documentElement.style.setProperty('--ev-header-h', `${hh}px`)
+      document.documentElement.style.setProperty('--ev-footer-h', `${fh}px`)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    const nav    = document.querySelector('nav')
+    const footer = document.querySelector('footer')
+    if (nav)    ro.observe(nav)
+    if (footer) ro.observe(footer)
+    return () => ro.disconnect()
+  }, [])
 
   // Sync preview from admin tab (same window)
   useEffect(() => {
