@@ -504,11 +504,15 @@ export async function restFamiliar(request, env, user) {
   }
 
   const newHappiness = Math.min(100, familiar.happiness + 10);
+  const hpRestored   = familiar.max_hp - familiar.hp;
   await env.DB.prepare(
     `UPDATE familiars SET hp = max_hp, happiness = ?, last_rested_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).bind(newHappiness, familiar.id).run();
 
-  return jsonResponse({ hp: familiar.max_hp, happiness: newHappiness });
+  return jsonResponse({
+    hpRestored, newHp: familiar.max_hp, maxHp: familiar.max_hp,
+    happinessGained: newHappiness - familiar.happiness, newHappiness,
+  });
 }
 
 export async function duelFamiliar(request, env, user) {

@@ -628,8 +628,9 @@ function ActionResultOverlay({ result, onDismiss }) {
   }
   const gradeColor = GRADE_COLOR[data.grade] || "var(--text-secondary)"
   const isTrain = type === 'train'
-  const accent  = isTrain ? '#a78bfa' : '#f59e0b'
-  const title   = isTrain ? 'TRAINING REPORT' : 'HUNT REPORT'
+  const isRest  = type === 'rest'
+  const accent  = isTrain ? '#a78bfa' : isRest ? '#6ee7b7' : '#f59e0b'
+  const title   = isTrain ? 'TRAINING REPORT' : isRest ? 'REST COMPLETE' : 'HUNT REPORT'
 
   return (
     <div style={{
@@ -673,7 +674,22 @@ function ActionResultOverlay({ result, onDismiss }) {
             {title}
           </div>
 
-          {data.failed ? (
+          {isRest ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>HP Restored</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#6ee7b7' }}>
+                  {data.hpRestored > 0 ? `+${data.hpRestored}` : 'Full'} · {data.newHp}/{data.maxHp}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Happiness</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#6ee7b7' }}>
+                  {data.happinessGained > 0 ? `+${data.happinessGained}` : 'Already at max'} · {data.newHappiness}/100
+                </span>
+              </div>
+            </div>
+          ) : data.failed ? (
             <div>
               <p style={{ fontSize: 14, color: '#ef4444', marginBottom: 10 }}>
                 Your familiar was too weary to respond. The attempt was wasted.
@@ -807,11 +823,8 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         return
       }
 
-      if (endpoint === 'train' || endpoint === 'hunt') {
+      if (endpoint === 'train' || endpoint === 'hunt' || endpoint === 'rest') {
         setActionResult({ type: endpoint, data })
-      }
-      if (endpoint === 'rest') {
-        showMsg('Your familiar has rested. HP restored, happiness +10.', '#6ee7b7')
       }
     } catch {
       showMsg('Connection error.', '#ef4444')

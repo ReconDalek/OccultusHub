@@ -742,19 +742,16 @@ export default function SeasonalEvents() {
   // Measure nav + footer, expose as CSS vars so all fixed overlays stay inside them
   useEffect(() => {
     function measure() {
-      const nav    = document.querySelector('nav')
-      const footer = document.querySelector('footer')
-      const hh = nav    ? nav.offsetHeight    : 64
-      const fh = footer ? footer.offsetHeight : 58
+      const nav = document.querySelector('nav')
+      const hh  = nav ? nav.offsetHeight : 64
       document.documentElement.style.setProperty('--ev-header-h', `${hh}px`)
-      document.documentElement.style.setProperty('--ev-footer-h', `${fh}px`)
+      // Footer is not viewport-fixed — no bottom offset needed
+      document.documentElement.style.setProperty('--ev-footer-h', '0px')
     }
     measure()
-    const ro = new ResizeObserver(measure)
-    const nav    = document.querySelector('nav')
-    const footer = document.querySelector('footer')
-    if (nav)    ro.observe(nav)
-    if (footer) ro.observe(footer)
+    const ro  = new ResizeObserver(measure)
+    const nav = document.querySelector('nav')
+    if (nav) ro.observe(nav)
     return () => ro.disconnect()
   }, [])
 
