@@ -117,27 +117,26 @@ function SignalBadge({ signal }) {
 }
 
 function computeSignal(rsi, perf) {
-  // RSI is the primary signal — tells us where the stock is in its cycle,
-  // not just what direction it has already moved.
-  // <30 = oversold (potential bottom, consider buying)
-  // >70 = overbought (potential top, consider selling)
-  // Secondary: week + month momentum confirms the trend isn't still running hard against us.
+  // RSI thresholds are intentionally tight — only fire at genuine extremes.
+  // BUY:  RSI < 25 (deeply oversold) AND weekly drop has slowed (week ≥ -2%)
+  //       AND month trend hasn't been in freefall (month > -8%)
+  // SELL: RSI > 75 (deeply overbought) AND weekly run has stalled (week ≤ +2%)
+  //       AND month trend not still strongly bullish (month < +8%)
+  // All three must agree before a signal fires — otherwise HOLD.
 
   if (rsi === null || rsi === undefined) return 'HOLD'
 
   const weekPct  = perf?.last_week?.change_percentage  ?? 0
   const monthPct = perf?.last_month?.change_percentage ?? 0
 
-  if (rsi < 30) {
-    // Oversold — only suggest BUY if the longer trend isn't in catastrophic freefall
-    if (monthPct > -5) return 'BUY'
-    return 'HOLD' // Still falling hard — wait for stabilisation
+  if (rsi < 25) {
+    if (weekPct >= -2 && monthPct > -8) return 'BUY'
+    return 'HOLD'
   }
 
-  if (rsi > 70) {
-    // Overbought — only suggest SELL if the trend isn't still strongly bullish
-    if (monthPct < 5) return 'SELL'
-    return 'HOLD' // Still rising hard — let it run
+  if (rsi > 75) {
+    if (weekPct <= 2 && monthPct < 8) return 'SELL'
+    return 'HOLD'
   }
 
   return 'HOLD'
