@@ -167,7 +167,7 @@ export default function FishingGame({ open, onClose }) {
   }, [open, user])
 
   useEffect(() => {
-    if (state !== 'cooldown') { clearInterval(countdownRef.current); return }
+    if (state !== 'cooldown' && state !== 'caught' && state !== 'escaped') { clearInterval(countdownRef.current); return }
     countdownRef.current = setInterval(() => {
       setCooldownMs(prev => {
         const next = prev - 1000
@@ -198,7 +198,11 @@ export default function FishingGame({ open, onClose }) {
       setState('bite')
       setShake(true)
       setTimeout(() => setShake(false), 600)
-      reelTimerRef.current = setTimeout(() => setState('escaped'), REEL_WINDOW[chosen.rarity])
+      reelTimerRef.current = setTimeout(() => {
+        setState('escaped')
+        const elapsed = castTimeRef.current ? Date.now() - castTimeRef.current : 0
+        setCooldownMs(Math.max(0, COOLDOWN_MS - elapsed))
+      }, REEL_WINDOW[chosen.rarity])
     }, wait)
   }
 
@@ -224,6 +228,8 @@ export default function FishingGame({ open, onClose }) {
     setState('reeling')
     setTimeout(async () => {
       setState('caught')
+      const elapsed = castTimeRef.current ? Date.now() - castTimeRef.current : 0
+      setCooldownMs(Math.max(0, COOLDOWN_MS - elapsed))
       if (user) {
         try {
           const token = localStorage.getItem('occultusSession')
@@ -435,7 +441,7 @@ export default function FishingGame({ open, onClose }) {
               {state === 'caught'   && entity && `✦ ${entity.name} bound — +${entity.essence} essence`}
               {state === 'escaped'  && '✦ The presence retreated into darkness'}
               {state === 'noauth'   && '🔒 You must be initiated to scry'}
-              {state === 'cooldown' && '⏳ The mirror must rest — next scrying in:'}
+              {(state === 'cooldown' || state === 'caught' || state === 'escaped') && '⏳ The mirror must rest — next scrying in:'}
             </div>
 
             {state === 'bite' && (
@@ -449,7 +455,7 @@ export default function FishingGame({ open, onClose }) {
               </div>
             )}
 
-            {state === 'cooldown' && (
+            {(state === 'cooldown' || state === 'caught' || state === 'escaped') && (
               <div style={{
                 padding: '14px 32px', borderRadius: '12px', textAlign: 'center',
                 background: 'rgba(109,40,217,0.08)', border: '1px solid rgba(109,40,217,0.2)',
@@ -485,16 +491,6 @@ export default function FishingGame({ open, onClose }) {
               </button>
             )}
 
-            {(state === 'caught' || state === 'escaped') && (
-              <button className="fishing-btn" onClick={reset} style={{
-                padding: '12px 40px', borderRadius: '12px', fontWeight: 700,
-                fontSize: '14px', cursor: 'pointer',
-                background: 'linear-gradient(145deg, rgba(109,40,217,0.4), rgba(179,18,63,0.3))',
-                border: '1px solid rgba(109,40,217,0.4)', color: '#e9d5ff', fontFamily: 'Cinzel, serif',
-              }}>
-                🔮 Scry Again
-              </button>
-            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
               {user && (

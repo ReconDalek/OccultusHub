@@ -163,7 +163,7 @@ export default function RuneCastingGame({ open, onClose }) {
   }, [open, user])
 
   useEffect(() => {
-    if (state !== 'cooldown') { clearInterval(countdownRef.current); return }
+    if (state !== 'cooldown' && state !== 'result') { clearInterval(countdownRef.current); return }
     countdownRef.current = setInterval(() => {
       setCooldownMs(prev => {
         const next = prev - 1000
@@ -203,6 +203,8 @@ export default function RuneCastingGame({ open, onClose }) {
       const read = calculateReading(runes)
       setReading(read)
       setState('result')
+      const elapsed = castTimeRef.current ? Date.now() - castTimeRef.current : 0
+      setCooldownMs(Math.max(0, COOLDOWN_MS - elapsed))
       // Record server-side
       try {
         const res2 = await fetch(`${API_BASE_URL}/api/runes/record`, {
@@ -360,11 +362,11 @@ export default function RuneCastingGame({ open, onClose }) {
                 {state === 'idle'      && 'ᚠ Cast the runes and receive your reading'}
                 {state === 'casting'   && 'ᚠ Consulting the void...'}
                 {state === 'revealing' && 'ᚠ The runes reveal themselves...'}
-                {state === 'result'    && '✦ The runes have spoken'}
+                {state === 'result'    && '⏳ The runes must rest — next casting in:'}
                 {state === 'cooldown'  && '⏳ The runes must rest — next casting in:'}
               </div>
 
-              {state === 'cooldown' && (
+              {(state === 'result' || state === 'cooldown') && (
                 <div style={{
                   padding: '12px 28px', borderRadius: '10px', textAlign: 'center',
                   background: 'rgba(109,40,217,0.08)', border: '1px solid rgba(109,40,217,0.2)',
@@ -392,16 +394,6 @@ export default function RuneCastingGame({ open, onClose }) {
                 </button>
               )}
 
-              {state === 'result' && (
-                <button className="rune-cast-btn" onClick={reset} style={{
-                  padding: '12px 40px', borderRadius: '12px', fontWeight: 700,
-                  fontSize: '14px', cursor: 'pointer',
-                  background: 'linear-gradient(145deg, rgba(109,40,217,0.35), rgba(179,18,63,0.25))',
-                  border: '1px solid rgba(109,40,217,0.35)', color: '#e9d5ff', fontFamily: 'Cinzel, serif',
-                }}>
-                  ᚠ Cast Again
-                </button>
-              )}
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
                 {user && (
