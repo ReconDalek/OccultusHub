@@ -272,6 +272,7 @@ export default function Stocks() {
   const [details, setDetails] = useState({})
   const [detailLoading, setDetailLoading] = useState({})
   const [search, setSearch] = useState('')
+  const [signalFilter, setSignalFilter] = useState('ALL')
   const [sortKey, setSortKey] = useState('acronym')
   const [sortDir, setSortDir] = useState(1)
 
@@ -331,12 +332,19 @@ export default function Stocks() {
   }
 
   // Merge API data with local TORN_STOCKS for logos/names
-  const merged = stocks.map(apiS => ({
-    apiStock: apiS,
-    localStock: TORN_STOCKS.find(l => l.id === apiS.id) || TORN_STOCKS.find(l => l.acronym === apiS.acronym),
-  })).filter(({ apiStock, localStock }) => {
+  const merged = stocks.map(apiS => {
+    const localStock = TORN_STOCKS.find(l => l.id === apiS.id) || TORN_STOCKS.find(l => l.acronym === apiS.acronym)
+    const detail = details[apiS.id]
+    const detailStock = detail?.stock
+    const perf = detailStock?.chart?.performance ?? apiS?.chart?.performance
+    const rsi = detailStock?.rsi ?? apiS?.rsi ?? null
+    const signal = computeSignal(rsi, perf)
+    return { apiStock: apiS, localStock, signal }
+  }).filter(({ apiStock, localStock, signal }) => {
     const q = search.toLowerCase()
-    return !q || (apiStock?.acronym?.toLowerCase().includes(q) || (apiStock?.name || localStock?.name || '').toLowerCase().includes(q))
+    const nameMatch = !q || (apiStock?.acronym?.toLowerCase().includes(q) || (apiStock?.name || localStock?.name || '').toLowerCase().includes(q))
+    const sigMatch = signalFilter === 'ALL' || signal === signalFilter
+    return nameMatch && sigMatch
   }).sort((a, b) => {
     const get = (item) => {
       if (sortKey === 'price') return item.apiStock?.market?.price ?? 0
@@ -381,12 +389,27 @@ export default function Stocks() {
             </div>
           )}
         </div>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search stocks..."
-          style={{ background: '#0d0d18', border: '1px solid #2a2a3a', borderRadius: 6, padding: '8px 12px', color: '#f4f4f5', fontSize: 13, width: '100%', maxWidth: 220 }}
-        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {['ALL', 'BUY', 'HOLD', 'SELL'].map(sig => {
+            const sigColor = { BUY: '#4ade80', SELL: '#f87171', HOLD: '#a0a0b0', ALL: '#9d6ef9' }[sig]
+            const active = signalFilter === sig
+            return (
+              <button key={sig} onClick={() => setSignalFilter(sig)} style={{
+                background: active ? sigColor + '22' : 'transparent',
+                border: `1px solid ${active ? sigColor : '#2a2a3a'}`,
+                color: active ? sigColor : '#555',
+                borderRadius: 6, padding: '6px 12px', fontSize: 11, fontWeight: 700,
+                letterSpacing: 1, cursor: 'pointer',
+              }}>{sig}</button>
+            )
+          })}
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search stocks..."
+            style={{ background: '#0d0d18', border: '1px solid #2a2a3a', borderRadius: 6, padding: '8px 12px', color: '#f4f4f5', fontSize: 13, width: '100%', maxWidth: 200 }}
+          />
+        </div>
       </div>
 
       <div style={{ background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 8, overflow: 'hidden' }}>
