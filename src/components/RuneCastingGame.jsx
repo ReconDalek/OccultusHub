@@ -186,6 +186,8 @@ export default function RuneCastingGame({ open, onClose }) {
     } catch { return }
 
     castTimeRef.current = Date.now()
+    localStorage.setItem('runeLastCastAt', castTimeRef.current)
+    window.dispatchEvent(new CustomEvent('runeCooldownStart'))
     const r1 = weightedRandom(RUNES)
     const r2 = weightedRandom(RUNES)
     const r3 = weightedRandom(RUNES)

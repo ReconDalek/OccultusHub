@@ -27,6 +27,8 @@ export default function RuneEasterEgg() {
   const scheduleRef = useRef(null)
 
   function isInCooldown() {
+    const local = localStorage.getItem('runeLastCastAt')
+    if (local && Date.now() - Number(local) < COOLDOWN_MS) return true
     if (!user?.lastRuneCastAt) return false
     const last = new Date(user.lastRuneCastAt.replace(' ', 'T') + 'Z').getTime()
     return Date.now() - last < COOLDOWN_MS
@@ -53,6 +55,12 @@ export default function RuneEasterEgg() {
     const init = setTimeout(spawn, getRandom(15000, 35000))
     return () => { clearTimeout(init); clearTimeout(scheduleRef.current) }
   }, [spawn])
+
+  useEffect(() => {
+    function onCooldown() { setVisible(false); clearTimeout(scheduleRef.current) }
+    window.addEventListener('runeCooldownStart', onCooldown)
+    return () => window.removeEventListener('runeCooldownStart', onCooldown)
+  }, [])
 
   function onAnimEnd() { setVisible(false); scheduleNext() }
 

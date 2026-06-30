@@ -189,6 +189,8 @@ export default function FishingGame({ open, onClose }) {
       if (!data.ok) { setCooldownMs(data.msRemaining || 0); setState('cooldown'); return }
     } catch { return }
     castTimeRef.current = Date.now()
+    localStorage.setItem('fishingLastCastAt', castTimeRef.current)
+    window.dispatchEvent(new CustomEvent('fishingCooldownStart'))
     setState('casting')
     const chosen = weightedRandom(ENTITIES)
     setEntity(chosen)

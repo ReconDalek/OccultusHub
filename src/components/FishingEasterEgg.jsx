@@ -109,6 +109,8 @@ export default function FishingEasterEgg() {
   const scheduleRef = useRef(null)
 
   function isInCooldown() {
+    const local = localStorage.getItem('fishingLastCastAt')
+    if (local && Date.now() - Number(local) < COOLDOWN_MS) return true
     if (!user?.lastFishedAt) return false
     const last = new Date(user.lastFishedAt.replace(' ', 'T') + 'Z').getTime()
     return Date.now() - last < COOLDOWN_MS
@@ -135,6 +137,12 @@ export default function FishingEasterEgg() {
     const init = setTimeout(spawnEntity, getRandom(8000, 20000))
     return () => { clearTimeout(init); clearTimeout(scheduleRef.current) }
   }, [spawnEntity])
+
+  useEffect(() => {
+    function onCooldown() { setVisible(false); clearTimeout(scheduleRef.current) }
+    window.addEventListener('fishingCooldownStart', onCooldown)
+    return () => window.removeEventListener('fishingCooldownStart', onCooldown)
+  }, [])
 
   function onAnimationEnd() { setVisible(false); scheduleNext() }
 
