@@ -294,7 +294,7 @@ export default function InvestmentsSubTab({ factionId }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>
-                {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'End', 'Days Left', 'TCI Purchased', ''].map(h => (
+                {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'Start', 'End', 'Days Left', 'TCI Purchased', ''].map(h => (
                   <th key={h} style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '6px 10px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.06)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -364,13 +364,17 @@ export default function InvestmentsSubTab({ factionId }) {
                     <td style={{ padding: '10px', color: '#f4f4f5', fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {fmt(inv.faction_income)}
                     </td>
-                    {/* End */}
+                    {/* Start */}
                     <td style={{ padding: '10px', color: "var(--text-secondary)", fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {isEditing ? (
                         <input style={{ ...inputStyle, width: '120px' }} type="date"
                           value={editForm.start_date ?? inv.start_date}
                           onChange={e => setEditForm(f => ({ ...f, start_date: e.target.value }))} />
-                      ) : inv.end_date}
+                      ) : inv.start_date}
+                    </td>
+                    {/* End */}
+                    <td style={{ padding: '10px', color: "var(--text-secondary)", fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      {inv.end_date}
                     </td>
                     {/* Days left */}
                     <td style={{ padding: '10px', fontSize: '13px', whiteSpace: 'nowrap' }}>
