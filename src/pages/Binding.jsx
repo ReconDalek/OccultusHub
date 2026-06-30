@@ -299,6 +299,19 @@ function ActionButton({ label, sublabel, onClick, disabled, cooldownSecs, color 
   )
 }
 
+function DuelCooldownTimer({ secs: initSecs }) {
+  const [secs, setSecs] = useState(initSecs)
+  useEffect(() => {
+    setSecs(initSecs)
+  }, [initSecs])
+  useEffect(() => {
+    if (secs <= 0) return
+    const t = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(t)
+  }, [secs])
+  return <>{formatCooldown(secs)}</>
+}
+
 function EventCard({ event, onDismiss }) {
   const d = typeof event.detail_json === 'string' ? JSON.parse(event.detail_json) : event.detail_json
 
@@ -377,7 +390,6 @@ function RitualIntro({ onComplete }) {
   const [summoning, setSummoning]   = useState(false)
   const [revealed, setRevealed]     = useState(false)
   const [creating, setCreating]     = useState(false)
-  const [familiarName, setFamiliarName] = useState('')
 
   const fadeTransition = (cb) => {
     setFadingOut(true)
@@ -416,11 +428,10 @@ function RitualIntro({ onComplete }) {
   const confirmBinding = async () => {
     setCreating(true)
     try {
-      const name = familiarName.trim().slice(0, 24)
       const res = await fetch(`${API_BASE_URL}/api/binding/create`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ species, ...(name.length >= 2 ? { name } : {}) }),
+        body: JSON.stringify({ species }),
       })
       const data = await res.json()
       if (res.ok) onComplete(data.familiar)
@@ -593,39 +604,13 @@ function RitualIntro({ onComplete }) {
           "{NATURE_REVELATION[nature]}"
         </p>
 
-        <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 20, letterSpacing: 1 }}>
+        <p style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 28, letterSpacing: 1 }}>
           The bond is formed. What happens next is yours to write.
         </p>
 
-        <div style={{ marginBottom: 28, textAlign: 'left' }}>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: 2, marginBottom: 10, textAlign: 'center' }}>
-            BESTOW A NAME <span style={{ color: "var(--text-ghost)" }}>— OPTIONAL</span>
-          </p>
-          <input
-            type="text"
-            value={familiarName}
-            onChange={e => setFamiliarName(e.target.value)}
-            maxLength={24}
-            placeholder="Leave empty to name later..."
-            style={{
-              width: '100%', padding: '11px 14px',
-              background: 'rgba(255,255,255,0.04)',
-              border: `1px solid ${sc.primary}30`,
-              borderRadius: 8, color: '#f4f4f5', fontSize: 14,
-              outline: 'none', textAlign: 'center',
-              boxSizing: 'border-box',
-            }}
-          />
-          {familiarName.trim().length === 1 && (
-            <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 6, textAlign: 'center' }}>
-              Name must be at least 2 characters
-            </p>
-          )}
-        </div>
-
         <button
           onClick={confirmBinding}
-          disabled={creating || familiarName.trim().length === 1}
+          disabled={creating}
           className="font-cinzel"
           style={{
             padding: '14px 36px',
@@ -635,8 +620,8 @@ function RitualIntro({ onComplete }) {
             color: '#f4f4f5',
             fontSize: 13,
             letterSpacing: 3,
-            cursor: creating || familiarName.trim().length === 1 ? 'not-allowed' : 'pointer',
-            opacity: creating || familiarName.trim().length === 1 ? 0.6 : 1,
+            cursor: creating ? 'not-allowed' : 'pointer',
+            opacity: creating ? 0.6 : 1,
           }}
         >
           {creating ? 'SEALING THE BOND...' : 'ENTER THE BINDING'}
@@ -857,6 +842,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const cdTrain = cooldownRemaining(familiar.last_trained_at, COOLDOWNS_MS.train)
   const cdHunt  = cooldownRemaining(familiar.last_hunted_at,  COOLDOWNS_MS.hunt)
   const cdRest  = cooldownRemaining(familiar.last_rested_at,  COOLDOWNS_MS.rest)
+  const cdDuel  = cooldownRemaining(familiar.last_dueled_at,  2 * 3600000)
 
   const showMsg = (msg, color = "var(--text-secondary)") => {
     setActionMsg({ text: msg, color })
@@ -1424,6 +1410,18 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         {/* ── Duel tab ── */}
         {tab === 'duel' && (
           <div>
+            {cdDuel > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', marginBottom: 16,
+                background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10 }}>
+                <span style={{ fontSize: 16 }}>⚔</span>
+                <div>
+                  <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>Battle Recovery</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    Your familiar needs rest — ready in <span style={{ color: '#f4f4f5' }}><DuelCooldownTimer secs={cdDuel} /></span>
+                  </div>
+                </div>
+              </div>
+            )}
             {others.length === 0 ? (
               <p style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '40px 0', fontSize: 14 }}>
                 No other familiars have been bound yet.
@@ -1462,17 +1460,17 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
                         )}
                       </div>
                       <button
-                        onClick={() => eligible && doDuel(f.user_id)}
-                        disabled={loading || !eligible}
-                        title={!eligible ? `Level gap too large (${levelGap}) — duels limited to ±10 levels` : undefined}
+                        onClick={() => eligible && cdDuel <= 0 && doDuel(f.user_id)}
+                        disabled={loading || !eligible || cdDuel > 0}
+                        title={!eligible ? `Level gap too large (${levelGap}) — duels limited to ±10 levels` : cdDuel > 0 ? 'Recovering from last battle' : undefined}
                         style={{
                           padding: '8px 16px', borderRadius: 8,
-                          background: !eligible ? 'rgba(255,255,255,0.02)' : loading ? 'rgba(255,255,255,0.04)' : 'rgba(179,18,63,0.2)',
-                          border: `1px solid ${eligible ? 'rgba(179,18,63,0.35)' : 'rgba(255,255,255,0.05)'}`,
-                          color: !eligible ? "var(--text-ghost)" : loading ? "var(--text-faint)" : '#fca5a5',
-                          fontSize: 12, cursor: eligible && !loading ? 'pointer' : 'not-allowed',
+                          background: (!eligible || cdDuel > 0) ? 'rgba(255,255,255,0.02)' : loading ? 'rgba(255,255,255,0.04)' : 'rgba(179,18,63,0.2)',
+                          border: `1px solid ${(eligible && cdDuel <= 0) ? 'rgba(179,18,63,0.35)' : 'rgba(255,255,255,0.05)'}`,
+                          color: (!eligible || cdDuel > 0) ? "var(--text-ghost)" : loading ? "var(--text-faint)" : '#fca5a5',
+                          fontSize: 12, cursor: (eligible && cdDuel <= 0 && !loading) ? 'pointer' : 'not-allowed',
                         }}>
-                        {eligible ? 'Duel' : 'Locked'}
+                        {!eligible ? 'Locked' : cdDuel > 0 ? 'Resting' : 'Duel'}
                       </button>
                     </div>
                   )

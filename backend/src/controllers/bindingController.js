@@ -29,6 +29,7 @@ const COOLDOWNS = {
   train: 6 * 60 * 60 * 1000,
   hunt:  4 * 60 * 60 * 1000,
   rest:  12 * 60 * 60 * 1000,
+  duel:  2 * 60 * 60 * 1000,
 };
 
 const XP_GAIN = {
@@ -427,10 +428,8 @@ export async function createFamiliar(request, env, user) {
   if (existing) return errorResponse('You have already bound a familiar', 409);
 
   const body = await request.json().catch(() => ({}));
-  const { species, name: rawName } = body;
+  const { species } = body;
   if (!SPECIES.includes(species)) return errorResponse('Invalid species', 400);
-
-  const givenName = rawName ? rawName.trim().slice(0, 24) : null;
 
   const nature = NATURES[rand(0, NATURES.length - 1)];
   const stats  = rollStats(species, nature);
@@ -438,9 +437,9 @@ export async function createFamiliar(request, env, user) {
 
   await env.DB.prepare(`
     INSERT INTO familiars
-      (user_id, species, nature, name, stat_str, stat_agi, stat_vit, stat_arc, stat_res, stat_ess, hp, max_hp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(user.userId, species, nature, givenName, stats.str, stats.agi, stats.vit, stats.arc, stats.res, stats.ess, hp, hp).run();
+      (user_id, species, nature, stat_str, stat_agi, stat_vit, stat_arc, stat_res, stat_ess, hp, max_hp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(user.userId, species, nature, stats.str, stats.agi, stats.vit, stats.arc, stats.res, stats.ess, hp, hp).run();
 
   const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
   return jsonResponse({ familiar }, 201);
@@ -607,6 +606,12 @@ export async function duelFamiliar(request, env, user) {
   if (!theirs) return errorResponse('That user has no bound familiar', 404);
   if (mine.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
+  const lastDuel = parseTS(mine.last_dueled_at);
+  if (lastDuel && Date.now() - lastDuel < COOLDOWNS.duel) {
+    const remaining = Math.ceil((COOLDOWNS.duel - (Date.now() - lastDuel)) / 1000);
+    return errorResponse('Your familiar needs time to recover from its last duel', 429, { remaining });
+  }
+
   const DUEL_LEVEL_CAP = 10;
   if (Math.abs(mine.level - theirs.level) > DUEL_LEVEL_CAP) {
     return errorResponse(
@@ -629,7 +634,8 @@ export async function duelFamiliar(request, env, user) {
     SET wins   = wins + ?,
         losses = losses + ?,
         shards = shards + ?,
-        happiness = MAX(0, MIN(100, happiness + ?))
+        happiness = MAX(0, MIN(100, happiness + ?)),
+        last_dueled_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).bind(won ? 1 : 0, won ? 0 : 1, shards, happinessChange, mine.id).run();
 
