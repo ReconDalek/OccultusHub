@@ -606,10 +606,15 @@ export async function duelFamiliar(request, env, user) {
   if (!theirs) return errorResponse('That user has no bound familiar', 404);
   if (mine.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
-  const lastDuel = parseTS(mine.last_dueled_at);
-  if (lastDuel && Date.now() - lastDuel < COOLDOWNS.duel) {
-    const remaining = Math.ceil((COOLDOWNS.duel - (Date.now() - lastDuel)) / 1000);
-    return errorResponse('Your familiar needs time to recover from its last duel', 429, { remaining });
+  const lastBattle = await env.DB.prepare(
+    `SELECT battled_at FROM familiar_battles WHERE challenger_id = ? ORDER BY battled_at DESC LIMIT 1`
+  ).bind(mine.id).first();
+  if (lastBattle) {
+    const lastDuel = parseTS(lastBattle.battled_at);
+    if (lastDuel && Date.now() - lastDuel < COOLDOWNS.duel) {
+      const remaining = Math.ceil((COOLDOWNS.duel - (Date.now() - lastDuel)) / 1000);
+      return errorResponse('Your familiar needs time to recover from its last duel', 429, { remaining });
+    }
   }
 
   const DUEL_LEVEL_CAP = 10;
@@ -634,10 +639,9 @@ export async function duelFamiliar(request, env, user) {
     SET wins   = wins + ?,
         losses = losses + ?,
         shards = shards + ?,
-        happiness = MAX(0, MIN(100, happiness + ?)),
-        last_dueled_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).bind(won ? 1 : 0, won ? 0 : 1, shards, happinessChange, mine.id).run();
+        happiness = MAX(0, MIN(100, happiness + ?))
+    WHERE user_id = ?
+  `).bind(won ? 1 : 0, won ? 0 : 1, shards, happinessChange, user.userId).run();
 
   await env.DB.prepare(`
     INSERT INTO familiar_battles (challenger_id, defender_id, winner_id, rounds_json, trigger)
@@ -659,11 +663,13 @@ export async function duelFamiliar(request, env, user) {
 
   const { bondGain, newBond } = await applyBond(env.DB, mine, won ? 'duel_win' : 'duel_loss');
 
+  const duelCooldownUntil = Date.now() + COOLDOWNS.duel;
   return jsonResponse({
     won, xp, shards, levelsGained, newLevel, evolved, newStage,
     rounds: result.rounds,
     opponent: { username: theirs.username, species: theirs.species, nature: theirs.nature },
     bondGain, newBond,
+    duelCooldownUntil,
   });
 }
 

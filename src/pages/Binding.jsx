@@ -829,6 +829,7 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const [nameModal, setNameModal]       = useState(false)
   const [nameInput, setNameInput]       = useState('')
   const [nameSaving, setNameSaving]     = useState(false)
+  const [duelCooldownUntil, setDuelCooldownUntil] = useState(null)
 
   const sc = SPECIES_COLOR[familiar.species]
   const naColor = NATURE_ACCENT[familiar.nature]
@@ -842,7 +843,9 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const cdTrain = cooldownRemaining(familiar.last_trained_at, COOLDOWNS_MS.train)
   const cdHunt  = cooldownRemaining(familiar.last_hunted_at,  COOLDOWNS_MS.hunt)
   const cdRest  = cooldownRemaining(familiar.last_rested_at,  COOLDOWNS_MS.rest)
-  const cdDuel  = cooldownRemaining(familiar.last_dueled_at,  2 * 3600000)
+  const cdDuelFromServer = duelCooldownUntil ? Math.max(0, Math.ceil((duelCooldownUntil - Date.now()) / 1000)) : 0
+  const cdDuelFromDB     = cooldownRemaining(familiar.last_dueled_at, 2 * 3600000)
+  const cdDuel           = Math.max(cdDuelFromServer, cdDuelFromDB)
 
   const showMsg = (msg, color = "var(--text-secondary)") => {
     setActionMsg({ text: msg, color })
@@ -894,6 +897,8 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
       })
       const data = await res.json()
       if (!res.ok) { showMsg(data.error || 'Duel failed.', '#ef4444'); return }
+
+      if (data.duelCooldownUntil) setDuelCooldownUntil(data.duelCooldownUntil)
 
       const fresh = await fetch(`${API_BASE_URL}/api/binding/familiar`, { headers: authHeaders() })
       const freshData = await fresh.json()
