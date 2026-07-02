@@ -597,13 +597,18 @@ export async function duelFamiliar(request, env, user) {
   if (!targetUserId) return errorResponse('targetUserId required', 400);
   if (targetUserId === user.userId) return errorResponse('You cannot duel yourself', 400);
 
-  const [mine, theirs] = await Promise.all([
-    env.DB.prepare(`SELECT f.*, u.username FROM familiars f JOIN users u ON u.id = f.user_id WHERE f.user_id = ?`).bind(user.userId).first(),
-    env.DB.prepare(`SELECT f.*, u.username FROM familiars f JOIN users u ON u.id = f.user_id WHERE f.user_id = ?`).bind(targetUserId).first(),
+  const [mine, theirs, mineUser, theirUser] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first(),
+    env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(targetUserId).first(),
+    env.DB.prepare(`SELECT username FROM users WHERE id = ?`).bind(user.userId).first(),
+    env.DB.prepare(`SELECT username FROM users WHERE id = ?`).bind(targetUserId).first(),
   ]);
 
   if (!mine)   return errorResponse('You have no bound familiar', 404);
   if (!theirs) return errorResponse('That user has no bound familiar', 404);
+
+  mine.username   = mineUser?.username ?? '';
+  theirs.username = theirUser?.username ?? '';
   if (mine.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
   const lastBattle = await env.DB.prepare(
