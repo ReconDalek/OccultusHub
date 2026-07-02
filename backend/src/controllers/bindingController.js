@@ -416,7 +416,18 @@ export async function getFamiliar(request, env, user) {
     `SELECT * FROM familiar_events WHERE familiar_id = ? AND seen = 0 ORDER BY created_at DESC`
   ).bind(familiar.id).all();
 
-  return jsonResponse({ familiar, events: events.results });
+  // Duel cooldown — check last battle
+  const lastBattle = await env.DB.prepare(
+    `SELECT battled_at FROM familiar_battles WHERE challenger_id = ? ORDER BY battled_at DESC LIMIT 1`
+  ).bind(familiar.id).first();
+  const duelCooldownRemaining = (() => {
+    if (!lastBattle) return 0;
+    const last = parseTS(lastBattle.battled_at);
+    if (!last) return 0;
+    return Math.max(0, Math.ceil((COOLDOWNS.duel - (Date.now() - last)) / 1000));
+  })();
+
+  return jsonResponse({ familiar, events: events.results, duelCooldownRemaining });
 }
 
 export async function createFamiliar(request, env, user) {

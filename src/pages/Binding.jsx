@@ -811,7 +811,7 @@ function ActionResultOverlay({ result, onDismiss }) {
   )
 }
 
-function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefresh }) {
+function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefresh, initDuelCooldownSecs = 0 }) {
   const { user }                        = useSession()
   const [familiar, setFamiliar]         = useState(initFamiliar)
   const [events, setEvents]             = useState(initEvents)
@@ -829,7 +829,9 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
   const [nameModal, setNameModal]       = useState(false)
   const [nameInput, setNameInput]       = useState('')
   const [nameSaving, setNameSaving]     = useState(false)
-  const [duelCooldownUntil, setDuelCooldownUntil] = useState(null)
+  const [duelCooldownUntil, setDuelCooldownUntil] = useState(
+    initDuelCooldownSecs > 0 ? Date.now() + initDuelCooldownSecs * 1000 : null
+  )
 
   const sc = SPECIES_COLOR[familiar.species]
   const naColor = NATURE_ACCENT[familiar.nature]
@@ -896,7 +898,11 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         body: JSON.stringify({ targetUserId }),
       })
       const data = await res.json()
-      if (!res.ok) { showMsg(data.error || 'Duel failed.', '#ef4444'); return }
+      if (!res.ok) {
+        if (res.status === 429 && data.remaining) setDuelCooldownUntil(Date.now() + data.remaining * 1000)
+        showMsg(data.error || 'Duel failed.', '#ef4444')
+        return
+      }
 
       if (data.duelCooldownUntil) setDuelCooldownUntil(data.duelCooldownUntil)
 
@@ -1789,6 +1795,7 @@ export default function Binding() {
   const [state, setState]   = useState('loading')   // loading | gate | ritual | dashboard
   const [familiar, setFamiliar] = useState(null)
   const [events, setEvents]     = useState([])
+  const [initDuelCooldownSecs, setInitDuelCooldownSecs] = useState(0)
 
   useEffect(() => {
     if (sessionLoading) return
@@ -1800,6 +1807,7 @@ export default function Binding() {
         if (data.familiar) {
           setFamiliar(data.familiar)
           setEvents(data.events || [])
+          setInitDuelCooldownSecs(data.duelCooldownRemaining || 0)
           setState('dashboard')
         } else {
           setState('ritual')
@@ -1833,6 +1841,7 @@ export default function Binding() {
     <FamiliarDashboard
       familiar={familiar}
       events={events}
+      initDuelCooldownSecs={initDuelCooldownSecs}
       onRefresh={() => {
         fetch(`${API_BASE_URL}/api/binding/familiar`, { headers: authHeaders() })
           .then(r => r.json()).then(d => { setFamiliar(d.familiar); setEvents(d.events || []) })
