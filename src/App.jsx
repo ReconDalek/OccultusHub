@@ -37,12 +37,19 @@ import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding'] // active gameplay routes — suppress easter egg overlays
 
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
+
 function Layout({ children }) {
   const { pathname } = useLocation()
   const isGameRoute = GAME_ROUTES.includes(pathname)
 
   return (
     <>
+      <ScrollToTop />
       <BackgroundOverlay />
       {!isGameRoute && <CipherOverlay />}
       <Navbar />
