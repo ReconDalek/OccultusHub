@@ -318,7 +318,7 @@ function SummaryBar({ members, extras, includeRevives, includeAttacks, days, cov
 
 // ─── Energy table ─────────────────────────────────────────────────────────────
 
-function EnergyTable({ members, extras, includeRevives, includeAttacks, days, periodFrom }) {
+function EnergyTable({ members, extras, includeRevives, includeAttacks, snapshotDays, periodFrom }) {
   const augmented = members.map(m => {
     const reviveEnergy  = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
     const attackEnergy  = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
@@ -347,7 +347,7 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days, pe
 
         {augmented.map((m, i) => {
           const barPct = Math.round((m.displayEnergy / maxEnergy) * 100)
-          const avgDay = days > 0 ? Math.round(m.displayEnergy / days) : 0
+          const avgDay = snapshotDays > 0 ? Math.round(m.displayEnergy / snapshotDays) : 0
           return (
             <div
               key={m.id}
@@ -652,7 +652,8 @@ export default function EnergyActivityPanel() {
                 <EnergyTable
                   members={data.members} extras={data.extras}
                   includeRevives={includeRevives} includeAttacks={includeAttacks}
-                  days={data.period.days} periodFrom={data.period.from}
+                  snapshotDays={data.coverage?.days_covered || Math.ceil(data.period.days)}
+                  periodFrom={data.period.from}
                 />
               )}
             </>
