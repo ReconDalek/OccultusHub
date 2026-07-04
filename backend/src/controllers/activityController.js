@@ -266,10 +266,9 @@ export async function takeEnergySnapshot(env) {
       const stmt = env.DB.prepare(`
         INSERT INTO energy_snapshots (torn_user_id, username, faction_id, energy_total, snapshot_date, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
+        ON CONFLICT(torn_user_id, faction_id, snapshot_date) DO UPDATE SET
           energy_total = excluded.energy_total,
-          username     = excluded.username,
-          faction_id   = excluded.faction_id
+          username     = excluded.username
       `);
 
       const validContributors = contributors.filter(c => c.value > 0);
@@ -322,23 +321,34 @@ export async function getEnergyActivity(request, env) {
     const fromDate = url.searchParams.get('from') || defaultFrom;
     const toDate   = url.searchParams.get('to')   || defaultTo;
 
-    // Find the earliest non-zero snapshot on or after fromDate for each member,
-    // and the latest snapshot on or before toDate. Diff = energy in period.
-    // start_date/start_energy exclude zeros to handle legacy zero rows already in the DB.
+    // Sum per-faction deltas so members who switch between factions mid-period
+    // get credit for contributions in both factions rather than one overwriting the other.
+    // Inner query groups by (torn_user_id, faction_id) to get each faction's delta;
+    // outer query sums those deltas per member.
     const rows = await env.DB.prepare(`
       SELECT
         torn_user_id,
-        MAX(username) AS username,
-        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
-        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS start_energy,
-        MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
-        MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) AS end_energy
-      FROM energy_snapshots
-      WHERE snapshot_date >= ? AND snapshot_date <= ?
+        MAX(username)  AS username,
+        MIN(start_date) AS start_date,
+        MAX(end_date)   AS end_date,
+        SUM(faction_delta) AS total_energy
+      FROM (
+        SELECT
+          torn_user_id,
+          faction_id,
+          MAX(username) AS username,
+          MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
+          MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
+          MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) -
+            MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS faction_delta
+        FROM energy_snapshots
+        WHERE snapshot_date >= ? AND snapshot_date <= ?
+        GROUP BY torn_user_id, faction_id
+        HAVING start_date IS NOT NULL AND end_date IS NOT NULL AND faction_delta > 0
+      )
       GROUP BY torn_user_id
-      HAVING end_energy IS NOT NULL AND start_energy IS NOT NULL
-         AND end_energy > start_energy
-    `).bind(fromDate, fromDate, toDate, toDate, fromDate, toDate).all();
+      HAVING total_energy > 0
+    `).bind(fromDate, toDate, toDate, fromDate, fromDate, toDate).all();
 
     // Calculate days for avg/day (calendar days in range)
     const fromTs = Date.UTC(...fromDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
@@ -347,14 +357,12 @@ export async function getEnergyActivity(request, env) {
 
     const members = (rows.results || [])
       .map(r => ({
-        id:           r.torn_user_id,
-        username:     r.username,
-        start_date:   r.start_date,
-        start_energy: r.start_energy,
-        end_date:     r.end_date,
-        end_energy:   r.end_energy,
-        energy:       r.end_energy - r.start_energy,
-        avg_day:      Math.round((r.end_energy - r.start_energy) / days),
+        id:         r.torn_user_id,
+        username:   r.username,
+        start_date: r.start_date,
+        end_date:   r.end_date,
+        energy:     r.total_energy,
+        avg_day:    Math.round(r.total_energy / days),
       }))
       .sort((a, b) => b.energy - a.energy);
 

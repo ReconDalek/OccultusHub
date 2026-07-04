@@ -414,14 +414,11 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
 
   const maxEnergy = augmented[0]?.totalEnergy || 1
   const showBreakdown = includeRevives || includeAttacks
-
-  const colTemplate = showBreakdown
-    ? '30px 1fr 160px 160px 130px 70px 100px'
-    : '30px 1fr 160px 160px 130px 70px 100px'
+  const colTemplate = '30px 1fr 110px 110px 140px 60px 100px'
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: '820px' }}>
+      <div style={{ minWidth: '700px' }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: colTemplate,
@@ -462,20 +459,17 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
                 </div>
               </div>
 
-              <div title={m.partialStart ? `No data before ${m.start_date} — joined or tracked mid-period` : undefined}>
-                <span style={{ color: m.partialStart ? '#f59e0b' : "var(--text-faint)", fontSize: '10px', display: 'block' }}>
-                  {m.start_date || '—'}
-                  {m.partialStart && <span style={{ marginLeft: '4px' }}>⚠</span>}
-                </span>
-                <span style={{ color: m.partialStart ? '#fbbf24' : "var(--text-muted)", fontSize: '12px', fontWeight: '500' }}>
-                  {fmt(m.start_energy)}
-                </span>
-              </div>
+              {/* First snapshot — amber if mid-period */}
+              <span
+                style={{ color: m.partialStart ? '#f59e0b' : "var(--text-faint)", fontSize: '12px' }}
+                title={m.partialStart ? `Tracking started ${m.start_date} — no data from period start` : undefined}
+              >
+                {m.start_date || '—'}
+                {m.partialStart && <span style={{ marginLeft: '4px' }}>⚠</span>}
+              </span>
 
-              <div>
-                <span style={{ color: "var(--text-faint)", fontSize: '10px', display: 'block' }}>{m.end_date || '—'}</span>
-                <span style={{ color: "var(--text-muted)", fontSize: '12px', fontWeight: '500' }}>{fmt(m.end_energy)}</span>
-              </div>
+              {/* Last snapshot */}
+              <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>{m.end_date || '—'}</span>
 
               <div>
                 <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.totalEnergy)}</span>
