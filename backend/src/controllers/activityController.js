@@ -272,9 +272,12 @@ export async function takeEnergySnapshot(env) {
           faction_id   = excluded.faction_id
       `);
 
-      await env.DB.batch(
-        contributors.map(c => stmt.bind(c.id, c.username, factionId, c.value || 0, today, now))
-      );
+      const validContributors = contributors.filter(c => c.value > 0);
+      if (validContributors.length) {
+        await env.DB.batch(
+          validContributors.map(c => stmt.bind(c.id, c.username, factionId, c.value, today, now))
+        );
+      }
 
       return { factionId, count: contributors.length };
     })
@@ -321,13 +324,13 @@ export async function getEnergyActivity(request, env) {
 
     // Find the earliest snapshot on or after fromDate for each member,
     // and the latest snapshot on or before toDate. Diff = energy in period.
-    // Exclude energy_total = 0 (member not in faction / API gap) to avoid skewing deltas.
+    // Zeros are never written to the DB (filtered at insert time), so no need to exclude here.
     const rows = await env.DB.prepare(`
       SELECT
         torn_user_id,
         MAX(username) AS username,
-        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS start_energy,
-        MAX(CASE WHEN snapshot_date <= ? AND energy_total > 0 THEN energy_total END) AS end_energy
+        MIN(CASE WHEN snapshot_date >= ? THEN energy_total END) AS start_energy,
+        MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) AS end_energy
       FROM energy_snapshots
       WHERE snapshot_date >= ? AND snapshot_date <= ?
       GROUP BY torn_user_id
