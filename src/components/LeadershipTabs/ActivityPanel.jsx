@@ -65,7 +65,6 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
   const months = buildMonthOptions()
   const now = new Date()
 
-  // A month is before data if its last day is before minDate
   const isMonthBeforeData = (year, month) => {
     if (!minDate) return false
     const lastDay = new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
@@ -177,7 +176,7 @@ function PeriodPicker({ mode, setMode, selectedMonth, setSelectedMonth, customFr
 
 // ─── Energy toggles ───────────────────────────────────────────────────────────
 
-function EnergyToggles({ includeRevives, setIncludeRevives, includeAttacks, setIncludeAttacks, hasRevives, hasAttacks }) {
+function EnergyToggles({ includeRevives, setIncludeRevives, includeAttacks, setIncludeAttacks, hasRevives, hasAttacks, showComparison, setShowComparison }) {
   const toggle = (active, hasData, label, onClick) => (
     <button
       key={label}
@@ -213,6 +212,106 @@ function EnergyToggles({ includeRevives, setIncludeRevives, includeAttacks, setI
       <span style={{ color: "var(--text-faint)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Include:</span>
       {toggle(includeRevives, hasRevives, 'Revives', () => setIncludeRevives(v => !v))}
       {toggle(includeAttacks, hasAttacks, 'Attacks', () => setIncludeAttacks(v => !v))}
+
+      <div style={{ flex: 1 }} />
+
+      <button
+        onClick={() => setShowComparison(v => !v)}
+        style={{
+          padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px',
+          border: `1px solid ${showComparison ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
+          background: showComparison ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.03)',
+          color: showComparison ? '#fbbf24' : "var(--text-secondary)",
+          fontWeight: showComparison ? '600' : '400',
+          transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+        }}
+      >
+        {showComparison ? 'Snapshot View' : 'Comparison View'}
+      </button>
+    </div>
+  )
+}
+
+// ─── Coverage bar ─────────────────────────────────────────────────────────────
+
+function CoverageBar({ coverage, days }) {
+  if (!coverage?.days_covered) return null
+
+  const snapshotDays = coverage.days_covered
+  const totalDates   = Math.round(days) + 1
+  const missingDays  = Math.max(0, totalDates - snapshotDays)
+  const fillPct      = Math.min(100, Math.round((snapshotDays / totalDates) * 100))
+  const hasMissing   = missingDays > 0
+
+  return (
+    <div style={{
+      padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
+      background: hasMissing ? 'rgba(251,191,36,0.05)' : 'rgba(255,255,255,0.02)',
+      border: `1px solid ${hasMissing ? 'rgba(251,191,36,0.18)' : 'rgba(255,255,255,0.07)'}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '12px', color: hasMissing ? '#fbbf24' : "var(--text-secondary)" }}>
+            <strong style={{ color: hasMissing ? '#fbbf24' : '#f4f4f5' }}>{snapshotDays}</strong>
+            <span style={{ color: "var(--text-faint)" }}> / {totalDates} days tracked</span>
+          </span>
+          {hasMissing && (
+            <span style={{ fontSize: '11px', color: '#f87171' }}>
+              {missingDays} day{missingDays !== 1 ? 's' : ''} missing
+            </span>
+          )}
+          {!hasMissing && (
+            <span style={{ fontSize: '11px', color: '#34d399' }}>complete coverage</span>
+          )}
+        </div>
+        <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>
+          {coverage.earliest} → {coverage.latest}
+        </span>
+      </div>
+      <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${fillPct}%`,
+          background: hasMissing
+            ? 'linear-gradient(90deg, #fbbf24, #f59e0b)'
+            : 'linear-gradient(90deg, #34d399, #059669)',
+          borderRadius: '2px', transition: 'width 0.4s ease',
+        }} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Summary bar ──────────────────────────────────────────────────────────────
+
+function SummaryBar({ members, extras, includeRevives, includeAttacks, days, coverage }) {
+  const total = members.reduce((s, m) => {
+    const reviveEnergy = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
+    const attackEnergy = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
+    return s + m.energy + reviveEnergy + attackEnergy
+  }, 0)
+
+  const snapshotDays = coverage?.days_covered || Math.ceil(days)
+  const avgDay = snapshotDays > 0 ? Math.round(total / snapshotDays) : 0
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+      gap: '8px', marginBottom: '12px',
+    }}>
+      {[
+        { label: 'Active Members', value: members.length,  color: '#f4f4f5' },
+        { label: 'Total Energy',   value: fmt(total),      color: '#a78bfa' },
+        { label: 'Avg / Day',      value: fmt(avgDay),     color: '#ff2f6d' },
+      ].map(({ label, value, color }) => (
+        <div key={label} style={{
+          padding: '10px 14px', borderRadius: '8px',
+          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>{label}</p>
+          <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
+        </div>
+      ))}
     </div>
   )
 }
@@ -290,36 +389,98 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) 
   )
 }
 
-// ─── Summary bar ──────────────────────────────────────────────────────────────
+// ─── Comparison table ─────────────────────────────────────────────────────────
 
-function SummaryBar({ members, extras, includeRevives, includeAttacks, days }) {
-  const total = members.reduce((s, m) => {
+function ComparisonTable({ members, extras, includeRevives, includeAttacks }) {
+  const augmented = members.map(m => {
+    const daysBetween = m.start_date && m.end_date
+      ? Math.max(1, Math.round((Date.parse(m.end_date) - Date.parse(m.start_date)) / 86400000))
+      : 1
+    const gymEnergy    = m.energy
     const reviveEnergy = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
     const attackEnergy = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
-    return s + m.energy + reviveEnergy + attackEnergy
-  }, 0)
-  const avgDay = days > 0 ? Math.round(total / days) : 0
+    const totalEnergy  = gymEnergy + reviveEnergy + attackEnergy
+    const avgDay       = Math.round(totalEnergy / daysBetween)
+    return { ...m, gymEnergy, reviveEnergy, attackEnergy, totalEnergy, avgDay, daysBetween }
+  }).sort((a, b) => b.totalEnergy - a.totalEnergy)
+
+  const maxEnergy = augmented[0]?.totalEnergy || 1
+  const showBreakdown = includeRevives || includeAttacks
+
+  const colTemplate = showBreakdown
+    ? '30px 1fr 160px 160px 130px 70px 100px'
+    : '30px 1fr 160px 160px 130px 70px 100px'
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-      gap: '8px', marginBottom: '20px',
-    }}>
-      {[
-        { label: 'Active Members', value: members.length, color: '#f4f4f5' },
-        { label: 'Total Energy',   value: fmt(total),     color: '#a78bfa' },
-        { label: 'Avg / Day',      value: fmt(avgDay),    color: '#ff2f6d' },
-        { label: 'Days Tracked',   value: Math.ceil(days), color: '#f4f4f5' },
-      ].map(({ label, value, color }) => (
-        <div key={label} style={{
-          padding: '10px 14px', borderRadius: '8px',
-          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: '820px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: colTemplate,
+          gap: '8px', padding: '6px 12px', marginBottom: '4px',
         }}>
-          <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px 0' }}>{label}</p>
-          <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
+          {['#', 'Member', 'First Snapshot', 'Last Snapshot', 'Energy Gained', 'Days', 'Avg / Day'].map(h => (
+            <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {h}
+            </span>
+          ))}
         </div>
-      ))}
+
+        {augmented.map((m, i) => {
+          const barPct = Math.round((m.totalEnergy / maxEnergy) * 100)
+          return (
+            <div
+              key={m.id}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: colTemplate,
+                alignItems: 'center',
+                gap: '8px', padding: '9px 12px', borderRadius: '8px',
+                background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+              }}
+            >
+              <span style={{ color: "var(--text-faint)", fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
+
+              <div style={{ minWidth: 0 }}>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '3px' }}>
+                  {m.username}
+                </span>
+                <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', width: `${barPct}%`,
+                    background: 'linear-gradient(90deg, #fbbf24, #f59e0b)',
+                    borderRadius: '2px',
+                  }} />
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: "var(--text-faint)", fontSize: '10px', display: 'block' }}>{m.start_date || '—'}</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '12px', fontWeight: '500' }}>{fmt(m.start_energy)}</span>
+              </div>
+
+              <div>
+                <span style={{ color: "var(--text-faint)", fontSize: '10px', display: 'block' }}>{m.end_date || '—'}</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '12px', fontWeight: '500' }}>{fmt(m.end_energy)}</span>
+              </div>
+
+              <div>
+                <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.totalEnergy)}</span>
+                {showBreakdown && (
+                  <span style={{ color: "var(--text-ghost)", fontSize: '10px', display: 'block', lineHeight: '1.5' }}>
+                    {m.gymEnergy > 0 && `gym ${fmt(m.gymEnergy)}`}
+                    {m.reviveEnergy > 0 && ` · rev ${fmt(m.reviveEnergy)}`}
+                    {m.attackEnergy > 0 && ` · atk ${fmt(m.attackEnergy)}`}
+                  </span>
+                )}
+              </div>
+
+              <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{m.daysBetween}d</span>
+              <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{fmt(m.avgDay)} / day</span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -340,8 +501,9 @@ export default function EnergyActivityPanel() {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
 
-  const [includeRevives, setIncludeRevives] = useState(false)
-  const [includeAttacks, setIncludeAttacks] = useState(false)
+  const [includeRevives,  setIncludeRevives]  = useState(false)
+  const [includeAttacks,  setIncludeAttacks]  = useState(false)
+  const [showComparison,  setShowComparison]  = useState(false)
 
   const minDate = data?.overall_earliest || data?.coverage?.earliest || todayStr
 
@@ -443,9 +605,6 @@ export default function EnergyActivityPanel() {
           <div style={{ marginBottom: '12px' }}>
             <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>
               Period: <span style={{ color: "var(--text-secondary)" }}>{periodLabel()}</span>
-              {data.coverage?.days_covered > 0 && (
-                <> · <span style={{ color: "var(--text-secondary)" }}>{data.coverage.days_covered} snapshot{data.coverage.days_covered !== 1 ? 's' : ''} ({data.coverage.earliest} to {data.coverage.latest})</span></>
-              )}
             </span>
           </div>
 
@@ -468,17 +627,26 @@ export default function EnergyActivityPanel() {
                 includeAttacks={includeAttacks} setIncludeAttacks={setIncludeAttacks}
                 hasRevives={Object.keys(data.extras?.revives ?? {}).length > 0}
                 hasAttacks={Object.keys(data.extras?.attacks ?? {}).length > 0}
+                showComparison={showComparison} setShowComparison={setShowComparison}
               />
               <SummaryBar
                 members={data.members} extras={data.extras}
                 includeRevives={includeRevives} includeAttacks={includeAttacks}
-                days={data.period.days}
+                days={data.period.days} coverage={data.coverage}
               />
-              <EnergyTable
-                members={data.members} extras={data.extras}
-                includeRevives={includeRevives} includeAttacks={includeAttacks}
-                days={data.period.days}
-              />
+              <CoverageBar coverage={data.coverage} days={data.period.days} />
+              {showComparison ? (
+                <ComparisonTable
+                  members={data.members} extras={data.extras}
+                  includeRevives={includeRevives} includeAttacks={includeAttacks}
+                />
+              ) : (
+                <EnergyTable
+                  members={data.members} extras={data.extras}
+                  includeRevives={includeRevives} includeAttacks={includeAttacks}
+                  days={data.period.days}
+                />
+              )}
             </>
           )}
         </>

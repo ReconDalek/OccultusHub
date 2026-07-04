@@ -329,26 +329,32 @@ export async function getEnergyActivity(request, env) {
       SELECT
         torn_user_id,
         MAX(username) AS username,
+        MIN(CASE WHEN snapshot_date >= ? THEN snapshot_date END) AS start_date,
         MIN(CASE WHEN snapshot_date >= ? THEN energy_total END) AS start_energy,
+        MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
         MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) AS end_energy
       FROM energy_snapshots
       WHERE snapshot_date >= ? AND snapshot_date <= ?
       GROUP BY torn_user_id
       HAVING end_energy IS NOT NULL AND start_energy IS NOT NULL
          AND end_energy > start_energy
-    `).bind(fromDate, toDate, fromDate, toDate).all();
+    `).bind(fromDate, fromDate, toDate, toDate, fromDate, toDate).all();
 
-    // Calculate days for avg/day
+    // Calculate days for avg/day (calendar days in range)
     const fromTs = Date.UTC(...fromDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
     const toTs   = Date.UTC(...toDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
     const days   = Math.max(1, (toTs - fromTs) / 86400);
 
     const members = (rows.results || [])
       .map(r => ({
-        id:       r.torn_user_id,
-        username: r.username,
-        energy:   r.end_energy - r.start_energy,
-        avg_day:  Math.round((r.end_energy - r.start_energy) / days),
+        id:           r.torn_user_id,
+        username:     r.username,
+        start_date:   r.start_date,
+        start_energy: r.start_energy,
+        end_date:     r.end_date,
+        end_energy:   r.end_energy,
+        energy:       r.end_energy - r.start_energy,
+        avg_day:      Math.round((r.end_energy - r.start_energy) / days),
       }))
       .sort((a, b) => b.energy - a.energy);
 
