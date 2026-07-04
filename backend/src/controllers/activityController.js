@@ -322,15 +322,15 @@ export async function getEnergyActivity(request, env) {
     const fromDate = url.searchParams.get('from') || defaultFrom;
     const toDate   = url.searchParams.get('to')   || defaultTo;
 
-    // Find the earliest snapshot on or after fromDate for each member,
+    // Find the earliest non-zero snapshot on or after fromDate for each member,
     // and the latest snapshot on or before toDate. Diff = energy in period.
-    // Zeros are never written to the DB (filtered at insert time), so no need to exclude here.
+    // start_date/start_energy exclude zeros to handle legacy zero rows already in the DB.
     const rows = await env.DB.prepare(`
       SELECT
         torn_user_id,
         MAX(username) AS username,
-        MIN(CASE WHEN snapshot_date >= ? THEN snapshot_date END) AS start_date,
-        MIN(CASE WHEN snapshot_date >= ? THEN energy_total END) AS start_energy,
+        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
+        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS start_energy,
         MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
         MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) AS end_energy
       FROM energy_snapshots

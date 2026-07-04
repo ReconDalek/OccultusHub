@@ -318,12 +318,13 @@ function SummaryBar({ members, extras, includeRevives, includeAttacks, days, cov
 
 // ─── Energy table ─────────────────────────────────────────────────────────────
 
-function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) {
+function EnergyTable({ members, extras, includeRevives, includeAttacks, days, periodFrom }) {
   const augmented = members.map(m => {
     const reviveEnergy  = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
     const attackEnergy  = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
     const displayEnergy = m.energy + reviveEnergy + attackEnergy
-    return { ...m, displayEnergy, reviveEnergy, attackEnergy }
+    const partialStart  = periodFrom && m.start_date && m.start_date > periodFrom
+    return { ...m, displayEnergy, reviveEnergy, attackEnergy, partialStart }
   }).sort((a, b) => b.displayEnergy - a.displayEnergy)
 
   const maxEnergy = augmented[0]?.displayEnergy || 1
@@ -363,6 +364,12 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) 
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '3px' }}>
                   {m.username}
+                  {m.partialStart && (
+                    <span
+                      title={`First snapshot: ${m.start_date} (joined mid-period)`}
+                      style={{ marginLeft: '6px', color: '#f59e0b', fontSize: '11px', verticalAlign: 'middle' }}
+                    >⚠</span>
+                  )}
                 </span>
                 <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
                   <div style={{
@@ -391,9 +398,9 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, days }) 
 
 // ─── Comparison table ─────────────────────────────────────────────────────────
 
-function ComparisonTable({ members, extras, includeRevives, includeAttacks }) {
+function ComparisonTable({ members, extras, includeRevives, includeAttacks, periodFrom }) {
   const augmented = members.map(m => {
-    const daysBetween = m.start_date && m.end_date
+    const daysBetween  = m.start_date && m.end_date
       ? Math.max(1, Math.round((Date.parse(m.end_date) - Date.parse(m.start_date)) / 86400000))
       : 1
     const gymEnergy    = m.energy
@@ -401,7 +408,8 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks }) {
     const attackEnergy = includeAttacks ? (extras?.attacks?.[m.id] ?? 0) * 25 : 0
     const totalEnergy  = gymEnergy + reviveEnergy + attackEnergy
     const avgDay       = Math.round(totalEnergy / daysBetween)
-    return { ...m, gymEnergy, reviveEnergy, attackEnergy, totalEnergy, avgDay, daysBetween }
+    const partialStart = periodFrom && m.start_date && m.start_date > periodFrom
+    return { ...m, gymEnergy, reviveEnergy, attackEnergy, totalEnergy, avgDay, daysBetween, partialStart }
   }).sort((a, b) => b.totalEnergy - a.totalEnergy)
 
   const maxEnergy = augmented[0]?.totalEnergy || 1
@@ -454,9 +462,14 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks }) {
                 </div>
               </div>
 
-              <div>
-                <span style={{ color: "var(--text-faint)", fontSize: '10px', display: 'block' }}>{m.start_date || '—'}</span>
-                <span style={{ color: "var(--text-muted)", fontSize: '12px', fontWeight: '500' }}>{fmt(m.start_energy)}</span>
+              <div title={m.partialStart ? `No data before ${m.start_date} — joined or tracked mid-period` : undefined}>
+                <span style={{ color: m.partialStart ? '#f59e0b' : "var(--text-faint)", fontSize: '10px', display: 'block' }}>
+                  {m.start_date || '—'}
+                  {m.partialStart && <span style={{ marginLeft: '4px' }}>⚠</span>}
+                </span>
+                <span style={{ color: m.partialStart ? '#fbbf24' : "var(--text-muted)", fontSize: '12px', fontWeight: '500' }}>
+                  {fmt(m.start_energy)}
+                </span>
               </div>
 
               <div>
@@ -639,12 +652,13 @@ export default function EnergyActivityPanel() {
                 <ComparisonTable
                   members={data.members} extras={data.extras}
                   includeRevives={includeRevives} includeAttacks={includeAttacks}
+                  periodFrom={data.period.from}
                 />
               ) : (
                 <EnergyTable
                   members={data.members} extras={data.extras}
                   includeRevives={includeRevives} includeAttacks={includeAttacks}
-                  days={data.period.days}
+                  days={data.period.days} periodFrom={data.period.from}
                 />
               )}
             </>
