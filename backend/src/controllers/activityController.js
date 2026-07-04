@@ -321,12 +321,13 @@ export async function getEnergyActivity(request, env) {
 
     // Find the earliest snapshot on or after fromDate for each member,
     // and the latest snapshot on or before toDate. Diff = energy in period.
+    // Exclude energy_total = 0 (member not in faction / API gap) to avoid skewing deltas.
     const rows = await env.DB.prepare(`
       SELECT
         torn_user_id,
         MAX(username) AS username,
-        MIN(CASE WHEN snapshot_date >= ? THEN energy_total END) AS start_energy,
-        MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) AS end_energy
+        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS start_energy,
+        MAX(CASE WHEN snapshot_date <= ? AND energy_total > 0 THEN energy_total END) AS end_energy
       FROM energy_snapshots
       WHERE snapshot_date >= ? AND snapshot_date <= ?
       GROUP BY torn_user_id
@@ -349,10 +350,13 @@ export async function getEnergyActivity(request, env) {
       .sort((a, b) => b.energy - a.energy);
 
     // Check whether we have any snapshot data at all for this period
-    const snapshotCheck = await env.DB.prepare(
-      `SELECT MIN(snapshot_date) as earliest, MAX(snapshot_date) as latest, COUNT(DISTINCT snapshot_date) as days_covered
-       FROM energy_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ?`
-    ).bind(fromDate, toDate).first();
+    const [snapshotCheck, overallCheck] = await Promise.all([
+      env.DB.prepare(
+        `SELECT MIN(snapshot_date) as earliest, MAX(snapshot_date) as latest, COUNT(DISTINCT snapshot_date) as days_covered
+         FROM energy_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ?`
+      ).bind(fromDate, toDate).first(),
+      env.DB.prepare(`SELECT MIN(snapshot_date) as overall_earliest FROM energy_snapshots`).first(),
+    ]);
 
     // ── Extras: revives delta from personal stats snapshots ──────────────────
     // Use earliest and latest snapshot within the period per member.
@@ -424,6 +428,7 @@ export async function getEnergyActivity(request, env) {
       members,
       period: { from: fromDate, to: toDate, days: Math.round(days * 10) / 10 },
       coverage: snapshotCheck,
+      overall_earliest: overallCheck?.overall_earliest || null,
       extras: { revives, attacks },
     });
   } catch (error) {

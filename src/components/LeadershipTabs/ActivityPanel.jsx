@@ -343,7 +343,7 @@ export default function EnergyActivityPanel() {
   const [includeRevives, setIncludeRevives] = useState(false)
   const [includeAttacks, setIncludeAttacks] = useState(false)
 
-  const minDate = data?.coverage?.earliest || todayStr
+  const minDate = data?.overall_earliest || data?.coverage?.earliest || todayStr
 
   const buildParams = useCallback(() => {
     if (mode === 'month') {
