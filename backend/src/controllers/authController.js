@@ -81,8 +81,8 @@ export async function login(request, env) {
       user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(user.id).first();
     } else {
       const result = await env.DB.prepare(
-        `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url, api_key, calendar_start_time)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (torn_user_id, username, faction_id, faction_position, image_url, api_key, calendar_start_time, last_login)
+         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          RETURNING *`
       )
         .bind(tornUserId, tornUsername, tornFactionId, tornFactionPosition, tornImage, encryptedApiKey, calendarStartTime)
