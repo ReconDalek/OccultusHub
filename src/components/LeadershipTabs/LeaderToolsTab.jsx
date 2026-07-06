@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Respect from '../../pages/Respect'
 import EnergyActivityPanel from './ActivityPanel'
 import PersonalStatsPanel from './PersonalStatsPanel'
+import CipherReviewTab from './CipherReviewTab'
 
 // ─── Sub-tab bar ──────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ const TOOLS = [
   { value: 'personal_stats', label: 'Personal Stats' },
   { value: 'respect',        label: 'Respect Tracker' },
   { value: 'recruitment',    label: 'Recruitment' },
+  { value: 'cipher',         label: 'Cipher Review' },
 ]
 
 export default function LeaderToolsTab() {
@@ -130,6 +132,7 @@ export default function LeaderToolsTab() {
       {activeTool === 'personal_stats'  && <PersonalStatsPanel />}
       {activeTool === 'respect'         && <RespectPanel />}
       {activeTool === 'recruitment'     && <RecruitmentPanel />}
+      {activeTool === 'cipher'          && <CipherReviewTab />}
     </div>
   )
 }

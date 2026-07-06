@@ -3,7 +3,6 @@ import { useSession } from '../hooks/useSession'
 import InternalNoticesTab from '../components/LeadershipTabs/InternalNoticesTab'
 import EventsSchedulesTab from '../components/LeadershipTabs/EventsSchedulesTab'
 import LeaderToolsTab from '../components/LeadershipTabs/LeaderToolsTab'
-import CipherReviewTab from '../components/LeadershipTabs/CipherReviewTab'
 import ChainTrackingTab from '../components/LeadershipTabs/ChainTrackingTab'
 import MemberRanksTab from '../components/LeadershipTabs/MemberRanksTab'
 import AccountingTab from '../components/LeadershipTabs/AccountingTab'
@@ -17,7 +16,6 @@ const tabs = [
   { id: 'accounting', label: 'Accounting' },
   { id: 'armory',     label: 'Armory' },
   { id: 'tools',      label: 'Tools' },
-  { id: 'cipher',     label: 'Cipher Review' },
 ]
 
 export default function Leadership() {
@@ -109,7 +107,6 @@ export default function Leadership() {
               {activeTab === 'ranks'   && <MemberRanksTab />}
               {activeTab === 'accounting' && <AccountingTab />}
               {activeTab === 'armory'  && <ArmoryTab />}
-              {activeTab === 'cipher'  && <CipherReviewTab />}
             </div>
           </>
         )}
