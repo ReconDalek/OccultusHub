@@ -17,9 +17,11 @@ export async function getAllUsers(request, env, user) {
         u.is_owner,
         u.created_at,
         u.last_login,
-        COUNT(lh.id) as login_count
+        COUNT(lh.id) as login_count,
+        json_extract(fc.data, '$.basic.name') as faction_name
       FROM users u
       LEFT JOIN login_history lh ON u.id = lh.user_id
+      LEFT JOIN faction_cache fc ON fc.faction_id = u.faction_id
     `;
 
     let statement;

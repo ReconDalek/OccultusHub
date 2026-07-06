@@ -3,6 +3,15 @@ import { useSession } from '../../hooks/useSession'
 import { API_BASE_URL } from '../../config/api'
 import { formatUTC } from '../../lib/dates'
 
+const LEADERSHIP_POSITIONS = ['Leader', 'Co-leader', 'Archon', 'High Council', 'Council']
+
+function getMemberBadge(u) {
+  if (u.is_owner) return { label: 'Owner', bg: 'rgba(218,165,32,0.3)', color: '#daa520' }
+  if (u.is_admin) return { label: 'Admin', bg: 'rgba(179,18,63,0.3)', color: '#ff2f6d' }
+  if (LEADERSHIP_POSITIONS.includes(u.faction_position)) return { label: 'Leader', bg: 'rgba(139,92,246,0.3)', color: '#a78bfa' }
+  return { label: 'Member', bg: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }
+}
+
 export default function UsersTab() {
   const { user: currentUser } = useSession()
   const [users, setUsers] = useState([])
@@ -160,46 +169,36 @@ export default function UsersTab() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
-                  Username
-                </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
-                  Torn ID
-                </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
-                  Faction
-                </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
-                  Logins
-                </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
-                  Status
-                </th>
-                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
-                  Actions
-                </th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Username</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Torn ID</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Faction</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Position</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Last Visit</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Logins</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Member</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {users.map((u) => {
+                const badge = getMemberBadge(u)
+                return (
                 <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                   <td style={{ padding: '8px', color: '#f4f4f5' }}>{u.username}</td>
                   <td style={{ padding: '8px', color: "var(--text-secondary)" }}>{u.torn_user_id}</td>
                   <td style={{ padding: '8px', color: "var(--text-secondary)" }}>
-                    {u.faction_position || 'Visitor'}
+                    {u.faction_name || (u.faction_id ? `[${u.faction_id}]` : '—')}
+                  </td>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)" }}>
+                    {u.faction_position || '—'}
+                  </td>
+                  <td style={{ padding: '8px', color: "var(--text-secondary)", fontSize: '13px' }}>
+                    {u.last_login ? formatUTC(u.last_login) : '—'}
                   </td>
                   <td style={{ padding: '8px', color: "var(--text-secondary)" }}>{u.login_count}</td>
                   <td style={{ padding: '8px' }}>
-                    <span
-                      style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        background: u.is_owner ? 'rgba(218,165,32,0.3)' : u.is_admin ? 'rgba(179,18,63,0.3)' : 'rgba(255,255,255,0.08)',
-                        color: u.is_owner ? '#daa520' : u.is_admin ? '#ff2f6d' : "var(--text-secondary)",
-                        fontSize: '12px',
-                      }}
-                    >
-                      {u.is_owner ? 'Owner' : u.is_admin ? 'Admin' : 'User'}
+                    <span style={{ padding: '4px 8px', borderRadius: '4px', background: badge.bg, color: badge.color, fontSize: '12px' }}>
+                      {badge.label}
                     </span>
                   </td>
                   <td style={{ padding: '8px' }}>
@@ -242,7 +241,7 @@ export default function UsersTab() {
                     )}
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>

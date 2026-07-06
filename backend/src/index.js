@@ -80,8 +80,8 @@ export default {
       return;
     }
 
-    // "0 1 * * 2" — Tuesday 01:00 UTC: ranked war match check + weekly chain history fetch
-    if (event.cron === '0 1 * * 2') {
+    // "0 14 * * 2" — Tuesday 14:00 UTC: ranked war match check + weekly chain history fetch (matchups announced 14:00 UTC)
+    if (event.cron === '0 14 * * 2') {
       try {
         const { checkWarMatches } = await import('./controllers/warController.js');
         const { fetchAndCacheChains } = await import('./controllers/chainController.js');
