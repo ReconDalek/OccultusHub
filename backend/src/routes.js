@@ -196,6 +196,10 @@ export async function handleRequest(request, env, ctx) {
       return memberController.triggerMemberSync(request, env, user);
     }
 
+    if (pathname === '/api/admin/users/sync-keys' && method === 'POST') {
+      return authController.triggerUserKeySyncAdmin(request, env);
+    }
+
     if (pathname === '/api/admin/wars/check' && method === 'POST') {
       return warController.triggerWarCheck(request, env, user);
     }

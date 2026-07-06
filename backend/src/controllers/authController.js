@@ -177,3 +177,115 @@ export async function session(request, env, user) {
 export async function logout(request, env, user) {
   return jsonResponse({ message: 'Logged out successfully' });
 }
+
+// ── User key sync ──────────────────────────────────────────────────────────────
+// Called by daily cron and admin manual trigger.
+// Loops all users with stored API keys, checks their current Torn profile,
+// and updates username / faction_id / faction_position / image_url if changed.
+export async function syncUserKeys(env) {
+  const { results: users } = await env.DB.prepare(
+    `SELECT id, torn_user_id, username, faction_id, faction_position, image_url, api_key
+     FROM users WHERE api_key IS NOT NULL`
+  ).all();
+
+  if (!users?.length) return { checked: 0, updated: 0, errors: 0, changes: [] };
+
+  let updated = 0;
+  let errors  = 0;
+  const changes = [];
+
+  // Process 5 at a time — API calls are IO so CPU limit isn't a concern,
+  // but we stay polite to Torn's rate limits.
+  const BATCH = 5;
+  for (let i = 0; i < users.length; i += BATCH) {
+    await Promise.all(users.slice(i, i + BATCH).map(async (u) => {
+      try {
+        const apiKey = atob(u.api_key);
+        const res = await fetch(
+          `${TORN_API_BASE}/user?selections=profile,faction&comment=OccHub`,
+          { headers: { Authorization: `ApiKey ${apiKey}` } }
+        );
+
+        if (!res.ok) {
+          errors++;
+          await logWarn(env, {
+            category: 'cron', event: 'user_key_sync_error',
+            message: `Key sync: API error for ${u.username} (${u.torn_user_id}): HTTP ${res.status}`,
+            torn_user_id: u.torn_user_id, username: u.username,
+          });
+          return;
+        }
+
+        const raw = await res.json();
+        if (raw.error) {
+          errors++;
+          await logWarn(env, {
+            category: 'cron', event: 'user_key_sync_invalid',
+            message: `Key sync: Invalid/expired key for ${u.username} (${u.torn_user_id}): ${raw.error.error ?? raw.error}`,
+            torn_user_id: u.torn_user_id, username: u.username,
+          });
+          return;
+        }
+
+        const profile     = raw.profile;
+        const factionData = raw.faction ?? null;
+
+        const newUsername         = profile.name          ?? u.username;
+        const newFactionId        = factionData?.id       ?? profile.faction_id ?? null;
+        const newFactionPosition  = factionData?.position ?? null;
+        const newImage            = profile.image         ?? null;
+
+        const fieldChanges = [];
+        if (newUsername        !== u.username)         fieldChanges.push({ field: 'username',         from: u.username,         to: newUsername });
+        if (newFactionId       !== u.faction_id)       fieldChanges.push({ field: 'faction_id',       from: u.faction_id,       to: newFactionId });
+        if (newFactionPosition !== u.faction_position) fieldChanges.push({ field: 'faction_position', from: u.faction_position, to: newFactionPosition });
+        if (newImage           !== u.image_url)        fieldChanges.push({ field: 'image_url',        from: '(old)',            to: '(new)' });
+
+        if (fieldChanges.length > 0) {
+          await env.DB.prepare(
+            `UPDATE users SET username = ?, faction_id = ?, faction_position = ?, image_url = ? WHERE id = ?`
+          ).bind(newUsername, newFactionId, newFactionPosition, newImage, u.id).run();
+
+          updated++;
+          for (const c of fieldChanges) {
+            const msg = `Key sync: ${u.username} — ${c.field} updated from ${c.from} to ${c.to}`;
+            changes.push(msg);
+            await logInfo(env, {
+              category: 'cron', event: 'user_key_sync_updated',
+              message: msg,
+              torn_user_id: u.torn_user_id, username: u.username,
+              meta: { field: c.field, from: c.from, to: c.to },
+            });
+          }
+        }
+      } catch (err) {
+        errors++;
+        await logError(env, {
+          category: 'cron', event: 'user_key_sync_failed',
+          message: `Key sync: Exception for ${u.username}: ${err.message}`,
+          torn_user_id: u.torn_user_id, username: u.username,
+        });
+      }
+    }));
+  }
+
+  await logInfo(env, {
+    category: 'cron', event: 'user_key_sync_complete',
+    message: `User key sync complete: ${users.length} checked, ${updated} updated, ${errors} errors`,
+    meta: { checked: users.length, updated, errors },
+  });
+
+  return { checked: users.length, updated, errors, changes };
+}
+
+export async function triggerUserKeySyncAdmin(request, env) {
+  try {
+    const result = await syncUserKeys(env);
+    return jsonResponse({
+      message: `User key sync: ${result.checked} checked, ${result.updated} updated, ${result.errors} errors`,
+      ...result,
+    });
+  } catch (err) {
+    return errorResponse(`User key sync failed: ${err.message}`, 500);
+  }
+}

@@ -14,6 +14,7 @@ export default function CacheTab() {
   const [armoryStatus,        setArmoryStatus]        = useState(null)
   const [itemPricesStatus,    setItemPricesStatus]    = useState(null)
   const [companyProfitStatus, setCompanyProfitStatus] = useState(null)
+  const [keySyncResult,        setKeySyncResult]       = useState(null)
   const [loading,             setLoading]             = useState(true)
   const [refreshing,          setRefreshing]          = useState(null)
   const [lastResult,          setLastResult]          = useState(null)
@@ -225,6 +226,31 @@ export default function CacheTab() {
         setLastResult(data)
         fetch(`${API_BASE_URL}/api/admin/item-prices/status`, { headers: { Authorization: token } })
           .then((r) => r.json()).then(setItemPricesStatus).catch(console.error)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
+  const syncUserKeys = async () => {
+    try {
+      setRefreshing('user-keys')
+      setError(null)
+      setLastResult(null)
+      setKeySyncResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/sync-keys`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult({ message: data.message })
+        setKeySyncResult(data)
       } else {
         setError(data.error || `Error ${res.status}`)
       }
@@ -470,6 +496,60 @@ export default function CacheTab() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* User key sync */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>User Keys</h3>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={syncUserKeys}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+              flexShrink: 0,
+            }}
+          >
+            {refreshing === 'user-keys' ? 'Syncing…' : 'Sync User Keys'}
+          </button>
+          <div>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
+              Checks all stored API keys against Torn and updates username, faction, position, and avatar if changed.
+            </p>
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
+              Auto-runs daily at 01:00 UTC. Run manually if a member recently switched factions and hasn't logged in yet.
+            </p>
+          </div>
+        </div>
+        {keySyncResult && (
+          <div style={{
+            marginTop: '12px', padding: '12px 14px', borderRadius: '8px',
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+          }}>
+            <div style={{ display: 'flex', gap: '24px', marginBottom: keySyncResult.changes?.length ? '10px' : 0 }}>
+              {[
+                { label: 'Checked', value: keySyncResult.checked, color: '#f4f4f5' },
+                { label: 'Updated', value: keySyncResult.updated, color: keySyncResult.updated > 0 ? '#fbbf24' : '#4ade80' },
+                { label: 'Errors',  value: keySyncResult.errors,  color: keySyncResult.errors  > 0 ? '#f87171' : '#4ade80' },
+              ].map(({ label, value, color }) => (
+                <div key={label}>
+                  <p style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px 0' }}>{label}</p>
+                  <p style={{ color, fontSize: '20px', fontWeight: '700', margin: 0 }}>{value}</p>
+                </div>
+              ))}
+            </div>
+            {keySyncResult.changes?.length > 0 && (
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                {keySyncResult.changes.map((c, i) => (
+                  <p key={i} style={{ color: '#fbbf24', fontSize: '12px', margin: '2px 0', fontFamily: 'monospace' }}>{c}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Personal stats snapshots */}
