@@ -227,10 +227,10 @@ class KeyPool {
 const FACTION_IDS = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
 
-// Fetch gym energy contributors for a faction — all contributors, including ex-members.
+// Fetch gym energy contributors for a faction — cat=all includes ex-members who contributed.
 async function fetchGymEnergy(apiKey) {
   const data = await fetchWithRetry(
-    `${TORN_API_BASE}/faction/contributors?stat=gymenergy&comment=OccHub`,
+    `${TORN_API_BASE}/faction/contributors?stat=gymenergy&cat=all&comment=OccHub`,
     { Authorization: `ApiKey ${apiKey}` }
   );
   return data.contributors || [];
