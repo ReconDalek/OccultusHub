@@ -15,6 +15,7 @@ export default function CacheTab() {
   const [itemPricesStatus,    setItemPricesStatus]    = useState(null)
   const [companyProfitStatus, setCompanyProfitStatus] = useState(null)
   const [keySyncResult,        setKeySyncResult]       = useState(null)
+  const [energySnapshotResult, setEnergySnapshotResult] = useState(null)
   const [loading,             setLoading]             = useState(true)
   const [refreshing,          setRefreshing]          = useState(null)
   const [lastResult,          setLastResult]          = useState(null)
@@ -287,6 +288,31 @@ export default function CacheTab() {
     }
   }
 
+  const runEnergySnapshot = async () => {
+    setError(null)
+    setLastResult(null)
+    setEnergySnapshotResult(null)
+    setRefreshing('energy-snapshot')
+    try {
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/energy/snapshot`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult({ message: data.message })
+        setEnergySnapshotResult(data)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
   if (loading) return <p style={{ color: "var(--text-secondary)" }}>Loading cache status...</p>
 
   return (
@@ -552,10 +578,41 @@ export default function CacheTab() {
         )}
       </div>
 
+      {/* Energy snapshots */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Gym Energy Snapshots</h3>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={runEnergySnapshot}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{ background: 'rgba(179,18,63,0.2)', color: '#ff2f6d', opacity: refreshing ? 0.5 : 1, flexShrink: 0 }}
+          >
+            {refreshing === 'energy-snapshot' ? 'Running…' : 'Run Energy Snapshot'}
+          </button>
+          <div>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
+              Fetches current gym energy totals for all 3 factions and upserts today's snapshot row.
+            </p>
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
+              Auto-runs daily at 01:00 UTC. Safe to run manually — same-day rows are overwritten, not duplicated.
+            </p>
+          </div>
+        </div>
+        {energySnapshotResult && (
+          <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <p style={{ color: '#4ade80', fontSize: '13px', margin: 0 }}>{energySnapshotResult.message}</p>
+            {energySnapshotResult.errors > 0 && (
+              <p style={{ color: '#f87171', fontSize: '12px', margin: '4px 0 0 0' }}>{energySnapshotResult.errors} faction(s) failed</p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Personal stats snapshots */}
-      {/*<div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Personal Stats</h3>
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Personal Stats Snapshots</h3>
+        <div className="grid gap-4 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           {[
             { label: 'Members Tracked', value: personalStatsStatus?.members ?? '—', color: '#f4f4f5' },
             { label: 'Days of History',  value: personalStatsStatus?.days    ?? '—', color: '#22d3ee' },
@@ -579,15 +636,12 @@ export default function CacheTab() {
             </div>
           )}
         </div>
-/*}
-        {/* Live progress bar while snapshot is running */}
-        {/*
         {snapshotRunning && personalStatsStatus && (
-          <div style={{ marginTop: '14px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)' }}>
+          <div style={{ marginBottom: '12px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
               <span style={{ color: '#22d3ee', fontSize: '13px', fontWeight: 600 }}>Snapshot in progress…</span>
               <span style={{ color: '#22d3ee', fontSize: '13px' }}>
-                {personalStatsStatus.today} / {personalStatsStatus.members || '?'} members today
+                {personalStatsStatus.today} / {personalStatsStatus.members || '?'} members
               </span>
             </div>
             <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
@@ -603,33 +657,27 @@ export default function CacheTab() {
             </div>
           </div>
         )}
-
-        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <button
             onClick={runPersonalStatsSnapshot}
             disabled={snapshotRunning}
             className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
-            style={{
-              background: 'rgba(179,18,63,0.2)',
-              color: '#ff2f6d',
-              opacity: snapshotRunning ? 0.5 : 1,
-            }}
+            style={{ background: 'rgba(179,18,63,0.2)', color: '#ff2f6d', opacity: snapshotRunning ? 0.5 : 1 }}
           >
-            {snapshotRunning ? 'Running…' : 'Run Snapshot Now'}
+            {snapshotRunning ? 'Running…' : 'Run Stats Snapshot'}
           </button>
           <div>
             <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
-              Auto-runs daily at 01:00 UTC/TCT — may take 3–5 minutes.
+              Auto-runs daily at 01:00 UTC — may take 3–5 minutes for all members.
             </p>
             {personalStatsStatus?.today > 0 && !snapshotRunning && (
               <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: '2px 0 0 0' }}>
-                {personalStatsStatus.today} members snapshotted for {personalStatsStatus.today_date}
+                {personalStatsStatus.today} members snapshotted today ({personalStatsStatus.today_date})
               </p>
             )}
           </div>
         </div>
       </div>
-      /*}
 
       {/* Armory cache status */}
       <div>

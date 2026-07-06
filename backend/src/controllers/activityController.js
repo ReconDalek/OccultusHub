@@ -1029,6 +1029,23 @@ export async function deletePersonalStatsSnapshot(request, env, user) {
   }
 }
 
+// ── Admin: manually trigger energy snapshot ───────────────────────────────────
+export async function triggerEnergySnapshotAdmin(request, env) {
+  try {
+    const summary = await takeEnergySnapshot(env);
+    const errors = summary.filter(r => r.error);
+    const totalSaved = summary.filter(r => !r.error).reduce((s, r) => s + r.count, 0);
+    return jsonResponse({
+      message: `Energy snapshot: ${totalSaved} members stored across ${FACTION_IDS.length - errors.length} factions`,
+      summary,
+      errors: errors.length,
+    });
+  } catch (error) {
+    console.error('triggerEnergySnapshotAdmin error:', error);
+    return errorResponse('Energy snapshot failed: ' + error.message, 500);
+  }
+}
+
 // ── Admin: manually trigger personal stats snapshot ───────────────────────────
 export async function triggerPersonalStatsSnapshotAdmin(request, env) {
   try {

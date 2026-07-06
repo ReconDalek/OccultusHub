@@ -214,6 +214,11 @@ export async function handleRequest(request, env, ctx) {
       return logsController.deleteLog(request, env);
     }
 
+    // Energy snapshot admin
+    if (pathname === '/api/admin/energy/snapshot' && method === 'POST') {
+      return activityController.triggerEnergySnapshotAdmin(request, env);
+    }
+
     // Personal stats snapshot admin
     if (pathname === '/api/admin/personal-stats/status' && method === 'GET') {
       return activityController.getPersonalStatsSnapshotStatus(request, env);
