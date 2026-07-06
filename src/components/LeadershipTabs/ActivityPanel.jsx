@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
+const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
+
 function ScrollToTop() {
   const [visible, setVisible] = useState(false)
   useEffect(() => {
@@ -364,8 +366,14 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, snapshot
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '1px' }}>
                   {m.username}
+                  {FACTION_LABEL[m.faction_id] && (
+                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>{FACTION_LABEL[m.faction_id]}</span>
+                  )}
                   {m.level != null && (
-                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>Lv {m.level}</span>
+                    <span style={{ marginLeft: '5px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>· Lv {m.level}</span>
+                  )}
+                  {m.days_in_faction != null && (
+                    <span style={{ marginLeft: '5px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>· {m.days_in_faction}d</span>
                   )}
                   {m.partialStart && (
                     <span
@@ -452,8 +460,14 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '1px' }}>
                   {m.username}
+                  {FACTION_LABEL[m.faction_id] && (
+                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>{FACTION_LABEL[m.faction_id]}</span>
+                  )}
                   {m.level != null && (
-                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>Lv {m.level}</span>
+                    <span style={{ marginLeft: '5px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>· Lv {m.level}</span>
+                  )}
+                  {m.days_in_faction != null && (
+                    <span style={{ marginLeft: '5px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>· {m.days_in_faction}d</span>
                   )}
                 </span>
                 <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>

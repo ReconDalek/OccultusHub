@@ -332,7 +332,9 @@ export async function getEnergyActivity(request, env) {
         agg.start_date,
         agg.end_date,
         agg.total_energy,
-        fm.level
+        fm.level,
+        fm.days_in_faction,
+        fm.faction_id AS current_faction_id
       FROM (
         SELECT
           torn_user_id,
@@ -367,10 +369,12 @@ export async function getEnergyActivity(request, env) {
 
     const members = (rows.results || [])
       .map(r => ({
-        id:         r.torn_user_id,
-        username:   r.username,
-        level:      r.level ?? null,
-        start_date: r.start_date,
+        id:              r.torn_user_id,
+        username:        r.username,
+        level:           r.level ?? null,
+        days_in_faction: r.days_in_faction ?? null,
+        faction_id:      r.current_faction_id ?? null,
+        start_date:      r.start_date,
         end_date:   r.end_date,
         energy:     r.total_energy,
         avg_day:    Math.round(r.total_energy / days),
