@@ -327,27 +327,37 @@ export async function getEnergyActivity(request, env) {
     // outer query sums those deltas per member.
     const rows = await env.DB.prepare(`
       SELECT
-        torn_user_id,
-        MAX(username)  AS username,
-        MIN(start_date) AS start_date,
-        MAX(end_date)   AS end_date,
-        SUM(faction_delta) AS total_energy
+        agg.torn_user_id,
+        agg.username,
+        agg.start_date,
+        agg.end_date,
+        agg.total_energy,
+        fm.level
       FROM (
         SELECT
           torn_user_id,
-          faction_id,
-          MAX(username) AS username,
-          MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
-          MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
-          MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) -
-            MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS faction_delta
-        FROM energy_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ?
-        GROUP BY torn_user_id, faction_id
-        HAVING start_date IS NOT NULL AND end_date IS NOT NULL AND faction_delta > 0
-      )
-      GROUP BY torn_user_id
-      HAVING total_energy > 0
+          MAX(username)      AS username,
+          MIN(start_date)    AS start_date,
+          MAX(end_date)      AS end_date,
+          SUM(faction_delta) AS total_energy
+        FROM (
+          SELECT
+            torn_user_id,
+            faction_id,
+            MAX(username) AS username,
+            MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
+            MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
+            MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) -
+              MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS faction_delta
+          FROM energy_snapshots
+          WHERE snapshot_date >= ? AND snapshot_date <= ?
+          GROUP BY torn_user_id, faction_id
+          HAVING start_date IS NOT NULL AND end_date IS NOT NULL AND faction_delta > 0
+        )
+        GROUP BY torn_user_id
+        HAVING total_energy > 0
+      ) agg
+      LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
     `).bind(fromDate, toDate, toDate, fromDate, fromDate, toDate).all();
 
     // Calculate days for avg/day (calendar days in range)
@@ -359,6 +369,7 @@ export async function getEnergyActivity(request, env) {
       .map(r => ({
         id:         r.torn_user_id,
         username:   r.username,
+        level:      r.level ?? null,
         start_date: r.start_date,
         end_date:   r.end_date,
         energy:     r.total_energy,

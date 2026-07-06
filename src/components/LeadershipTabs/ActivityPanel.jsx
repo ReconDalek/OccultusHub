@@ -362,8 +362,11 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, snapshot
             >
               <span style={{ color: "var(--text-faint)", fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
-                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '3px' }}>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '1px' }}>
                   {m.username}
+                  {m.level != null && (
+                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>Lv {m.level}</span>
+                  )}
                   {m.partialStart && (
                     <span
                       title={`First snapshot: ${m.start_date} (joined mid-period)`}
@@ -447,8 +450,11 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
               <span style={{ color: "var(--text-faint)", fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
 
               <div style={{ minWidth: 0 }}>
-                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '3px' }}>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', display: 'block', marginBottom: '1px' }}>
                   {m.username}
+                  {m.level != null && (
+                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px', fontWeight: '400' }}>Lv {m.level}</span>
+                  )}
                 </span>
                 <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
                   <div style={{
