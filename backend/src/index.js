@@ -180,8 +180,8 @@ export default {
       return;
     }
 
-    // "0 */12 * * *" — faction cache refresh + member sync every 12 hours
-    if (event.cron === '0 */12 * * *') try {
+    // "15 */12 * * *" — faction cache refresh + member sync (00:15 and 12:15 UTC)
+    if (event.cron === '15 */12 * * *') try {
       const { fetchAndCacheFactions, getRandomUserApiKey } = await import('./services/tornApiService.js');
       const { syncMembersFromCache } = await import('./controllers/memberController.js');
 
