@@ -821,6 +821,10 @@ export async function getPersonalStatsGaps(request, env) {
           SELECT 1 FROM personal_stats_snapshots p
           WHERE p.torn_user_id = fm.torn_user_id AND p.snapshot_date = dates.snapshot_date
         )
+        AND EXISTS (
+          SELECT 1 FROM personal_stats_snapshots p2
+          WHERE p2.torn_user_id = fm.torn_user_id AND p2.snapshot_date < dates.snapshot_date
+        )
       ORDER BY dates.snapshot_date DESC, fm.username
     `).all();
 
