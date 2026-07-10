@@ -124,8 +124,17 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
   const details   = cr.details  || {}
   const bonuses   = cr.bonuses  || []
   const attackers = (cr.attackers || [])
-    .filter((a) => a.attacks?.total > 0)
-    .sort((a, b) => b.attacks.total - a.attacks.total)
+    .slice()
+    .sort((a, b) => (b.attacks?.total || 0) - (a.attacks?.total || 0))
+
+  // Torn returns 0-attack members separately as plain IDs
+  const nonAttackers = (cr.non_attackers || [])
+    .slice()
+    .sort((a, b) => {
+      const nameA = usernames[a] || String(a)
+      const nameB = usernames[b] || String(b)
+      return nameA.localeCompare(nameB)
+    })
 
   const alreadySaved = savedInDB || saveStatus === 'saved'
 
@@ -199,7 +208,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
 
       {/* ── Member Contributions ── */}
       <Section title="Member Contributions">
-        {attackers.length === 0 ? (
+        {attackers.length === 0 && nonAttackers.length === 0 ? (
           <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No attacker data available.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -223,6 +232,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
             {attackers.map((a, idx) => {
               const name    = memberLabel(a.id, usernames)
               const isKnown = !!usernames[a.id]
+              const zeroHit = (a.attacks?.total || 0) === 0
               return (
                 <div
                   key={a.id}
@@ -235,6 +245,7 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
                     borderRadius: '8px',
                     background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
                     border: '1px solid transparent',
+                    opacity: zeroHit ? 0.5 : 1,
                   }}
                 >
                   {/* Member name */}
@@ -276,6 +287,37 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
                   ) : (
                     <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
                   )}
+                </div>
+              )
+            })}
+
+            {/* Members with 0 attacks (Torn's non_attackers list) */}
+            {nonAttackers.map((id) => {
+              const name    = memberLabel(id, usernames)
+              const isKnown = !!usernames[id]
+              return (
+                <div
+                  key={id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 70px 80px 60px',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    opacity: 0.5,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    {isKnown ? (
+                      <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
+                    ) : (
+                      <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{id}]</span>
+                    )}
+                  </div>
+                  <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '700' }}>0</span>
+                  <span style={{ color: '#9f67ff', fontSize: '13px' }}>0.00</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
                 </div>
               )
             })}

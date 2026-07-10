@@ -888,7 +888,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
       const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/verify/apply`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attackerStats: result.attackerStats, defendStats: result.defendStats, totals: result.totals }),
+        body: JSON.stringify({ attackerStats: result.attackerStats, defendStats: result.defendStats, totals: result.totals, attacks: result.attacks }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Apply failed')
@@ -1150,9 +1150,13 @@ function ScoreBoard({ war, ourFactionName }) {
   const total     = our_score + opponent_score
   const weWinning = our_score >= opponent_score
 
-  // Progress bars: each side fills towards centre based on score / target
-  const ourPct  = target > 0 ? Math.min((our_score / target) * 100, 100) : 0
-  const oppPct  = target > 0 ? Math.min((opponent_score / target) * 100, 100) : 0
+  // The war ends when the LEAD (score differential) reaches target — not
+  // when either side's raw score does. Progress bars fill based on how
+  // close the current lead is to that target, on whichever side is ahead.
+  const leadDiff  = Math.abs(our_score - opponent_score)
+  const leadPct   = target > 0 ? Math.min((leadDiff / target) * 100, 100) : 0
+  const ourPct    = weWinning ? leadPct : 0
+  const oppPct    = weWinning ? 0 : leadPct
 
   const countdown = useCountdown(isMatched ? scheduled_start : null)
 
@@ -1248,8 +1252,8 @@ function ScoreBoard({ war, ourFactionName }) {
       {total > 0 && (
         <p style={{ textAlign: 'center', color: "var(--text-faint)", fontSize: '10px', margin: '6px 0 0 0' }}>
           {weWinning
-            ? `+${(our_score - opponent_score).toLocaleString('en-GB')} lead — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more to win`
-            : `${(opponent_score - our_score).toLocaleString('en-GB')} behind — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more to win`}
+            ? `+${leadDiff.toLocaleString('en-GB')} lead — need ${Math.max(0, target - leadDiff).toLocaleString('en-GB')} more lead to win`
+            : `${leadDiff.toLocaleString('en-GB')} behind — opponent needs ${Math.max(0, target - leadDiff).toLocaleString('en-GB')} more lead to win`}
         </p>
       )}
     </div>

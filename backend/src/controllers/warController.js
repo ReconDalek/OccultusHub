@@ -120,7 +120,7 @@ async function buildMemberStats(env, warId) {
        COUNT(CASE WHEN attack_type='friendly_hit'      THEN 1 END)                                                       AS friendly_hits,
        ROUND(SUM(CASE WHEN attack_type='war_attack' AND chain_count IN (10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000) THEN respect_gain ELSE 0 END), 2) AS bonus_respect,
        COUNT(CASE WHEN attack_type IN ('war_attack','outside_attack','assist') THEN 1 END) * 25                          AS energy_used
-     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0
+     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0 AND attack_type != 'war_defend'
      GROUP BY attacker_id, attacker_name ORDER BY war_hits DESC`
   ).bind(warId).all();
 
@@ -293,8 +293,12 @@ export async function trackActiveWars(env, trigger = 'cron') {
 
   for (const war of wars) {
     const { id: warId, faction_id: factionId, opponent_faction_id: opponentId,
-            status, scheduled_start, started_at: warStartedAt,
+            status, scheduled_start, started_at: warStartedAtInitial,
             last_attack_fetched: lastAttackId, created_at } = war;
+    // Mutable — a matched→active transition detected later in this same poll
+    // must update this before it's used by fetchAndStoreAttacks, or the fetch
+    // runs with no lower time bound and vacuums in pre-war activity.
+    let warStartedAt = warStartedAtInitial;
     const createdAtUnix = created_at
       ? Math.floor(new Date(created_at.replace(' ', 'T') + 'Z').getTime() / 1000)
       : null;
@@ -391,6 +395,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
             await env.DB.prepare(
               `UPDATE ranked_wars SET status='active', started_at=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status='matched'`
             ).bind(item.timestamp, warId).run();
+            warStartedAt = item.timestamp; // keep local value in sync — used by fetchAndStoreAttacks below this same poll
             console.log(`trackActiveWars: war ${warId} now ACTIVE`);
             await logInfo(env, { category: 'war_cron', event: 'war_started', message: `War ${warId} (faction ${factionId} vs ${opponentId}) now ACTIVE`, meta: { warId, factionId, opponentId } }).catch(() => {});
             break;
@@ -403,6 +408,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
         await env.DB.prepare(
           `UPDATE ranked_wars SET status='active', started_at=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status='matched'`
         ).bind(scheduled_start, warId).run();
+        warStartedAt = scheduled_start; // keep local value in sync — used by fetchAndStoreAttacks below this same poll
       }
 
       // ── 3. Armory usage ─────────────────────────────────────────────────────
@@ -480,7 +486,8 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   let nextUrl     = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
   let maxId       = lastAttackId;
   let totalNew    = 0;
-  const MAX_PAGES = 20;
+  let reachedBoundary = false; // true once we've connected back to lastAttackId or the war start
+  const MAX_PAGES = 30; // 3,000 raw attacks/poll headroom; watermark logic below is the real gap guard
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
@@ -489,7 +496,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
     } catch (e) { console.error(`fetchAndStoreAttacks: ${e.message}`); break; }
 
     const attacks = data.attacks || [];
-    if (!attacks.length) break;
+    if (!attacks.length) { reachedBoundary = true; break; } // no data at all == nothing further back
 
     let allOlderThanWar = true;  // assume true; set false if any attack is within war window
     let hitWatermark    = false;
@@ -532,24 +539,35 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
     }
 
     // Stop if we've hit the watermark or the page only contains pre-war attacks or no more pages
-    if (hitWatermark || allOlderThanWar) break;
+    if (hitWatermark || allOlderThanWar) { reachedBoundary = true; break; }
 
     // Follow the prev link for the next (older) page
     const prevUrl = data._metadata?.links?.prev;
-    if (!prevUrl) break;
+    if (!prevUrl) { reachedBoundary = true; break; } // no more pages == naturally reached the end
 
     // Extract `to` timestamp from the prev URL for the next fetch
     nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub` +
               `&to=${new URL(prevUrl).searchParams.get('to')}`;
   }
 
-  // Update watermark to highest ID seen
-  if (maxId > lastAttackId) {
+  // Only advance the watermark once we've confirmed a gapless connection back to
+  // lastAttackId (or the war start / end of history). If MAX_PAGES was exhausted
+  // mid-run, advancing anyway would permanently skip the unfetched middle section —
+  // instead leave the watermark where it was so the next poll retries and expands
+  // further back until it reconnects (INSERT OR IGNORE makes re-fetching safe).
+  if (reachedBoundary && maxId > lastAttackId) {
     await env.DB.prepare(
       `UPDATE ranked_wars SET last_attack_fetched=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
     ).bind(maxId, warId).run();
+  } else if (!reachedBoundary) {
+    console.warn(`fetchAndStoreAttacks: war ${warId} — hit MAX_PAGES (${MAX_PAGES}) before reconnecting to watermark; will retry next poll`);
+    await logWarn(env, {
+      category: 'war_cron', event: 'war_attack_fetch_truncated',
+      message: `War ${warId}: attack fetch truncated at ${MAX_PAGES} pages — watermark not advanced, will retry`,
+      meta: { warId, factionId, lastAttackId, maxIdSeen: maxId },
+    }).catch(() => {});
   }
-  if (totalNew > 0) console.log(`fetchAndStoreAttacks: war ${warId} — ${totalNew} new attacks (maxId=${maxId})`);
+  if (totalNew > 0) console.log(`fetchAndStoreAttacks: war ${warId} — ${totalNew} new attacks (maxId=${maxId}, reachedBoundary=${reachedBoundary})`);
   return totalNew;
 }
 
@@ -584,18 +602,23 @@ export async function getWarDetails(request, env) {
     const war = await env.DB.prepare(`SELECT * FROM ranked_wars WHERE id=?`).bind(warId).first();
     if (!war) return errorResponse('War not found', 404);
 
-    // Check whether raw attack rows exist
-    const attackCount = await env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM war_attacks WHERE ranked_war_id=?`
-    ).bind(warId).first();
+    // Once leadership has applied Verify Data, summary_json is authoritative —
+    // skip live recomputation from war_attacks even if raw rows still exist
+    // (they always do pre-payout, which is exactly when Verify gets used).
+    if (!war.verified_override) {
+      // Check whether raw attack rows exist
+      const attackCount = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM war_attacks WHERE ranked_war_id=?`
+      ).bind(warId).first();
 
-    if ((attackCount?.n ?? 0) > 0) {
-      // Live data from war_attacks
-      const { attackerStats, defendStats, totals } = await buildMemberStats(env, warId);
-      return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false });
+      if ((attackCount?.n ?? 0) > 0) {
+        // Live data from war_attacks
+        const { attackerStats, defendStats, totals } = await buildMemberStats(env, warId);
+        return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false });
+      }
     }
 
-    // Archived data from summary_json
+    // Archived / verified data from summary_json
     if (war.summary_json) {
       const archived = JSON.parse(war.summary_json);
       return jsonResponse({ war, summary: archived.totals || {}, attackerStats: archived.attackerStats || [], defendStats: archived.defendStats || [], fromSummary: true });
@@ -1044,8 +1067,27 @@ export async function verifyWarData(request, env) {
 
     const stats = aggregateVerifiedAttacks(attacks);
 
+    // Trimmed raw rows — sent back so "Apply" can replace war_attacks itself,
+    // keeping the Attack Log debug tab in sync with the verified data too.
+    const rawAttacks = attacks.map(a => ({
+      torn_attack_id: a.id,
+      attacker_id:    a.attacker?.id   ?? 0,
+      attacker_name:  a.attacker?.name ?? null,
+      defender_id:    a.defender?.id   ?? 0,
+      defender_name:  a.defender?.name ?? null,
+      attack_type:    a.attack_type,
+      result:         a.result ?? null,
+      respect_gain:   a.respect_gain ?? 0,
+      respect_loss:   a.respect_loss ?? 0,
+      is_interrupted: a.is_interrupted ? 1 : 0,
+      fair_fight:     a.modifiers?.fair_fight ?? 1,
+      started_at:     a.started,
+      chain_count:    a.chain ?? 0,
+    }));
+
     return jsonResponse({
       ...stats,
+      attacks: rawAttacks,
       attack_count: attacks.length,
       truncated,
       key_user: apiKeyObj.username,
@@ -1058,7 +1100,10 @@ export async function verifyWarData(request, env) {
 }
 
 // ── POST /api/leadership/war/:id/verify/apply ─────────────────────────────────
-// Overwrites summary_json with the verified stats.
+// Overwrites summary_json with the verified stats, and — unless the war is
+// already paid/locked — replaces the raw war_attacks rows too, so the Attack
+// Log debug tab shows the same verified data instead of the original (possibly
+// bad) live-tracked log.
 
 export async function applyVerifiedWarData(request, env) {
   try {
@@ -1066,12 +1111,43 @@ export async function applyVerifiedWarData(request, env) {
     const warId = match ? parseInt(match[1], 10) : null;
     if (!warId) return errorResponse('Invalid war ID', 400);
 
-    const { attackerStats, defendStats, totals } = await request.json();
+    const { attackerStats, defendStats, totals, attacks } = await request.json();
+
+    const war = await env.DB.prepare(`SELECT faction_id, hits_saved FROM ranked_wars WHERE id=?`).bind(warId).first();
+    if (!war) return errorResponse('War not found', 404);
+
+    // Once payout is finalised and raw rows purged, don't resurrect them —
+    // the summary_json override is the only thing that should change.
+    if (!war.hits_saved && Array.isArray(attacks) && attacks.length > 0) {
+      await env.DB.prepare(`DELETE FROM war_attacks WHERE ranked_war_id=?`).bind(warId).run();
+
+      const insertStmt = env.DB.prepare(
+        `INSERT OR IGNORE INTO war_attacks
+           (ranked_war_id, faction_id, torn_attack_id, attacker_id, attacker_name,
+            defender_id, defender_name, attack_type, result, respect_gain, respect_loss,
+            is_interrupted, fair_fight, started_at, chain_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      const bound = attacks.map(a => insertStmt.bind(
+        warId, war.faction_id, a.torn_attack_id, a.attacker_id, a.attacker_name,
+        a.defender_id, a.defender_name, a.attack_type, a.result,
+        a.respect_gain ?? 0, a.respect_loss ?? 0, a.is_interrupted ?? 0,
+        a.fair_fight ?? 1, a.started_at, a.chain_count ?? 0
+      ));
+
+      // D1 batch sends many statements in one round trip instead of awaiting
+      // each insert individually — chunked to stay well under batch size limits.
+      const CHUNK = 200;
+      for (let i = 0; i < bound.length; i += CHUNK) {
+        await env.DB.batch(bound.slice(i, i + CHUNK));
+      }
+    }
+
     await env.DB.prepare(
-      `UPDATE ranked_wars SET summary_json=? WHERE id=?`
+      `UPDATE ranked_wars SET summary_json=?, verified_override=1 WHERE id=?`
     ).bind(JSON.stringify({ attackerStats, defendStats, totals }), warId).run();
 
-    return jsonResponse({ ok: true });
+    return jsonResponse({ ok: true, attacksReplaced: !war.hits_saved && Array.isArray(attacks) ? attacks.length : 0 });
   } catch (err) {
     console.error('applyVerifiedWarData error:', err);
     return errorResponse('Failed to apply verified data: ' + err.message, 500);

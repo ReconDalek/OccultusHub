@@ -25,6 +25,7 @@ import * as armoryController from './controllers/armoryController.js';
 import * as companyProfitController from './controllers/companyProfitController.js';
 import * as webhookController from './controllers/webhookController.js';
 import * as bindingController from './controllers/bindingController.js';
+import * as warningsController from './controllers/warningsController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -358,6 +359,23 @@ export async function handleRequest(request, env, ctx) {
     // Faction member list with chain hit totals (for Ranks tab)
     if (pathname === '/api/leadership/members' && method === 'GET') {
       return memberController.getFactionMembers(request, env);
+    }
+
+    // Member warnings
+    if (pathname === '/api/leadership/warnings/members' && method === 'GET') {
+      return warningsController.getWarningMembers(request, env);
+    }
+    if (pathname === '/api/leadership/warnings' && method === 'GET') {
+      return warningsController.getWarnings(request, env);
+    }
+    if (pathname === '/api/leadership/warnings' && method === 'POST') {
+      return warningsController.addWarning(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/warnings\/\d+$/) && method === 'DELETE') {
+      return warningsController.deleteWarning(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/warnings\/\d+\/comment$/) && method === 'PUT') {
+      return warningsController.updateWarningComment(request, env);
     }
 
     // War tracking endpoints

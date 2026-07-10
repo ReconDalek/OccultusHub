@@ -158,14 +158,16 @@ export async function getChainReport(request, env) {
       return errorResponse(`Torn API error: ${err.message}`, 502);
     }
 
-    // Collect all IDs that need a name: attackers + bonus hit attackers
-    const attackers  = data.chainreport?.attackers || [];
-    const bonuses    = data.chainreport?.bonuses   || [];
+    // Collect all IDs that need a name: attackers + bonus hit attackers + non-attackers
+    const attackers    = data.chainreport?.attackers     || [];
+    const bonuses      = data.chainreport?.bonuses       || [];
+    const nonAttackers = data.chainreport?.non_attackers || [];
 
     const allIds = [
       ...new Set([
         ...attackers.map((a) => a.id),
         ...bonuses.map((b) => b.attacker_id),
+        ...nonAttackers,
       ].filter(Boolean)),
     ];
 
