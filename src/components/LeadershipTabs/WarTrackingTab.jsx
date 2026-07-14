@@ -99,7 +99,35 @@ function Section({ title, children }) {
 
 // ─── Member stats table ───────────────────────────────────────────────────────
 
+const MEMBER_STATS_COLUMNS = [
+  { key: 'attacker_name',   label: 'Member',     align: 'left' },
+  { key: 'war_hits',        label: 'War Hits'    },
+  { key: 'war_losses',      label: 'Losses'      },
+  { key: 'war_interrupted', label: 'Interrupted' },
+  { key: 'gained',          label: 'Gained'      },
+  { key: 'bonus',           label: 'Bonus'       },
+  { key: 'respectLost',     label: 'Lost'        },
+  { key: 'net',             label: 'Net'         },
+  { key: 'avg_fair_fight',  label: 'Fair Fight'  },
+  { key: 'defends_won',     label: 'Def Won'     },
+  { key: 'defends_lost',    label: 'Def Lost'    },
+  { key: 'outside_attacks', label: 'Outside'     },
+  { key: 'assists',         label: 'Assists'     },
+  { key: 'friendly_hits',   label: 'Friendly'    },
+  { key: 'energy_used',     label: 'Energy Out'  },
+  { key: 'energy_in',       label: 'Energy In'   },
+  { key: 'overdoses',       label: 'OD'          },
+]
+
+function SortArrow({ dir }) {
+  if (!dir) return null
+  return <span style={{ fontSize: '9px', marginLeft: '3px' }}>{dir === 'asc' ? '▲' : '▼'}</span>
+}
+
 function MemberStatsTable({ attackerStats, defendStats }) {
+  const [sortKey, setSortKey] = useState(null)
+  const [sortDir, setSortDir] = useState('desc')
+
   // Merge defend stats into a map keyed by member ID
   const defendMap = {}
   for (const d of defendStats || []) {
@@ -107,22 +135,52 @@ function MemberStatsTable({ attackerStats, defendStats }) {
   }
 
   // Build combined rows: all attackers + any defenders not already in attacker list
-  const rows = [...(attackerStats || [])]
-  const attackerIds = new Set(rows.map((r) => r.attacker_id))
+  const rawRows = [...(attackerStats || [])]
+  const attackerIds = new Set(rawRows.map((r) => r.attacker_id))
   for (const d of defendStats || []) {
     if (!attackerIds.has(d.defender_id)) {
-      rows.push({
+      rawRows.push({
         attacker_id: d.defender_id,
         attacker_name: d.defender_name,
         war_hits: 0, war_losses: 0, war_interrupted: 0,
         war_respect_gained: 0, bonus_respect: 0, avg_fair_fight: 0,
         outside_attacks: 0, outside_respect: 0, energy_used: 0,
+        energy_in: 0, overdoses: 0,
       })
     }
   }
 
-  if (!rows.length) {
+  if (!rawRows.length) {
     return <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attack data recorded yet.</p>
+  }
+
+  // Pre-compute derived fields so they're available to sort on
+  const rows = rawRows.map((r) => {
+    const def         = defendMap[r.attacker_id] || {}
+    const respectLost = def.respect_lost_defending || 0
+    const bonus       = r.bonus_respect || 0
+    const gained      = (r.war_respect_gained || 0) - bonus
+    const net         = (r.war_respect_gained || 0) - respectLost
+    return {
+      ...r, respectLost, bonus, gained, net,
+      defends_won: def.defends_won || 0, defends_lost: def.defends_lost || 0,
+    }
+  })
+
+  if (sortKey) {
+    const mul = sortDir === 'asc' ? 1 : -1
+    rows.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return mul * String(av ?? '').localeCompare(String(bv ?? ''))
+      }
+      return mul * ((av ?? 0) - (bv ?? 0))
+    })
+  }
+
+  const toggleSort = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir(key === 'attacker_name' ? 'asc' : 'desc'); return }
+    setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
   }
 
   const STICKY_BG = '#141414'
@@ -130,6 +188,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
     padding: '8px 10px', fontSize: '10px', textTransform: 'uppercase',
     letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600',
     borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap',
+    cursor: 'pointer', userSelect: 'none',
   }
   const thL = { ...th, textAlign: 'left' }
   const thSticky = { ...thL, position: 'sticky', left: 0, zIndex: 2, background: STICKY_BG }
@@ -137,36 +196,28 @@ function MemberStatsTable({ attackerStats, defendStats }) {
   const tdL = { ...td, textAlign: 'left', color: '#e4e4e7' }
   const tdSticky = { ...tdL, position: 'sticky', left: 0, zIndex: 1, background: STICKY_BG }
 
+  const headerCell = (col) => (
+    <th
+      key={col.key}
+      style={col.align === 'left' ? thSticky : th}
+      onClick={() => toggleSort(col.key)}
+      title="Click to sort"
+    >
+      {col.label}<SortArrow dir={sortKey === col.key ? sortDir : null} />
+    </th>
+  )
+
   return (
     <div style={{ overflowX: 'auto', marginTop: '8px' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '940px' }}>
         <thead>
           <tr>
-            <th style={thSticky}>Member</th>
-            <th style={th}>War Hits</th>
-            <th style={th}>Losses</th>
-            <th style={th}>Interrupted</th>
-            <th style={th}>Gained</th>
-            <th style={th}>Bonus</th>
-            <th style={th}>Lost</th>
-            <th style={th}>Net</th>
-            <th style={th}>Fair Fight</th>
-            <th style={th}>Def Won</th>
-            <th style={th}>Def Lost</th>
-            <th style={th}>Outside</th>
-            <th style={th}>Assists</th>
-            <th style={th}>Friendly</th>
-            <th style={th}>Energy</th>
+            {MEMBER_STATS_COLUMNS.map(headerCell)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
-            const def         = defendMap[r.attacker_id] || {}
-            const respectLost = def.respect_lost_defending || 0
-            const bonus       = r.bonus_respect || 0
-            const gained      = (r.war_respect_gained || 0) - bonus
-            const net         = (r.war_respect_gained || 0) - respectLost
-            const netPos      = net >= 0
+            const netPos = r.net >= 0
             return (
               <tr key={r.attacker_id}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
@@ -176,19 +227,21 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(r.war_hits)}</td>
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.war_losses)}</td>
                 <td style={{ ...td, color: r.war_interrupted > 0 ? '#f97316' : "var(--text-muted)" }}>{fmt(r.war_interrupted)}</td>
-                <td style={{ ...td, color: '#22c55e' }}>{fmt(gained, 2)}</td>
-                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : "var(--text-muted)" }}>{fmt(bonus, 2)}</td>
-                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(respectLost, 2)}</td>
+                <td style={{ ...td, color: '#22c55e' }}>{fmt(r.gained, 2)}</td>
+                <td style={{ ...td, color: r.bonus > 0 ? '#f59e0b' : "var(--text-muted)" }}>{fmt(r.bonus, 2)}</td>
+                <td style={{ ...td, color: r.respectLost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.respectLost, 2)}</td>
                 <td style={{ ...td, color: netPos ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
-                  {netPos ? '+' : ''}{fmt(net, 2)}
+                  {netPos ? '+' : ''}{fmt(r.net, 2)}
                 </td>
                 <td style={td}>{fmt(r.avg_fair_fight, 2)}</td>
-                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(def.defends_won)}</td>
-                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(def.defends_lost)}</td>
+                <td style={{ ...td, color: r.defends_won > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(r.defends_won)}</td>
+                <td style={{ ...td, color: r.defends_lost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.defends_lost)}</td>
                 <td style={td}>{fmt(r.outside_attacks)}</td>
                 <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : "var(--text-muted)" }}>{fmt(r.assists)}</td>
                 <td style={{ ...td, color: (r.friendly_hits || 0) > 0 ? '#fb923c' : "var(--text-muted)" }}>{fmt(r.friendly_hits || 0)}</td>
                 <td style={{ ...td, color: "var(--text-secondary)" }}>{fmt(r.energy_used)}</td>
+                <td style={{ ...td, color: (r.energy_in || 0) > 0 ? '#38bdf8' : "var(--text-muted)" }}>{fmt(r.energy_in || 0)}</td>
+                <td style={{ ...td, color: (r.overdoses || 0) > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.overdoses || 0)}</td>
               </tr>
             )
           })}
@@ -290,7 +343,23 @@ function PctToggle({ label, value, onChange, disabled }) {
   )
 }
 
-function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue }) {
+// Strips a formatted money string back to a clean numeric string (digits + at most one decimal point)
+function parseMoneyInput(value) {
+  let v = value.replace(/,/g, '').replace(/[^\d.]/g, '')
+  const firstDot = v.indexOf('.')
+  if (firstDot !== -1) v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
+  return v
+}
+
+// Formats a clean numeric string with thousands separators for display, preserving a trailing decimal as typed
+function formatMoneyDisplay(raw) {
+  if (!raw) return ''
+  const [intPart, decPart] = raw.split('.')
+  const formattedInt = intPart ? Number(intPart).toLocaleString('en-US') : ''
+  return decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt
+}
+
+function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue, includeBonusRespect }) {
   // When cap is off, always use attack-based formula regardless of capType
   const useRespect = capEnabled && capType === 'respect'
   const cap        = capEnabled && capValue > 0 ? capValue : Infinity
@@ -298,8 +367,9 @@ function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendly
   return attackerStats
     .filter(r => (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.friendly_hits || 0) + (r.war_respect_gained || 0) > 0)
     .map(r => {
+      const respectForPayout = (parseFloat(r.war_respect_gained) || 0) - (includeBonusRespect ? 0 : (parseFloat(r.bonus_respect) || 0))
       const rawUnits = useRespect
-        ? (parseFloat(r.war_respect_gained) || 0)
+        ? respectForPayout
         : (r.war_hits        || 0) * warPct      / 100
         + (r.outside_attacks || 0) * outsidePct  / 100
         + (r.assists         || 0) * assistPct   / 100
@@ -367,6 +437,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
   const [capEnabled,  setCapEnabled]  = useState(false)
   const [capType,     setCapType]     = useState('attacks')
   const [capValue,    setCapValue]    = useState('')
+  const [includeBonusRespect, setIncludeBonusRespect] = useState(false)
   const [paidSet,     setPaidSet]     = useState(new Set())
   const [hitsSaved,   setHitsSaved]   = useState(!!initialHitsSaved)
   const [saving,      setSaving]      = useState(false)
@@ -389,6 +460,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
           setTotalAmount(p.settings.totalAmount ?? '')
           setFactionShare(p.settings.factionShare ?? 10); setCapEnabled(p.settings.capEnabled ?? false)
           setCapType(p.settings.capType ?? 'attacks'); setCapValue(p.settings.capValue ?? '')
+          setIncludeBonusRespect(p.settings.includeBonusRespect ?? false)
         }
         if (p.paid)      setPaidSet(new Set(Object.keys(p.paid).map(Number)))
         if (p.overrides) setOverrides(p.overrides)
@@ -403,7 +475,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
     return ov ? { ...r, ...ov } : r
   })
 
-  const settings = { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare }
+  const settings = { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare, includeBonusRespect }
   const rows         = computePayouts(mergedStats, settings)
   const totalUnits   = rows.reduce((s, r) => s + r.units, 0)
   const amount       = parseFloat(totalAmount) || 0
@@ -506,7 +578,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Total Payout ($)</label>
-            <input type="number" min="0" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="e.g. 500000000" style={inputStyle} />
+            <input type="text" inputMode="decimal" value={formatMoneyDisplay(totalAmount)} onChange={e => setTotalAmount(parseMoneyInput(e.target.value))} placeholder="e.g. 500,000,000" style={inputStyle} />
           </div>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction Share ({factionShare}%)</label>
@@ -537,6 +609,15 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             <input type="number" min="0" value={capValue} onChange={e => setCapValue(e.target.value)}
               placeholder={capType === 'attacks' ? 'Max units' : 'Max respect'}
               style={{ ...inputStyle, width: '130px' }} />
+
+            {capType === 'respect' && (
+              <button onClick={() => setIncludeBonusRespect(v => !v)} title="Chain-milestone bonus respect (10x, 25x, 50x hits, etc.) is excluded from payout respect by default" style={{
+                padding: '5px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                border: `1px solid ${includeBonusRespect ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                background: includeBonusRespect ? 'rgba(245,158,11,0.1)' : 'transparent',
+                color: includeBonusRespect ? '#f59e0b' : "var(--text-muted)",
+              }}>{includeBonusRespect ? '✓ Bonus Respect Included' : 'Bonus Respect Excluded'}</button>
+            )}
           </>}
         </div>
 
@@ -558,7 +639,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <p style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
             <thead>
               <tr>
                 <th style={th('left')}>Member</th>
@@ -566,7 +647,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                 <th style={th()}>Outside</th>
                 <th style={th()}>Assists</th>
                 <th style={th()}>Friendly</th>
-                <th style={th()}>Respect</th>
+                <th style={th()}>Gained</th>
+                <th style={th()}>Bonus</th>
                 <th style={th()}>Units</th>
                 <th style={th()}>Payout</th>
                 <th style={th('center')}>Pay</th>
@@ -608,7 +690,8 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
                     <td style={td()}>{r.outside_attacks || 0}</td>
                     <td style={td()}>{r.assists || 0}</td>
                     <td style={{ ...td(), color: (r.friendly_hits || 0) > 0 ? '#fb923c' : "var(--text-faint)" }}>{r.friendly_hits || 0}</td>
-                    <td style={{ ...td(), color: '#a78bfa' }}>{(parseFloat(r.war_respect_gained) || 0).toFixed(2)}</td>
+                    <td style={{ ...td(), color: '#22c55e' }}>{((parseFloat(r.war_respect_gained) || 0) - (parseFloat(r.bonus_respect) || 0)).toFixed(2)}</td>
+                    <td style={{ ...td(), color: (parseFloat(r.bonus_respect) || 0) > 0 ? '#f59e0b' : "var(--text-faint)" }}>{(parseFloat(r.bonus_respect) || 0).toFixed(2)}</td>
                     <td style={{ ...td(), color: '#f4f4f5', fontWeight: '600' }}>{r.units.toFixed(useRespect ? 2 : 1)}</td>
                     <td style={{ ...td(), color: '#22c55e', fontWeight: '700', fontSize: '13px' }}>
                       ${r.payout.toLocaleString('en-GB')}
@@ -639,7 +722,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="6" style={{ padding: '10px', fontSize: '11px', color: "var(--text-secondary)", borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <td colSpan="7" style={{ padding: '10px', fontSize: '11px', color: "var(--text-secondary)", borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                   {paidSet.size} of {rows.length} paid
                 </td>
                 <td style={{ padding: '10px', fontSize: '12px', fontWeight: '700', color: '#f4f4f5', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totalUnits.toFixed(1)}</td>
@@ -1150,13 +1233,12 @@ function ScoreBoard({ war, ourFactionName }) {
   const total     = our_score + opponent_score
   const weWinning = our_score >= opponent_score
 
-  // The war ends when the LEAD (score differential) reaches target — not
-  // when either side's raw score does. Progress bars fill based on how
-  // close the current lead is to that target, on whichever side is ahead.
+  // The war ENDS when the lead (score differential) reaches target — used
+  // below for the "need X more to win" text — but the bars themselves show
+  // each side's share of total points, so both stay visible as points come in.
   const leadDiff  = Math.abs(our_score - opponent_score)
-  const leadPct   = target > 0 ? Math.min((leadDiff / target) * 100, 100) : 0
-  const ourPct    = weWinning ? leadPct : 0
-  const oppPct    = weWinning ? 0 : leadPct
+  const ourPct    = total > 0 ? (our_score / total) * 100 : 0
+  const oppPct    = total > 0 ? (opponent_score / total) * 100 : 0
 
   const countdown = useCountdown(isMatched ? scheduled_start : null)
 

@@ -65,9 +65,14 @@ function ScoreBoard({ war, ourFactionName }) {
           opponent_faction_name, started_at, status, scheduled_start } = war
 
   const isMatched = status === 'matched'
+  const total     = our_score + opponent_score
   const weWinning = our_score >= opponent_score
-  const ourPct    = target > 0 ? Math.min((our_score  / target) * 100, 100) : 0
-  const oppPct    = target > 0 ? Math.min((opponent_score / target) * 100, 100) : 0
+  // The war ENDS when the lead (score differential) reaches target — used
+  // below for the "need X more to win" text — but the bars themselves show
+  // each side's share of total points, so both stay visible as points come in.
+  const leadDiff  = Math.abs(our_score - opponent_score)
+  const ourPct    = total > 0 ? (our_score / total) * 100 : 0
+  const oppPct    = total > 0 ? (opponent_score / total) * 100 : 0
 
   const countdown = useCountdown(isMatched ? scheduled_start : null)
 
@@ -131,8 +136,8 @@ function ScoreBoard({ war, ourFactionName }) {
       {!isMatched && (our_score + opponent_score) > 0 && (
         <p style={{ textAlign: 'center', color: "var(--text-faint)", fontSize: '10px', margin: '6px 0 0 0' }}>
           {weWinning
-            ? `+${(our_score - opponent_score).toLocaleString('en-GB')} lead — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more`
-            : `${(opponent_score - our_score).toLocaleString('en-GB')} behind — need ${Math.max(0, target - our_score).toLocaleString('en-GB')} more`}
+            ? `+${leadDiff.toLocaleString('en-GB')} lead — need ${Math.max(0, target - leadDiff).toLocaleString('en-GB')} more lead to win`
+            : `${leadDiff.toLocaleString('en-GB')} behind — opponent needs ${Math.max(0, target - leadDiff).toLocaleString('en-GB')} more lead to win`}
         </p>
       )}
     </div>
@@ -141,7 +146,32 @@ function ScoreBoard({ war, ourFactionName }) {
 
 // ─── Member stats ─────────────────────────────────────────────────────────────
 
+const SUMMARY_STATS_COLUMNS = [
+  { key: 'attacker_name',   label: 'Member',    align: 'left' },
+  { key: 'war_hits',        label: 'Hits'    },
+  { key: 'war_losses',      label: 'Losses'  },
+  { key: 'gained',          label: 'Gained'  },
+  { key: 'bonus',           label: 'Bonus'   },
+  { key: 'respectLost',     label: 'Lost'    },
+  { key: 'net',             label: 'Net'     },
+  { key: 'defends_won',     label: 'Def Won' },
+  { key: 'defends_lost',    label: 'Def Lost'},
+  { key: 'outside_attacks', label: 'Outside' },
+  { key: 'assists',         label: 'Assists' },
+  { key: 'energy_used',     label: 'Energy Out' },
+  { key: 'energy_in',       label: 'Energy In'  },
+  { key: 'overdoses',       label: 'OD'      },
+]
+
+function SortArrow({ dir }) {
+  if (!dir) return null
+  return <span style={{ fontSize: '9px', marginLeft: '3px' }}>{dir === 'asc' ? '▲' : '▼'}</span>
+}
+
 function MemberStatsTable({ attackerStats, defendStats }) {
+  const [sortKey, setSortKey] = useState(null)
+  const [sortDir, setSortDir] = useState('desc')
+
   if (!attackerStats?.length && !defendStats?.length) {
     return <p style={{ color: "var(--text-secondary)", fontSize: '12px', textAlign: 'center', padding: '16px 0' }}>No attack data recorded yet.</p>
   }
@@ -149,46 +179,65 @@ function MemberStatsTable({ attackerStats, defendStats }) {
   const defendMap = {}
   for (const d of (defendStats || [])) defendMap[d.defender_id] = d
 
-  const rows = [...(attackerStats || [])]
-  const attackerIds = new Set(rows.map(r => r.attacker_id))
+  const rawRows = [...(attackerStats || [])]
+  const attackerIds = new Set(rawRows.map(r => r.attacker_id))
   for (const d of (defendStats || [])) {
     if (!attackerIds.has(d.defender_id)) {
-      rows.push({ attacker_id: d.defender_id, attacker_name: d.defender_name,
+      rawRows.push({ attacker_id: d.defender_id, attacker_name: d.defender_name,
         war_hits: 0, war_losses: 0, war_interrupted: 0,
         war_respect_gained: 0, bonus_respect: 0, avg_fair_fight: 0,
-        outside_attacks: 0, energy_used: 0 })
+        outside_attacks: 0, energy_used: 0, energy_in: 0, overdoses: 0 })
     }
   }
 
-  const th = { padding: '7px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap' }
+  const rows = rawRows.map((r) => {
+    const def         = defendMap[r.attacker_id] || {}
+    const respectLost = def.respect_lost_defending || 0
+    const bonus       = r.bonus_respect || 0
+    const gained      = (r.war_respect_gained || 0) - bonus
+    const net         = (r.war_respect_gained || 0) - respectLost
+    return {
+      ...r, respectLost, bonus, gained, net,
+      defends_won: def.defends_won || 0, defends_lost: def.defends_lost || 0,
+    }
+  })
+
+  if (sortKey) {
+    const mul = sortDir === 'asc' ? 1 : -1
+    rows.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return mul * String(av ?? '').localeCompare(String(bv ?? ''))
+      }
+      return mul * ((av ?? 0) - (bv ?? 0))
+    })
+  }
+
+  const toggleSort = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir(key === 'attacker_name' ? 'asc' : 'desc'); return }
+    setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+  }
+
+  const th = { padding: '7px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: "var(--text-secondary)", fontWeight: '600', borderBottom: '1px solid rgba(255,255,255,0.07)', textAlign: 'right', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }
   const td = { padding: '7px 8px', fontSize: '11px', color: '#f4f4f5', textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.04)' }
+
+  const headerCell = (col) => (
+    <th key={col.key} style={col.align === 'left' ? { ...th, textAlign: 'left' } : th} onClick={() => toggleSort(col.key)} title="Click to sort">
+      {col.label}<SortArrow dir={sortKey === col.key ? sortDir : null} />
+    </th>
+  )
 
   return (
     <div style={{ overflowX: 'auto', marginTop: '12px' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }}>Member</th>
-            <th style={th}>Hits</th>
-            <th style={th}>Losses</th>
-            <th style={th}>Gained</th>
-            <th style={th}>Bonus</th>
-            <th style={th}>Lost</th>
-            <th style={th}>Net</th>
-            <th style={th}>Def Won</th>
-            <th style={th}>Def Lost</th>
-            <th style={th}>Outside</th>
-            <th style={th}>Assists</th>
-            <th style={th}>Energy</th>
+            {SUMMARY_STATS_COLUMNS.map(headerCell)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
-            const def         = defendMap[r.attacker_id] || {}
-            const respectLost = def.respect_lost_defending || 0
-            const bonus       = r.bonus_respect || 0
-            const gained      = (r.war_respect_gained || 0) - bonus
-            const net         = (r.war_respect_gained || 0) - respectLost
+            const netPos = r.net >= 0
             return (
               <tr key={r.attacker_id}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
@@ -197,17 +246,19 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, textAlign: 'left', color: '#e4e4e7' }}>{r.attacker_name || `[${r.attacker_id}]`}</td>
                 <td style={{ ...td, color: r.war_hits > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(r.war_hits)}</td>
                 <td style={{ ...td, color: r.war_losses > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.war_losses)}</td>
-                <td style={{ ...td, color: '#22c55e' }}>{fmt(gained, 2)}</td>
-                <td style={{ ...td, color: bonus > 0 ? '#f59e0b' : "var(--text-muted)" }}>{fmt(bonus, 2)}</td>
-                <td style={{ ...td, color: respectLost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(respectLost, 2)}</td>
-                <td style={{ ...td, color: net >= 0 ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
-                  {net >= 0 ? '+' : ''}{fmt(net, 2)}
+                <td style={{ ...td, color: '#22c55e' }}>{fmt(r.gained, 2)}</td>
+                <td style={{ ...td, color: r.bonus > 0 ? '#f59e0b' : "var(--text-muted)" }}>{fmt(r.bonus, 2)}</td>
+                <td style={{ ...td, color: r.respectLost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.respectLost, 2)}</td>
+                <td style={{ ...td, color: netPos ? '#22c55e' : '#ef4444', fontWeight: '600' }}>
+                  {netPos ? '+' : ''}{fmt(r.net, 2)}
                 </td>
-                <td style={{ ...td, color: def.defends_won > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(def.defends_won)}</td>
-                <td style={{ ...td, color: def.defends_lost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(def.defends_lost)}</td>
+                <td style={{ ...td, color: r.defends_won > 0 ? '#22c55e' : "var(--text-muted)" }}>{fmt(r.defends_won)}</td>
+                <td style={{ ...td, color: r.defends_lost > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.defends_lost)}</td>
                 <td style={td}>{fmt(r.outside_attacks)}</td>
                 <td style={{ ...td, color: r.assists > 0 ? '#a78bfa' : "var(--text-muted)" }}>{fmt(r.assists)}</td>
                 <td style={{ ...td, color: "var(--text-secondary)" }}>{fmt(r.energy_used)}</td>
+                <td style={{ ...td, color: (r.energy_in || 0) > 0 ? '#38bdf8' : "var(--text-muted)" }}>{fmt(r.energy_in || 0)}</td>
+                <td style={{ ...td, color: (r.overdoses || 0) > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.overdoses || 0)}</td>
               </tr>
             )
           })}

@@ -176,7 +176,69 @@ async function buildMemberStats(env, warId) {
      FROM war_attacks WHERE ranked_war_id=?`
   ).bind(warId).first();
 
-  return { attackerStats: attackerStats || [], defendStats: defendStats || [], totals: totals || {} };
+  const rows = await enrichEnergyAndOD(env, warId, attackerStats || []);
+
+  return { attackerStats: rows, defendStats: defendStats || [], totals: totals || {} };
+}
+
+// ── Shared: attach Energy In (Xanax) and OD (overdose delta) to attacker rows ─
+// Used by both the live path (buildMemberStats) and the Verify Data path
+// (verifyWarData) so both produce the same attackerStats shape.
+
+async function enrichEnergyAndOD(env, warId, rows) {
+  if (!rows.length) return rows;
+
+  // ── Energy In: Xanax used during this war (stacking + war period) ──────────
+  const { results: xanaxRows } = await env.DB.prepare(
+    `SELECT torn_user_id, COUNT(*) AS xanax_count
+     FROM war_armory_usage
+     WHERE ranked_war_id=? AND item_name='Xanax' AND (action_type IS NULL OR action_type != 'loaned')
+     GROUP BY torn_user_id`
+  ).bind(warId).all();
+  const xanaxMap = {};
+  for (const x of xanaxRows || []) xanaxMap[x.torn_user_id] = x.xanax_count;
+
+  // ── OD: overdoses delta from personal stats snapshots over the war's tracked period ──
+  const periodRow = await env.DB.prepare(
+    `SELECT MIN(started_at) AS min_ts, MAX(started_at) AS max_ts FROM war_attacks WHERE ranked_war_id=?`
+  ).bind(warId).first();
+
+  const odMap = {};
+  if (periodRow?.min_ts) {
+    const fromDate = new Date(periodRow.min_ts * 1000).toISOString().slice(0, 10);
+    const toDate   = new Date((periodRow.max_ts || Math.floor(Date.now() / 1000)) * 1000).toISOString().slice(0, 10);
+    const [odStartRows, odEndRows] = await Promise.all([
+      env.DB.prepare(`
+        SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+        FROM personal_stats_snapshots p
+        INNER JOIN (
+          SELECT torn_user_id, MIN(snapshot_date) AS min_date
+          FROM personal_stats_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ? GROUP BY torn_user_id
+        ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+      `).bind(fromDate, toDate).all(),
+      env.DB.prepare(`
+        SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+        FROM personal_stats_snapshots p
+        INNER JOIN (
+          SELECT torn_user_id, MAX(snapshot_date) AS max_date
+          FROM personal_stats_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ? GROUP BY torn_user_id
+        ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+      `).bind(fromDate, toDate).all(),
+    ]);
+    const odStart = {};
+    for (const r of odStartRows.results || []) odStart[r.torn_user_id] = r.val ?? 0;
+    for (const r of odEndRows.results || []) {
+      odMap[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
+    }
+  }
+
+  for (const row of rows) {
+    row.xanax_used = xanaxMap[row.attacker_id] || 0;
+    row.energy_in  = row.xanax_used * 250;
+    row.overdoses  = odMap[row.attacker_id] || 0;
+  }
+
+  return rows;
 }
 
 // ── Summarise completed war (raw rows kept until payout is saved to rankings) ─
@@ -1066,6 +1128,7 @@ export async function verifyWarData(request, env) {
     );
 
     const stats = aggregateVerifiedAttacks(attacks);
+    stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
     // Trimmed raw rows — sent back so "Apply" can replace war_attacks itself,
     // keeping the Attack Log debug tab in sync with the verified data too.

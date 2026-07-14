@@ -43,7 +43,7 @@ function MemberHome({ user }) {
 
   return (
     <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
-      <div className="max-w-7xl mx-auto px-6 py-12">
+      <div className="max-w-[1600px] mx-auto px-6 py-12">
         {/* Welcome header */}
         <div className="mb-12">
           <h1
