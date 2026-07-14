@@ -343,6 +343,17 @@ function PctToggle({ label, value, onChange, disabled }) {
   )
 }
 
+// Strips a formatted money string back to a clean digit-only string (no decimals allowed)
+function parseMoneyInput(value) {
+  return value.replace(/\D/g, '')
+}
+
+// Formats a clean digit string with thousands separators for display
+function formatMoneyDisplay(raw) {
+  if (!raw) return ''
+  return Number(raw).toLocaleString('en-US')
+}
+
 function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue, includeBonusRespect }) {
   // When cap is off, always use attack-based formula regardless of capType
   const useRespect = capEnabled && capType === 'respect'
@@ -562,7 +573,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Total Payout ($)</label>
-            <input type="number" min="0" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="e.g. 500000000" style={inputStyle} />
+            <input type="text" inputMode="numeric" value={formatMoneyDisplay(totalAmount)} onChange={e => setTotalAmount(parseMoneyInput(e.target.value))} placeholder="e.g. 500,000,000" style={inputStyle} />
           </div>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction Share ({factionShare}%)</label>
