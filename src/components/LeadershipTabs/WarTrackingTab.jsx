@@ -343,22 +343,6 @@ function PctToggle({ label, value, onChange, disabled }) {
   )
 }
 
-// Strips a formatted money string back to a clean numeric string (digits + at most one decimal point)
-function parseMoneyInput(value) {
-  let v = value.replace(/,/g, '').replace(/[^\d.]/g, '')
-  const firstDot = v.indexOf('.')
-  if (firstDot !== -1) v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '')
-  return v
-}
-
-// Formats a clean numeric string with thousands separators for display, preserving a trailing decimal as typed
-function formatMoneyDisplay(raw) {
-  if (!raw) return ''
-  const [intPart, decPart] = raw.split('.')
-  const formattedInt = intPart ? Number(intPart).toLocaleString('en-US') : ''
-  return decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt
-}
-
 function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue, includeBonusRespect }) {
   // When cap is off, always use attack-based formula regardless of capType
   const useRespect = capEnabled && capType === 'respect'
@@ -578,7 +562,7 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Total Payout ($)</label>
-            <input type="text" inputMode="decimal" value={formatMoneyDisplay(totalAmount)} onChange={e => setTotalAmount(parseMoneyInput(e.target.value))} placeholder="e.g. 500,000,000" style={inputStyle} />
+            <input type="number" min="0" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="e.g. 500000000" style={inputStyle} />
           </div>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>Faction Share ({factionShare}%)</label>
