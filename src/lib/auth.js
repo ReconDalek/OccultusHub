@@ -50,8 +50,16 @@ export function enrichUserAccess(user) {
     isFactionMember &&
     OCCULTUS_CONFIG.leadershipRoles.includes(user.factionPosition)
   )
+  const isOwner = user.isOwner || false
 
-  return { ...user, isFactionMember, isLeader, isAdmin: user.isAdmin || false }
+  // Owner always has full access, regardless of anything else above.
+  return {
+    ...user,
+    isFactionMember: isFactionMember || isOwner,
+    isLeader: isLeader || isOwner,
+    isAdmin: user.isAdmin || isOwner || false,
+    isOwner,
+  }
 }
 
 /* ── Session validation (returns enriched user or null) ─── */

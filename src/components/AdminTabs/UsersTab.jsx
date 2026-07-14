@@ -372,7 +372,7 @@ function AccessOverrideModal({ user, onClose, onSaved }) {
 
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 16px' }}>
           Grants <strong style={{ color: '#f4f4f5' }}>{user.username}</strong> member or leader access regardless of their
-          actual Torn faction — for members visiting from another faction. Their API key is never used for faction data
+          actual Torn faction — for members visiting another faction. Their API key is never used for faction data
           while this is active.
         </p>
 
