@@ -1,4 +1,4 @@
-import { generateToken } from '../middleware/auth.js';
+import { generateToken, computeEffectiveAccess } from '../middleware/auth.js';
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
@@ -112,6 +112,7 @@ export async function login(request, env) {
 
     // Generate JWT token
     const token = await generateToken(user, env);
+    const access = computeEffectiveAccess(user);
 
     return jsonResponse({
       token,
@@ -124,6 +125,9 @@ export async function login(request, env) {
         image: user.image_url,
         isAdmin: user.is_admin === 1,
         isOwner: user.is_owner === 1,
+        isFactionMember: access.isFactionMember,
+        isLeader: access.isLeader,
+        accessOverride: access.accessOverride,
         fishingPoints: user.fishing_points || 0,
         runePoints: user.rune_points || 0,
         calendarStartTime: user.calendar_start_time || null,
@@ -150,6 +154,8 @@ export async function session(request, env, user) {
       return jsonResponse({ valid: false });
     }
 
+    const access = computeEffectiveAccess(userData);
+
     return jsonResponse({
       valid: true,
       user: {
@@ -161,6 +167,9 @@ export async function session(request, env, user) {
         image: userData.image_url,
         isAdmin: userData.is_admin === 1,
         isOwner: userData.is_owner === 1,
+        isFactionMember: access.isFactionMember,
+        isLeader: access.isLeader,
+        accessOverride: access.accessOverride,
         fishingPoints: userData.fishing_points || 0,
         lastFishedAt: userData.last_fished_at || null,
         runePoints: userData.rune_points || 0,

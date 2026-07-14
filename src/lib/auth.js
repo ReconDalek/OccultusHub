@@ -40,12 +40,16 @@ export function clearUserSession() {
 /* ── Access enrichment ───────────────────── */
 
 export function enrichUserAccess(user) {
-  const isFactionMember = OCCULTUS_CONFIG.allowedFactionIds.includes(
+  // Backend computes isFactionMember/isLeader itself (including any temporary
+  // admin-granted access override) — fall back to client-side derivation only
+  // if the backend didn't send them (e.g. dev-auth stub already sets both).
+  const isFactionMember = user.isFactionMember ?? OCCULTUS_CONFIG.allowedFactionIds.includes(
     Number(user.factionId)
   )
-  const isLeader =
+  const isLeader = user.isLeader ?? (
     isFactionMember &&
     OCCULTUS_CONFIG.leadershipRoles.includes(user.factionPosition)
+  )
 
   return { ...user, isFactionMember, isLeader, isAdmin: user.isAdmin || false }
 }

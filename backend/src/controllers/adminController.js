@@ -17,6 +17,9 @@ export async function getAllUsers(request, env, user) {
         u.is_owner,
         u.created_at,
         u.last_login,
+        u.access_override,
+        u.access_override_expires_at,
+        u.access_override_note,
         COUNT(lh.id) as login_count,
         json_extract(fc.data, '$.basic.name') as faction_name
       FROM users u
@@ -172,6 +175,65 @@ export async function revokeAdmin(request, env, user) {
   } catch (error) {
     console.error('revokeAdmin error:', error);
     return errorResponse('Failed to revoke admin access', 500);
+  }
+}
+
+// Grants/revokes a temporary member or leader access override for a user —
+// e.g. a member visiting from another Occultus faction temporarily.
+// Never derived from the target's own API key/faction data; purely a manual admin grant.
+export async function setAccessOverride(request, env, user) {
+  try {
+    const { tornUserId } = new URL(request.url).pathname.match(
+      /\/api\/admin\/users\/(?<tornUserId>\d+)\/access-override/
+    )?.groups ?? {};
+
+    const { level, durationHours, note } = await request.json();
+
+    if (level !== null && level !== 'member' && level !== 'leader') {
+      return errorResponse('level must be "member", "leader", or null', 400);
+    }
+
+    const userResult = await env.DB.prepare(
+      'SELECT id FROM users WHERE torn_user_id = ?'
+    )
+      .bind(tornUserId)
+      .first();
+
+    if (!userResult) {
+      return errorResponse('User not found', 404);
+    }
+
+    if (level === null) {
+      await env.DB.prepare(
+        `UPDATE users
+         SET access_override = NULL, access_override_expires_at = NULL,
+             access_override_note = NULL, access_override_granted_by = NULL,
+             access_override_granted_at = NULL
+         WHERE id = ?`
+      )
+        .bind(userResult.id)
+        .run();
+
+      return jsonResponse({ message: 'Access override revoked' });
+    }
+
+    const expiresAt = durationHours
+      ? new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+      : null;
+
+    await env.DB.prepare(
+      `UPDATE users
+       SET access_override = ?, access_override_expires_at = ?, access_override_note = ?,
+           access_override_granted_by = ?, access_override_granted_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    )
+      .bind(level, expiresAt, note || null, user.userId, userResult.id)
+      .run();
+
+    return jsonResponse({ message: `${level === 'leader' ? 'Leader' : 'Member'} access granted`, expiresAt });
+  } catch (error) {
+    console.error('setAccessOverride error:', error);
+    return errorResponse('Failed to update access override', 500);
   }
 }
 

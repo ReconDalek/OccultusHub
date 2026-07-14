@@ -111,6 +111,10 @@ export async function handleRequest(request, env, ctx) {
       return adminController.revokeAdmin(request, env, user);
     }
 
+    if (pathname.match(/^\/api\/admin\/users\/\d+\/access-override$/) && method === 'POST') {
+      return adminController.setAccessOverride(request, env, user);
+    }
+
     // Cache endpoints
     if (pathname === '/api/admin/cache/status' && method === 'GET') {
       return adminController.getCacheStatus(request, env, user);
@@ -232,7 +236,7 @@ export async function handleRequest(request, env, ctx) {
   // Activity endpoints (leadership)
   if (pathname === '/api/leadership/energy' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
-    if (!user.isLeader && !user.isAdmin) return errorResponse('Leadership access required', 403);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return activityController.getEnergyActivity(request, env);
   }
 
@@ -298,7 +302,7 @@ export async function handleRequest(request, env, ctx) {
   // Leadership-gated endpoints
   if (pathname.startsWith('/api/leadership/')) {
     if (!user) return errorResponse('Authentication required', 401);
-    const isLeader = await requireLeadership(user);
+    const isLeader = await requireLeadership(user, env);
     if (!isLeader) return errorResponse('Leadership access required', 403);
 
     if (pathname === '/api/leadership/notices' && method === 'GET') {
@@ -642,7 +646,7 @@ export async function handleRequest(request, env, ctx) {
 
   // Refresh stock history — leadership only
   if (pathname === '/api/leadership/stocks/refresh' && method === 'POST') {
-    if (!requireLeadership(user)) return errorResponse('Leadership access required', 403);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return stocksController.refreshStockHistory(request, env);
   }
 

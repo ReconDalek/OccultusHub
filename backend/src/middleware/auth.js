@@ -1,6 +1,7 @@
 import { jwtVerify, SignJWT } from 'jose';
 
 const LEADERSHIP_ROLES = ['Leader', 'Co-leader', 'Archon', 'High Council', 'Council'];
+const ALLOWED_FACTION_IDS = [33097, 9728, 9171];
 
 // Verify JWT token from request headers
 export async function verifyToken(request, env) {
@@ -19,14 +20,52 @@ export async function verifyToken(request, env) {
   }
 }
 
+// Whether a user row's temporary access_override is currently in effect
+export function isOverrideActive(userRow) {
+  if (!userRow?.access_override) return false;
+  if (!userRow.access_override_expires_at) return true;
+  const expiresAt = new Date(userRow.access_override_expires_at.replace(' ', 'T') + 'Z').getTime();
+  return Date.now() < expiresAt;
+}
+
+// Computes real + override-derived access flags from a fresh `users` row.
+// Never derived from the user's own API key/faction data for the override part —
+// it's purely a manual admin grant (used for visiting members from other factions).
+export function computeEffectiveAccess(userRow) {
+  const realIsFactionMember = ALLOWED_FACTION_IDS.includes(Number(userRow.faction_id));
+  const realIsLeader = realIsFactionMember && LEADERSHIP_ROLES.includes(userRow.faction_position);
+  const overrideActive = isOverrideActive(userRow);
+
+  return {
+    isFactionMember: realIsFactionMember || overrideActive,
+    isLeader: realIsLeader || (overrideActive && userRow.access_override === 'leader'),
+    accessOverride: overrideActive
+      ? {
+          level: userRow.access_override,
+          expiresAt: userRow.access_override_expires_at || null,
+          note: userRow.access_override_note || null,
+        }
+      : null,
+  };
+}
+
 // Check if user has admin role
 export async function requireAdmin(user) {
   return user && user.isAdmin === true;
 }
 
-// Check if user has leadership or admin role
-export async function requireLeadership(user) {
-  return user && (user.isLeader === true || user.isAdmin === true);
+// Check if user has leadership or admin role — also honours a temporary
+// leader access_override granted from the admin Users page, even if the
+// JWT was issued before the override was set.
+export async function requireLeadership(user, env) {
+  if (!user) return false;
+  if (user.isLeader === true || user.isAdmin === true) return true;
+
+  const row = await env.DB.prepare(
+    'SELECT access_override, access_override_expires_at FROM users WHERE id = ?'
+  ).bind(user.userId).first();
+
+  return !!row && isOverrideActive(row) && row.access_override === 'leader';
 }
 
 // Generate JWT token for user
