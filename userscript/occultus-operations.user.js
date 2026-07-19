@@ -34,6 +34,7 @@
     const USER_STORAGE = "occultus_user_data";
     const FACTION_STORAGE = "occultus_faction_data";
     const FACTION_LABELS = { 33097: "Occ1", 9728: "Occ2", 9171: "Occ3" };
+    const FACTION_ORDER = [33097, 9728, 9171];
     const COUNCIL_ROLES = ["council", "archon", "leader", "co-leader"];
     const BASE_XANAX = 5;
     const RANK_MODIFIERS = {
@@ -436,8 +437,11 @@ transform: translateY(3px);
 
     let totalFound = 0;
 
-    // Render each faction as a collapsible section
-    Object.keys(factionMap).sort().forEach(factionId => {
+    // Render each faction as a collapsible section, in fixed Occ1/Occ2/Occ3 order
+    // (Object.keys would sort these numeric-looking IDs lexicographically, giving
+    // 33097, 9171, 9728 — wrong order — so iterate an explicit list instead).
+    FACTION_ORDER.forEach(factionId => {
+        if (!factionMap[factionId]) return;
         const memberCount = Object.values(factionMap[factionId]).reduce((sum, arr) => sum + arr.length, 0);
         const factionLabel = FACTION_LABELS[factionId] || factionId;
 
