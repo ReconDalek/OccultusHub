@@ -58,8 +58,13 @@ function windowLabel(win) {
   return `${sStr} – ${eStr}`
 }
 
-function isInWindow(dateStr, win) {
-  return dateStr >= win.start && dateStr < win.end
+// Windows against the warning's period (what month it's actually FOR), not
+// date_reported (when it was logged) — warnings are always reported in
+// arrears, so date_reported would misalign which periods count.
+function isInWindow(periodYear, periodMonth, win) {
+  if (periodYear == null || periodMonth == null) return false
+  const periodStr = `${periodYear}-${pad2(periodMonth)}-01`
+  return periodStr >= win.start && periodStr < win.end
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
@@ -626,7 +631,7 @@ export default function WarningsTab() {
         historicalWarnings: [],
       }
     }
-    if (isInWindow(w.date_reported, WINDOW)) {
+    if (isInWindow(w.period_year, w.period_month, WINDOW)) {
       grouped[w.torn_user_id].windowWarnings.push(w)
     } else {
       grouped[w.torn_user_id].historicalWarnings.push(w)
