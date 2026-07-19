@@ -1,11 +1,10 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
+const TARGET_RANKS = ['Harbinger', 'Doomsayer', 'Sentinel', 'Arcanist', 'Adept'];
+const TARGET_RANKS_UPPER = new Set(TARGET_RANKS.map(r => r.toUpperCase()));
 
-// Mirrors src/components/LeadershipTabs/MemberRanksTab.jsx RANK_TIERS —
-// a member's xanax-eligible rank is earned via hits, not their real Torn
-// faction_position, so leadership (Leader/Co-leader/Archon/Council) still
-// qualifies based on what they'd earn if they weren't holding office.
+// Mirrors src/components/LeadershipTabs/MemberRanksTab.jsx RANK_TIERS.
 const RANK_TIERS = [
   { name: 'Harbinger', min: 15000 },
   { name: 'Doomsayer', min: 5000 },
@@ -20,6 +19,17 @@ function getDerivedRank(totalHits) {
     if (totalHits >= tier.min) return tier.name;
   }
   return 'Acolyte';
+}
+
+// A member's real Torn faction_position is used when it's already one of
+// the 5 hitter ranks. Leadership titles (Leader/Co-leader/Archon/Council/
+// Socius/etc.) aren't hitter ranks at all, so those fall back to whatever
+// rank the member has earned via hits — otherwise they'd never qualify.
+function effectiveRank(factionPosition, totalHits) {
+  if (factionPosition && TARGET_RANKS_UPPER.has(factionPosition.toUpperCase())) {
+    return factionPosition;
+  }
+  return getDerivedRank(totalHits);
 }
 
 function currentUtcMonth() {
@@ -48,6 +58,11 @@ export async function getDistributions(request, env) {
     const targetMonth = parseInt(url.searchParams.get('month'), 10) || nowMonth.month;
     const prev = previousMonth(targetYear, targetMonth);
 
+    // Only hits banked before the target month started count toward the
+    // rank used for that month's eligibility — chain/war activity still
+    // happening this month shouldn't let someone qualify mid-month.
+    const monthStart = Math.floor(Date.UTC(targetYear, targetMonth - 1, 1) / 1000);
+
     const factionClause = factionId ? 'fm.faction_id = ?' : `fm.faction_id IN (${FACTION_IDS.join(',')})`;
 
     // Same total_hits computation as memberController.getFactionMembers —
@@ -68,11 +83,16 @@ export async function getDistributions(request, env) {
       FROM faction_members fm
       LEFT JOIN (
         SELECT torn_user_id, SUM(total_attacks) AS total_chain_hits
-        FROM chain_hits GROUP BY torn_user_id
+        FROM chain_hits
+        WHERE start_at < ?
+        GROUP BY torn_user_id
       ) ch ON ch.torn_user_id = fm.torn_user_id
       LEFT JOIN (
-        SELECT torn_user_id, SUM(units) AS total_war_units
-        FROM war_hits GROUP BY torn_user_id
+        SELECT wh.torn_user_id, SUM(wh.units) AS total_war_units
+        FROM war_hits wh
+        JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
+        WHERE rw.ended_at < ?
+        GROUP BY wh.torn_user_id
       ) wh ON wh.torn_user_id = fm.torn_user_id
       LEFT JOIN (
         SELECT torn_user_id, SUM(hits) AS total_custom_hits
@@ -86,15 +106,16 @@ export async function getDistributions(request, env) {
       ORDER BY total_hits DESC, fm.username ASC
     `;
 
-    const binds = [prev.year, prev.month, targetYear, targetMonth];
+    const binds = [prev.year, prev.month, monthStart, monthStart, targetYear, targetMonth];
     if (factionId) binds.push(factionId);
 
     const { results } = await env.DB.prepare(query).bind(...binds).all();
 
-    // Derive each member's earned rank from total_hits (not their real Torn
-    // position) and drop anyone whose earned rank is Acolyte — no perk tier.
+    // Use each member's real Torn rank when it's a hitter rank; otherwise
+    // (leadership titles) fall back to what they've earned via hits. Drop
+    // anyone who lands on Acolyte — no perk tier.
     const members = (results || [])
-      .map(m => ({ ...m, derived_rank: getDerivedRank(m.total_hits) }))
+      .map(m => ({ ...m, derived_rank: effectiveRank(m.faction_position, m.total_hits) }))
       .filter(m => m.derived_rank !== 'Acolyte');
 
     return jsonResponse({ members, year: targetYear, month: targetMonth });
