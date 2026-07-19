@@ -1,10 +1,10 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
-const TARGET_RANKS = ['Harbinger', 'Doomsayer', 'Sentinel', 'Arcanist', 'Adept'];
-const TARGET_RANKS_UPPER = new Set(TARGET_RANKS.map(r => r.toUpperCase()));
 
-// Mirrors src/components/LeadershipTabs/MemberRanksTab.jsx RANK_TIERS.
+// Mirrors src/components/LeadershipTabs/MemberRanksTab.jsx RANK_TIERS —
+// rank is always computed from stored hits, never from faction_position
+// (the Torn-synced position can go stale between 12h syncs).
 const RANK_TIERS = [
   { name: 'Harbinger', min: 15000 },
   { name: 'Doomsayer', min: 5000 },
@@ -19,17 +19,6 @@ function getDerivedRank(totalHits) {
     if (totalHits >= tier.min) return tier.name;
   }
   return 'Acolyte';
-}
-
-// A member's real Torn faction_position is used when it's already one of
-// the 5 hitter ranks. Leadership titles (Leader/Co-leader/Archon/Council/
-// Socius/etc.) aren't hitter ranks at all, so those fall back to whatever
-// rank the member has earned via hits — otherwise they'd never qualify.
-function effectiveRank(factionPosition, totalHits) {
-  if (factionPosition && TARGET_RANKS_UPPER.has(factionPosition.toUpperCase())) {
-    return factionPosition;
-  }
-  return getDerivedRank(totalHits);
 }
 
 function currentUtcMonth() {
@@ -111,11 +100,10 @@ export async function getDistributions(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...binds).all();
 
-    // Use each member's real Torn rank when it's a hitter rank; otherwise
-    // (leadership titles) fall back to what they've earned via hits. Drop
+    // Rank comes purely from earned hits, not faction_position — drop
     // anyone who lands on Acolyte — no perk tier.
     const members = (results || [])
-      .map(m => ({ ...m, derived_rank: effectiveRank(m.faction_position, m.total_hits) }))
+      .map(m => ({ ...m, derived_rank: getDerivedRank(m.total_hits) }))
       .filter(m => m.derived_rank !== 'Acolyte');
 
     return jsonResponse({ members, year: targetYear, month: targetMonth });
