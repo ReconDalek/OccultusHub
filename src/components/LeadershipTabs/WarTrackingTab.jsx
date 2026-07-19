@@ -557,11 +557,17 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', marginBottom: '14px' }}>
           <p style={{ color: '#4ade80', fontSize: '12px', margin: 0 }}>✓ Payout saved to member rankings — results are locked</p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '11px', margin: '6px 0 0' }}>
-            {payoutVerified
-              ? <span style={{ color: '#4ade80' }}>✔ Live-tracked data was verified before payout</span>
-              : <span style={{ color: '#eab308' }}>⚠ Live-tracked data was not verified before payout</span>}
-            {payoutProcessedBy && <> · Processed by <strong style={{ color: '#f4f4f5' }}>{payoutProcessedBy}</strong></>}
-            {payoutProcessedAt && ` on ${formatUnixDate(parseD1DateTime(payoutProcessedAt))}`}
+            {!payoutProcessedBy && !payoutProcessedAt ? (
+              <span>Verification/processor not recorded — paid out before this tracking was added</span>
+            ) : (
+              <>
+                {payoutVerified
+                  ? <span style={{ color: '#4ade80' }}>✔ Live-tracked data was verified before payout</span>
+                  : <span style={{ color: '#eab308' }}>⚠ Live-tracked data was not verified before payout</span>}
+                {payoutProcessedBy && <> · Processed by <strong style={{ color: '#f4f4f5' }}>{payoutProcessedBy}</strong></>}
+                {payoutProcessedAt && ` on ${formatUnixDate(parseD1DateTime(payoutProcessedAt))}`}
+              </>
+            )}
           </p>
         </div>
       )}
