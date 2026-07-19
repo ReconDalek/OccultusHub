@@ -422,7 +422,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
   )
 }
 
-function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSaved }) {
+function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSaved, payoutVerified, payoutProcessedBy, payoutProcessedAt }) {
   const [warPct,      setWarPct]      = useState(100)
   const [outsidePct,  setOutsidePct]  = useState(0)
   const [assistPct,   setAssistPct]   = useState(0)
@@ -556,6 +556,13 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
       {hitsSaved && (
         <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', marginBottom: '14px' }}>
           <p style={{ color: '#4ade80', fontSize: '12px', margin: 0 }}>✓ Payout saved to member rankings — results are locked</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '11px', margin: '6px 0 0' }}>
+            {payoutVerified
+              ? <span style={{ color: '#4ade80' }}>✔ Live-tracked data was verified before payout</span>
+              : <span style={{ color: '#eab308' }}>⚠ Live-tracked data was not verified before payout</span>}
+            {payoutProcessedBy && <> · Processed by <strong style={{ color: '#f4f4f5' }}>{payoutProcessedBy}</strong></>}
+            {payoutProcessedAt && ` on ${formatUnixDate(parseD1DateTime(payoutProcessedAt))}`}
+          </p>
         </div>
       )}
 
@@ -1190,7 +1197,8 @@ function WarDetail({ warId, onPayoutSaved }) {
         />
       )}
       {activeSection === 'payout' && (
-        <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved} />
+        <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved}
+          payoutVerified={!!war?.payout_verified} payoutProcessedBy={war?.payout_processed_by_username} payoutProcessedAt={war?.payout_processed_at} />
       )}
     </div>
   )

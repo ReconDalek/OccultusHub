@@ -661,7 +661,12 @@ export async function getWarDetails(request, env) {
     const warId = match ? parseInt(match[1], 10) : null;
     if (!warId) return errorResponse('Invalid war ID', 400);
 
-    const war = await env.DB.prepare(`SELECT * FROM ranked_wars WHERE id=?`).bind(warId).first();
+    const war = await env.DB.prepare(
+      `SELECT rw.*, u.username AS payout_processed_by_username
+       FROM ranked_wars rw
+       LEFT JOIN users u ON u.id = rw.payout_processed_by
+       WHERE rw.id=?`
+    ).bind(warId).first();
     if (!war) return errorResponse('War not found', 404);
 
     // Once leadership has applied Verify Data, summary_json is authoritative —
@@ -783,7 +788,7 @@ export async function saveWarHits(request, env, user) {
     const id = parseInt(request.url.match(/\/war\/(\d+)\/save-hits/)?.[1], 10);
     if (!id) return errorResponse('Invalid war id', 400);
 
-    const war = await env.DB.prepare(`SELECT faction_id, is_paid, hits_saved FROM ranked_wars WHERE id=?`).bind(id).first();
+    const war = await env.DB.prepare(`SELECT faction_id, is_paid, hits_saved, verified_override FROM ranked_wars WHERE id=?`).bind(id).first();
     if (!war) return errorResponse('War not found', 404);
     if (!war.is_paid) return errorResponse('War must be fully paid before saving to rankings', 400);
     if (war.hits_saved) return errorResponse('Hits already saved to rankings for this war', 409);
@@ -823,7 +828,9 @@ export async function saveWarHits(request, env, user) {
       saved++;
     }
 
-    await env.DB.prepare(`UPDATE ranked_wars SET hits_saved=1 WHERE id=?`).bind(id).run();
+    await env.DB.prepare(
+      `UPDATE ranked_wars SET hits_saved=1, payout_verified=?, payout_processed_by=?, payout_processed_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).bind(war.verified_override ? 1 : 0, user.userId, id).run();
     // Raw attack rows are no longer needed once payout is finalised and hits are in rankings
     await env.DB.prepare(`DELETE FROM war_attacks WHERE ranked_war_id=?`).bind(id).run();
     return jsonResponse({ saved, message: `${saved} member war records saved to rankings` });
