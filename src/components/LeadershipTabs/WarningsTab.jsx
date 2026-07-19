@@ -559,9 +559,11 @@ function MemberCard({ member, windowWarnings, historicalWarnings, showAllWarning
 
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
-const WINDOW = getSixMonthWindow()
-
 export default function WarningsTab() {
+  // Recomputed on every render (not module scope) so a long-lived tab picks up
+  // the real current month instead of freezing at whatever date the bundle
+  // first loaded.
+  const WINDOW = getSixMonthWindow()
   const { user } = useSession()
   const [warnings,         setWarnings]         = useState([])
   const [members,          setMembers]           = useState([])
