@@ -18,6 +18,8 @@ export async function getWarnings(request, env) {
         w.date_reported,
         w.date_issued,
         w.period,
+        w.period_month,
+        w.period_year,
         w.warning_type,
         w.target_value,
         w.achieved_value,
@@ -68,28 +70,35 @@ export async function getWarningMembers(request, env) {
 
 // POST /api/leadership/warnings
 // Body: { torn_user_id, username, date_reported, date_issued?, period,
-//         warning_type, target_value?, achieved_value?, comment? }
+//         period_month?, period_year?, warning_type, target_value?, achieved_value?, comment? }
 export async function addWarning(request, env, user) {
   try {
     const body = await request.json();
     const {
       torn_user_id, username, date_reported, date_issued,
-      period, warning_type, target_value, achieved_value, comment,
+      period, period_month, period_year, warning_type, target_value, achieved_value, comment,
     } = body;
 
     if (!torn_user_id || !username || !date_reported || !period || !warning_type) {
       return errorResponse('Missing required fields: torn_user_id, username, date_reported, period, warning_type', 400);
+    }
+    if (period_month != null && (period_month < 1 || period_month > 12)) {
+      return errorResponse('period_month must be between 1 and 12', 400);
+    }
+    if (period_year != null && String(period_year).length !== 4) {
+      return errorResponse('period_year must be a 4-digit year', 400);
     }
 
     const now = Math.floor(Date.now() / 1000);
 
     const { meta } = await env.DB.prepare(`
       INSERT INTO member_warnings
-        (torn_user_id, username, date_reported, date_issued, period, warning_type,
-         target_value, achieved_value, comment, issued_by, issued_by_username, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (torn_user_id, username, date_reported, date_issued, period, period_month, period_year,
+         warning_type, target_value, achieved_value, comment, issued_by, issued_by_username, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      torn_user_id, username, date_reported, date_issued || null, period, warning_type,
+      torn_user_id, username, date_reported, date_issued || null, period,
+      period_month ?? null, period_year ?? null, warning_type,
       target_value ?? null, achieved_value ?? null, comment || null,
       user.tornUserId, user.username, now
     ).run();

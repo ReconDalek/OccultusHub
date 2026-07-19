@@ -26,6 +26,7 @@ import * as companyProfitController from './controllers/companyProfitController.
 import * as webhookController from './controllers/webhookController.js';
 import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
+import * as xanaxController from './controllers/xanaxController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -380,6 +381,17 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/warnings\/\d+\/comment$/) && method === 'PUT') {
       return warningsController.updateWarningComment(request, env);
+    }
+
+    // Monthly xanax distribution tracking
+    if (pathname === '/api/leadership/xanax' && method === 'GET') {
+      return xanaxController.getDistributions(request, env);
+    }
+    if (pathname === '/api/leadership/xanax' && method === 'POST') {
+      return xanaxController.markDistribution(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/xanax\/\d+$/) && method === 'DELETE') {
+      return xanaxController.deleteDistribution(request, env);
     }
 
     // War tracking endpoints

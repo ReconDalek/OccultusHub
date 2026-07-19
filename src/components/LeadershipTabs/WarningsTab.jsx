@@ -14,6 +14,15 @@ const TYPE_LABELS = {
 const token = () => localStorage.getItem('occultusSession')
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+// Defaults the period picker to last calendar month — warnings are typically
+// reported on a period that has already ended.
+function defaultPeriod() {
+  const now = new Date()
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  return { period_month: prev.getMonth() + 1, period_year: prev.getFullYear() }
+}
 
 // ─── Window helpers ───────────────────────────────────────────────────────────
 
@@ -67,12 +76,16 @@ function AddWarningModal({ members, onClose, onRefresh }) {
   const [shared, setShared] = useState({
     warning_type: 'Energy',
     custom_type: '',
-    period: '',
+    ...defaultPeriod(),
     date_reported: today,
     date_issued: '',
     target_value: '',
     comment: '',
   })
+
+  const currentYear = new Date().getFullYear()
+  const yearOptions = [currentYear - 1, currentYear, currentYear + 1]
+  const periodLabel = `${MONTHS_FULL[shared.period_month - 1]} ${shared.period_year}`
 
   // Per-member list: [{ torn_user_id, username, achieved_value }]
   const [selectedMembers, setSelectedMembers] = useState([])
@@ -114,7 +127,6 @@ function AddWarningModal({ members, onClose, onRefresh }) {
     e.preventDefault()
     if (selectedMembers.length === 0) { setError('Add at least one member'); return }
     if (!resolvedType)                { setError('Enter a warning type'); return }
-    if (!shared.period)               { setError('Enter a period'); return }
 
     setSaving(true)
     setError(null)
@@ -129,7 +141,9 @@ function AddWarningModal({ members, onClose, onRefresh }) {
               username:       m.username,
               date_reported:  shared.date_reported,
               date_issued:    shared.date_issued || null,
-              period:         shared.period,
+              period:         periodLabel,
+              period_month:   shared.period_month,
+              period_year:    shared.period_year,
               warning_type:   resolvedType,
               target_value:   shared.target_value !== '' ? parseFloat(shared.target_value) : null,
               achieved_value: m.achieved_value !== '' ? parseFloat(m.achieved_value) : null,
@@ -224,9 +238,17 @@ function AddWarningModal({ members, onClose, onRefresh }) {
 
             {/* Period */}
             <div>
-              <label style={labelStyle}>Period * (e.g. June 2026)</label>
-              <input style={inputStyle} placeholder="June 2026" value={shared.period}
-                onChange={e => setShared(f => ({ ...f, period: e.target.value }))} />
+              <label style={labelStyle}>Period *</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <select style={inputStyle} value={shared.period_month}
+                  onChange={e => setShared(f => ({ ...f, period_month: parseInt(e.target.value, 10) }))}>
+                  {MONTHS_FULL.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                </select>
+                <select style={inputStyle} value={shared.period_year}
+                  onChange={e => setShared(f => ({ ...f, period_year: parseInt(e.target.value, 10) }))}>
+                  {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
             </div>
 
             {/* Dates row */}
