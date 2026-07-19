@@ -26,25 +26,35 @@ function defaultPeriod() {
 
 // ─── Window helpers ───────────────────────────────────────────────────────────
 
+function pad2(n) { return String(n).padStart(2, '0') }
+
 // Returns the last 6 complete months, not including the current month.
 // E.g. if today is July 2026, returns Jan 1 2026 – Jun 30 2026.
+// Built from plain year/month integers (no Date→toISOString round-trip) —
+// that round-trip converts a local midnight to UTC, which rolls the date
+// back a day (and sometimes a whole month) for any timezone ahead of UTC.
 function getSixMonthWindow() {
-  const now   = new Date()
-  const end   = new Date(now.getFullYear(), now.getMonth(), 1)    // start of current month (exclusive)
-  const start = new Date(now.getFullYear(), now.getMonth() - 6, 1) // 6 months back
+  const now = new Date()
+  const endYear  = now.getFullYear()
+  const endMonth = now.getMonth() // 0-indexed; exclusive end = 1st of this month
+  let startYear  = endYear
+  let startMonth = endMonth - 6
+  if (startMonth < 0) { startMonth += 12; startYear -= 1 }
   return {
-    start: start.toISOString().slice(0, 10),
-    end:   end.toISOString().slice(0, 10),
+    start: `${startYear}-${pad2(startMonth + 1)}-01`,
+    end:   `${endYear}-${pad2(endMonth + 1)}-01`,
   }
 }
 
 function windowLabel(win) {
-  const s = new Date(win.start + 'T00:00:00')
-  // end is exclusive (start of current month), so last month = end - 1 month
-  const e = new Date(win.end + 'T00:00:00')
-  e.setMonth(e.getMonth() - 1)
-  const sStr = `${MONTHS[s.getMonth()]} ${s.getFullYear()}`
-  const eStr = `${MONTHS[e.getMonth()]} ${e.getFullYear()}`
+  const [sy, sm] = win.start.split('-').map(Number)
+  const [ey, em] = win.end.split('-').map(Number)
+  // end is exclusive (1st of current month), so last included month = end - 1
+  let lastMonth = em - 1
+  let lastYear  = ey
+  if (lastMonth < 1) { lastMonth = 12; lastYear -= 1 }
+  const sStr = `${MONTHS[sm - 1]} ${sy}`
+  const eStr = `${MONTHS[lastMonth - 1]} ${lastYear}`
   return `${sStr} – ${eStr}`
 }
 
