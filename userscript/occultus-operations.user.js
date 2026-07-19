@@ -93,12 +93,6 @@
 
 #occ-xan-footer { padding: 10px; border-top: 1px solid #333; margin-top: 10px; }
 
-#occ-warn-list { max-height: 400px; overflow-y: auto; overflow-x: hidden !important; margin-top: 5px; padding-right: 5px; }
-.warn-item { background: #1a1a1a; border: 1px solid #333; padding: 8px; border-radius: 4px; margin-top: 6px; }
-.warn-name { color: #ff6b6b; font-weight: bold; font-size: 13px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px; }
-.warn-line { font-size: 11px; color: #bbb; display: flex; justify-content: space-between; }
-.warn-val { color: #fff; font-weight: bold; }
-
 #occ-faction-btn .occ-inline-icon {
     width: 16px !important;
     height: 16px !important;
@@ -186,18 +180,12 @@ transform: translateY(3px);
 
 <div id="occ-council-page" style="display:none;">
     <button id="occ-monthly-xanax"><img src="${XANAX_ICON}" class="xan-icon">Monthly Xanax</button>
-    <button id="occ-warnings-btn">⚠️ Warnings</button>
     <button id="occ-back-to-main" class="red-btn nav-btn">⬅ Back</button>
 </div>
 
 <div id="occ-xanax-page" style="display:none;">
     <div id="occ-member-list"></div>
     <button id="occ-xan-back" class="red-btn nav-btn">⬅ Back</button>
-</div>
-
-<div id="occ-warnings-page" style="display:none;">
-    <div id="occ-warn-list"></div>
-    <button id="occ-warn-back" class="red-btn nav-btn">⬅ Back</button>
 </div>
 
 <div id="occ-settings-page" style="display:none;">
@@ -217,8 +205,6 @@ transform: translateY(3px);
         document.getElementById("occ-monthly-xanax").onclick = fetchAndShowMembers;
         document.getElementById("occ-xan-back").onclick = openCouncil;
         document.getElementById("occ-update-api").onclick = manualUpdateKey;
-        document.getElementById("occ-warnings-btn").onclick = fetchAndShowWarnings;
-        document.getElementById("occ-warn-back").onclick = openCouncil;
     }
 
     function showMainPage() {
@@ -240,7 +226,7 @@ transform: translateY(3px);
     }
 
     function hideAllPages() {
-    ["occ-main-page", "occ-council-page", "occ-xanax-page", "occ-warnings-page", "occ-settings-page"].forEach(id => {
+    ["occ-main-page", "occ-council-page", "occ-xanax-page", "occ-settings-page"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = "none";
     });
@@ -420,9 +406,12 @@ transform: translateY(3px);
     listContainer.innerHTML = "";
 
     // --- Build faction → rank → members map ---
+    // Grouped by derived_rank (earned via hits — see xanaxController.js),
+    // not the member's real Torn faction_position, so council/archon/
+    // co-leader/leader members still show up under the rank they've earned.
     const factionMap = {};
     res.data.members.forEach(m => {
-        const matchedRank = TARGET_RANKS.find(r => r.toLowerCase() === (m.faction_position || "").toLowerCase());
+        const matchedRank = TARGET_RANKS.find(r => r.toLowerCase() === (m.derived_rank || "").toLowerCase());
         if (!matchedRank) return;
 
         const faction = m.faction_id;
@@ -530,69 +519,6 @@ transform: translateY(3px);
     hideAllPages();
     document.getElementById("occ-xanax-page").style.display = "block";
     document.getElementById("occ-title").textContent = "Select Member";
-    setStatus("Ready");
-    }
-
-    async function fetchAndShowWarnings() {
-    const jwt = SafeStore.get(JWT_STORAGE);
-    if (!jwt) {
-        setStatus("Not authenticated — reopen panel", true);
-        return;
-    }
-
-    const warnBtn = document.getElementById("occ-warnings-btn");
-    const originalContent = warnBtn.innerHTML;
-
-    warnBtn.disabled = true;
-    warnBtn.textContent = "⏳ Loading...";
-    setStatus("Fetching Warnings...");
-
-    const res = await apiRequest("GET", "/api/leadership/warnings", null, jwt);
-
-    warnBtn.disabled = false;
-    warnBtn.innerHTML = originalContent;
-
-    if (res.status !== 200 || !res.data?.warnings) {
-        setStatus("Fetch Error: " + res.status, true);
-        return;
-    }
-
-    // Tally chain/energy/other/total counts per member from the raw warning rows.
-    const tallies = {};
-    res.data.warnings.forEach(w => {
-        if (!tallies[w.torn_user_id]) {
-            tallies[w.torn_user_id] = { name: w.username, chain: 0, energy: 0, total: 0 };
-        }
-        const t = tallies[w.torn_user_id];
-        t.total++;
-        if (w.warning_type === "Chain") t.chain++;
-        else if (w.warning_type === "Energy") t.energy++;
-    });
-
-    const listContainer = document.getElementById("occ-warn-list");
-    listContainer.innerHTML = "";
-    let totalFound = 0;
-
-    Object.values(tallies).forEach(t => {
-        const item = document.createElement("div");
-        item.className = "warn-item";
-        item.innerHTML = `
-            <div class="warn-name">${t.name}</div>
-            <div class="warn-line">Chain Warnings: <span class="warn-val">${t.chain}</span></div>
-            <div class="warn-line">Energy Warnings: <span class="warn-val">${t.energy}</span></div>
-            <div class="warn-line">Total Warnings: <span class="warn-val">${t.total}</span></div>
-        `;
-        listContainer.appendChild(item);
-        totalFound++;
-    });
-
-    if (totalFound === 0) {
-        listContainer.innerHTML = "<p style='text-align:center; padding:10px;'>No active warnings found.</p>";
-    }
-
-    hideAllPages();
-    document.getElementById("occ-warnings-page").style.display = "block";
-    document.getElementById("occ-title").textContent = "Warnings";
     setStatus("Ready");
     }
 

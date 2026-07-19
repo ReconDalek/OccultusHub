@@ -1,7 +1,26 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
-const TARGET_RANKS = ['HARBINGER', 'DOOMSAYER', 'SENTINEL', 'ARCANIST', 'ADEPT'];
+
+// Mirrors src/components/LeadershipTabs/MemberRanksTab.jsx RANK_TIERS —
+// a member's xanax-eligible rank is earned via hits, not their real Torn
+// faction_position, so leadership (Leader/Co-leader/Archon/Council) still
+// qualifies based on what they'd earn if they weren't holding office.
+const RANK_TIERS = [
+  { name: 'Harbinger', min: 15000 },
+  { name: 'Doomsayer', min: 5000 },
+  { name: 'Sentinel',  min: 2500 },
+  { name: 'Arcanist',  min: 1000 },
+  { name: 'Adept',     min: 500 },
+  { name: 'Acolyte',   min: 0 },
+];
+
+function getDerivedRank(totalHits) {
+  for (const tier of RANK_TIERS) {
+    if (totalHits >= tier.min) return tier.name;
+  }
+  return 'Acolyte';
+}
 
 function currentUtcMonth() {
   const now = new Date();
@@ -30,11 +49,15 @@ export async function getDistributions(request, env) {
     const prev = previousMonth(targetYear, targetMonth);
 
     const factionClause = factionId ? 'fm.faction_id = ?' : `fm.faction_id IN (${FACTION_IDS.join(',')})`;
-    const rankPlaceholders = TARGET_RANKS.map(() => '?').join(',');
 
+    // Same total_hits computation as memberController.getFactionMembers —
+    // pre-aggregate each hits table before joining to avoid Cartesian inflation.
     const query = `
       SELECT
         fm.torn_user_id, fm.username, fm.faction_id, fm.faction_position, fm.level,
+        COALESCE(ch.total_chain_hits, 0)
+          + ROUND(COALESCE(wh.total_war_units, 0), 0)
+          + COALESCE(cx.total_custom_hits, 0)                    AS total_hits,
         xd.quantity AS given_quantity, xd.given_by_username, xd.given_at,
         CASE WHEN xd.id IS NOT NULL THEN 1 ELSE 0 END AS is_complete,
         CASE WHEN EXISTS (
@@ -43,22 +66,38 @@ export async function getDistributions(request, env) {
             AND w.period_year = ? AND w.period_month = ?
         ) THEN 1 ELSE 0 END AS is_warned
       FROM faction_members fm
+      LEFT JOIN (
+        SELECT torn_user_id, SUM(total_attacks) AS total_chain_hits
+        FROM chain_hits GROUP BY torn_user_id
+      ) ch ON ch.torn_user_id = fm.torn_user_id
+      LEFT JOIN (
+        SELECT torn_user_id, SUM(units) AS total_war_units
+        FROM war_hits GROUP BY torn_user_id
+      ) wh ON wh.torn_user_id = fm.torn_user_id
+      LEFT JOIN (
+        SELECT torn_user_id, SUM(hits) AS total_custom_hits
+        FROM custom_hits GROUP BY torn_user_id
+      ) cx ON cx.torn_user_id = fm.torn_user_id
       LEFT JOIN xanax_distributions xd
         ON xd.torn_user_id = fm.torn_user_id
        AND xd.distribution_year = ? AND xd.distribution_month = ?
       WHERE fm.is_active = 1
         AND ${factionClause}
-        AND UPPER(fm.faction_position) IN (${rankPlaceholders})
-      ORDER BY fm.faction_position, fm.username ASC
+      ORDER BY total_hits DESC, fm.username ASC
     `;
 
     const binds = [prev.year, prev.month, targetYear, targetMonth];
     if (factionId) binds.push(factionId);
-    binds.push(...TARGET_RANKS);
 
     const { results } = await env.DB.prepare(query).bind(...binds).all();
 
-    return jsonResponse({ members: results || [], year: targetYear, month: targetMonth });
+    // Derive each member's earned rank from total_hits (not their real Torn
+    // position) and drop anyone whose earned rank is Acolyte — no perk tier.
+    const members = (results || [])
+      .map(m => ({ ...m, derived_rank: getDerivedRank(m.total_hits) }))
+      .filter(m => m.derived_rank !== 'Acolyte');
+
+    return jsonResponse({ members, year: targetYear, month: targetMonth });
   } catch (err) {
     console.error('getDistributions error:', err);
     return errorResponse('Failed to fetch xanax distributions', 500);
