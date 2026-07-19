@@ -1155,6 +1155,25 @@ export async function verifyWarData(request, env) {
       chain_count:    a.chain ?? 0,
     }));
 
+    // Diff against whatever's currently tracked in war_attacks, so leadership can
+    // see exactly which attacks verification added/removed vs live tracking —
+    // useful for spotting systematic gaps in the live tracker over time.
+    // Only possible pre-hits_saved; raw rows are purged once payout is finalised.
+    const { results: liveRows } = await env.DB.prepare(
+      `SELECT torn_attack_id, attacker_name, defender_name, attack_type, result, respect_gain, started_at
+       FROM war_attacks WHERE ranked_war_id=?`
+    ).bind(warId).all();
+
+    let diff = null;
+    if (liveRows && liveRows.length > 0) {
+      const liveIds     = new Set(liveRows.map(r => r.torn_attack_id));
+      const verifiedIds = new Set(rawAttacks.map(a => a.torn_attack_id));
+      diff = {
+        missingFromLive: rawAttacks.filter(a => !liveIds.has(a.torn_attack_id)),
+        extraInLive:     liveRows.filter(r => !verifiedIds.has(r.torn_attack_id)),
+      };
+    }
+
     return jsonResponse({
       ...stats,
       attacks: rawAttacks,
@@ -1162,6 +1181,7 @@ export async function verifyWarData(request, env) {
       truncated,
       key_user: apiKeyObj.username,
       range: { start_at: startAt, end_at: endAt },
+      diff,
     });
   } catch (err) {
     console.error('verifyWarData error:', err);

@@ -936,11 +936,18 @@ function AttackLogTab({ warId }) {
 
 function unixToInput(unix) {
   if (!unix) return ''
-  return new Date(unix * 1000).toISOString().slice(0, 16) // UTC datetime string
+  return new Date(unix * 1000).toISOString().slice(0, 19) // UTC datetime string, seconds included
 }
 function inputToUnix(val) {
   if (!val) return null
-  return Math.floor(new Date(val + ':00Z').getTime() / 1000)
+  // datetime-local values are "YYYY-MM-DDTHH:MM" or, with a seconds-enabled
+  // input, "YYYY-MM-DDTHH:MM:SS". If seconds are missing we don't know how far
+  // into that minute the real moment was — round UP to the next minute rather
+  // than truncating to :00, so verification never cuts off trailing attacks
+  // (e.g. a war ending 11:25:52 must run through 11:26:00, not stop at 11:25:00).
+  const hasSeconds = val.length > 16
+  const unix = Math.floor(new Date((hasSeconds ? val : `${val}:00`) + 'Z').getTime() / 1000)
+  return hasSeconds ? unix : unix + 60
 }
 
 function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
@@ -1017,11 +1024,11 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War Start</label>
-            <input type="datetime-local" value={startInput} onChange={e => setStartInput(e.target.value)} style={{ ...inp, width: '100%' }} />
+            <input type="datetime-local" step="1" value={startInput} onChange={e => setStartInput(e.target.value)} style={{ ...inp, width: '100%' }} />
           </div>
           <div>
             <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>War End</label>
-            <input type="datetime-local" value={endInput} onChange={e => setEndInput(e.target.value)} style={{ ...inp, width: '100%' }} />
+            <input type="datetime-local" step="1" value={endInput} onChange={e => setEndInput(e.target.value)} style={{ ...inp, width: '100%' }} />
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1089,6 +1096,17 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             </div>
           </div>
 
+          {/* Attack-level diff vs currently tracked data */}
+          {result.diff ? (
+            (result.diff.missingFromLive.length > 0 || result.diff.extraInLive.length > 0) && (
+              <VerifyDiffPanel diff={result.diff} />
+            )
+          ) : (
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '0 0 14px' }}>
+              No attack-level diff available — this war's raw tracked attacks were already purged (payout finalised), so only the aggregate comparison above is possible.
+            </p>
+          )}
+
           {/* New member stats */}
           <div style={{ marginBottom: '14px' }}>
             <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Verified Member Stats</p>
@@ -1116,6 +1134,69 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Verify diff panel — attack-level differences vs live tracking ────────────
+// Surfaces exactly which attacks caused the aggregate numbers above to differ,
+// so a recurring gap here can point at a bug in the live tracker itself.
+
+function VerifyDiffRow({ a }) {
+  return (
+    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <td style={{ padding: '5px 8px', fontSize: '11px', color: "var(--text-faint)", whiteSpace: 'nowrap' }}>{formatUnixDateTime(a.started_at)}</td>
+      <td style={{ padding: '5px 8px', fontSize: '12px', color: '#e4e4e7' }}>{a.attacker_name || a.attacker_id || '—'}</td>
+      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-muted)" }}>{a.defender_name || a.defender_id || '—'}</td>
+      <td style={{ padding: '5px 8px', fontSize: '11px', color: "var(--text-secondary)" }}>{a.attack_type}</td>
+      <td style={{ padding: '5px 8px', fontSize: '11px', color: "var(--text-secondary)" }}>{a.result || '—'}</td>
+      <td style={{ padding: '5px 8px', fontSize: '11px', color: "var(--text-secondary)", textAlign: 'right' }}>{fmt(a.respect_gain, 2)}</td>
+    </tr>
+  )
+}
+
+function VerifyDiffTable({ title, rows, color, note }) {
+  if (!rows.length) return null
+  return (
+    <div style={{ marginBottom: '10px' }}>
+      <p style={{ color, fontSize: '11px', fontWeight: '600', margin: '0 0 4px' }}>{title} ({rows.length})</p>
+      {note && <p style={{ color: "var(--text-faint)", fontSize: '10px', margin: '0 0 6px' }}>{note}</p>}
+      <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead>
+            <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
+              {['Time', 'Attacker', 'Defender', 'Type', 'Result', 'Respect'].map(h => (
+                <th key={h} style={{ padding: '5px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: "var(--text-faint)", textAlign: h === 'Respect' ? 'right' : 'left', borderBottom: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((a, i) => <VerifyDiffRow key={a.torn_attack_id ?? i} a={a} />)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function VerifyDiffPanel({ diff }) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
+        Attack-Level Diff <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>— what actually changed</span>
+      </p>
+      <VerifyDiffTable
+        title="Missing from live tracking"
+        note="Found by verification but not currently stored — the live tracker missed these."
+        rows={diff.missingFromLive}
+        color="#4ade80"
+      />
+      <VerifyDiffTable
+        title="In live tracking but not in verified range"
+        note="Currently stored but not returned by this verification — check the time range, or these may be stale/duplicate rows."
+        rows={diff.extraInLive}
+        color="#f87171"
+      />
     </div>
   )
 }
