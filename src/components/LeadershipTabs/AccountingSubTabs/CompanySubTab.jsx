@@ -95,6 +95,13 @@ const TD = ({ children, right, muted, color }) => (
   }}>{children}</td>
 )
 
+// Small dulled "faction 30%" sub-line shown beneath a per-member amount
+const CutLine = ({ value }) => (
+  <div style={{ fontSize: '10px', color: "var(--text-faint)", marginTop: '2px', fontWeight: '400' }}>
+    30%: {fmt(value * 0.3)}
+  </div>
+)
+
 export default function CompanySubTab({ factionId }) {
   const [companies, setCompanies]       = useState([])
   const [loading, setLoading]           = useState(true)
@@ -318,13 +325,23 @@ export default function CompanySubTab({ factionId }) {
                   <TD right color={c.daily_wages > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_wages) : '—'}</TD>
                   <TD right color={c.daily_advert > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_advert) : '—'}</TD>
                   <TD right color={c.avg_daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_profit) : '—'}</TD>
-                  <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : "var(--text-muted)"}>{(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}</TD>
-                  <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.mtd_profit) : '—'}</TD>
-                  <TD right color={hasDays ? '#60a5fa' : "var(--text-muted)"}>{hasDays ? fmt(c.ytd_profit) : '—'}</TD>
+                  <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : "var(--text-muted)"}>
+                    {(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}
+                    {(c.prev_month_profit ?? 0) > 0 && <CutLine value={c.prev_month_profit} />}
+                  </TD>
+                  <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>
+                    {hasDays ? fmt(c.mtd_profit) : '—'}
+                    {hasDays && <CutLine value={c.mtd_profit} />}
+                  </TD>
+                  <TD right color={hasDays ? '#60a5fa' : "var(--text-muted)"}>
+                    {hasDays ? fmt(c.ytd_profit) : '—'}
+                    {hasDays && <CutLine value={c.ytd_profit} />}
+                  </TD>
                   <TD right color={hasDays ? '#a78bfa' : "var(--text-muted)"}>
                     {hasDays
                       ? <span title={`${c.month_snapshot_days} day${c.month_snapshot_days === 1 ? '' : 's'} of data`}>{fmt(c.est_monthly)}</span>
                       : '—'}
+                    {hasDays && <CutLine value={c.est_monthly} />}
                   </TD>
                   <td style={{ padding: '10px 12px' }}>
                     <button
