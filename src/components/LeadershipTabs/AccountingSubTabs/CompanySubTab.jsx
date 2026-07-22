@@ -291,10 +291,10 @@ export default function CompanySubTab({ factionId }) {
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
               <TH>Company</TH>
               <TH>Director</TH>
-              <TH right>Daily Income</TH>
+              <TH right>Daily Income Avg</TH>
               <TH right>Wages</TH>
               <TH right>Advert</TH>
-              <TH right>Daily Profit</TH>
+              <TH right>Daily Profit Avg</TH>
               <TH right>Prev Month</TH>
               <TH right>MTD</TH>
               <TH right>YTD</TH>
@@ -314,10 +314,10 @@ export default function CompanySubTab({ factionId }) {
                     )}
                   </TD>
                   <TD muted>{c.director_name ?? `#${c.director_id}`}</TD>
-                  <TD right>{c.has_api_key ? fmt(c.daily_income) : '—'}</TD>
+                  <TD right>{hasDays ? fmt(c.avg_daily_income) : '—'}</TD>
                   <TD right color={c.daily_wages > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_wages) : '—'}</TD>
                   <TD right color={c.daily_advert > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_advert) : '—'}</TD>
-                  <TD right color={c.daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_profit) : '—'}</TD>
+                  <TD right color={c.avg_daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_profit) : '—'}</TD>
                   <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : "var(--text-muted)"}>{(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}</TD>
                   <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.mtd_profit) : '—'}</TD>
                   <TD right color={hasDays ? '#60a5fa' : "var(--text-muted)"}>{hasDays ? fmt(c.ytd_profit) : '—'}</TD>
@@ -406,7 +406,7 @@ export default function CompanySubTab({ factionId }) {
       </div>
 
       <p style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '16px' }}>
-        Principal: {fmt(PRINCIPAL)} per company · Profit = daily income − wages − advert ·
+        Principal: {fmt(PRINCIPAL)} per company · Daily Income Avg / Daily Profit Avg = average of this month's daily snapshots (not just the latest day) · Profit = daily income − wages − advert ·
         MTD / YTD / Prev Month = sum of daily profit snapshots · Current Month Est. = daily average × days in month ·
         Days Tracked = days where all companies with API keys have data · Only paid principal counts toward networth
       </p>

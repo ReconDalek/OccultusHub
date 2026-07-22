@@ -240,6 +240,7 @@ export async function getCompanyProfits(request, env, user) {
            COALESCE(s.ytd_profit, 0)        AS ytd_profit,
            COALESCE(s.prev_month_profit, 0) AS prev_month_profit,
            COALESCE(s.month_days, 0)        AS month_snapshot_days,
+           COALESCE(s.avg_daily_income, 0)  AS avg_daily_income,
            COALESCE(s.avg_daily_profit, 0)  AS avg_daily_profit,
            COALESCE(s.avg_daily_cut, 0)     AS avg_daily_cut
          FROM company_profit_cache c
@@ -254,6 +255,8 @@ export async function getCompanyProfits(request, env, user) {
                        AND  snapshot_date <  date('now', 'start of month')
                        THEN daily_profit ELSE 0 END)                                                   AS prev_month_profit,
              COUNT(CASE WHEN snapshot_date >= date('now', 'start of month') THEN 1 END)               AS month_days,
+             AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
+                       THEN CAST(daily_income AS REAL) END)                                            AS avg_daily_income,
              AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
                        THEN CAST(daily_profit AS REAL) END)                                            AS avg_daily_profit,
              AVG(CASE WHEN snapshot_date >= date('now', 'start of month')
