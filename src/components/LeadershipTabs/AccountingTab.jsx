@@ -290,6 +290,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
               settings={settings}
               armoryValue={armoryValues[faction.basic?.id] ?? 0}
               racketValue={racketValues[faction.basic?.id] ?? 0}
+              summary={summaries[faction.basic?.id]}
             />
 
           ))}
@@ -437,6 +438,8 @@ function calcFactionNetworth(faction, settings, armoryValue = 0) {
   return respectEst + pointsEst + factionNet + armoryValue
 }
 
+// Group-owned assets — not tied to any one faction (unlike wars, OC, and
+// expenses, which now live in each FactionNetworthCard instead).
 function InvestmentCard({ summaries, shownIds }) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -448,13 +451,9 @@ function InvestmentCard({ summaries, shownIds }) {
   const companyPrincipal = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.total_principal ?? 0), 0)
   const companyTotal   = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.total            ?? 0), 0)
   const companyWithKey = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.with_key         ?? 0), 0)
-  const warMonthly     = shownIds.reduce((s, id) => s + (summaries[id]?.wars?.monthly_income        ?? 0), 0)
-  const warCount       = shownIds.reduce((s, id) => s + (summaries[id]?.wars?.count                 ?? 0), 0)
-  const ocMonthly      = shownIds.reduce((s, id) => s + (summaries[id]?.oc?.monthly_income          ?? 0), 0)
-  const ocConfigured   = shownIds.some(id => summaries[id]?.oc?.configured)
 
   const totalInvested = invPrincipal + stockInvested + companyPrincipal
-  const totalProfit   = invMonthly + stockMonthly + companyMonthly + warMonthly + ocMonthly
+  const totalMonthly  = invMonthly + stockMonthly + companyMonthly
 
   const rows = [
     {
@@ -476,26 +475,7 @@ function InvestmentCard({ summaries, shownIds }) {
       monthly: companyMonthly,
       partial: companyWithKey < companyTotal,
     },
-    {
-      label: 'Wars',
-      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`,
-      monthly: warMonthly,
-    },
-    {
-      label: 'Organized Crime',
-      sub: 'Not yet tracked',
-      monthly: ocMonthly,
-      placeholder: !ocConfigured,
-    },
   ]
-
-  const expenseRows = [
-    { label: 'Armory',        sub: 'Not yet tracked', monthly: shownIds.reduce((s, id) => s + (summaries[id]?.expenses?.armory?.monthly_cost       ?? 0), 0), configured: shownIds.some(id => summaries[id]?.expenses?.armory?.configured) },
-    { label: 'OD Insurance',  sub: 'Not yet tracked', monthly: shownIds.reduce((s, id) => s + (summaries[id]?.expenses?.od_insurance?.monthly_cost ?? 0), 0), configured: shownIds.some(id => summaries[id]?.expenses?.od_insurance?.configured) },
-    { label: 'Rank Perks',    sub: 'Not yet tracked', monthly: shownIds.reduce((s, id) => s + (summaries[id]?.expenses?.rank_perks?.monthly_cost   ?? 0), 0), configured: shownIds.some(id => summaries[id]?.expenses?.rank_perks?.configured) },
-  ]
-  const totalExpenses = expenseRows.reduce((s, r) => s + r.monthly, 0)
-  const netMonthly    = totalProfit - totalExpenses
 
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', overflow: 'hidden' }}>
@@ -510,7 +490,7 @@ function InvestmentCard({ summaries, shownIds }) {
           cursor: 'pointer', userSelect: 'none',
         }}
       >
-        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Profit & Expenses</span>
+        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Investments</span>
         <span style={{ color: "var(--text-faint)", fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
       </div>
 
@@ -527,54 +507,23 @@ function InvestmentCard({ summaries, shownIds }) {
                 <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{
-                  color: row.placeholder ? "var(--text-ghost)" : (row.partial ? '#f97316' : '#f4f4f5'),
-                  fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
-                  fontStyle: row.placeholder ? 'italic' : 'normal',
-                }}>
-                  {row.placeholder ? '—' : <>{fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></>}
+                <div style={{ color: row.partial ? '#f97316' : '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
+                  {fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
                   {row.partial && <span style={{ color: '#f97316', fontSize: '10px', marginLeft: '4px' }}>partial</span>}
                 </div>
-                {row.principal != null && <div style={{ color: "var(--text-muted)", fontSize: '11px' }}>principal {fmt(row.principal)}</div>}
-              </div>
-            </div>
-          ))}
-
-          {/* Expenses */}
-          <div style={{ padding: '10px 16px 4px', color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'rgba(248,113,113,0.03)' }}>
-            Expenses
-          </div>
-          {expenseRows.map((row, i) => (
-            <div key={row.label} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
-              padding: '10px 16px',
-              borderBottom: i < expenseRows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-              background: 'rgba(248,113,113,0.03)',
-            }}>
-              <div style={{ flex: '1 1 0', minWidth: 0 }}>
-                <div style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{row.label}</div>
-                <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                {row.configured ? (
-                  <div style={{ color: '#f87171', fontSize: '14px', fontWeight: '600' }}>
-                    −{fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
-                  </div>
-                ) : (
-                  <div style={{ color: "var(--text-ghost)", fontSize: '14px', fontWeight: '400', fontStyle: 'italic' }}>—</div>
-                )}
+                <div style={{ color: "var(--text-muted)", fontSize: '11px' }}>principal {fmt(row.principal)}</div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Footer — principal / profit / expenses / net */}
+      {/* Footer — split networth / monthly */}
       <div style={{
         padding: '12px 16px',
         background: 'rgba(255,255,255,0.02)',
         borderTop: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px',
       }}>
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
           <div>
@@ -582,16 +531,8 @@ function InvestmentCard({ summaries, shownIds }) {
             <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
           </div>
           <div>
-            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Profit</div>
-            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalProfit)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Expenses</div>
-            <div style={{ color: totalExpenses > 0 ? '#f87171' : "var(--text-muted)", fontSize: '16px', fontWeight: '700' }}>{fmt(totalExpenses)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net</div>
-            <div style={{ color: netMonthly >= 0 ? '#4ade80' : '#f87171', fontSize: '16px', fontWeight: '700' }}>{fmt(netMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
+            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
           </div>
         </div>
       </div>
@@ -599,7 +540,7 @@ function InvestmentCard({ summaries, shownIds }) {
   )
 }
 
-function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue = 0 }) {
+function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue = 0, summary }) {
   const [collapsed, setCollapsed] = useState(false)
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
@@ -617,7 +558,24 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
 
   // Networth uses faction balance (vault − members) — can be negative, which is intentional
   const totalNetworth = respectEst + pointsEst + factionNet + armoryValue
-  const monthlyProfit = racketValue
+
+  // Profit/expense streams that belong to this specific faction (unlike bank
+  // investments/stocks/companies, which are owned by Occultus as a whole and
+  // live in the separate Investments card below)
+  const warMonthly     = summary?.wars?.monthly_income ?? 0
+  const warCount       = summary?.wars?.count ?? 0
+  const ocMonthly       = summary?.oc?.monthly_income ?? 0
+  const ocConfigured    = summary?.oc?.configured ?? false
+  const armoryExpense   = summary?.expenses?.armory?.monthly_cost ?? 0
+  const armoryConfigured = summary?.expenses?.armory?.configured ?? false
+  const odExpense       = summary?.expenses?.od_insurance?.monthly_cost ?? 0
+  const odConfigured    = summary?.expenses?.od_insurance?.configured ?? false
+  const perksExpense    = summary?.expenses?.rank_perks?.monthly_cost ?? 0
+  const perksConfigured = summary?.expenses?.rank_perks?.configured ?? false
+
+  const totalProfit   = racketValue + warMonthly + ocMonthly
+  const totalExpenses = armoryExpense + odExpense + perksExpense
+  const netMonthly     = totalProfit - totalExpenses
 
   const itemRackets = rackets.filter(r => r.reward?.type === 'Item')
   const racketSub = itemRackets.length > 0
@@ -662,6 +620,26 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     },
   ]
 
+  const incomeRows = [
+    {
+      label: 'Wars',
+      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`,
+      value: warMonthly,
+    },
+    {
+      label: 'Organized Crime',
+      sub: 'Not yet tracked',
+      value: ocMonthly,
+      placeholder: !ocConfigured,
+    },
+  ]
+
+  const expenseRows = [
+    { label: 'Armory Spend', sub: 'Not yet tracked', value: armoryExpense, configured: armoryConfigured },
+    { label: 'OD Insurance', sub: 'Not yet tracked', value: odExpense,     configured: odConfigured },
+    { label: 'Rank Perks',   sub: 'Not yet tracked', value: perksExpense, configured: perksConfigured },
+  ]
+
   return (
     <div style={{
       background: 'rgba(255,255,255,0.03)',
@@ -690,7 +668,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
         </div>
       </div>
 
-      {/* Rows — unchanged */}
+      {/* Networth rows */}
       {!collapsed && <div style={{ padding: '0 4px' }}>
         {rows.map((row, i) => (
           <div key={row.label} style={{
@@ -715,9 +693,61 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
             </div>
           </div>
         ))}
+
+        {/* Income — faction-specific profit streams */}
+        <div style={{ padding: '10px 16px 4px', color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Income
+        </div>
+        {incomeRows.map((row, i) => (
+          <div key={row.label} style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+            padding: '10px 16px',
+            borderBottom: i < incomeRows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+          }}>
+            <div style={{ flex: '1 1 0', minWidth: 0, paddingRight: '8px' }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{row.label}</div>
+              <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
+            </div>
+            <div style={{
+              color: row.placeholder ? "var(--text-ghost)" : '#4ade80',
+              fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
+              fontStyle: row.placeholder ? 'italic' : 'normal',
+              textAlign: 'right', flexShrink: 0, whiteSpace: 'nowrap',
+            }}>
+              {row.placeholder ? '—' : <>{fmt(row.value)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></>}
+            </div>
+          </div>
+        ))}
+
+        {/* Expenses — faction-specific costs */}
+        <div style={{ padding: '10px 16px 4px', color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'rgba(248,113,113,0.03)' }}>
+          Expenses
+        </div>
+        {expenseRows.map((row, i) => (
+          <div key={row.label} style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+            padding: '10px 16px',
+            borderBottom: i < expenseRows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+            background: 'rgba(248,113,113,0.03)',
+          }}>
+            <div style={{ flex: '1 1 0', minWidth: 0, paddingRight: '8px' }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{row.label}</div>
+              <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              {row.configured ? (
+                <div style={{ color: '#f87171', fontSize: '14px', fontWeight: '600' }}>
+                  −{fmt(row.value)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
+                </div>
+              ) : (
+                <div style={{ color: "var(--text-ghost)", fontSize: '14px', fontWeight: '400', fontStyle: 'italic' }}>—</div>
+              )}
+            </div>
+          </div>
+        ))}
       </div>}
 
-      {/* Footer — networth + monthly profit */}
+      {/* Footer — networth / profit / expenses / net */}
       <div style={{
         padding: '12px 16px',
         background: 'rgba(255,255,255,0.02)',
@@ -729,9 +759,21 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
           <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalNetworth)}</div>
         </div>
         <div>
-          <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
+          <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Profit</div>
           <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>
-            {fmt(monthlyProfit)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
+            {fmt(totalProfit)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Expenses</div>
+          <div style={{ color: totalExpenses > 0 ? '#f87171' : "var(--text-muted)", fontSize: '16px', fontWeight: '700' }}>
+            {fmt(totalExpenses)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net</div>
+          <div style={{ color: netMonthly >= 0 ? '#4ade80' : '#f87171', fontSize: '16px', fontWeight: '700' }}>
+            {fmt(netMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
           </div>
         </div>
       </div>
