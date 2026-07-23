@@ -336,10 +336,11 @@ export async function getSummary(request, env) {
     const stockWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
 
     const companyWhere = factionId ? `WHERE c.faction_id = ?` : ``;
+    const warWhere = factionId ? `WHERE faction_id = ? AND is_paid = 1 AND hits_saved = 1` : `WHERE is_paid = 1 AND hits_saved = 1`;
     const now = new Date();
     const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
 
-    const [invRows, stockRows, companyRows] = await Promise.all([
+    const [invRows, stockRows, companyRows, warRow] = await Promise.all([
       env.DB.prepare(`SELECT amount, rate, duration_months, member_profit_pct FROM accounting_investments ${invWhere}`).bind(...invParams).all(),
       env.DB.prepare(`SELECT payout_frequency, tier, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
       env.DB.prepare(
@@ -350,6 +351,21 @@ export async function getSummary(request, env) {
          ${companyWhere}
          GROUP BY c.company_id`
       ).bind(...invParams).all(),
+      // War income (MTD actual): 10% (or whatever factionShare was set to) of each
+      // fully paid-out war's total payout this month. Wars are sporadic, not daily
+      // recurring like companies, so MTD-actual is more honest than a projection.
+      // Bucketed by payout_processed_at (when Save to Rankings locked it in) with a
+      // fallback to ended_at for wars paid before that column existed.
+      env.DB.prepare(
+        `SELECT
+           COUNT(*) AS war_count,
+           SUM(CAST(json_extract(payout_json,'$.settings.totalAmount') AS REAL)
+               * CAST(json_extract(payout_json,'$.settings.factionShare') AS REAL) / 100.0) AS war_income
+         FROM ranked_wars
+         ${warWhere}
+           AND payout_json IS NOT NULL
+           AND date(COALESCE(payout_processed_at, datetime(ended_at, 'unixepoch'))) >= date('now','start of month')`
+      ).bind(...invParams).first(),
     ]);
 
     const invResults = invRows.results || [];
@@ -403,6 +419,20 @@ export async function getSummary(request, env) {
         with_key: companyWithKey,
         total_principal: companyTotalPrincipal,
         monthly_income: companyMonthlyIncome,
+      },
+      wars: {
+        count: warRow?.war_count ?? 0,
+        monthly_income: warRow?.war_income ?? 0,
+      },
+      // Not yet tracked — placeholders so the UI structure is ready before real data exists
+      oc: {
+        monthly_income: 0,
+        configured: false,
+      },
+      expenses: {
+        armory:       { monthly_cost: 0, configured: false },
+        od_insurance: { monthly_cost: 0, configured: false },
+        rank_perks:   { monthly_cost: 0, configured: false },
       },
     });
   } catch (e) {

@@ -312,9 +312,17 @@ function OverviewSubTab({ factionId, onNavigate }) {
             const stockMonthly     = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.stocks?.monthly_income      ?? 0), 0)
             const companyPrincipal = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.companies?.total_principal  ?? 0), 0)
             const companyMonthly   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.companies?.monthly_income   ?? 0), 0)
+            const warMonthly       = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.monthly_income        ?? 0), 0)
+            const warCount         = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.count                 ?? 0), 0)
+            const ocMonthly        = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.oc?.monthly_income          ?? 0), 0)
+            const totalExpenses    = displayFactions.reduce((s, f) => s
+              + (summaries[f.basic?.id]?.expenses?.armory?.monthly_cost       ?? 0)
+              + (summaries[f.basic?.id]?.expenses?.od_insurance?.monthly_cost ?? 0)
+              + (summaries[f.basic?.id]?.expenses?.rank_perks?.monthly_cost   ?? 0), 0)
             const investmentPrincipal = invPrincipal + stockInvested + companyPrincipal
             const combinedNetworth = factionSubtotal + investmentPrincipal
-            const combinedMonthly  = totalRackets + invMonthly + stockMonthly + companyMonthly
+            const combinedProfit   = totalRackets + invMonthly + stockMonthly + companyMonthly + warMonthly + ocMonthly
+            const combinedNet      = combinedProfit - totalExpenses
 
             return (
               <div style={{
@@ -339,8 +347,18 @@ function OverviewSubTab({ factionId, onNavigate }) {
                   </div>
                   <div>
                     <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
-                    <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
-                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>rackets + investments + stocks + companies</div>
+                    <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedProfit)}<span style={{ color: "var(--text-faint)", fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
+                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>rackets + investments + stocks + companies + wars + OC</div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Expenses</div>
+                    <div style={{ color: totalExpenses > 0 ? '#f87171' : "var(--text-muted)", fontSize: '22px', fontWeight: '700' }}>{fmt(totalExpenses)}<span style={{ color: "var(--text-faint)", fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
+                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>armory + OD insurance + rank perks</div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net</div>
+                    <div style={{ color: combinedNet >= 0 ? '#4ade80' : '#f87171', fontSize: '22px', fontWeight: '700' }}>{fmt(combinedNet)}<span style={{ color: "var(--text-faint)", fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
+                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>profit − expenses</div>
                   </div>
                 </div>
 
@@ -377,6 +395,23 @@ function OverviewSubTab({ factionId, onNavigate }) {
                       <span style={{ color: "var(--text-muted)" }}>Companies: </span>
                       <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(companyMonthly)}/mo</span>
                     </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: "var(--text-muted)" }}>Wars ({warCount}): </span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(warMonthly)}/mo</span>
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: "var(--text-muted)" }}>Organized Crime: </span>
+                      <span style={{ color: "var(--text-ghost)", fontWeight: '400', fontStyle: 'italic' }}>not yet tracked</span>
+                    </div>
+                  </div>
+                  <div style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', marginTop: '10px' }}>Expense Breakdown</div>
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    {['Armory', 'OD Insurance', 'Rank Perks'].map(label => (
+                      <div key={label} style={{ fontSize: '12px' }}>
+                        <span style={{ color: "var(--text-muted)" }}>{label}: </span>
+                        <span style={{ color: "var(--text-ghost)", fontWeight: '400', fontStyle: 'italic' }}>not yet tracked</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -413,9 +448,13 @@ function InvestmentCard({ summaries, shownIds }) {
   const companyPrincipal = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.total_principal ?? 0), 0)
   const companyTotal   = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.total            ?? 0), 0)
   const companyWithKey = shownIds.reduce((s, id) => s + (summaries[id]?.companies?.with_key         ?? 0), 0)
+  const warMonthly     = shownIds.reduce((s, id) => s + (summaries[id]?.wars?.monthly_income        ?? 0), 0)
+  const warCount       = shownIds.reduce((s, id) => s + (summaries[id]?.wars?.count                 ?? 0), 0)
+  const ocMonthly      = shownIds.reduce((s, id) => s + (summaries[id]?.oc?.monthly_income          ?? 0), 0)
+  const ocConfigured   = shownIds.some(id => summaries[id]?.oc?.configured)
 
   const totalInvested = invPrincipal + stockInvested + companyPrincipal
-  const totalMonthly  = invMonthly + stockMonthly + companyMonthly
+  const totalProfit   = invMonthly + stockMonthly + companyMonthly + warMonthly + ocMonthly
 
   const rows = [
     {
@@ -437,7 +476,26 @@ function InvestmentCard({ summaries, shownIds }) {
       monthly: companyMonthly,
       partial: companyWithKey < companyTotal,
     },
+    {
+      label: 'Wars',
+      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`,
+      monthly: warMonthly,
+    },
+    {
+      label: 'Organized Crime',
+      sub: 'Not yet tracked',
+      monthly: ocMonthly,
+      placeholder: !ocConfigured,
+    },
   ]
+
+  const expenseRows = [
+    { label: 'Armory',        sub: 'Not yet tracked', monthly: shownIds.reduce((s, id) => s + (summaries[id]?.expenses?.armory?.monthly_cost       ?? 0), 0), configured: shownIds.some(id => summaries[id]?.expenses?.armory?.configured) },
+    { label: 'OD Insurance',  sub: 'Not yet tracked', monthly: shownIds.reduce((s, id) => s + (summaries[id]?.expenses?.od_insurance?.monthly_cost ?? 0), 0), configured: shownIds.some(id => summaries[id]?.expenses?.od_insurance?.configured) },
+    { label: 'Rank Perks',    sub: 'Not yet tracked', monthly: shownIds.reduce((s, id) => s + (summaries[id]?.expenses?.rank_perks?.monthly_cost   ?? 0), 0), configured: shownIds.some(id => summaries[id]?.expenses?.rank_perks?.configured) },
+  ]
+  const totalExpenses = expenseRows.reduce((s, r) => s + r.monthly, 0)
+  const netMonthly    = totalProfit - totalExpenses
 
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', overflow: 'hidden' }}>
@@ -452,7 +510,7 @@ function InvestmentCard({ summaries, shownIds }) {
           cursor: 'pointer', userSelect: 'none',
         }}
       >
-        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Investments</span>
+        <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Profit & Expenses</span>
         <span style={{ color: "var(--text-faint)", fontSize: '12px', transition: 'transform 0.2s', display: 'inline-block', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
       </div>
 
@@ -469,23 +527,54 @@ function InvestmentCard({ summaries, shownIds }) {
                 <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ color: row.partial ? '#f97316' : '#f4f4f5', fontSize: '14px', fontWeight: '600' }}>
-                  {fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
+                <div style={{
+                  color: row.placeholder ? "var(--text-ghost)" : (row.partial ? '#f97316' : '#f4f4f5'),
+                  fontSize: '14px', fontWeight: row.placeholder ? '400' : '600',
+                  fontStyle: row.placeholder ? 'italic' : 'normal',
+                }}>
+                  {row.placeholder ? '—' : <>{fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></>}
                   {row.partial && <span style={{ color: '#f97316', fontSize: '10px', marginLeft: '4px' }}>partial</span>}
                 </div>
-                <div style={{ color: "var(--text-muted)", fontSize: '11px' }}>principal {fmt(row.principal)}</div>
+                {row.principal != null && <div style={{ color: "var(--text-muted)", fontSize: '11px' }}>principal {fmt(row.principal)}</div>}
+              </div>
+            </div>
+          ))}
+
+          {/* Expenses */}
+          <div style={{ padding: '10px 16px 4px', color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'rgba(248,113,113,0.03)' }}>
+            Expenses
+          </div>
+          {expenseRows.map((row, i) => (
+            <div key={row.label} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+              padding: '10px 16px',
+              borderBottom: i < expenseRows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+              background: 'rgba(248,113,113,0.03)',
+            }}>
+              <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{row.label}</div>
+                <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>{row.sub}</div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                {row.configured ? (
+                  <div style={{ color: '#f87171', fontSize: '14px', fontWeight: '600' }}>
+                    −{fmt(row.monthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span>
+                  </div>
+                ) : (
+                  <div style={{ color: "var(--text-ghost)", fontSize: '14px', fontWeight: '400', fontStyle: 'italic' }}>—</div>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Footer — split networth / monthly */}
+      {/* Footer — principal / profit / expenses / net */}
       <div style={{
         padding: '12px 16px',
         background: 'rgba(255,255,255,0.02)',
         borderTop: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap',
       }}>
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
           <div>
@@ -493,8 +582,16 @@ function InvestmentCard({ summaries, shownIds }) {
             <div style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700' }}>{fmt(totalInvested)}</div>
           </div>
           <div>
-            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Est. Monthly Profit</div>
-            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
+            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Profit</div>
+            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: '700' }}>{fmt(totalProfit)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Expenses</div>
+            <div style={{ color: totalExpenses > 0 ? '#f87171' : "var(--text-muted)", fontSize: '16px', fontWeight: '700' }}>{fmt(totalExpenses)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net</div>
+            <div style={{ color: netMonthly >= 0 ? '#4ade80' : '#f87171', fontSize: '16px', fontWeight: '700' }}>{fmt(netMonthly)}<span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400' }}>/mo</span></div>
           </div>
         </div>
       </div>
