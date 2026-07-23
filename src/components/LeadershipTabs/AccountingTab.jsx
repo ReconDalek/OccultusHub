@@ -595,12 +595,6 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
       placeholder: armoryValue === 0,
     },
     {
-      label: 'Rackets',
-      sub: racketSub,
-      value: racketValue > 0 ? racketValue : null,
-      placeholder: racketValue === 0,
-    },
-    {
       label: 'Points',
       sub: `${points.toLocaleString()} × $${(settings.points_value || 0).toLocaleString()}/pt`,
       value: pointsEst,
@@ -621,6 +615,12 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   ]
 
   const incomeRows = [
+    {
+      label: 'Rackets',
+      sub: racketSub,
+      value: racketValue,
+      placeholder: racketValue === 0,
+    },
     {
       label: 'Wars',
       sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`,
