@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getFactionRankPerkExpense, getFactionODInsuranceExpense } from './xanaxController.js';
+import { getFactionArmoryExpense } from './armoryController.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 
@@ -407,10 +408,12 @@ export async function getSummary(request, env) {
 
     // Rank Perks / OD Insurance expenses: both priced at the current cached
     // Xanax market value (item_prices_cache), both Adept+ eligibility only.
+    // Armory expense: this month's deposited items × current item price.
     const perkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
-    const [rankPerkResults, odInsuranceResults] = await Promise.all([
+    const [rankPerkResults, odInsuranceResults, armoryExpenseResults] = await Promise.all([
       Promise.all(perkFactionIds.map(id => getFactionRankPerkExpense(env, id))),
       Promise.all(perkFactionIds.map(id => getFactionODInsuranceExpense(env, id))),
+      Promise.all(perkFactionIds.map(id => getFactionArmoryExpense(env, id))),
     ]);
     const rankPerks = rankPerkResults.reduce((acc, r) => ({
       eligible_members: acc.eligible_members + r.eligible_members,
@@ -427,6 +430,12 @@ export async function getSummary(request, env) {
       monthly_cost:            acc.monthly_cost + r.monthly_cost,
       configured:              true,
     }), { eligible_members: 0, members_with_overdoses: 0, total_overdoses: 0, unit_price: 0, monthly_cost: 0, configured: false });
+    const armoryExpense = armoryExpenseResults.reduce((acc, r) => ({
+      deposit_count: acc.deposit_count + r.deposit_count,
+      total_items:   acc.total_items + r.total_items,
+      monthly_cost:  acc.monthly_cost + r.monthly_cost,
+      configured:    true,
+    }), { deposit_count: 0, total_items: 0, monthly_cost: 0, configured: false });
 
     return jsonResponse({
       investments: {
@@ -456,7 +465,7 @@ export async function getSummary(request, env) {
         configured: false,
       },
       expenses: {
-        armory:       { monthly_cost: 0, configured: false },
+        armory:       armoryExpense,
         od_insurance: odInsurance,
         rank_perks:   rankPerks,
       },

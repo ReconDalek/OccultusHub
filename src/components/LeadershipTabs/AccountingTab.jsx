@@ -409,7 +409,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
                   <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>Armory: </span>
-                      <span style={{ color: "var(--text-ghost)", fontWeight: '400', fontStyle: 'italic' }}>not yet tracked</span>
+                      <span style={{ color: '#f87171', fontWeight: '600' }}>{fmt(totalArmoryExpense)}/mo</span>
                     </div>
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>OD Insurance: </span>
@@ -574,6 +574,8 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const ocConfigured    = summary?.oc?.configured ?? false
   const armoryExpense   = summary?.expenses?.armory?.monthly_cost ?? 0
   const armoryConfigured = summary?.expenses?.armory?.configured ?? false
+  const armoryDepositCount = summary?.expenses?.armory?.deposit_count ?? 0
+  const armoryTotalItems   = summary?.expenses?.armory?.total_items ?? 0
   const odExpense       = summary?.expenses?.od_insurance?.monthly_cost ?? 0
   const odConfigured    = summary?.expenses?.od_insurance?.configured ?? false
   const odMembersWithOD = summary?.expenses?.od_insurance?.members_with_overdoses ?? 0
@@ -647,7 +649,14 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   ]
 
   const expenseRows = [
-    { label: 'Armory Spend', sub: 'Not yet tracked', value: armoryExpense, configured: armoryConfigured },
+    {
+      label: 'Armory Spend',
+      sub: armoryConfigured
+        ? `${armoryDepositCount} deposit${armoryDepositCount !== 1 ? 's' : ''} this month — ${armoryTotalItems.toLocaleString()} items`
+        : 'Not yet tracked',
+      value: armoryExpense,
+      configured: armoryConfigured,
+    },
     {
       label: 'OD Insurance',
       sub: odConfigured

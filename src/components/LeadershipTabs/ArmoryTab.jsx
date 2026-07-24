@@ -300,6 +300,93 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
   )
 }
 
+// ── Deposit log ────────────────────────────────────────────────────────────────
+// Read-only display of armory deposits fetched via cron from Torn's
+// armoryDeposit news category. Does not affect any current calculations here —
+// the Accounting page's Armory expense is computed server-side separately.
+
+function formatDepositTime(unix) {
+  return new Date(unix * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    timeZone: 'UTC',
+  }) + ' UTC/TCT'
+}
+
+function ArmoryDepositsTab() {
+  const [deposits, setDeposits] = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState(null)
+  const [factionFilter, setFactionFilter] = useState(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem('occultusSession')
+    const qs = factionFilter != null ? `?faction_id=${factionFilter}&limit=200` : '?limit=200'
+    setLoading(true)
+    fetch(`${API_BASE_URL}/api/leadership/armory/deposits${qs}`, { headers: { Authorization: token } })
+      .then(r => r.json())
+      .then(d => { if (d.error) setError(d.error); else setDeposits(d.deposits || []) })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [factionFilter])
+
+  return (
+    <div>
+      <div style={{ marginBottom: '16px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 10px' }}>
+          Items deposited into each faction's armory, most recent first. Display only — doesn't affect any current calculations.
+        </p>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {[{ id: null, label: 'All Factions' }, ...FACTIONS].map(f => {
+            const active = factionFilter === f.id
+            return (
+              <button key={String(f.id)} onClick={() => setFactionFilter(f.id)}
+                style={{
+                  padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+                  border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
+                  color: active ? '#f4f4f5' : "var(--text-secondary)",
+                }}
+              >{f.label}</button>
+            )
+          })}
+        </div>
+      </div>
+
+      {loading && <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>Loading deposit log…</p>}
+      {!loading && error && <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>}
+
+      {!loading && !error && (
+        deposits.length === 0 ? (
+          <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>No deposits logged yet.</p>
+        ) : (
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '150px 90px 1fr 130px 90px 110px', gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
+              {['Time', 'Faction', 'Item', 'User', 'Qty', 'Est. Value'].map((h, i) => (
+                <span key={h} style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i >= 4 ? 'right' : 'left' }}>{h}</span>
+              ))}
+            </div>
+            {deposits.map(d => (
+              <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '150px 90px 1fr 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>{formatDepositTime(d.deposited_at)}</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{FACTIONS.find(f => f.id === d.faction_id)?.label ?? d.faction_id}</span>
+                <span style={{ color: '#d4d4d8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.item_name}</span>
+                <a href={`https://www.torn.com/profiles.php?XID=${d.torn_user_id}`} target="_blank" rel="noopener noreferrer"
+                  style={{ color: '#a78bfa', fontSize: '12px', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {d.username}
+                </a>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', textAlign: 'right' }}>{d.quantity.toLocaleString()}</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'right' }}>
+                  {d.unit_price > 0 ? formatValue(d.quantity * d.unit_price) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
 export default function ArmoryTab() {
@@ -345,8 +432,11 @@ export default function ArmoryTab() {
       {/* View tabs: Inventory | Config */}
       <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '24px' }}>
         <button onClick={() => setView('inventory')} style={tabStyle(view === 'inventory')}>Inventory</button>
+        <button onClick={() => setView('deposits')}  style={tabStyle(view === 'deposits')}>Deposit Log</button>
         <button onClick={() => setView('config')}    style={tabStyle(view === 'config')}>Config</button>
       </div>
+
+      {view === 'deposits' && <ArmoryDepositsTab />}
 
       {view === 'config' && <ArmoryConfigTab armory={armory} />}
 

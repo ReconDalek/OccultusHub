@@ -131,6 +131,10 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/armory/refresh' && method === 'POST') {
       return armoryController.refreshArmoryCache(request, env, user);
     }
+    if (pathname === '/api/admin/armory/deposits/refresh' && method === 'POST') {
+      const result = await armoryController.fetchAndCacheArmoryDeposits(env);
+      return jsonResponse({ message: `Armory deposits refreshed: ${result.fetched}/3 factions, ${result.inserted} new`, ...result });
+    }
     if (pathname === '/api/admin/armory/minimums' && method === 'GET') {
       return armoryController.getArmoryMinimums(request, env, user);
     }
@@ -497,6 +501,9 @@ export async function handleRequest(request, env, ctx) {
     // Armory cache + minimums (read-only for inventory highlights)
     if (pathname === '/api/leadership/armory' && method === 'GET') {
       return armoryController.getArmory(request, env, user);
+    }
+    if (pathname === '/api/leadership/armory/deposits' && method === 'GET') {
+      return armoryController.getArmoryDeposits(request, env, user);
     }
     if (pathname === '/api/leadership/armory/minimums' && method === 'GET') {
       return armoryController.getArmoryMinimums(request, env, user);

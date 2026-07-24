@@ -52,6 +52,121 @@ export async function fetchAndCacheArmory(env) {
   return results;
 }
 
+// ── Armory deposit log ────────────────────────────────────────────────────────
+// "<a href = \"...XID=2754706\">Mozz</a> deposited 2000x Empty Blood Bag"
+function parseDepositEntry(text) {
+  const m = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>\s*deposited\s+(\d+)x\s+(.+)$/);
+  if (!m) return null;
+  return {
+    torn_user_id: parseInt(m[1], 10),
+    username: m[2].trim(),
+    quantity: parseInt(m[3], 10),
+    item_name: m[4].trim(),
+  };
+}
+
+export async function fetchAndCacheArmoryDeposits(env) {
+  const results = { fetched: 0, inserted: 0, errors: [] };
+
+  for (const factionId of FACTION_IDS) {
+    try {
+      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
+      if (!apiKeyObj?.key) {
+        results.errors.push({ factionId, error: 'No API key available for this faction' });
+        continue;
+      }
+
+      const data = await fetchWithRetry(
+        `https://api.torn.com/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryDeposit`,
+        { Authorization: `ApiKey ${apiKeyObj.key}` }
+      );
+      if (data?.error) {
+        results.errors.push({ factionId, error: `Torn API error ${data.error.code}: ${data.error.error}` });
+        continue;
+      }
+
+      const stmts = [];
+      for (const item of data.news || []) {
+        const parsed = parseDepositEntry(item.text);
+        if (!parsed) continue;
+        stmts.push(env.DB.prepare(
+          `INSERT OR IGNORE INTO armory_deposits
+             (faction_id, torn_news_id, torn_user_id, username, item_name, quantity, deposited_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).bind(factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, parsed.quantity, item.timestamp));
+      }
+
+      if (stmts.length) {
+        const batchResults = await env.DB.batch(stmts);
+        results.inserted += batchResults.filter(r => (r.meta?.changes ?? 0) > 0).length;
+      }
+      results.fetched++;
+    } catch (e) {
+      console.error(`[armory-deposits] faction ${factionId} failed:`, e.message);
+      results.errors.push({ factionId, error: e.message });
+    }
+  }
+
+  console.log(`[armory-deposits] done — ${results.fetched}/3 fetched, ${results.inserted} new rows, ${results.errors.length} errors`);
+  return results;
+}
+
+export async function getArmoryDeposits(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = url.searchParams.get('faction_id');
+    const limit = Math.min(parseInt(url.searchParams.get('limit'), 10) || 200, 500);
+
+    const where = factionId ? 'WHERE d.faction_id = ?' : '';
+    const params = factionId ? [parseInt(factionId, 10)] : [];
+
+    const { results } = await env.DB.prepare(
+      `SELECT d.id, d.faction_id, d.torn_user_id, d.username, d.item_name, d.quantity, d.deposited_at,
+              COALESCE(p.effective_price, 0) AS unit_price
+       FROM armory_deposits d
+       LEFT JOIN item_prices_cache p ON p.name = d.item_name
+       ${where}
+       ORDER BY d.deposited_at DESC
+       LIMIT ?`
+    ).bind(...params, limit).all();
+
+    return jsonResponse({ deposits: results || [] });
+  } catch (e) {
+    return errorResponse('Failed to fetch armory deposits: ' + e.message, 500);
+  }
+}
+
+// This month's Armory expense for one faction — sum of deposited quantity ×
+// current cached item price, for deposits logged since the start of the
+// current UTC month. Used by accountingController's Armory expense line.
+export async function getFactionArmoryExpense(env, factionId) {
+  const now = new Date();
+  const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+
+  const { results } = await env.DB.prepare(
+    `SELECT d.quantity, COALESCE(p.effective_price, 0) AS unit_price
+     FROM armory_deposits d
+     LEFT JOIN item_prices_cache p ON p.name = d.item_name
+     WHERE d.faction_id = ? AND d.deposited_at >= ?`
+  ).bind(factionId, monthStartTs).all();
+
+  let depositCount = 0;
+  let totalItems = 0;
+  let monthlyCost = 0;
+  for (const r of results || []) {
+    depositCount++;
+    totalItems += r.quantity;
+    monthlyCost += r.quantity * r.unit_price;
+  }
+
+  return {
+    deposit_count: depositCount,
+    total_items: totalItems,
+    monthly_cost: Math.round(monthlyCost),
+    configured: true,
+  };
+}
+
 export async function fetchAndCacheItemPrices(env) {
   console.log('[item-prices] fetching all items from Torn API...');
   try {

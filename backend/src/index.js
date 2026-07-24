@@ -162,7 +162,7 @@ export default {
     // "0 */6 * * *" — armory cache + item prices refresh every 6 hours
     if (event.cron === '0 */6 * * *') {
       try {
-        const { fetchAndCacheArmory, fetchAndCacheItemPrices } = await import('./controllers/armoryController.js');
+        const { fetchAndCacheArmory, fetchAndCacheItemPrices, fetchAndCacheArmoryDeposits } = await import('./controllers/armoryController.js');
         ctx.waitUntil(
           fetchAndCacheArmory(env)
             .then(r => {
@@ -173,6 +173,12 @@ export default {
             .then(() => fetchAndCacheItemPrices(env))
             .then(r => console.log(`[cron] item prices cached: ${r.count} items`))
             .catch(e => console.error('[cron] item prices cache failed:', e))
+            .then(() => fetchAndCacheArmoryDeposits(env))
+            .then(r => {
+              console.log(`[cron] armory deposits: ${r.fetched}/3 factions, ${r.inserted} new`);
+              if (r.errors?.length) console.warn('[cron] armory deposit errors:', r.errors);
+            })
+            .catch(e => console.error('[cron] armory deposits failed:', e))
         );
       } catch (e) {
         console.error('[cron] armory handler error:', e);
