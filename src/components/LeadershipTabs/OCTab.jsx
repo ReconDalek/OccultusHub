@@ -223,6 +223,17 @@ function PredictOutcome({ factionId, crimeName, memberIds, avgCpr }) {
 
 // ─── Crime card ───────────────────────────────────────────────────────────────
 
+// Non-reusable, faction-owned items actually burned (used or lost) running
+// this crime — real either way, whether the crime itself succeeded or failed.
+function crimeItemExpense(crime) {
+  return crime.slots.reduce((sum, s) => {
+    if (s.item_reusable) return sum
+    if (s.item_outcome_owner !== 'faction') return sum
+    if (!['used', 'lost'].includes(s.item_outcome_result)) return sum
+    return sum + (s.item_unit_price || 0)
+  }, 0)
+}
+
 function CrimeCard({ crime }) {
   const bucket = crime.status === 'Recruiting' ? 'recruiting' : crime.status === 'Planning' ? 'planning' : 'completed'
   const countdownTarget = bucket === 'recruiting' ? crime.expired_at : bucket === 'planning' ? crime.ready_at : null
@@ -231,6 +242,7 @@ function CrimeCard({ crime }) {
   const isSuccess = crime.status === 'Successful'
   const isFailure = crime.status === 'Failure'
   const isExpired = crime.status === 'Expired'
+  const itemExpense = bucket === 'completed' ? crimeItemExpense(crime) : 0
 
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden', marginBottom: '12px' }}>
@@ -301,10 +313,10 @@ function CrimeCard({ crime }) {
         })()}
       </div>
 
-      {/* Rewards (completed only) */}
-      {bucket === 'completed' && crime.rewards && (
+      {/* Rewards + item expense (completed only) */}
+      {bucket === 'completed' && (crime.rewards || itemExpense > 0) && (
         <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(255,255,255,0.015)' }}>
-          {crime.rewards.money > 0 && (() => {
+          {crime.rewards?.money > 0 && (() => {
             const money = crime.rewards.money
             const memberPct = crime.rewards.payout?.percentage ?? 80
             const factionPct = 100 - memberPct
@@ -322,9 +334,14 @@ function CrimeCard({ crime }) {
               </>
             )
           })()}
-          {crime.rewards.respect > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>⚡ {crime.rewards.respect} respect</span>}
-          {crime.rewards.items?.length > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>📦 {crime.rewards.items.length} item{crime.rewards.items.length !== 1 ? 's' : ''}</span>}
-          {crime.rewards.payout && (
+          {crime.rewards?.respect > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>⚡ {crime.rewards.respect} respect</span>}
+          {crime.rewards?.items?.length > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>📦 {crime.rewards.items.length} item{crime.rewards.items.length !== 1 ? 's' : ''}</span>}
+          {itemExpense > 0 && (
+            <span title="Non-reusable faction-owned items used or lost running this crime" style={{ color: '#f87171', fontSize: '11px' }}>
+              🧨 Item cost: {fmtMoney(itemExpense)}
+            </span>
+          )}
+          {crime.rewards?.payout && (
             <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
               PAID
             </span>
@@ -756,6 +773,168 @@ function TeamBuilder({ factionId }) {
   )
 }
 
+// ─── Config: per-slot position weights ─────────────────────────────────────────
+// Bulk-editable weight config, mirroring ArmoryConfigTab's UX: collapsible
+// per-crime groups, dirty-row highlighting, single Save Changes button.
+// New crimes/slots appear automatically (seeded server-side whenever the
+// daily OC cron sees a slot combo it hasn't stored a weight row for yet).
+
+function OCConfigTab() {
+  const [crimes, setCrimes] = useState([])
+  const [dirty, setDirty] = useState({}) // `${crime_name}|${position}|${position_number}` -> weight string
+  const [collapsed, setCollapsed] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [saveMsg, setSaveMsg] = useState(null)
+
+  const load = () => {
+    setLoading(true)
+    fetch(`${API_BASE_URL}/api/leadership/oc/weights`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setCrimes(d.crimes || []) })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const keyOf = (crimeName, position, positionNumber) => `${crimeName}|${position}|${positionNumber}`
+
+  const handleChange = (crimeName, position, positionNumber, value) => {
+    setDirty(prev => ({ ...prev, [keyOf(crimeName, position, positionNumber)]: value }))
+  }
+
+  const getValue = (slot) => {
+    const k = keyOf(slot.crime_name, slot.position, slot.position_number)
+    return dirty[k] !== undefined ? dirty[k] : slot.weight
+  }
+
+  const toggleCollapse = (name) => setCollapsed(prev => ({ ...prev, [name]: !prev[name] }))
+
+  async function handleSave() {
+    const updates = Object.entries(dirty).map(([k, weight]) => {
+      const [crime_name, position, position_number] = k.split('|')
+      return { crime_name, position, position_number: Number(position_number), weight: Number(weight) || 0 }
+    })
+    if (!updates.length) return
+
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/oc/weights`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Save failed')
+      setDirty({})
+      setSaveMsg(`Saved — ${data.updated} weight${data.updated !== 1 ? 's' : ''} updated`)
+      setTimeout(() => setSaveMsg(null), 4000)
+      load()
+    } catch (e) {
+      setSaveMsg(`Error: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasDirty = Object.keys(dirty).length > 0
+
+  if (loading) return <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>Loading…</p>
+  if (error) return <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '560px' }}>
+          How much each individual slot's own outcome swings a crime's overall success — the Team Builder fills the
+          highest-weight slots first with the best available members. Same role can have different weights per slot
+          (e.g. Muscle #1 vs #2 vs #3). Weights auto-populate from observed history; edit any value below to override
+          it permanently — overridden rows stop auto-updating. New crimes appear here automatically once Torn releases them.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('Error') ? '#f87171' : '#4ade80' }}>{saveMsg}</span>}
+          <button
+            onClick={handleSave}
+            disabled={saving || !hasDirty}
+            style={{
+              padding: '7px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', border: 'none',
+              cursor: saving || !hasDirty ? 'default' : 'pointer',
+              background: saving || !hasDirty ? 'rgba(255,255,255,0.06)' : '#b3123f',
+              color: saving || !hasDirty ? "var(--text-faint)" : '#f4f4f5',
+              transition: 'all 0.15s',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      {crimes.map(c => {
+        const isOpen = !collapsed[c.crime_name]
+        const overrideCount = c.slots.filter(s => !s.auto_computed).length
+        return (
+          <div key={c.crime_name} style={{ marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button
+              onClick={() => toggleCollapse(c.crime_name)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <span style={{ fontSize: '13px', fontWeight: '600', color: isOpen ? '#f4f4f5' : "var(--text-secondary)" }}>{c.crime_name}</span>
+              <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>
+                {c.slots.length} slot{c.slots.length !== 1 ? 's' : ''}
+                {overrideCount > 0 && <> · <span style={{ color: '#b3123f' }}>{overrideCount} manual override{overrideCount !== 1 ? 's' : ''}</span></>}
+              </span>
+              <span style={{ marginLeft: 'auto', color: "var(--text-faint)", fontSize: '11px' }}>{isOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {isOpen && c.slots.map(slot => {
+              const k = keyOf(slot.crime_name, slot.position, slot.position_number)
+              return (
+                <div
+                  key={k}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 110px 90px', gap: '8px',
+                    padding: '7px 12px', alignItems: 'center',
+                    borderTop: '1px solid rgba(255,255,255,0.04)',
+                    background: dirty[k] !== undefined ? 'rgba(179,18,63,0.04)' : 'transparent',
+                  }}
+                >
+                  <span style={{ fontSize: '13px', color: '#d4d4d8' }}>{slot.position_label || `${slot.position} #${slot.position_number}`}</span>
+                  <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>{slot.auto_computed ? 'Auto' : 'Manual'}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={getValue(slot)}
+                      onChange={e => handleChange(slot.crime_name, slot.position, slot.position_number, e.target.value)}
+                      style={{
+                        width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '4px', color: '#f4f4f5', fontSize: '13px', padding: '4px 6px',
+                        textAlign: 'center', outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>%</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+
+      {crimes.length === 0 && (
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>
+          No crime data yet — weights populate once the daily OC cron has cached at least one crime.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
 export default function OCTab() {
@@ -800,10 +979,12 @@ export default function OCTab() {
       <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '20px' }}>
         <button onClick={() => setView('crimes')} style={subTabStyle('crimes')}>Crimes</button>
         <button onClick={() => setView('builder')} style={subTabStyle('builder')}>Team Builder</button>
+        <button onClick={() => setView('config')} style={subTabStyle('config')}>Config</button>
       </div>
 
       {view === 'crimes'  && <CrimesListView factionId={factionId} />}
       {view === 'builder' && <TeamBuilder factionId={factionId} />}
+      {view === 'config'  && <OCConfigTab />}
     </div>
     </CprCurvesContext.Provider>
   )

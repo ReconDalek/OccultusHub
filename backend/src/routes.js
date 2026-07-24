@@ -540,6 +540,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/oc/predict-success' && method === 'POST') {
       return ocController.predictSuccess(request, env, user);
     }
+    if (pathname === '/api/leadership/oc/weights' && method === 'GET') {
+      return ocController.getPositionWeightsConfig(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/weights' && method === 'POST') {
+      return ocController.updatePositionWeightsConfig(request, env, user);
+    }
 
     // Activity tracking
     if (pathname === '/api/leadership/energy' && method === 'GET') {
