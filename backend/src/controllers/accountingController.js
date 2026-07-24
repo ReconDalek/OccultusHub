@@ -440,9 +440,11 @@ export async function getSummary(request, env) {
     }), { deposit_count: 0, total_items: 0, monthly_cost: 0, configured: false });
     const ocProfit = ocProfitResults.reduce((acc, r) => ({
       paid_crimes:    acc.paid_crimes + r.paid_crimes,
+      gross_income:   acc.gross_income + r.gross_income,
+      item_expense:   acc.item_expense + r.item_expense,
       monthly_income: acc.monthly_income + r.monthly_income,
       configured:     true,
-    }), { paid_crimes: 0, monthly_income: 0, configured: false });
+    }), { paid_crimes: 0, gross_income: 0, item_expense: 0, monthly_income: 0, configured: false });
 
     return jsonResponse({
       investments: {

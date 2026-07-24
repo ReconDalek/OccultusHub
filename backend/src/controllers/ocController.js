@@ -73,12 +73,14 @@ export async function fetchAndCacheFactionCrimes(env) {
 
           for (const slot of crime.slots || []) {
             const posInfo = slot.position_info || {};
+            const itemOutcome = slot.user?.item_outcome || null;
             slotUpserts.push(env.DB.prepare(
               `INSERT INTO oc_crime_slots
                  (crime_id, position, position_id, position_label, position_number,
                   item_id, item_reusable, item_available, torn_user_id, joined_at,
-                  progress, outcome, outcome_duration, checkpoint_pass_rate)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  progress, outcome, outcome_duration, checkpoint_pass_rate,
+                  item_outcome_owner, item_outcome_result)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(crime_id, position_id) DO UPDATE SET
                  torn_user_id = excluded.torn_user_id,
                  joined_at = excluded.joined_at,
@@ -86,13 +88,16 @@ export async function fetchAndCacheFactionCrimes(env) {
                  outcome = excluded.outcome,
                  outcome_duration = excluded.outcome_duration,
                  checkpoint_pass_rate = excluded.checkpoint_pass_rate,
-                 item_available = excluded.item_available`
+                 item_available = excluded.item_available,
+                 item_outcome_owner = excluded.item_outcome_owner,
+                 item_outcome_result = excluded.item_outcome_result`
             ).bind(
               crime.id, slot.position, posInfo.id ?? null, posInfo.label ?? null, posInfo.number ?? null,
               slot.item_requirement?.id ?? null, slot.item_requirement?.is_reusable ? 1 : 0, slot.item_requirement?.is_available ? 1 : 0,
               slot.user?.id ?? null, slot.user?.joined_at ?? null,
               slot.user?.progress ?? null, slot.user?.outcome ?? null, slot.user?.outcome_duration ?? null,
-              slot.checkpoint_pass_rate ?? 0
+              slot.checkpoint_pass_rate ?? 0,
+              itemOutcome?.owned_by ?? null, itemOutcome?.outcome ?? null
             ));
 
             if (slot.user?.id && slot.checkpoint_pass_rate > 0) {
@@ -190,10 +195,22 @@ export async function getCrimes(request, env, user) {
       }
     }
 
+    // Resolve required item names for display
+    const itemIds = [...new Set(slots.map(s => s.item_id).filter(Boolean))];
+    const itemNameMap = {};
+    if (itemIds.length) {
+      const items = await fetchInChunks(env, ph => `SELECT item_id, name FROM item_prices_cache WHERE item_id IN (${ph})`, itemIds);
+      for (const i of items) itemNameMap[i.item_id] = i.name;
+    }
+
     const enriched = crimes.map(c => ({
       ...c,
       rewards: c.rewards_json ? JSON.parse(c.rewards_json) : null,
-      slots: (slotsByCrime[c.id] || []).map(s => ({ ...s, username: s.torn_user_id ? (memberMap[s.torn_user_id] ?? `#${s.torn_user_id}`) : null })),
+      slots: (slotsByCrime[c.id] || []).map(s => ({
+        ...s,
+        username: s.torn_user_id ? (memberMap[s.torn_user_id] ?? `#${s.torn_user_id}`) : null,
+        item_name: s.item_id ? (itemNameMap[s.item_id] ?? `Item #${s.item_id}`) : null,
+      })),
     }));
 
     return jsonResponse({ crimes: enriched, members: memberMap });
@@ -502,19 +519,22 @@ export async function predictSuccess(request, env, user) {
 }
 
 // This month's Organized Crime profit for one faction — the faction's cut of
-// every paid-out crime's reward money. Members split the payout percentage
-// recorded on the crime itself (usually 80%, per policy), faction keeps the
-// rest (usually 20%) — used by accountingController's `oc` income line.
+// every paid-out crime's reward money, minus the cost of non-reusable
+// faction-owned items actually consumed running those same crimes. Members
+// split the payout percentage recorded on the crime itself (usually 80%,
+// per policy), faction keeps the rest (usually 20%) — used by
+// accountingController's `oc` income line, which reads monthly_income (net).
 export async function getFactionOCProfit(env, factionId) {
   const now = new Date();
   const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
 
   const { results } = await env.DB.prepare(
-    `SELECT rewards_json FROM oc_crimes WHERE faction_id = ? AND status = 'Successful' AND rewards_json IS NOT NULL`
+    `SELECT id, rewards_json FROM oc_crimes WHERE faction_id = ? AND status = 'Successful' AND rewards_json IS NOT NULL`
   ).bind(factionId).all();
 
   let paidCrimes = 0;
-  let factionProfit = 0;
+  let grossIncome = 0;
+  const paidCrimeIds = [];
   for (const row of results) {
     let rewards;
     try { rewards = JSON.parse(row.rewards_json); } catch { continue; }
@@ -525,11 +545,36 @@ export async function getFactionOCProfit(env, factionId) {
 
     const memberPct = typeof payout.percentage === 'number' ? payout.percentage : 80; // stated policy default
     const factionPct = 100 - memberPct;
-    factionProfit += money * (factionPct / 100);
+    grossIncome += money * (factionPct / 100);
     paidCrimes++;
+    paidCrimeIds.push(row.id);
   }
 
-  return { paid_crimes: paidCrimes, monthly_income: Math.round(factionProfit), configured: true };
+  // Non-reusable, faction-owned items actually consumed (used or lost) on
+  // those same paid crimes — this month's real out-of-pocket cost of running them.
+  let itemExpense = 0;
+  if (paidCrimeIds.length) {
+    const consumedItems = await fetchInChunks(env, ph => `
+      SELECT s.item_id, COALESCE(p.effective_price, 0) AS unit_price
+      FROM oc_crime_slots s
+      LEFT JOIN item_prices_cache p ON p.item_id = s.item_id
+      WHERE s.crime_id IN (${ph})
+        AND s.item_reusable = 0
+        AND s.item_outcome_owner = 'faction'
+        AND s.item_outcome_result IN ('used', 'lost')
+    `, paidCrimeIds);
+    for (const item of consumedItems) itemExpense += item.unit_price || 0;
+  }
+
+  const netProfit = grossIncome - itemExpense;
+
+  return {
+    paid_crimes: paidCrimes,
+    gross_income: Math.round(grossIncome),
+    item_expense: Math.round(itemExpense),
+    monthly_income: Math.round(netProfit),
+    configured: true,
+  };
 }
 
 // ── Admin: cache status + manual refresh ─────────────────────────────────────

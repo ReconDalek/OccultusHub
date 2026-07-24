@@ -573,6 +573,8 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const ocMonthly       = summary?.oc?.monthly_income ?? 0
   const ocConfigured    = summary?.oc?.configured ?? false
   const ocPaidCrimes    = summary?.oc?.paid_crimes ?? 0
+  const ocGrossIncome   = summary?.oc?.gross_income ?? 0
+  const ocItemExpense   = summary?.oc?.item_expense ?? 0
   const armoryExpense   = summary?.expenses?.armory?.monthly_cost ?? 0
   const armoryConfigured = summary?.expenses?.armory?.configured ?? false
   const armoryDepositCount = summary?.expenses?.armory?.deposit_count ?? 0
@@ -644,7 +646,9 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     {
       label: 'Organized Crime',
       sub: ocConfigured
-        ? `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`
+        ? (ocItemExpense > 0
+            ? `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid — ${fmt(ocGrossIncome)} cut − ${fmt(ocItemExpense)} item costs = net`
+            : `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`)
         : 'Not yet tracked',
       value: ocMonthly,
       placeholder: !ocConfigured,

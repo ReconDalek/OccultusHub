@@ -260,8 +260,18 @@ function CrimeCard({ crime }) {
       {/* Slots */}
       <div style={{ padding: '10px 16px' }}>
         {crime.slots.map(s => (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', flexWrap: 'wrap' }}>
             <span style={{ color: "var(--text-secondary)", fontSize: '12px', minWidth: '110px' }}>{s.position_label || s.position}</span>
+            {(bucket === 'recruiting' || bucket === 'planning') && s.item_name && (
+              <span title={s.item_available ? 'Item available' : 'Item missing or unavailable'} style={{
+                fontSize: '10px', padding: '1px 6px', borderRadius: '4px', flexShrink: 0, whiteSpace: 'nowrap',
+                color: s.item_available ? "var(--text-muted)" : '#f87171',
+                background: s.item_available ? 'rgba(255,255,255,0.05)' : 'rgba(248,113,113,0.1)',
+                border: `1px solid ${s.item_available ? 'rgba(255,255,255,0.1)' : 'rgba(248,113,113,0.3)'}`,
+              }}>
+                {s.item_available ? '' : '⚠ '}{s.item_name}
+              </span>
+            )}
             {s.torn_user_id ? (
               <a href={`https://www.torn.com/profiles.php?XID=${s.torn_user_id}`} target="_blank" rel="noopener noreferrer"
                 style={{ color: '#a78bfa', fontSize: '13px', textDecoration: 'none', flex: '1 1 0', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -294,7 +304,24 @@ function CrimeCard({ crime }) {
       {/* Rewards (completed only) */}
       {bucket === 'completed' && crime.rewards && (
         <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(255,255,255,0.015)' }}>
-          {crime.rewards.money > 0 && <span style={{ color: '#4ade80', fontSize: '12px', fontWeight: '600' }}>{fmtMoney(crime.rewards.money)}</span>}
+          {crime.rewards.money > 0 && (() => {
+            const money = crime.rewards.money
+            const memberPct = crime.rewards.payout?.percentage ?? 80
+            const factionPct = 100 - memberPct
+            const participantCount = crime.slots.filter(s => s.torn_user_id).length
+            const perMember = participantCount > 0 ? (money * memberPct / 100) / participantCount : 0
+            return (
+              <>
+                <span style={{ color: '#4ade80', fontSize: '12px', fontWeight: '600' }}>{fmtMoney(money)} total</span>
+                <span style={{ color: "var(--text-muted)", fontSize: '11px' }}>
+                  {memberPct}% split ({participantCount} member{participantCount !== 1 ? 's' : ''}): {fmtMoney(perMember)} each
+                </span>
+                <span style={{ color: "var(--text-muted)", fontSize: '11px' }}>
+                  Faction {factionPct}%: {fmtMoney(money * factionPct / 100)}
+                </span>
+              </>
+            )
+          })()}
           {crime.rewards.respect > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>⚡ {crime.rewards.respect} respect</span>}
           {crime.rewards.items?.length > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>📦 {crime.rewards.items.length} item{crime.rewards.items.length !== 1 ? 's' : ''}</span>}
           {crime.rewards.payout && (
