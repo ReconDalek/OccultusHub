@@ -64,10 +64,24 @@ function DifficultyBadge({ difficulty }) {
   )
 }
 
+// Checkpoint Pass Rate — Torn's own per-member, per-position stat estimating
+// how likely that member is to pass their individual checkpoint on this crime.
+// The colour bands below are just an informal visual aid we chose (not an
+// official Torn threshold) — higher is better regardless of the exact colour.
 function CprBadge({ rate }) {
   if (!rate) return <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>—</span>
   const color = rate >= 80 ? '#4ade80' : rate >= 60 ? '#f97316' : '#f87171'
   return <span style={{ color, fontSize: '12px', fontWeight: '600' }}>{rate}%</span>
+}
+
+// Time-based crime completion progress (0–100%, how close the crime is to
+// becoming "Ready") — unrelated to CPR/skill, shown only during Planning.
+function ProgressBar({ progress }) {
+  return (
+    <div title={`${Math.round(progress || 0)}% toward ready`} style={{ width: '80px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ width: `${progress || 0}%`, height: '100%', background: 'linear-gradient(90deg,#6d28d9,#b3123f)' }} />
+    </div>
+  )
 }
 
 const OUTCOME_STYLE = {
@@ -76,6 +90,80 @@ const OUTCOME_STYLE = {
   Hospitalized: { icon: '🏥', color: '#f97316' },
   Jailed:       { icon: '🚔', color: '#f97316' },
   Injured:      { icon: '🤕', color: '#eab308' },
+}
+
+// ─── Predict outcome ────────────────────────────────────────────────────────
+// 1) Checks whether this exact set of members has run this crime before and
+//    shows their real historical success rate if so.
+// 2) Otherwise compares this team's average CPR against the average CPR seen
+//    in this crime's past successful vs failed runs, as a rough estimate.
+
+function PredictOutcome({ factionId, crimeName, memberIds, avgCpr }) {
+  const [shown, setShown]     = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [result, setResult]   = useState(null)
+  const [error, setError]     = useState(null)
+
+  if (!memberIds.length) return null
+
+  const run = async () => {
+    setShown(true)
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/oc/predict-success`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ faction_id: factionId, crime_name: crimeName, member_ids: memberIds, avg_cpr: avgCpr }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Prediction failed')
+      setResult(data)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!shown) {
+    return (
+      <button onClick={run} style={{
+        padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(139,92,246,0.3)', background: 'rgba(139,92,246,0.08)',
+        color: '#a78bfa', fontSize: '11px', cursor: 'pointer', marginTop: '8px',
+      }}>Predict Outcome</button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '6px', background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.15)' }}>
+      {loading && <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: 0 }}>Analyzing history…</p>}
+      {!loading && error && <p style={{ color: '#f87171', fontSize: '11px', margin: 0 }}>{error}</p>}
+      {!loading && !error && result?.exact_match && (
+        <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: 0 }}>
+          This exact team has run this crime <strong style={{ color: '#f4f4f5' }}>{result.exact_match.runs}</strong> time{result.exact_match.runs !== 1 ? 's' : ''} before —{' '}
+          <strong style={{ color: result.exact_match.success_rate >= 50 ? '#4ade80' : '#f87171' }}>{result.exact_match.success_rate}% successful</strong>{' '}
+          ({result.exact_match.successes}/{result.exact_match.runs}).
+        </p>
+      )}
+      {!loading && !error && !result?.exact_match && result?.fallback && (
+        <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: 0 }}>
+          No exact match — based on {result.fallback.sample_size} past run{result.fallback.sample_size !== 1 ? 's' : ''} of this crime,
+          successful teams averaged {result.fallback.success_avg_cpr}% CPR vs {result.fallback.fail_avg_cpr}% for failed ones.
+          {result.fallback.estimated_success_chance !== null && (
+            <> This team's avg CPR is {result.fallback.team_avg_cpr}% → estimated{' '}
+              <strong style={{ color: result.fallback.estimated_success_chance >= 50 ? '#4ade80' : '#f87171' }}>
+                ~{result.fallback.estimated_success_chance}% chance of success
+              </strong>.
+            </>
+          )}
+        </p>
+      )}
+      {!loading && !error && !result?.exact_match && !result?.fallback && (
+        <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: 0 }}>{result?.message || 'Not enough history for this crime yet to estimate an outcome.'}</p>
+      )}
+    </div>
+  )
 }
 
 // ─── Crime card ───────────────────────────────────────────────────────────────
@@ -127,11 +215,7 @@ function CrimeCard({ crime }) {
             ) : (
               <span style={{ color: "var(--text-ghost)", fontSize: '13px', fontStyle: 'italic', flex: '1 1 0' }}>Vacant</span>
             )}
-            {bucket === 'planning' && s.torn_user_id && (
-              <div style={{ width: '80px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden', flexShrink: 0 }}>
-                <div style={{ width: `${s.progress || 0}%`, height: '100%', background: 'linear-gradient(90deg,#6d28d9,#b3123f)' }} />
-              </div>
-            )}
+            {bucket === 'planning' && s.torn_user_id && <ProgressBar progress={s.progress} />}
             {bucket === 'completed' && s.outcome && (
               <span style={{ fontSize: '11px', color: OUTCOME_STYLE[s.outcome]?.color ?? "var(--text-muted)", flexShrink: 0 }}>
                 {OUTCOME_STYLE[s.outcome]?.icon ?? ''} {s.outcome}
@@ -140,6 +224,16 @@ function CrimeCard({ crime }) {
             <CprBadge rate={s.checkpoint_pass_rate} />
           </div>
         ))}
+
+        {bucket === 'planning' && (() => {
+          const filledSlots = crime.slots.filter(s => s.torn_user_id)
+          const rates = filledSlots.map(s => s.checkpoint_pass_rate).filter(r => r > 0)
+          const avgCpr = rates.length ? Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 10) / 10 : null
+          return (
+            <PredictOutcome factionId={crime.faction_id} crimeName={crime.name}
+              memberIds={filledSlots.map(s => s.torn_user_id)} avgCpr={avgCpr} />
+          )
+        })()}
       </div>
 
       {/* Rewards (completed only) */}
@@ -179,6 +273,9 @@ function CrimesListView({ factionId }) {
 
   return (
     <div>
+      <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '0 0 14px' }}>
+        The % badge next to each member is their checkpoint pass rate (CPR) — Torn's estimate of how likely they are to pass their individual part of this crime (colour is just a visual aid, not an official threshold). The bar shown during Planning is unrelated — it's the crime's time-based progress toward becoming Ready.
+      </p>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
         {STATUS_TABS.map(t => {
           const active = status === t.id
@@ -207,7 +304,66 @@ function CrimesListView({ factionId }) {
 
 // ─── Team builder ─────────────────────────────────────────────────────────────
 
-function TeamBuilder({ factionId }) {
+const inputStyle = {
+  background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+  color: '#f4f4f5', borderRadius: '8px', padding: '8px 12px', fontSize: '13px',
+}
+
+// Shared result card for both Suggested and Custom team output.
+function TeamResultCard({ team, factionId, crimeName, editable, roster, usedIds, onPick }) {
+  const memberIds = team.positions.filter(p => p.torn_user_id).map(p => p.torn_user_id)
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '13px' }}>Team {team.team_index + 1}</span>
+        <span style={{ fontSize: '12px', color: team.filled === team.needed ? '#4ade80' : '#f97316' }}>
+          {team.filled}/{team.needed} filled · avg {team.avg_pass_rate}%
+        </span>
+      </div>
+      <div style={{ padding: '8px 14px' }}>
+        {team.positions.map((p, i) => (
+          <div key={p.slotKey ?? i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: i < team.positions.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
+            <span style={{ color: "var(--text-secondary)", fontSize: '12px', flexShrink: 0 }}>{p.position_label}</span>
+            {editable ? (
+              <select
+                value={p.torn_user_id ?? ''}
+                onChange={e => onPick(p.slotKey, e.target.value ? Number(e.target.value) : null)}
+                style={{ ...inputStyle, padding: '4px 8px', fontSize: '12px', maxWidth: '160px' }}
+              >
+                <option value="">— Vacant —</option>
+                {roster.members
+                  .filter(m => !usedIds.has(m.torn_user_id) || m.torn_user_id === p.torn_user_id)
+                  .map(m => {
+                    const rate = roster.cpr[m.torn_user_id]?.[p.position]
+                    return <option key={m.torn_user_id} value={m.torn_user_id}>{m.username}{rate != null ? ` (${rate}%)` : ''}</option>
+                  })}
+              </select>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <a href={`https://www.torn.com/profiles.php?XID=${p.torn_user_id}`} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: '12px', textDecoration: 'none' }}>
+                  {p.username}
+                </a>
+                <CprBadge rate={p.pass_rate} />
+              </div>
+            )}
+            {editable && <CprBadge rate={p.pass_rate} />}
+          </div>
+        ))}
+        {team.filled < team.needed && (
+          <p style={{ color: '#f97316', fontSize: '11px', margin: '8px 0 0' }}>
+            {editable ? 'Not every position is filled yet.' : 'Not enough members with known CPR for this crime to fill every slot.'}
+          </p>
+        )}
+        {memberIds.length > 0 && <PredictOutcome factionId={factionId} crimeName={crimeName} memberIds={memberIds} avgCpr={team.avg_pass_rate} />}
+      </div>
+    </div>
+  )
+}
+
+// ── Suggested mode: algorithmic snake-draft ──────────────────────────────────
+
+function SuggestedTeamBuilder({ factionId }) {
   const [templates, setTemplates] = useState([])
   const [crimeName, setCrimeName] = useState('')
   const [teamCount, setTeamCount] = useState(1)
@@ -245,11 +401,6 @@ function TeamBuilder({ factionId }) {
     } finally {
       setLoading(false)
     }
-  }
-
-  const inputStyle = {
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
-    color: '#f4f4f5', borderRadius: '8px', padding: '8px 12px', fontSize: '13px',
   }
 
   return (
@@ -292,35 +443,114 @@ function TeamBuilder({ factionId }) {
       {result && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
           {result.teams.map(team => (
-            <div key={team.team_index} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden' }}>
-              <div style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '13px' }}>Team {team.team_index + 1}</span>
-                <span style={{ fontSize: '12px', color: team.filled === team.needed ? '#4ade80' : '#f97316' }}>
-                  {team.filled}/{team.needed} filled · avg {team.avg_pass_rate}%
-                </span>
-              </div>
-              <div style={{ padding: '8px 14px' }}>
-                {team.positions.map((p, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: i < team.positions.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
-                    <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{p.position_label}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <a href={`https://www.torn.com/profiles.php?XID=${p.torn_user_id}`} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: '12px', textDecoration: 'none' }}>
-                        {p.username}
-                      </a>
-                      <CprBadge rate={p.pass_rate} />
-                    </div>
-                  </div>
-                ))}
-                {team.filled < team.needed && (
-                  <p style={{ color: '#f97316', fontSize: '11px', margin: '8px 0 0' }}>
-                    Not enough members with known CPR for this crime to fill every slot.
-                  </p>
-                )}
-              </div>
-            </div>
+            <TeamResultCard key={team.team_index} team={team} factionId={factionId} crimeName={crimeName} editable={false} />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Custom mode: manual member assignment per slot ───────────────────────────
+
+function CustomTeamBuilder({ factionId }) {
+  const [templates, setTemplates] = useState([])
+  const [crimeName, setCrimeName] = useState('')
+  const [teamCount, setTeamCount] = useState(1)
+  const [roster, setRoster] = useState({ members: [], cpr: {} })
+  const [picks, setPicks] = useState({}) // `${teamIdx}-${slotIdx}` -> torn_user_id
+
+  useEffect(() => {
+    setCrimeName('')
+    setPicks({})
+    fetch(`${API_BASE_URL}/api/leadership/oc/templates?faction_id=${factionId}`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => setTemplates(d.templates || []))
+      .catch(() => setTemplates([]))
+  }, [factionId])
+
+  useEffect(() => {
+    setPicks({})
+    if (!crimeName) { setRoster({ members: [], cpr: {} }); return }
+    fetch(`${API_BASE_URL}/api/leadership/oc/roster?faction_id=${factionId}&crime_name=${encodeURIComponent(crimeName)}`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => setRoster({ members: d.members || [], cpr: d.cpr || {} }))
+      .catch(() => setRoster({ members: [], cpr: {} }))
+  }, [factionId, crimeName])
+
+  const selectedTemplate = templates.find(t => t.name === crimeName)
+  const usedIds = new Set(Object.values(picks).filter(Boolean))
+
+  const onPick = (slotKey, userId) => {
+    setPicks(prev => ({ ...prev, [slotKey]: userId }))
+  }
+
+  const teams = selectedTemplate ? Array.from({ length: teamCount }, (_, teamIdx) => {
+    const positions = selectedTemplate.positions.map((slot, slotIdx) => {
+      const slotKey = `${teamIdx}-${slotIdx}`
+      const userId = picks[slotKey] ?? null
+      const username = userId ? roster.members.find(m => m.torn_user_id === userId)?.username : null
+      const passRate = userId ? (roster.cpr[userId]?.[slot.position] ?? null) : null
+      return { position: slot.position, position_label: slot.position_label, torn_user_id: userId, username, pass_rate: passRate, slotKey }
+    })
+    const rates = positions.map(p => p.pass_rate).filter(r => r != null)
+    const avg = rates.length ? Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 10) / 10 : 0
+    return { team_index: teamIdx, positions, avg_pass_rate: avg, filled: positions.filter(p => p.torn_user_id).length, needed: positions.length }
+  }) : []
+
+  return (
+    <div>
+      <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 16px' }}>
+        Manually assign a member to each position for however many teams you want — shown with the same CPR and
+        Predict Outcome tools as the suggested builder.
+      </p>
+
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '20px' }}>
+        <div>
+          <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Crime</label>
+          <select style={{ ...inputStyle, minWidth: '220px' }} value={crimeName} onChange={e => setCrimeName(e.target.value)}>
+            <option value="">Select a crime…</option>
+            {templates.map(t => <option key={t.name} value={t.name}>{t.name} ({t.difficulty}/10)</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Teams</label>
+          <input type="number" min="1" max="10" style={{ ...inputStyle, width: '70px' }} value={teamCount}
+            onChange={e => { setTeamCount(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1))); setPicks({}) }} />
+        </div>
+      </div>
+
+      {selectedTemplate && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+          {teams.map(team => (
+            <TeamResultCard key={team.team_index} team={team} factionId={factionId} crimeName={crimeName}
+              editable roster={roster} usedIds={usedIds} onPick={onPick} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Mode wrapper ──────────────────────────────────────────────────────────────
+
+function TeamBuilder({ factionId }) {
+  const [mode, setMode] = useState('suggested')
+
+  const modeStyle = (id) => ({
+    padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+    border: mode === id ? '1px solid rgba(139,92,246,0.5)' : '1px solid rgba(255,255,255,0.12)',
+    background: mode === id ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.04)',
+    color: mode === id ? '#f4f4f5' : "var(--text-secondary)",
+  })
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+        <button onClick={() => setMode('suggested')} style={modeStyle('suggested')}>Suggested</button>
+        <button onClick={() => setMode('custom')} style={modeStyle('custom')}>Custom</button>
+      </div>
+      {mode === 'suggested' ? <SuggestedTeamBuilder factionId={factionId} /> : <CustomTeamBuilder factionId={factionId} />}
     </div>
   )
 }

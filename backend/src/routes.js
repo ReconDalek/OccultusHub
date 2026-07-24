@@ -528,6 +528,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/oc/suggest-teams' && method === 'POST') {
       return ocController.suggestTeams(request, env, user);
     }
+    if (pathname === '/api/leadership/oc/roster' && method === 'GET') {
+      return ocController.getCrimeRoster(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/predict-success' && method === 'POST') {
+      return ocController.predictSuccess(request, env, user);
+    }
 
     // Activity tracking
     if (pathname === '/api/leadership/energy' && method === 'GET') {

@@ -5,11 +5,24 @@ const FACTION_IDS = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
 const MAX_PAGES = 5; // 500 crimes per faction per run — plenty of headroom over a day's activity
 
-// Torn's raw status strings map to our 3 display buckets
-function statusBucket(status) {
-  if (status === 'Recruiting') return 'recruiting';
-  if (status === 'Planning') return 'planning';
-  return 'completed'; // Successful | Failure | Expired
+const BUCKET_STATUSES = {
+  recruiting: ['Recruiting'],
+  planning: ['Planning'],
+  completed: ['Successful', 'Failure', 'Expired'],
+};
+
+// D1 rejects statements with too many bound parameters (SQLITE_ERROR "too many
+// SQL variables") once an IN(...) list gets large — the Completed bucket alone
+// can have hundreds of crime ids. Run the IN(...) query in chunks instead.
+async function fetchInChunks(env, buildQuery, ids, chunkSize = 100) {
+  const all = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const batch = ids.slice(i, i + chunkSize);
+    const placeholders = batch.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(buildQuery(placeholders)).bind(...batch).all();
+    all.push(...results);
+  }
+  return all;
 }
 
 // ── Cron: fetch + cache all crimes for all 3 factions ────────────────────────
@@ -123,6 +136,8 @@ export async function fetchAndCacheFactionCrimes(env) {
 }
 
 // ── GET /api/leadership/oc/crimes?faction_id=&status=recruiting|planning|completed ──
+// Recruiting sorts soonest-to-expire first, Planning sorts soonest-ready first,
+// Completed sorts most-recently-created first.
 export async function getCrimes(request, env, user) {
   try {
     const url = new URL(request.url);
@@ -130,18 +145,25 @@ export async function getCrimes(request, env, user) {
     const status = url.searchParams.get('status'); // optional bucket filter
     if (!factionId || !FACTION_IDS.includes(factionId)) return errorResponse('Invalid or missing faction_id', 400);
 
-    const { results: crimes } = await env.DB.prepare(
-      `SELECT * FROM oc_crimes WHERE faction_id = ? ORDER BY created_at DESC LIMIT 300`
-    ).bind(factionId).all();
+    let query = `SELECT * FROM oc_crimes WHERE faction_id = ?`;
+    const params = [factionId];
+    if (status && BUCKET_STATUSES[status]) {
+      const statuses = BUCKET_STATUSES[status];
+      query += ` AND status IN (${statuses.map(() => '?').join(',')})`;
+      params.push(...statuses);
+    }
+    const orderBy = status === 'recruiting' ? 'expired_at ASC' : status === 'planning' ? 'ready_at ASC' : 'created_at DESC';
+    query += ` ORDER BY ${orderBy} LIMIT 300`;
 
-    const filtered = status ? crimes.filter(c => statusBucket(c.status) === status) : crimes;
-    if (!filtered.length) return jsonResponse({ crimes: [], members: {} });
+    const { results: crimes } = await env.DB.prepare(query).bind(...params).all();
+    if (!crimes.length) return jsonResponse({ crimes: [], members: {} });
 
-    const crimeIds = filtered.map(c => c.id);
-    const placeholders = crimeIds.map(() => '?').join(',');
-    const { results: slots } = await env.DB.prepare(
-      `SELECT * FROM oc_crime_slots WHERE crime_id IN (${placeholders}) ORDER BY position_number ASC`
-    ).bind(...crimeIds).all();
+    const crimeIds = crimes.map(c => c.id);
+    const slots = await fetchInChunks(
+      env,
+      ph => `SELECT * FROM oc_crime_slots WHERE crime_id IN (${ph}) ORDER BY position_number ASC`,
+      crimeIds
+    );
 
     const slotsByCrime = {};
     for (const s of slots) {
@@ -152,23 +174,17 @@ export async function getCrimes(request, env, user) {
     const userIds = [...new Set(slots.map(s => s.torn_user_id).filter(Boolean))];
     const memberMap = {};
     if (userIds.length) {
-      const idPlaceholders = userIds.map(() => '?').join(',');
-      const { results: members } = await env.DB.prepare(
-        `SELECT torn_user_id, username FROM faction_members WHERE torn_user_id IN (${idPlaceholders})`
-      ).bind(...userIds).all();
+      const members = await fetchInChunks(env, ph => `SELECT torn_user_id, username FROM faction_members WHERE torn_user_id IN (${ph})`, userIds);
       for (const m of members) memberMap[m.torn_user_id] = m.username;
 
       const missing = userIds.filter(id => !memberMap[id]);
       if (missing.length) {
-        const missingPlaceholders = missing.map(() => '?').join(',');
-        const { results: fallback } = await env.DB.prepare(
-          `SELECT torn_user_id, username FROM users WHERE torn_user_id IN (${missingPlaceholders})`
-        ).bind(...missing).all();
+        const fallback = await fetchInChunks(env, ph => `SELECT torn_user_id, username FROM users WHERE torn_user_id IN (${ph})`, missing);
         for (const m of fallback) memberMap[m.torn_user_id] = m.username;
       }
     }
 
-    const enriched = filtered.map(c => ({
+    const enriched = crimes.map(c => ({
       ...c,
       rewards: c.rewards_json ? JSON.parse(c.rewards_json) : null,
       slots: (slotsByCrime[c.id] || []).map(s => ({ ...s, username: s.torn_user_id ? (memberMap[s.torn_user_id] ?? `#${s.torn_user_id}`) : null })),
@@ -198,10 +214,11 @@ export async function getCrimeTemplates(request, env, user) {
     if (!names.length) return jsonResponse({ templates: [] });
 
     const crimeIds = names.map(n => n.latest_id);
-    const placeholders = crimeIds.map(() => '?').join(',');
-    const { results: slots } = await env.DB.prepare(
-      `SELECT crime_id, position, position_label, position_number FROM oc_crime_slots WHERE crime_id IN (${placeholders}) ORDER BY position_number ASC`
-    ).bind(...crimeIds).all();
+    const slots = await fetchInChunks(
+      env,
+      ph => `SELECT crime_id, position, position_label, position_number FROM oc_crime_slots WHERE crime_id IN (${ph}) ORDER BY position_number ASC`,
+      crimeIds
+    );
 
     const slotsByCrime = {};
     for (const s of slots) (slotsByCrime[s.crime_id] ??= []).push(s);
@@ -317,6 +334,125 @@ export async function suggestTeams(request, env, user) {
   } catch (e) {
     console.error('suggestTeams error:', e);
     return errorResponse('Failed to suggest teams: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/leadership/oc/roster?faction_id=&crime_name= ────────────────────
+// Active faction members + their best-known CPR per position for this crime —
+// feeds the Custom Team Builder's manual member pickers.
+export async function getCrimeRoster(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+    const crimeName = url.searchParams.get('crime_name');
+    if (!factionId || !FACTION_IDS.includes(factionId)) return errorResponse('Invalid or missing faction_id', 400);
+    if (!crimeName) return errorResponse('crime_name is required', 400);
+
+    const { results: members } = await env.DB.prepare(
+      `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1 ORDER BY username ASC`
+    ).bind(factionId).all();
+
+    const { results: cprRows } = await env.DB.prepare(
+      `SELECT torn_user_id, position, best_pass_rate FROM oc_member_cpr WHERE crime_name = ?`
+    ).bind(crimeName).all();
+
+    const cpr = {};
+    for (const row of cprRows) {
+      (cpr[row.torn_user_id] ??= {})[row.position] = row.best_pass_rate;
+    }
+
+    return jsonResponse({ members, cpr });
+  } catch (e) {
+    console.error('getCrimeRoster error:', e);
+    return errorResponse('Failed to fetch crime roster: ' + e.message, 500);
+  }
+}
+
+// ── POST /api/leadership/oc/predict-success ───────────────────────────────────
+// Body: { faction_id, crime_name, member_ids: [...], avg_cpr? }
+// 1) Looks for past completed runs of this crime by this exact set of members
+//    (same people, regardless of position) and returns their real success rate.
+// 2) If no exact match exists, falls back to comparing this team's average CPR
+//    against the average CPR seen in this crime's past successful vs failed
+//    runs, and interpolates a rough estimated success chance.
+export async function predictSuccess(request, env, user) {
+  try {
+    const { faction_id, crime_name, member_ids, avg_cpr } = await request.json();
+    const factionId = parseInt(faction_id, 10);
+    if (!factionId || !FACTION_IDS.includes(factionId)) return errorResponse('Invalid or missing faction_id', 400);
+    if (!crime_name) return errorResponse('crime_name is required', 400);
+    if (!Array.isArray(member_ids) || !member_ids.length) return errorResponse('member_ids array is required', 400);
+
+    const targetSet = new Set(member_ids.map(Number));
+
+    const { results: pastCrimes } = await env.DB.prepare(
+      `SELECT id, status FROM oc_crimes WHERE faction_id = ? AND name = ? AND status IN ('Successful','Failure') ORDER BY id ASC`
+    ).bind(factionId, crime_name).all();
+
+    if (!pastCrimes.length) {
+      return jsonResponse({ exact_match: null, fallback: null, message: 'No completed runs of this crime found for this faction yet.' });
+    }
+
+    const crimeIds = pastCrimes.map(c => c.id);
+    const slots = await fetchInChunks(
+      env,
+      ph => `SELECT crime_id, torn_user_id, checkpoint_pass_rate FROM oc_crime_slots WHERE crime_id IN (${ph}) AND torn_user_id IS NOT NULL`,
+      crimeIds
+    );
+
+    const slotsByCrime = {};
+    for (const s of slots) (slotsByCrime[s.crime_id] ??= []).push(s);
+
+    // 1) Exact-team match — same set of participants, any position
+    let exactRuns = 0, exactSuccesses = 0;
+    for (const crime of pastCrimes) {
+      const participantIds = new Set((slotsByCrime[crime.id] || []).map(s => s.torn_user_id));
+      if (participantIds.size !== targetSet.size) continue;
+      let same = true;
+      for (const id of targetSet) if (!participantIds.has(id)) { same = false; break; }
+      if (!same) continue;
+      exactRuns++;
+      if (crime.status === 'Successful') exactSuccesses++;
+    }
+    const exactMatch = exactRuns > 0
+      ? { runs: exactRuns, successes: exactSuccesses, success_rate: Math.round((exactSuccesses / exactRuns) * 1000) / 10 }
+      : null;
+
+    // 2) Fallback — average participant CPR of past successful vs failed runs
+    let successCprs = [], failCprs = [];
+    for (const crime of pastCrimes) {
+      const crimeSlots = slotsByCrime[crime.id] || [];
+      const rates = crimeSlots.map(s => s.checkpoint_pass_rate).filter(r => r > 0);
+      if (!rates.length) continue;
+      const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
+      (crime.status === 'Successful' ? successCprs : failCprs).push(avg);
+    }
+
+    let fallback = null;
+    if (successCprs.length && failCprs.length) {
+      const successAvg = successCprs.reduce((a, b) => a + b, 0) / successCprs.length;
+      const failAvg = failCprs.reduce((a, b) => a + b, 0) / failCprs.length;
+      const teamAvg = typeof avg_cpr === 'number' ? avg_cpr : null;
+
+      let estimatedChance = null;
+      if (teamAvg !== null && successAvg !== failAvg) {
+        const clamped = Math.max(0, Math.min(1, (teamAvg - failAvg) / (successAvg - failAvg)));
+        estimatedChance = Math.round(clamped * 1000) / 10;
+      }
+
+      fallback = {
+        sample_size: successCprs.length + failCprs.length,
+        success_avg_cpr: Math.round(successAvg * 10) / 10,
+        fail_avg_cpr: Math.round(failAvg * 10) / 10,
+        team_avg_cpr: teamAvg,
+        estimated_success_chance: estimatedChance,
+      };
+    }
+
+    return jsonResponse({ exact_match: exactMatch, fallback });
+  } catch (e) {
+    console.error('predictSuccess error:', e);
+    return errorResponse('Failed to predict success: ' + e.message, 500);
   }
 }
 
