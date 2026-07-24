@@ -38,16 +38,16 @@ function currentUtcMonth() {
   return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
 }
 
-// Computes this month's expected rank-perk xanax cost for one faction —
-// used by accountingController's Rank Perks expense line. Eligibility/rank
-// mirrors getDistributions (hits banked before this month started), but this
-// only needs counts/coefficients, not per-member distribution status.
-export async function getFactionRankPerkExpense(env, factionId) {
+// Active members of a faction who rank Adept or above — the shared
+// eligibility rule for both Rank Perks and OD Insurance. Rank/hits mirror
+// getDistributions (hits banked before this month started).
+async function getEligibleMembers(env, factionId) {
   const now = new Date();
   const monthStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
 
   const { results } = await env.DB.prepare(`
     SELECT
+      fm.torn_user_id,
       COALESCE(ch.total_chain_hits, 0)
         + ROUND(COALESCE(wh.total_war_units, 0), 0)
         + COALESCE(cx.total_custom_hits, 0) AS total_hits
@@ -69,25 +69,94 @@ export async function getFactionRankPerkExpense(env, factionId) {
     WHERE fm.is_active = 1 AND fm.faction_id = ?
   `).bind(monthStart, monthStart, factionId).all();
 
-  let eligibleMembers = 0;
-  let totalXanax = 0;
-  for (const m of results || []) {
-    const coeff = RANK_COEFFICIENTS[getDerivedRank(m.total_hits || 0)];
-    if (!coeff) continue; // Acolyte — no perk
-    eligibleMembers++;
-    totalXanax += BASE_XANAX * coeff;
-  }
+  return (results || [])
+    .map(m => ({ torn_user_id: m.torn_user_id, rank: getDerivedRank(m.total_hits || 0) }))
+    .filter(m => m.rank !== 'Acolyte');
+}
 
+async function getXanaxUnitPrice(env) {
   const priceRow = await env.DB.prepare(
     `SELECT effective_price FROM item_prices_cache WHERE name = 'Xanax'`
   ).first();
-  const unitPrice = priceRow?.effective_price ?? 0;
+  return priceRow?.effective_price ?? 0;
+}
+
+// Computes this month's expected rank-perk xanax cost for one faction —
+// used by accountingController's Rank Perks expense line.
+export async function getFactionRankPerkExpense(env, factionId) {
+  const eligible = await getEligibleMembers(env, factionId);
+
+  let totalXanax = 0;
+  for (const m of eligible) totalXanax += BASE_XANAX * RANK_COEFFICIENTS[m.rank];
+
+  const unitPrice = await getXanaxUnitPrice(env);
 
   return {
-    eligible_members: eligibleMembers,
+    eligible_members: eligible.length,
     total_xanax: totalXanax,
     unit_price: unitPrice,
     monthly_cost: Math.round(totalXanax * unitPrice),
+    configured: true,
+  };
+}
+
+// Computes this month's OD Insurance xanax cost for one faction: +1 xanax
+// replacement per overdose logged this month, for Adept+ members only.
+// Overdose count comes from personal_stats_snapshots ($.drugs.overdoses),
+// delta from the first snapshot this month to the most recent one.
+export async function getFactionODInsuranceExpense(env, factionId) {
+  const eligible = await getEligibleMembers(env, factionId);
+  const unitPrice = await getXanaxUnitPrice(env);
+
+  if (!eligible.length) {
+    return { eligible_members: 0, members_with_overdoses: 0, total_overdoses: 0, unit_price: unitPrice, monthly_cost: 0, configured: true };
+  }
+
+  const now = new Date();
+  const monthStartDate = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+  const todayDate = now.toISOString().slice(0, 10);
+  const ids = eligible.map(m => m.torn_user_id);
+  const placeholders = ids.map(() => '?').join(',');
+
+  const [startRows, endRows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+      FROM personal_stats_snapshots p
+      INNER JOIN (
+        SELECT torn_user_id, MIN(snapshot_date) AS min_date
+        FROM personal_stats_snapshots
+        WHERE snapshot_date >= ? AND snapshot_date <= ? AND torn_user_id IN (${placeholders})
+        GROUP BY torn_user_id
+      ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+    `).bind(monthStartDate, todayDate, ...ids).all(),
+    env.DB.prepare(`
+      SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+      FROM personal_stats_snapshots p
+      INNER JOIN (
+        SELECT torn_user_id, MAX(snapshot_date) AS max_date
+        FROM personal_stats_snapshots
+        WHERE snapshot_date >= ? AND snapshot_date <= ? AND torn_user_id IN (${placeholders})
+        GROUP BY torn_user_id
+      ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+    `).bind(monthStartDate, todayDate, ...ids).all(),
+  ]);
+
+  const odStart = {};
+  for (const r of startRows.results || []) odStart[r.torn_user_id] = r.val ?? 0;
+
+  let totalOverdoses = 0;
+  let membersWithOverdoses = 0;
+  for (const r of endRows.results || []) {
+    const delta = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
+    if (delta > 0) { totalOverdoses += delta; membersWithOverdoses++; }
+  }
+
+  return {
+    eligible_members: eligible.length,
+    members_with_overdoses: membersWithOverdoses,
+    total_overdoses: totalOverdoses,
+    unit_price: unitPrice,
+    monthly_cost: Math.round(totalOverdoses * unitPrice),
     configured: true,
   };
 }

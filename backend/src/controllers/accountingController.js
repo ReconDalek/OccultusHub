@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getFactionRankPerkExpense } from './xanaxController.js';
+import { getFactionRankPerkExpense, getFactionODInsuranceExpense } from './xanaxController.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 
@@ -405,10 +405,13 @@ export async function getSummary(request, env) {
       AND date(end_date) <= date('now', '+7 days') AND date(end_date) >= date('now')
     `).bind(...invParams).first();
 
-    // Rank Perks expense: base xanax × rank coefficient per eligible member,
-    // priced at the current cached Xanax market value (item_prices_cache).
-    const rankPerkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
-    const rankPerkResults = await Promise.all(rankPerkFactionIds.map(id => getFactionRankPerkExpense(env, id)));
+    // Rank Perks / OD Insurance expenses: both priced at the current cached
+    // Xanax market value (item_prices_cache), both Adept+ eligibility only.
+    const perkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
+    const [rankPerkResults, odInsuranceResults] = await Promise.all([
+      Promise.all(perkFactionIds.map(id => getFactionRankPerkExpense(env, id))),
+      Promise.all(perkFactionIds.map(id => getFactionODInsuranceExpense(env, id))),
+    ]);
     const rankPerks = rankPerkResults.reduce((acc, r) => ({
       eligible_members: acc.eligible_members + r.eligible_members,
       total_xanax:       acc.total_xanax + r.total_xanax,
@@ -416,6 +419,14 @@ export async function getSummary(request, env) {
       monthly_cost:       acc.monthly_cost + r.monthly_cost,
       configured:         true,
     }), { eligible_members: 0, total_xanax: 0, unit_price: 0, monthly_cost: 0, configured: false });
+    const odInsurance = odInsuranceResults.reduce((acc, r) => ({
+      eligible_members:        acc.eligible_members + r.eligible_members,
+      members_with_overdoses:  acc.members_with_overdoses + r.members_with_overdoses,
+      total_overdoses:         acc.total_overdoses + r.total_overdoses,
+      unit_price:              r.unit_price,
+      monthly_cost:            acc.monthly_cost + r.monthly_cost,
+      configured:              true,
+    }), { eligible_members: 0, members_with_overdoses: 0, total_overdoses: 0, unit_price: 0, monthly_cost: 0, configured: false });
 
     return jsonResponse({
       investments: {
@@ -446,7 +457,7 @@ export async function getSummary(request, env) {
       },
       expenses: {
         armory:       { monthly_cost: 0, configured: false },
-        od_insurance: { monthly_cost: 0, configured: false },
+        od_insurance: odInsurance,
         rank_perks:   rankPerks,
       },
     });

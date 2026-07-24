@@ -316,11 +316,10 @@ function OverviewSubTab({ factionId, onNavigate }) {
             const warMonthly       = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.monthly_income        ?? 0), 0)
             const warCount         = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.count                 ?? 0), 0)
             const ocMonthly        = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.oc?.monthly_income          ?? 0), 0)
-            const totalRankPerks   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.rank_perks?.monthly_cost ?? 0), 0)
-            const totalOtherExpenses = displayFactions.reduce((s, f) => s
-              + (summaries[f.basic?.id]?.expenses?.armory?.monthly_cost       ?? 0)
-              + (summaries[f.basic?.id]?.expenses?.od_insurance?.monthly_cost ?? 0), 0)
-            const totalExpenses    = totalOtherExpenses + totalRankPerks
+            const totalRankPerks   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.rank_perks?.monthly_cost   ?? 0), 0)
+            const totalOdInsurance = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.od_insurance?.monthly_cost ?? 0), 0)
+            const totalArmoryExpense = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.armory?.monthly_cost     ?? 0), 0)
+            const totalExpenses    = totalArmoryExpense + totalOdInsurance + totalRankPerks
             const investmentPrincipal = invPrincipal + stockInvested + companyPrincipal
             const combinedNetworth = factionSubtotal + investmentPrincipal
             const combinedProfit   = totalRackets + invMonthly + stockMonthly + companyMonthly + warMonthly + ocMonthly
@@ -408,12 +407,14 @@ function OverviewSubTab({ factionId, onNavigate }) {
                   </div>
                   <div style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', marginTop: '10px' }}>Expense Breakdown</div>
                   <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                    {['Armory', 'OD Insurance'].map(label => (
-                      <div key={label} style={{ fontSize: '12px' }}>
-                        <span style={{ color: "var(--text-muted)" }}>{label}: </span>
-                        <span style={{ color: "var(--text-ghost)", fontWeight: '400', fontStyle: 'italic' }}>not yet tracked</span>
-                      </div>
-                    ))}
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: "var(--text-muted)" }}>Armory: </span>
+                      <span style={{ color: "var(--text-ghost)", fontWeight: '400', fontStyle: 'italic' }}>not yet tracked</span>
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: "var(--text-muted)" }}>OD Insurance: </span>
+                      <span style={{ color: '#f87171', fontWeight: '600' }}>{fmt(totalOdInsurance)}/mo</span>
+                    </div>
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>Rank Perks: </span>
                       <span style={{ color: '#f87171', fontWeight: '600' }}>{fmt(totalRankPerks)}/mo</span>
@@ -575,6 +576,9 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const armoryConfigured = summary?.expenses?.armory?.configured ?? false
   const odExpense       = summary?.expenses?.od_insurance?.monthly_cost ?? 0
   const odConfigured    = summary?.expenses?.od_insurance?.configured ?? false
+  const odMembersWithOD = summary?.expenses?.od_insurance?.members_with_overdoses ?? 0
+  const odOverdoses     = summary?.expenses?.od_insurance?.total_overdoses ?? 0
+  const odUnitPrice     = summary?.expenses?.od_insurance?.unit_price ?? 0
   const perksExpense    = summary?.expenses?.rank_perks?.monthly_cost ?? 0
   const perksConfigured = summary?.expenses?.rank_perks?.configured ?? false
   const perksMembers    = summary?.expenses?.rank_perks?.eligible_members ?? 0
@@ -644,7 +648,14 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
 
   const expenseRows = [
     { label: 'Armory Spend', sub: 'Not yet tracked', value: armoryExpense, configured: armoryConfigured },
-    { label: 'OD Insurance', sub: 'Not yet tracked', value: odExpense,     configured: odConfigured },
+    {
+      label: 'OD Insurance',
+      sub: odConfigured
+        ? `${odMembersWithOD} member${odMembersWithOD !== 1 ? 's' : ''} overdosed this month — ${odOverdoses.toLocaleString()} xanax replaced @ $${odUnitPrice.toLocaleString()} each`
+        : 'Not yet tracked',
+      value: odExpense,
+      configured: odConfigured,
+    },
     {
       label: 'Rank Perks',
       sub: perksConfigured
