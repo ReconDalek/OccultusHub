@@ -528,6 +528,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/oc/suggest-teams' && method === 'POST') {
       return ocController.suggestTeams(request, env, user);
     }
+    if (pathname === '/api/leadership/oc/suggest-teams-batch' && method === 'POST') {
+      return ocController.suggestTeamsBatch(request, env, user);
+    }
     if (pathname === '/api/leadership/oc/roster' && method === 'GET') {
       return ocController.getCrimeRoster(request, env, user);
     }

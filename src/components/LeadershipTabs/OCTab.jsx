@@ -406,7 +406,14 @@ function TeamResultCard({ team, factionId, crimeName, editable, roster, usedIds,
       <div style={{ padding: '8px 14px' }}>
         {team.positions.map((p, i) => (
           <div key={p.slotKey ?? i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: i < team.positions.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
-            <span style={{ color: "var(--text-secondary)", fontSize: '12px', flexShrink: 0 }}>{p.position_label}</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '12px', flexShrink: 0 }}>
+              {p.position_label}
+              {p.weight > 0 && (
+                <span title="How much this position's own outcome historically swings the crime's overall success rate" style={{ color: '#f97316', fontSize: '10px', marginLeft: '5px' }}>
+                  ⚡{p.weight}%
+                </span>
+              )}
+            </span>
             {editable ? (
               <select
                 value={p.torn_user_id ?? ''}
@@ -489,7 +496,9 @@ function SuggestedTeamBuilder({ factionId }) {
     <div>
       <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 16px' }}>
         Suggests the best member for each position using their highest known checkpoint pass rate for that crime,
-        spread evenly across teams (snake draft) so no single team hoards all the top performers.
+        spread evenly across teams (snake draft) so no single team hoards all the top performers. Positions are
+        filled in order of how much they historically swing the crime's success (⚡ badge), so the most critical
+        roles get first pick of the best available members.
       </p>
 
       <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '20px' }}>
@@ -614,6 +623,113 @@ function CustomTeamBuilder({ factionId }) {
   )
 }
 
+// ── Batch mode: multiple crimes at once, sequentially excluding used members ──
+
+function BatchTeamBuilder({ factionId }) {
+  const [templates, setTemplates] = useState([])
+  const [rows, setRows] = useState([{ crime_name: '', team_count: 1 }])
+  const [results, setResults] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setRows([{ crime_name: '', team_count: 1 }])
+    setResults(null)
+    fetch(`${API_BASE_URL}/api/leadership/oc/templates?faction_id=${factionId}`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => setTemplates(d.templates || []))
+      .catch(() => setTemplates([]))
+  }, [factionId])
+
+  const updateRow = (i, patch) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r))
+  const addRow = () => setRows(prev => [...prev, { crime_name: '', team_count: 1 }])
+  const removeRow = (i) => setRows(prev => prev.filter((_, idx) => idx !== i))
+
+  const runBatch = async () => {
+    const valid = rows.filter(r => r.crime_name)
+    if (!valid.length) return
+    setLoading(true)
+    setError(null)
+    setResults(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/oc/suggest-teams-batch`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ faction_id: factionId, crimes: valid }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to build batch')
+      setResults(data.results)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div>
+      <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 16px' }}>
+        Build teams for several crimes in one pass — the first crime gets first pick of members, then each
+        following crime draws from whoever's left, so nobody is drafted onto two crimes at once.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+        {rows.map((row, i) => (
+          <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Crime {i + 1}</label>
+              <select style={{ ...inputStyle, minWidth: '220px' }} value={row.crime_name} onChange={e => updateRow(i, { crime_name: e.target.value })}>
+                <option value="">Select a crime…</option>
+                {templates.map(t => <option key={t.name} value={t.name}>{t.name} ({t.difficulty}/10)</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Teams</label>
+              <input type="number" min="1" max="10" style={{ ...inputStyle, width: '70px' }} value={row.team_count}
+                onChange={e => updateRow(i, { team_count: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })} />
+            </div>
+            {rows.length > 1 && (
+              <button onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', color: "var(--text-faint)", cursor: 'pointer', fontSize: '16px', padding: '8px' }}>×</button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <button onClick={addRow} style={{
+          padding: '7px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)',
+          color: "var(--text-secondary)", fontSize: '12px', cursor: 'pointer',
+        }}>+ Add Crime</button>
+        <button onClick={runBatch} disabled={loading || !rows.some(r => r.crime_name)}
+          style={{
+            padding: '9px 20px', borderRadius: '8px', border: 'none', cursor: (loading || !rows.some(r => r.crime_name)) ? 'default' : 'pointer',
+            background: 'rgba(179,18,63,0.8)', color: '#fff', fontSize: '13px', fontWeight: '600',
+            opacity: (loading || !rows.some(r => r.crime_name)) ? 0.5 : 1,
+          }}
+        >{loading ? 'Building…' : 'Build All Teams'}</button>
+      </div>
+
+      {error && <p style={{ color: '#f87171', fontSize: '13px' }}>{error}</p>}
+
+      {results && results.map((result, i) => (
+        <div key={i} style={{ marginBottom: '20px' }}>
+          <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600', margin: '0 0 8px' }}>{result.crime_name}</p>
+          {result.error ? (
+            <p style={{ color: '#f87171', fontSize: '12px' }}>{result.error}</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+              {result.teams.map(team => (
+                <TeamResultCard key={team.team_index} team={team} factionId={factionId} crimeName={result.crime_name} editable={false} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Mode wrapper ──────────────────────────────────────────────────────────────
 
 function TeamBuilder({ factionId }) {
@@ -630,9 +746,12 @@ function TeamBuilder({ factionId }) {
     <div>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
         <button onClick={() => setMode('suggested')} style={modeStyle('suggested')}>Suggested</button>
+        <button onClick={() => setMode('batch')} style={modeStyle('batch')}>Multi-Crime</button>
         <button onClick={() => setMode('custom')} style={modeStyle('custom')}>Custom</button>
       </div>
-      {mode === 'suggested' ? <SuggestedTeamBuilder factionId={factionId} /> : <CustomTeamBuilder factionId={factionId} />}
+      {mode === 'suggested' && <SuggestedTeamBuilder factionId={factionId} />}
+      {mode === 'batch' && <BatchTeamBuilder factionId={factionId} />}
+      {mode === 'custom' && <CustomTeamBuilder factionId={factionId} />}
     </div>
   )
 }

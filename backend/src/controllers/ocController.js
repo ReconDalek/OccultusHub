@@ -259,10 +259,129 @@ export async function getCrimeTemplates(request, env, user) {
   }
 }
 
+// Empirical importance of each position to a crime's overall success —
+// derived from real history, not guessed. For each position, compares the
+// crime's overall success rate in runs where that position's own slot
+// succeeded vs runs where it didn't; the gap (in percentage points, floored
+// at 0) is the "weight". A position where the crime succeeds regardless of
+// how that slot went scores ~0; a position that makes-or-breaks the crime
+// scores high. Needs at least 3 samples on both sides to be trusted, else 0
+// (treated as "no signal", not "unimportant").
+async function getPositionWeights(env, crimeName) {
+  const { results } = await env.DB.prepare(
+    `SELECT s.position,
+            SUM(CASE WHEN s.outcome = 'Successful' AND c.status = 'Successful' THEN 1 ELSE 0 END) AS pos_succ_crime_succ,
+            SUM(CASE WHEN s.outcome = 'Successful' THEN 1 ELSE 0 END)                              AS pos_succ_total,
+            SUM(CASE WHEN s.outcome != 'Successful' AND c.status = 'Successful' THEN 1 ELSE 0 END) AS pos_fail_crime_succ,
+            SUM(CASE WHEN s.outcome != 'Successful' THEN 1 ELSE 0 END)                             AS pos_fail_total
+     FROM oc_crime_slots s
+     JOIN oc_crimes c ON c.id = s.crime_id
+     WHERE c.name = ? AND c.status IN ('Successful','Failure')
+       AND s.torn_user_id IS NOT NULL AND s.outcome IS NOT NULL
+     GROUP BY s.position`
+  ).bind(crimeName).all();
+
+  const weights = {};
+  for (const row of results) {
+    if (row.pos_succ_total < 3 || row.pos_fail_total < 3) { weights[row.position] = 0; continue; }
+    const succRate = row.pos_succ_crime_succ / row.pos_succ_total;
+    const failRate = row.pos_fail_crime_succ / row.pos_fail_total;
+    weights[row.position] = Math.max(0, Math.round((succRate - failRate) * 1000) / 10);
+  }
+  return weights;
+}
+
+// Builds N teams for one crime, snake-drafting the highest-CPR active
+// members per position so strength spreads evenly across teams. Positions
+// are filled in weight order (highest-impact position first) so the members
+// who are strong in multiple positions get claimed by whichever role matters
+// most to success, before lower-impact positions pick from what's left.
+// `usedMembers` is a Set mutated in place — callers can seed it with members
+// already committed to other crimes so a multi-crime batch never double-books.
+async function buildTeamsForCrime(env, factionId, crimeName, teamCount, usedMembers) {
+  const latest = await env.DB.prepare(
+    `SELECT id FROM oc_crimes WHERE faction_id = ? AND name = ? ORDER BY id DESC LIMIT 1`
+  ).bind(factionId, crimeName).first();
+  if (!latest) return { crime_name: crimeName, error: 'No known crime with that name for this faction', teams: [] };
+
+  const { results: templateSlots } = await env.DB.prepare(
+    `SELECT position, position_label, position_number FROM oc_crime_slots WHERE crime_id = ? ORDER BY position_number ASC`
+  ).bind(latest.id).all();
+  if (!templateSlots.length) return { crime_name: crimeName, error: 'No slot structure found for this crime', teams: [] };
+
+  const { results: activeMembers } = await env.DB.prepare(
+    `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1`
+  ).bind(factionId).all();
+  const activeIds = new Set(activeMembers.map(m => m.torn_user_id));
+  const usernameMap = {};
+  for (const m of activeMembers) usernameMap[m.torn_user_id] = m.username;
+
+  const positions = [...new Set(templateSlots.map(s => s.position))];
+  const posPlaceholders = positions.map(() => '?').join(',');
+  const { results: cprRows } = await env.DB.prepare(
+    `SELECT torn_user_id, position, best_pass_rate FROM oc_member_cpr
+     WHERE crime_name = ? AND position IN (${posPlaceholders})`
+  ).bind(crimeName, ...positions).all();
+
+  const candidatesByPosition = {};
+  for (const p of positions) candidatesByPosition[p] = [];
+  for (const row of cprRows) {
+    if (!activeIds.has(row.torn_user_id)) continue;
+    candidatesByPosition[row.position].push({ torn_user_id: row.torn_user_id, username: usernameMap[row.torn_user_id], pass_rate: row.best_pass_rate });
+  }
+  for (const p of positions) candidatesByPosition[p].sort((a, b) => b.pass_rate - a.pass_rate);
+
+  const weights = await getPositionWeights(env, crimeName);
+  const orderedPositions = [...positions].sort((a, b) => (weights[b] ?? 0) - (weights[a] ?? 0));
+
+  const teams = Array.from({ length: teamCount }, (_, i) => ({ team_index: i, positions: [] }));
+  const slotsByPosition = {};
+  for (const s of templateSlots) (slotsByPosition[s.position] ??= []).push(s);
+
+  for (const position of orderedPositions) {
+    const slotsNeededPerTeam = slotsByPosition[position].length;
+    const totalSlotsNeeded = slotsNeededPerTeam * teamCount;
+    const pool = candidatesByPosition[position].filter(c => !usedMembers.has(c.torn_user_id));
+
+    // Snake draft: round r assigns to teams in forward order on even rounds,
+    // reverse order on odd rounds, so the strongest candidates spread across
+    // teams instead of stacking into team 0.
+    let picked = 0;
+    let round = 0;
+    while (picked < totalSlotsNeeded && picked < pool.length) {
+      const order = round % 2 === 0
+        ? [...Array(teamCount).keys()]
+        : [...Array(teamCount).keys()].reverse();
+      for (const teamIdx of order) {
+        if (picked >= totalSlotsNeeded || picked >= pool.length) break;
+        const candidate = pool[picked];
+        usedMembers.add(candidate.torn_user_id);
+        teams[teamIdx].positions.push({
+          position,
+          position_label: slotsByPosition[position][Math.floor(teams[teamIdx].positions.filter(p => p.position === position).length)]?.position_label ?? position,
+          torn_user_id: candidate.torn_user_id,
+          username: candidate.username,
+          pass_rate: candidate.pass_rate,
+          weight: weights[position] ?? 0,
+        });
+        picked++;
+      }
+      round++;
+    }
+  }
+
+  for (const team of teams) {
+    const rates = team.positions.map(p => p.pass_rate);
+    team.avg_pass_rate = rates.length ? Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 10) / 10 : 0;
+    team.filled = team.positions.length;
+    team.needed = templateSlots.length;
+  }
+
+  return { crime_name: crimeName, teams };
+}
+
 // ── POST /api/leadership/oc/suggest-teams ────────────────────────────────────
 // Body: { faction_id, crime_name, team_count }
-// Snake-drafts the highest-CPR members per position across N teams so
-// strength is spread evenly rather than stacked into a single "best" team.
 export async function suggestTeams(request, env, user) {
   try {
     const { faction_id, crime_name, team_count } = await request.json();
@@ -272,90 +391,43 @@ export async function suggestTeams(request, env, user) {
     if (!crime_name) return errorResponse('crime_name is required', 400);
     if (!teamCount || teamCount < 1 || teamCount > 10) return errorResponse('team_count must be between 1 and 10', 400);
 
-    // Position structure for this crime, from its most recent instance for this faction
-    const latest = await env.DB.prepare(
-      `SELECT id FROM oc_crimes WHERE faction_id = ? AND name = ? ORDER BY id DESC LIMIT 1`
-    ).bind(factionId, crime_name).first();
-    if (!latest) return errorResponse('No known crime with that name for this faction', 404);
+    const result = await buildTeamsForCrime(env, factionId, crime_name, teamCount, new Set());
+    if (result.error) return errorResponse(result.error, 404);
 
-    const { results: templateSlots } = await env.DB.prepare(
-      `SELECT position, position_label, position_number FROM oc_crime_slots WHERE crime_id = ? ORDER BY position_number ASC`
-    ).bind(latest.id).all();
-    if (!templateSlots.length) return errorResponse('No slot structure found for this crime', 404);
-
-    // Active members of this faction
-    const { results: activeMembers } = await env.DB.prepare(
-      `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1`
-    ).bind(factionId).all();
-    const activeIds = new Set(activeMembers.map(m => m.torn_user_id));
-    const usernameMap = {};
-    for (const m of activeMembers) usernameMap[m.torn_user_id] = m.username;
-
-    // All known CPR for this crime's positions
-    const positions = [...new Set(templateSlots.map(s => s.position))];
-    const posPlaceholders = positions.map(() => '?').join(',');
-    const { results: cprRows } = await env.DB.prepare(
-      `SELECT torn_user_id, position, best_pass_rate FROM oc_member_cpr
-       WHERE crime_name = ? AND position IN (${posPlaceholders})`
-    ).bind(crime_name, ...positions).all();
-
-    // Candidates per position, active members only, sorted by pass rate desc
-    const candidatesByPosition = {};
-    for (const p of positions) candidatesByPosition[p] = [];
-    for (const row of cprRows) {
-      if (!activeIds.has(row.torn_user_id)) continue;
-      candidatesByPosition[row.position].push({ torn_user_id: row.torn_user_id, username: usernameMap[row.torn_user_id], pass_rate: row.best_pass_rate });
-    }
-    for (const p of positions) candidatesByPosition[p].sort((a, b) => b.pass_rate - a.pass_rate);
-
-    const teams = Array.from({ length: teamCount }, (_, i) => ({ team_index: i, positions: [] }));
-    const usedMembers = new Set();
-
-    // Slots needed per position (e.g. "Muscle" x3 for a 3-muscle crime), repeated per team
-    const slotsByPosition = {};
-    for (const s of templateSlots) (slotsByPosition[s.position] ??= []).push(s);
-
-    for (const position of positions) {
-      const slotsNeededPerTeam = slotsByPosition[position].length;
-      const totalSlotsNeeded = slotsNeededPerTeam * teamCount;
-      const pool = candidatesByPosition[position].filter(c => !usedMembers.has(c.torn_user_id));
-
-      // Snake draft: round r assigns to teams in forward order on even rounds,
-      // reverse order on odd rounds, so the strongest candidates spread across
-      // teams instead of stacking into team 0.
-      let picked = 0;
-      let round = 0;
-      while (picked < totalSlotsNeeded && picked < pool.length) {
-        const order = round % 2 === 0
-          ? [...Array(teamCount).keys()]
-          : [...Array(teamCount).keys()].reverse();
-        for (const teamIdx of order) {
-          if (picked >= totalSlotsNeeded || picked >= pool.length) break;
-          const candidate = pool[picked];
-          usedMembers.add(candidate.torn_user_id);
-          teams[teamIdx].positions.push({
-            position,
-            position_label: slotsByPosition[position][Math.floor(teams[teamIdx].positions.filter(p => p.position === position).length)]?.position_label ?? position,
-            torn_user_id: candidate.torn_user_id,
-            username: candidate.username,
-            pass_rate: candidate.pass_rate,
-          });
-          picked++;
-        }
-        round++;
-      }
-    }
-
-    for (const team of teams) {
-      const rates = team.positions.map(p => p.pass_rate);
-      team.avg_pass_rate = rates.length ? Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 10) / 10 : 0;
-      team.filled = team.positions.length;
-      team.needed = templateSlots.length;
-    }
-
-    return jsonResponse({ crime_name, difficulty: null, teams });
+    return jsonResponse({ crime_name: result.crime_name, difficulty: null, teams: result.teams });
   } catch (e) {
     console.error('suggestTeams error:', e);
+    return errorResponse('Failed to suggest teams: ' + e.message, 500);
+  }
+}
+
+// ── POST /api/leadership/oc/suggest-teams-batch ───────────────────────────────
+// Body: { faction_id, crimes: [{ crime_name, team_count }, ...] }
+// Builds teams for each crime IN ORDER, carrying the used-members set forward
+// so a member drafted for an earlier crime in the batch can never also be
+// drafted for a later one — a member can only actually run one crime at a time.
+export async function suggestTeamsBatch(request, env, user) {
+  try {
+    const { faction_id, crimes } = await request.json();
+    const factionId = parseInt(faction_id, 10);
+    if (!factionId || !FACTION_IDS.includes(factionId)) return errorResponse('Invalid or missing faction_id', 400);
+    if (!Array.isArray(crimes) || !crimes.length) return errorResponse('crimes array is required', 400);
+    if (crimes.length > 10) return errorResponse('Max 10 crimes per batch', 400);
+
+    const usedMembers = new Set();
+    const results = [];
+    for (const entry of crimes) {
+      const teamCount = parseInt(entry.team_count, 10);
+      if (!entry.crime_name || !teamCount || teamCount < 1 || teamCount > 10) {
+        results.push({ crime_name: entry.crime_name ?? null, error: 'Invalid crime_name or team_count', teams: [] });
+        continue;
+      }
+      results.push(await buildTeamsForCrime(env, factionId, entry.crime_name, teamCount, usedMembers));
+    }
+
+    return jsonResponse({ results });
+  } catch (e) {
+    console.error('suggestTeamsBatch error:', e);
     return errorResponse('Failed to suggest teams: ' + e.message, 500);
   }
 }
