@@ -152,7 +152,13 @@ export async function getCrimes(request, env, user) {
       query += ` AND status IN (${statuses.map(() => '?').join(',')})`;
       params.push(...statuses);
     }
-    const orderBy = status === 'recruiting' ? 'expired_at ASC' : status === 'planning' ? 'ready_at ASC' : 'created_at DESC';
+    // Completed sorts by actual completion time (executed_at), not creation
+    // time — a crime can sit in Recruiting/Planning for a while before it
+    // finishes, so created_at DESC doesn't reflect "most recently completed".
+    // Expired crimes have no executed_at, so fall back to expired_at.
+    const orderBy = status === 'recruiting' ? 'expired_at ASC'
+      : status === 'planning' ? 'ready_at ASC'
+      : 'COALESCE(executed_at, expired_at, created_at) DESC';
     query += ` ORDER BY ${orderBy} LIMIT 300`;
 
     const { results: crimes } = await env.DB.prepare(query).bind(...params).all();
@@ -368,6 +374,45 @@ export async function getCrimeRoster(request, env, user) {
   }
 }
 
+// ── GET /api/leadership/oc/cpr-curves ─────────────────────────────────────────
+// Empirical "does this CPR actually tend to succeed?" curve per crime name +
+// position, bucketed in 10-point CPR bands, computed from every completed
+// crime across all 3 factions (mechanics aren't faction-specific, so pooling
+// gives more sample size than scoping to one faction). Used to colour CPR
+// badges by real observed pass rate instead of the raw number alone.
+export async function getCprCurves(request, env, user) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT c.name AS crime_name, s.position,
+              (s.checkpoint_pass_rate / 10) * 10 AS cpr_bucket,
+              COUNT(*) AS total,
+              SUM(CASE WHEN s.outcome = 'Successful' THEN 1 ELSE 0 END) AS successes
+       FROM oc_crime_slots s
+       JOIN oc_crimes c ON c.id = s.crime_id
+       WHERE c.status IN ('Successful','Failure')
+         AND s.torn_user_id IS NOT NULL AND s.checkpoint_pass_rate > 0 AND s.outcome IS NOT NULL
+       GROUP BY c.name, s.position, cpr_bucket
+       ORDER BY c.name, s.position, cpr_bucket ASC`
+    ).all();
+
+    const curves = {};
+    for (const row of results) {
+      const byPosition = (curves[row.crime_name] ??= {});
+      const buckets = (byPosition[row.position] ??= []);
+      buckets.push({
+        cpr: row.cpr_bucket,
+        success_rate: Math.round((row.successes / row.total) * 1000) / 10,
+        sample_size: row.total,
+      });
+    }
+
+    return jsonResponse({ curves });
+  } catch (e) {
+    console.error('getCprCurves error:', e);
+    return errorResponse('Failed to fetch CPR curves: ' + e.message, 500);
+  }
+}
+
 // ── POST /api/leadership/oc/predict-success ───────────────────────────────────
 // Body: { faction_id, crime_name, member_ids: [...], avg_cpr? }
 // 1) Looks for past completed runs of this crime by this exact set of members
@@ -454,6 +499,37 @@ export async function predictSuccess(request, env, user) {
     console.error('predictSuccess error:', e);
     return errorResponse('Failed to predict success: ' + e.message, 500);
   }
+}
+
+// This month's Organized Crime profit for one faction — the faction's cut of
+// every paid-out crime's reward money. Members split the payout percentage
+// recorded on the crime itself (usually 80%, per policy), faction keeps the
+// rest (usually 20%) — used by accountingController's `oc` income line.
+export async function getFactionOCProfit(env, factionId) {
+  const now = new Date();
+  const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+
+  const { results } = await env.DB.prepare(
+    `SELECT rewards_json FROM oc_crimes WHERE faction_id = ? AND status = 'Successful' AND rewards_json IS NOT NULL`
+  ).bind(factionId).all();
+
+  let paidCrimes = 0;
+  let factionProfit = 0;
+  for (const row of results) {
+    let rewards;
+    try { rewards = JSON.parse(row.rewards_json); } catch { continue; }
+    const payout = rewards?.payout;
+    if (!payout?.paid_at || payout.paid_at < monthStartTs) continue;
+    const money = rewards.money || 0;
+    if (!money) continue;
+
+    const memberPct = typeof payout.percentage === 'number' ? payout.percentage : 80; // stated policy default
+    const factionPct = 100 - memberPct;
+    factionProfit += money * (factionPct / 100);
+    paidCrimes++;
+  }
+
+  return { paid_crimes: paidCrimes, monthly_income: Math.round(factionProfit), configured: true };
 }
 
 // ── Admin: cache status + manual refresh ─────────────────────────────────────

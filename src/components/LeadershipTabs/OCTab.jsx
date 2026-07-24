@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
 const FACTIONS = [
@@ -16,6 +16,52 @@ const STATUS_TABS = [
 function authHeaders() {
   const token = localStorage.getItem('occultusSession')
   return token ? { Authorization: token } : {}
+}
+
+// ─── CPR empirical success curves ─────────────────────────────────────────────
+// Fetched once (module-level cache, since the data is faction-agnostic) and
+// used to colour CPR badges by the *actual observed pass rate* for that crime
+// + position + CPR band, rather than the raw number alone.
+
+const CprCurvesContext = createContext({})
+function useCprCurvesContext() { return useContext(CprCurvesContext) }
+
+let cprCurvesCache = null
+let cprCurvesPromise = null
+function useCprCurves() {
+  const [curves, setCurves] = useState(cprCurvesCache || {})
+  useEffect(() => {
+    if (cprCurvesCache) return
+    if (!cprCurvesPromise) {
+      cprCurvesPromise = fetch(`${API_BASE_URL}/api/leadership/oc/cpr-curves`, { headers: authHeaders() })
+        .then(r => r.json())
+        .then(d => { cprCurvesCache = d.curves || {}; return cprCurvesCache })
+        .catch(() => ({}))
+    }
+    cprCurvesPromise.then(setCurves)
+  }, [])
+  return curves
+}
+
+// Nearest CPR-bucket lookup (bucket ignored if under 3 samples — too noisy to
+// trust). Falls back to treating the raw CPR number as the estimate when
+// there's no reliable historical data for this crime+position yet.
+function estimateSuccessRate(curves, crimeName, position, cpr) {
+  const buckets = curves?.[crimeName]?.[position]
+  if (!buckets?.length) return cpr
+  let best = null, bestDist = Infinity
+  for (const b of buckets) {
+    if (b.sample_size < 3) continue
+    const dist = Math.abs(b.cpr - cpr)
+    if (dist < bestDist) { bestDist = dist; best = b }
+  }
+  return best ? best.success_rate : cpr
+}
+
+// Red (0%) → yellow/orange (50%) → green (100%), by estimated success rate.
+function successRateColor(rate) {
+  const clamped = Math.max(0, Math.min(100, rate))
+  return `hsl(${Math.round(clamped * 1.2)}, 75%, 50%)`
 }
 
 function fmtMoney(n) {
@@ -66,12 +112,21 @@ function DifficultyBadge({ difficulty }) {
 
 // Checkpoint Pass Rate — Torn's own per-member, per-position stat estimating
 // how likely that member is to pass their individual checkpoint on this crime.
-// The colour bands below are just an informal visual aid we chose (not an
-// official Torn threshold) — higher is better regardless of the exact colour.
-function CprBadge({ rate }) {
+// Colour reflects the *empirical* historical pass rate observed for this
+// crime + position at this CPR level (green=100% historical success,
+// red=0%, yellow/orange=50/50) — not the raw CPR number itself. Falls back
+// to treating the raw number as the estimate when there's no reliable
+// history yet for that crime+position.
+function CprBadge({ rate, crimeName, position }) {
+  const curves = useCprCurvesContext()
   if (!rate) return <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>—</span>
-  const color = rate >= 80 ? '#4ade80' : rate >= 60 ? '#f97316' : '#f87171'
-  return <span style={{ color, fontSize: '12px', fontWeight: '600' }}>{rate}%</span>
+  const estimated = crimeName && position ? estimateSuccessRate(curves, crimeName, position, rate) : rate
+  const color = successRateColor(estimated)
+  return (
+    <span title={`~${Math.round(estimated)}% historical pass rate for ${position || 'this role'} at this CPR`} style={{ color, fontSize: '12px', fontWeight: '600' }}>
+      {rate}%
+    </span>
+  )
 }
 
 // Time-based crime completion progress (0–100%, how close the crime is to
@@ -221,7 +276,7 @@ function CrimeCard({ crime }) {
                 {OUTCOME_STYLE[s.outcome]?.icon ?? ''} {s.outcome}
               </span>
             )}
-            <CprBadge rate={s.checkpoint_pass_rate} />
+            <CprBadge rate={s.checkpoint_pass_rate} crimeName={crime.name} position={s.position} />
           </div>
         ))}
 
@@ -274,7 +329,7 @@ function CrimesListView({ factionId }) {
   return (
     <div>
       <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '0 0 14px' }}>
-        The % badge next to each member is their checkpoint pass rate (CPR) — Torn's estimate of how likely they are to pass their individual part of this crime (colour is just a visual aid, not an official threshold). The bar shown during Planning is unrelated — it's the crime's time-based progress toward becoming Ready.
+        The % badge next to each member is their checkpoint pass rate (CPR) — Torn's estimate of how likely they are to pass their individual part of this crime. Its colour reflects the actual historical pass rate we've observed at that CPR for this specific role/crime (green ≈ always succeeds, red ≈ rarely succeeds, yellow/orange ≈ 50/50) — not just the raw number. The bar shown during Planning is unrelated — it's the crime's time-based progress toward becoming Ready.
       </p>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
         {STATUS_TABS.map(t => {
@@ -344,10 +399,10 @@ function TeamResultCard({ team, factionId, crimeName, editable, roster, usedIds,
                 <a href={`https://www.torn.com/profiles.php?XID=${p.torn_user_id}`} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: '12px', textDecoration: 'none' }}>
                   {p.username}
                 </a>
-                <CprBadge rate={p.pass_rate} />
+                <CprBadge rate={p.pass_rate} crimeName={crimeName} position={p.position} />
               </div>
             )}
-            {editable && <CprBadge rate={p.pass_rate} />}
+            {editable && <CprBadge rate={p.pass_rate} crimeName={crimeName} position={p.position} />}
           </div>
         ))}
         {team.filled < team.needed && (
@@ -560,6 +615,7 @@ function TeamBuilder({ factionId }) {
 export default function OCTab() {
   const [factionId, setFactionId] = useState(FACTIONS[0].id)
   const [view, setView] = useState('crimes')
+  const cprCurves = useCprCurves()
 
   const subTabStyle = (id) => ({
     padding: '8px 16px', fontWeight: '500', border: 'none', cursor: 'pointer',
@@ -568,6 +624,7 @@ export default function OCTab() {
   })
 
   return (
+    <CprCurvesContext.Provider value={cprCurves}>
     <div>
       <div style={{ marginBottom: '20px' }}>
         <h2 className="font-cinzel" style={{ fontSize: '20px', color: '#f4f4f5', marginBottom: '4px' }}>Organized Crime</h2>
@@ -602,5 +659,6 @@ export default function OCTab() {
       {view === 'crimes'  && <CrimesListView factionId={factionId} />}
       {view === 'builder' && <TeamBuilder factionId={factionId} />}
     </div>
+    </CprCurvesContext.Provider>
   )
 }

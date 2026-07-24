@@ -402,7 +402,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
                     </div>
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>Organized Crime: </span>
-                      <span style={{ color: "var(--text-ghost)", fontWeight: '400', fontStyle: 'italic' }}>not yet tracked</span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(ocMonthly)}/mo</span>
                     </div>
                   </div>
                   <div style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px', marginTop: '10px' }}>Expense Breakdown</div>
@@ -572,6 +572,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const warCount       = summary?.wars?.count ?? 0
   const ocMonthly       = summary?.oc?.monthly_income ?? 0
   const ocConfigured    = summary?.oc?.configured ?? false
+  const ocPaidCrimes    = summary?.oc?.paid_crimes ?? 0
   const armoryExpense   = summary?.expenses?.armory?.monthly_cost ?? 0
   const armoryConfigured = summary?.expenses?.armory?.configured ?? false
   const armoryDepositCount = summary?.expenses?.armory?.deposit_count ?? 0
@@ -642,7 +643,9 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     },
     {
       label: 'Organized Crime',
-      sub: 'Not yet tracked',
+      sub: ocConfigured
+        ? `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`
+        : 'Not yet tracked',
       value: ocMonthly,
       placeholder: !ocConfigured,
     },

@@ -531,6 +531,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/oc/roster' && method === 'GET') {
       return ocController.getCrimeRoster(request, env, user);
     }
+    if (pathname === '/api/leadership/oc/cpr-curves' && method === 'GET') {
+      return ocController.getCprCurves(request, env, user);
+    }
     if (pathname === '/api/leadership/oc/predict-success' && method === 'POST') {
       return ocController.predictSuccess(request, env, user);
     }

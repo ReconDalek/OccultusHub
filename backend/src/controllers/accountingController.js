@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getFactionRankPerkExpense, getFactionODInsuranceExpense } from './xanaxController.js';
 import { getFactionArmoryExpense } from './armoryController.js';
+import { getFactionOCProfit } from './ocController.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 
@@ -410,10 +411,11 @@ export async function getSummary(request, env) {
     // Xanax market value (item_prices_cache), both Adept+ eligibility only.
     // Armory expense: this month's deposited items × current item price.
     const perkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
-    const [rankPerkResults, odInsuranceResults, armoryExpenseResults] = await Promise.all([
+    const [rankPerkResults, odInsuranceResults, armoryExpenseResults, ocProfitResults] = await Promise.all([
       Promise.all(perkFactionIds.map(id => getFactionRankPerkExpense(env, id))),
       Promise.all(perkFactionIds.map(id => getFactionODInsuranceExpense(env, id))),
       Promise.all(perkFactionIds.map(id => getFactionArmoryExpense(env, id))),
+      Promise.all(perkFactionIds.map(id => getFactionOCProfit(env, id))),
     ]);
     const rankPerks = rankPerkResults.reduce((acc, r) => ({
       eligible_members: acc.eligible_members + r.eligible_members,
@@ -436,6 +438,11 @@ export async function getSummary(request, env) {
       monthly_cost:  acc.monthly_cost + r.monthly_cost,
       configured:    true,
     }), { deposit_count: 0, total_items: 0, monthly_cost: 0, configured: false });
+    const ocProfit = ocProfitResults.reduce((acc, r) => ({
+      paid_crimes:    acc.paid_crimes + r.paid_crimes,
+      monthly_income: acc.monthly_income + r.monthly_income,
+      configured:     true,
+    }), { paid_crimes: 0, monthly_income: 0, configured: false });
 
     return jsonResponse({
       investments: {
@@ -459,11 +466,7 @@ export async function getSummary(request, env) {
         count: warRow?.war_count ?? 0,
         monthly_income: warRow?.war_income ?? 0,
       },
-      // Not yet tracked — placeholders so the UI structure is ready before real data exists
-      oc: {
-        monthly_income: 0,
-        configured: false,
-      },
+      oc: ocProfit,
       expenses: {
         armory:       armoryExpense,
         od_insurance: odInsurance,
