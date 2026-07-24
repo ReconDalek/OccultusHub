@@ -26,6 +26,7 @@ import * as companyProfitController from './controllers/companyProfitController.
 import * as webhookController from './controllers/webhookController.js';
 import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
+import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 
 export async function handleRequest(request, env, ctx) {
@@ -154,6 +155,12 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/admin/company-profits/refresh' && method === 'POST') {
       return companyProfitController.refreshCompanyProfitCache(request, env, user);
+    }
+    if (pathname === '/api/admin/oc/status' && method === 'GET') {
+      return ocController.getOcStatus(request, env, user);
+    }
+    if (pathname === '/api/admin/oc/refresh' && method === 'POST') {
+      return ocController.refreshOcCrimes(request, env, user);
     }
 
     // Webhook configs
@@ -509,6 +516,17 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/armory/minimums' && method === 'GET') {
       return armoryController.getArmoryMinimums(request, env, user);
+    }
+
+    // Organized Crime tracking + team builder
+    if (pathname === '/api/leadership/oc/crimes' && method === 'GET') {
+      return ocController.getCrimes(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/templates' && method === 'GET') {
+      return ocController.getCrimeTemplates(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/suggest-teams' && method === 'POST') {
+      return ocController.suggestTeams(request, env, user);
     }
 
     // Activity tracking

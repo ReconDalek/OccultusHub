@@ -41,6 +41,7 @@ export default {
         const { fetchAndCacheCompanyProfits } = await import('./controllers/companyProfitController.js');
         const { sendInvestmentTciAlerts, sendArmoryLowStockAlerts } = await import('./controllers/webhookController.js');
         const { syncUserKeys } = await import('./controllers/authController.js');
+        const { fetchAndCacheFactionCrimes } = await import('./controllers/ocController.js');
         ctx.waitUntil(
           takeEnergySnapshot(env)
             .then(r => console.log('[cron] energy snapshot:', JSON.stringify(r)))
@@ -58,6 +59,9 @@ export default {
             .then(() => syncUserKeys(env))
             .then(r => console.log(`[cron] user key sync: ${r.checked} checked, ${r.updated} updated, ${r.errors} errors`))
             .catch(e => console.error('[cron] user key sync failed:', e))
+            .then(() => fetchAndCacheFactionCrimes(env))
+            .then(r => console.log(`[cron] OC crimes: ${r.fetched}/3 factions, ${r.crimesUpserted} crimes upserted`))
+            .catch(e => console.error('[cron] OC crimes fetch failed:', e))
         );
       } catch (e) {
         console.error('[cron] daily snapshot handler error:', e);
