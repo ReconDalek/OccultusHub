@@ -1,4 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { getFactionRankPerkExpense } from './xanaxController.js';
+
+const FACTION_IDS = [33097, 9728, 9171];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -402,6 +405,18 @@ export async function getSummary(request, env) {
       AND date(end_date) <= date('now', '+7 days') AND date(end_date) >= date('now')
     `).bind(...invParams).first();
 
+    // Rank Perks expense: base xanax × rank coefficient per eligible member,
+    // priced at the current cached Xanax market value (item_prices_cache).
+    const rankPerkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
+    const rankPerkResults = await Promise.all(rankPerkFactionIds.map(id => getFactionRankPerkExpense(env, id)));
+    const rankPerks = rankPerkResults.reduce((acc, r) => ({
+      eligible_members: acc.eligible_members + r.eligible_members,
+      total_xanax:       acc.total_xanax + r.total_xanax,
+      unit_price:         r.unit_price,
+      monthly_cost:       acc.monthly_cost + r.monthly_cost,
+      configured:         true,
+    }), { eligible_members: 0, total_xanax: 0, unit_price: 0, monthly_cost: 0, configured: false });
+
     return jsonResponse({
       investments: {
         total: invResults.length,
@@ -432,7 +447,7 @@ export async function getSummary(request, env) {
       expenses: {
         armory:       { monthly_cost: 0, configured: false },
         od_insurance: { monthly_cost: 0, configured: false },
-        rank_perks:   { monthly_cost: 0, configured: false },
+        rank_perks:   rankPerks,
       },
     });
   } catch (e) {

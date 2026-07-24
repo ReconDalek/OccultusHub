@@ -21,9 +21,75 @@ function getDerivedRank(totalHits) {
   return 'Acolyte';
 }
 
+// Monthly rank perk formula: base xanax × rank coefficient. Acolyte has no
+// coefficient — below Adept, no perk. Coefficients are a straight multiplier
+// on top of a shared base, not a lookup table of flat amounts.
+const BASE_XANAX = 5;
+const RANK_COEFFICIENTS = {
+  Adept:     1,
+  Arcanist:  1.2,
+  Sentinel:  1.4,
+  Doomsayer: 1.6,
+  Harbinger: 1.8,
+};
+
 function currentUtcMonth() {
   const now = new Date();
   return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+}
+
+// Computes this month's expected rank-perk xanax cost for one faction —
+// used by accountingController's Rank Perks expense line. Eligibility/rank
+// mirrors getDistributions (hits banked before this month started), but this
+// only needs counts/coefficients, not per-member distribution status.
+export async function getFactionRankPerkExpense(env, factionId) {
+  const now = new Date();
+  const monthStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+
+  const { results } = await env.DB.prepare(`
+    SELECT
+      COALESCE(ch.total_chain_hits, 0)
+        + ROUND(COALESCE(wh.total_war_units, 0), 0)
+        + COALESCE(cx.total_custom_hits, 0) AS total_hits
+    FROM faction_members fm
+    LEFT JOIN (
+      SELECT torn_user_id, SUM(total_attacks) AS total_chain_hits
+      FROM chain_hits WHERE start_at < ? GROUP BY torn_user_id
+    ) ch ON ch.torn_user_id = fm.torn_user_id
+    LEFT JOIN (
+      SELECT wh.torn_user_id, SUM(wh.units) AS total_war_units
+      FROM war_hits wh
+      JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
+      WHERE rw.ended_at < ? GROUP BY wh.torn_user_id
+    ) wh ON wh.torn_user_id = fm.torn_user_id
+    LEFT JOIN (
+      SELECT torn_user_id, SUM(hits) AS total_custom_hits
+      FROM custom_hits GROUP BY torn_user_id
+    ) cx ON cx.torn_user_id = fm.torn_user_id
+    WHERE fm.is_active = 1 AND fm.faction_id = ?
+  `).bind(monthStart, monthStart, factionId).all();
+
+  let eligibleMembers = 0;
+  let totalXanax = 0;
+  for (const m of results || []) {
+    const coeff = RANK_COEFFICIENTS[getDerivedRank(m.total_hits || 0)];
+    if (!coeff) continue; // Acolyte — no perk
+    eligibleMembers++;
+    totalXanax += BASE_XANAX * coeff;
+  }
+
+  const priceRow = await env.DB.prepare(
+    `SELECT effective_price FROM item_prices_cache WHERE name = 'Xanax'`
+  ).first();
+  const unitPrice = priceRow?.effective_price ?? 0;
+
+  return {
+    eligible_members: eligibleMembers,
+    total_xanax: totalXanax,
+    unit_price: unitPrice,
+    monthly_cost: Math.round(totalXanax * unitPrice),
+    configured: true,
+  };
 }
 
 function previousMonth(year, month) {
