@@ -326,6 +326,25 @@ export async function checkWarMatches(env, trigger = 'cron') {
           results.push({ factionId, opponentId, opponentName, scheduledStart, action: 'created' });
           console.log(`checkWarMatches: faction ${factionId} vs ${opponentId} scheduled ${new Date(scheduledStart * 1000).toISOString()}`);
           await logInfo(env, { category: 'war_cron', event: 'war_matched', message: `Faction ${factionId} matched vs ${opponentName} (${opponentId}), starts ${new Date(scheduledStart * 1000).toISOString()}`, meta: { factionId, opponentId, opponentName, scheduledStart } }).catch(() => {});
+
+          // Auto-populate the Faction Operations countdown card — advances an
+          // existing manually-created "enlisting" schedule if leadership set one
+          // up ahead of time, otherwise creates the active-stage row from
+          // scratch. Removes the need to manually mark a war as matched.
+          const scheduledAtIso = new Date(scheduledStart * 1000).toISOString();
+          const advanced = await env.DB.prepare(
+            `UPDATE faction_schedules
+             SET stage='active', scheduled_at=?, opponent_faction_id=?, opponent_faction_name=?
+             WHERE faction_id=? AND type='war' AND stage='enlisting'
+             RETURNING id`
+          ).bind(scheduledAtIso, opponentId, opponentName, factionId).first();
+
+          if (!advanced) {
+            await env.DB.prepare(
+              `INSERT INTO faction_schedules (faction_id, type, stage, scheduled_at, opponent_faction_id, opponent_faction_name)
+               VALUES (?, 'war', 'active', ?, ?, ?)`
+            ).bind(factionId, scheduledAtIso, opponentId, opponentName).run();
+          }
         } else {
           results.push({ factionId, opponentId, action: 'exists' });
         }
