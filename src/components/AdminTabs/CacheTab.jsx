@@ -12,6 +12,7 @@ export default function CacheTab() {
   const [analytics,           setAnalytics]           = useState(null)
   const [personalStatsStatus, setPersonalStatsStatus] = useState(null)
   const [armoryStatus,        setArmoryStatus]        = useState(null)
+  const [armoryDepositsStatus,setArmoryDepositsStatus] = useState(null)
   const [itemPricesStatus,    setItemPricesStatus]    = useState(null)
   const [companyProfitStatus, setCompanyProfitStatus] = useState(null)
   const [keySyncResult,        setKeySyncResult]       = useState(null)
@@ -55,6 +56,8 @@ export default function CacheTab() {
         .then((r) => r.json()).then(setPersonalStatsStatus).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/armory/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then((d) => setArmoryStatus(d.status)).catch(console.error),
+      fetch(`${API_BASE_URL}/api/admin/armory/deposits/status`, { headers: { Authorization: token } })
+        .then((r) => r.json()).then(setArmoryDepositsStatus).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/item-prices/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then(setItemPricesStatus).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/company-profits/status`, { headers: { Authorization: token } })
@@ -177,6 +180,31 @@ export default function CacheTab() {
         setLastResult(data)
         fetch(`${API_BASE_URL}/api/admin/armory/status`, { headers: { Authorization: token } })
           .then((r) => r.json()).then((d) => setArmoryStatus(d.status)).catch(console.error)
+      } else {
+        setError(data.error || `Error ${res.status}`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
+  const refreshArmoryDeposits = async () => {
+    try {
+      setRefreshing('armory-deposits')
+      setError(null)
+      setLastResult(null)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/armory/deposits/refresh`, {
+        method: 'POST',
+        headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLastResult(data)
+        fetch(`${API_BASE_URL}/api/admin/armory/deposits/status`, { headers: { Authorization: token } })
+          .then((r) => r.json()).then(setArmoryDepositsStatus).catch(console.error)
       } else {
         setError(data.error || `Error ${res.status}`)
       }
@@ -722,6 +750,61 @@ export default function CacheTab() {
           <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
             Auto-refreshes every 6 hours (00:00, 06:00, 12:00, 18:00 UTC/TCT).
           </p>
+        </div>
+      </div>
+
+      {/* Armory deposit log */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Armory Deposits</h3>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+          {FACTION_IDS.map((fid) => {
+            const info = armoryDepositsStatus?.status?.[fid]
+            return (
+              <div
+                key={fid}
+                className="p-5 rounded-lg"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <span style={{ fontSize: '18px' }}>📦</span>
+                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
+                </div>
+                <div className="flex justify-between mb-1">
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Logged deposits</span>
+                  <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.count ?? 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last fetched</span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.fetched_at ?? ''}>
+                    {info?.fetched_at ? timeAgo(info.fetched_at) : '—'}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <button
+            onClick={refreshArmoryDeposits}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'armory-deposits' ? 'Refreshing…' : 'Refresh Armory Deposits'}
+          </button>
+          <div>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
+              Auto-refreshes every 6 hours alongside the armory cache. Fetched via each faction's leader key.
+            </p>
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
+              Deduped by Torn's news ID — safe to run manually any time, never creates duplicate entries.
+            </p>
+          </div>
         </div>
       </div>
 

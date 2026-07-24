@@ -111,6 +111,36 @@ export async function fetchAndCacheArmoryDeposits(env) {
   return results;
 }
 
+export async function refreshArmoryDeposits(request, env, user) {
+  try {
+    const result = await fetchAndCacheArmoryDeposits(env);
+    return jsonResponse({
+      message: `Armory deposits refreshed: ${result.fetched}/3 factions, ${result.inserted} new`,
+      ...result,
+      refreshedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    return errorResponse('Armory deposits refresh failed: ' + e.message, 500);
+  }
+}
+
+export async function getArmoryDepositsStatus(request, env, user) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT faction_id, COUNT(*) AS count, MAX(fetched_at) AS fetched_at
+       FROM armory_deposits GROUP BY faction_id`
+    ).all();
+    const status = {};
+    for (const row of results || []) {
+      status[row.faction_id] = { count: row.count, fetched_at: row.fetched_at };
+    }
+    const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM armory_deposits`).first();
+    return jsonResponse({ status, total: totalRow?.total ?? 0 });
+  } catch (e) {
+    return errorResponse('Failed to fetch armory deposits status: ' + e.message, 500);
+  }
+}
+
 export async function getArmoryDeposits(request, env, user) {
   try {
     const url = new URL(request.url);

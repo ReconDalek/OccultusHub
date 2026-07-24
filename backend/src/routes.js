@@ -131,9 +131,11 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/armory/refresh' && method === 'POST') {
       return armoryController.refreshArmoryCache(request, env, user);
     }
+    if (pathname === '/api/admin/armory/deposits/status' && method === 'GET') {
+      return armoryController.getArmoryDepositsStatus(request, env, user);
+    }
     if (pathname === '/api/admin/armory/deposits/refresh' && method === 'POST') {
-      const result = await armoryController.fetchAndCacheArmoryDeposits(env);
-      return jsonResponse({ message: `Armory deposits refreshed: ${result.fetched}/3 factions, ${result.inserted} new`, ...result });
+      return armoryController.refreshArmoryDeposits(request, env, user);
     }
     if (pathname === '/api/admin/armory/minimums' && method === 'GET') {
       return armoryController.getArmoryMinimums(request, env, user);
