@@ -388,8 +388,9 @@ function CrimesListView({ factionId }) {
     if (filters.participant && !c.slots.some(s => s.username?.toLowerCase().includes(filters.participant.toLowerCase()))) return false
     if (filters.outcome === 'successful' && c.status !== 'Successful') return false
     if (filters.outcome === 'failed' && c.status !== 'Failure') return false
-    if (filters.paid === 'paid' && !c.rewards?.payout?.paid_at) return false
-    if (filters.paid === 'unpaid' && c.rewards?.payout?.paid_at) return false
+    // Paid/unpaid only makes sense for Successful crimes — Failure crimes never pay out.
+    if (filters.paid === 'paid' && (c.status !== 'Successful' || !c.rewards?.payout?.paid_at)) return false
+    if (filters.paid === 'unpaid' && (c.status !== 'Successful' || c.rewards?.payout?.paid_at)) return false
     return true
   })
 
