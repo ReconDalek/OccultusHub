@@ -205,6 +205,18 @@ export async function getCrimes(request, env, user) {
     const parsedRewards = {};
     for (const c of crimes) parsedRewards[c.id] = c.rewards_json ? JSON.parse(c.rewards_json) : null;
 
+    // Per-slot weight config, keyed by `${crime_name}|${position}|${position_number}`.
+    const crimeNames = [...new Set(crimes.map(c => c.name))];
+    const weightMap = {};
+    if (crimeNames.length) {
+      const weightRows = await fetchInChunks(
+        env,
+        ph => `SELECT crime_name, position, position_number, weight FROM oc_position_weights WHERE crime_name IN (${ph})`,
+        crimeNames
+      );
+      for (const w of weightRows) weightMap[`${w.crime_name}|${w.position}|${w.position_number}`] = w.weight;
+    }
+
     // Resolve item names + prices for display — covers both required-item
     // slots and crime reward items (looked up against the same armory-cron
     // item_prices_cache used for armory valuation, so values stay consistent).
@@ -235,6 +247,7 @@ export async function getCrimes(request, env, user) {
           username: s.torn_user_id ? (memberMap[s.torn_user_id] ?? `#${s.torn_user_id}`) : null,
           item_name: s.item_id ? (itemNameMap[s.item_id] ?? `Item #${s.item_id}`) : null,
           item_unit_price: s.item_id ? (itemPriceMap[s.item_id] ?? 0) : 0,
+          weight: weightMap[`${c.name}|${s.position}|${s.position_number}`] ?? 100,
         })),
       };
     });

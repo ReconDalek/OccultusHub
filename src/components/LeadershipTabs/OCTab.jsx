@@ -268,11 +268,21 @@ function CrimeCard({ crime }) {
         )}
       </div>
 
-      {/* Slots */}
+      {/* Slots — Recruiting/Planning ordered by weight (highest-impact role first) */}
       <div style={{ padding: '10px 16px' }}>
-        {crime.slots.map(s => (
+        {((bucket === 'recruiting' || bucket === 'planning')
+          ? [...crime.slots].sort((a, b) => (b.weight ?? 100) - (a.weight ?? 100))
+          : crime.slots
+        ).map(s => (
           <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', flexWrap: 'wrap' }}>
-            <span style={{ color: "var(--text-secondary)", fontSize: '12px', minWidth: '110px' }}>{s.position_label || s.position}</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: '12px', minWidth: '110px' }}>
+              {s.position_label || s.position}
+              {(bucket === 'recruiting' || bucket === 'planning') && (
+                <span title="How much this slot's own outcome swings the crime's overall success — set via the Config tab" style={{ color: '#f97316', fontSize: '10px', marginLeft: '5px' }}>
+                  ⚡{s.weight}%
+                </span>
+              )}
+            </span>
             {s.torn_user_id ? (
               <a href={`https://www.torn.com/profiles.php?XID=${s.torn_user_id}`} target="_blank" rel="noopener noreferrer"
                 style={{ color: '#a78bfa', fontSize: '13px', textDecoration: 'none', flex: '1 1 0', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
