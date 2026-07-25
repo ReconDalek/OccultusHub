@@ -350,8 +350,8 @@ function CrimeCard({ crime, prevCrime, nextCrime }) {
         })()}
       </div>
 
-      {/* Rewards + item expense (completed only) */}
-      {bucket === 'completed' && (crime.rewards || itemExpense > 0) && (
+      {/* Rewards + item expense + chain links (completed only) */}
+      {bucket === 'completed' && (crime.rewards || itemExpense > 0 || prevCrime || nextCrime) && (
         <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(255,255,255,0.015)' }}>
           {crime.rewards?.money > 0 && (() => {
             const money = crime.rewards.money
@@ -383,27 +383,29 @@ function CrimeCard({ crime, prevCrime, nextCrime }) {
               Consumed item cost: {fmtMoney(itemExpense)}
             </span>
           )}
-          {isChainCrime(crime) ? (
+          {(prevCrime || nextCrime || isChainCrime(crime) || crime.rewards?.payout) && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
               {prevCrime && (
                 <button onClick={() => scrollToCrime(prevCrime.id)} title={`Previous in chain: ${prevCrime.name}`} style={chainLinkStyle}>
                   ← Previous
                 </button>
               )}
-              <span title="Succeeding this crime opened a follow-up crime — the full chain pays out together once the final crime succeeds"
-                style={{ fontSize: '11px', fontWeight: '700', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
-                CHAIN
-              </span>
+              {isChainCrime(crime) ? (
+                <span title="Succeeding this crime opened a follow-up crime — the full chain pays out together once the final crime succeeds"
+                  style={{ fontSize: '11px', fontWeight: '700', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
+                  CHAIN
+                </span>
+              ) : crime.rewards?.payout && (
+                <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
+                  PAID
+                </span>
+              )}
               {nextCrime && (
                 <button onClick={() => scrollToCrime(nextCrime.id)} title={`Next in chain: ${nextCrime.name}`} style={chainLinkStyle}>
                   Next →
                 </button>
               )}
             </div>
-          ) : crime.rewards?.payout && (
-            <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
-              PAID
-            </span>
           )}
         </div>
       )}
