@@ -241,7 +241,6 @@ function CrimeCard({ crime }) {
 
   const isSuccess = crime.status === 'Successful'
   const isFailure = crime.status === 'Failure'
-  const isExpired = crime.status === 'Expired'
   const itemExpense = bucket === 'completed' ? crimeItemExpense(crime) : 0
 
   return (
@@ -260,7 +259,7 @@ function CrimeCard({ crime }) {
             border: `1px solid ${isSuccess ? 'rgba(74,222,128,0.3)' : isFailure ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.1)'}`,
             borderRadius: '6px', padding: '3px 10px',
           }}>
-            {isExpired ? 'Expired' : crime.status}
+            {crime.status}
           </span>
         ) : (
           <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>
@@ -274,6 +273,14 @@ function CrimeCard({ crime }) {
         {crime.slots.map(s => (
           <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', flexWrap: 'wrap' }}>
             <span style={{ color: "var(--text-secondary)", fontSize: '12px', minWidth: '110px' }}>{s.position_label || s.position}</span>
+            {s.torn_user_id ? (
+              <a href={`https://www.torn.com/profiles.php?XID=${s.torn_user_id}`} target="_blank" rel="noopener noreferrer"
+                style={{ color: '#a78bfa', fontSize: '13px', textDecoration: 'none', flex: '1 1 0', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {s.username}
+              </a>
+            ) : (
+              <span style={{ color: "var(--text-ghost)", fontSize: '13px', fontStyle: 'italic', flex: '1 1 0' }}>Vacant</span>
+            )}
             {(bucket === 'recruiting' || bucket === 'planning') && s.item_name && (
               <span title={s.item_available ? 'Item available' : 'Item missing or unavailable'} style={{
                 fontSize: '10px', padding: '1px 6px', borderRadius: '4px', flexShrink: 0, whiteSpace: 'nowrap',
@@ -283,14 +290,6 @@ function CrimeCard({ crime }) {
               }}>
                 {s.item_available ? '' : '⚠ '}{s.item_name}
               </span>
-            )}
-            {s.torn_user_id ? (
-              <a href={`https://www.torn.com/profiles.php?XID=${s.torn_user_id}`} target="_blank" rel="noopener noreferrer"
-                style={{ color: '#a78bfa', fontSize: '13px', textDecoration: 'none', flex: '1 1 0', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {s.username}
-              </a>
-            ) : (
-              <span style={{ color: "var(--text-ghost)", fontSize: '13px', fontStyle: 'italic', flex: '1 1 0' }}>Vacant</span>
             )}
             {bucket === 'planning' && s.torn_user_id && <ProgressBar progress={s.progress} />}
             {bucket === 'completed' && s.outcome && (
@@ -335,7 +334,12 @@ function CrimeCard({ crime }) {
             )
           })()}
           {crime.rewards?.respect > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>⚡ {crime.rewards.respect} respect</span>}
-          {crime.rewards?.items?.length > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>📦 {crime.rewards.items.length} item{crime.rewards.items.length !== 1 ? 's' : ''}</span>}
+          {crime.rewards?.items?.length > 0 && (
+            <span title={crime.rewards.items.map(i => `${i.name} x${i.quantity}`).join(', ')} style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
+              📦 {crime.rewards.items.map(i => `${i.name}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ')}
+              {crime.reward_items_value > 0 && <> ({fmtMoney(crime.reward_items_value)})</>}
+            </span>
+          )}
           {itemExpense > 0 && (
             <span title="Non-reusable faction-owned items used or lost running this crime" style={{ color: '#f87171', fontSize: '11px' }}>
               🧨 Item cost: {fmtMoney(itemExpense)}
@@ -354,11 +358,14 @@ function CrimeCard({ crime }) {
 
 // ─── Crimes list view ─────────────────────────────────────────────────────────
 
+const FILTER_DEFAULTS = { level: '', name: '', participant: '', outcome: '', paid: '' }
+
 function CrimesListView({ factionId }) {
   const [status, setStatus] = useState('recruiting')
   const [crimes, setCrimes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [filters, setFilters] = useState(FILTER_DEFAULTS)
 
   useEffect(() => {
     setLoading(true)
@@ -369,6 +376,22 @@ function CrimesListView({ factionId }) {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [factionId, status])
+
+  useEffect(() => { setFilters(FILTER_DEFAULTS) }, [status, factionId])
+
+  const levels = [...new Set(crimes.map(c => c.difficulty))].sort((a, b) => a - b)
+  const names = [...new Set(crimes.map(c => c.name))].sort()
+
+  const filteredCrimes = status !== 'completed' ? crimes : crimes.filter(c => {
+    if (filters.level && String(c.difficulty) !== filters.level) return false
+    if (filters.name && c.name !== filters.name) return false
+    if (filters.participant && !c.slots.some(s => s.username?.toLowerCase().includes(filters.participant.toLowerCase()))) return false
+    if (filters.outcome === 'successful' && c.status !== 'Successful') return false
+    if (filters.outcome === 'failed' && c.status !== 'Failure') return false
+    if (filters.paid === 'paid' && !c.rewards?.payout?.paid_at) return false
+    if (filters.paid === 'unpaid' && c.rewards?.payout?.paid_at) return false
+    return true
+  })
 
   return (
     <div>
@@ -391,12 +414,61 @@ function CrimesListView({ factionId }) {
         })}
       </div>
 
+      {status === 'completed' && !loading && !error && crimes.length > 0 && (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <div>
+            <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Level</label>
+            <select style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px' }} value={filters.level} onChange={e => setFilters(f => ({ ...f, level: e.target.value }))}>
+              <option value="">All</option>
+              {levels.map(l => <option key={l} value={l}>{l}/10</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Crime</label>
+            <select style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', maxWidth: '200px' }} value={filters.name} onChange={e => setFilters(f => ({ ...f, name: e.target.value }))}>
+              <option value="">All</option>
+              {names.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Participant</label>
+            <input type="text" placeholder="Username…" style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', width: '140px' }}
+              value={filters.participant} onChange={e => setFilters(f => ({ ...f, participant: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Outcome</label>
+            <select style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px' }} value={filters.outcome} onChange={e => setFilters(f => ({ ...f, outcome: e.target.value }))}>
+              <option value="">All</option>
+              <option value="successful">Successful</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ color: "var(--text-secondary)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>Payout</label>
+            <select style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px' }} value={filters.paid} onChange={e => setFilters(f => ({ ...f, paid: e.target.value }))}>
+              <option value="">All</option>
+              <option value="paid">Paid</option>
+              <option value="unpaid">Unpaid</option>
+            </select>
+          </div>
+          {(filters.level || filters.name || filters.participant || filters.outcome || filters.paid) && (
+            <button onClick={() => setFilters(FILTER_DEFAULTS)} style={{
+              background: 'none', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: "var(--text-secondary)",
+              fontSize: '12px', padding: '7px 12px', cursor: 'pointer',
+            }}>Clear</button>
+          )}
+        </div>
+      )}
+
       {loading && <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>Loading crimes…</p>}
       {!loading && error && <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>}
       {!loading && !error && crimes.length === 0 && (
         <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>No {status} crimes found. Data populates via the daily cron — use the admin Cache page to refresh manually.</p>
       )}
-      {!loading && !error && crimes.map(c => <CrimeCard key={c.id} crime={c} />)}
+      {!loading && !error && crimes.length > 0 && filteredCrimes.length === 0 && (
+        <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>No crimes match the current filters.</p>
+      )}
+      {!loading && !error && filteredCrimes.map(c => <CrimeCard key={c.id} crime={c} />)}
     </div>
   )
 }
@@ -851,8 +923,8 @@ function OCConfigTab() {
         <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '560px' }}>
           How much each individual slot's own outcome swings a crime's overall success — the Team Builder fills the
           highest-weight slots first with the best available members. Same role can have different weights per slot
-          (e.g. Muscle #1 vs #2 vs #3). Weights auto-populate from observed history; edit any value below to override
-          it permanently — overridden rows stop auto-updating. New crimes appear here automatically once Torn releases them.
+          (e.g. Muscle #1 vs #2 vs #3). Every slot sits at a default of 100% until you set a real value here. New
+          crimes appear here automatically once Torn releases them.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('Error') ? '#f87171' : '#4ade80' }}>{saveMsg}</span>}
@@ -874,7 +946,6 @@ function OCConfigTab() {
 
       {crimes.map(c => {
         const isOpen = !collapsed[c.crime_name]
-        const overrideCount = c.slots.filter(s => !s.auto_computed).length
         return (
           <div key={c.crime_name} style={{ marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
             <button
@@ -884,7 +955,6 @@ function OCConfigTab() {
               <span style={{ fontSize: '13px', fontWeight: '600', color: isOpen ? '#f4f4f5' : "var(--text-secondary)" }}>{c.crime_name}</span>
               <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>
                 {c.slots.length} slot{c.slots.length !== 1 ? 's' : ''}
-                {overrideCount > 0 && <> · <span style={{ color: '#b3123f' }}>{overrideCount} manual override{overrideCount !== 1 ? 's' : ''}</span></>}
               </span>
               <span style={{ marginLeft: 'auto', color: "var(--text-faint)", fontSize: '11px' }}>{isOpen ? '▲' : '▼'}</span>
             </button>
@@ -895,14 +965,13 @@ function OCConfigTab() {
                 <div
                   key={k}
                   style={{
-                    display: 'grid', gridTemplateColumns: '1fr 110px 90px', gap: '8px',
+                    display: 'grid', gridTemplateColumns: '1fr 90px', gap: '8px',
                     padding: '7px 12px', alignItems: 'center',
                     borderTop: '1px solid rgba(255,255,255,0.04)',
                     background: dirty[k] !== undefined ? 'rgba(179,18,63,0.04)' : 'transparent',
                   }}
                 >
                   <span style={{ fontSize: '13px', color: '#d4d4d8' }}>{slot.position_label || `${slot.position} #${slot.position_number}`}</span>
-                  <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>{slot.auto_computed ? 'Auto' : 'Manual'}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <input
                       type="number"

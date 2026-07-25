@@ -8,7 +8,7 @@ const MAX_PAGES = 5; // 500 crimes per faction per run — plenty of headroom ov
 const BUCKET_STATUSES = {
   recruiting: ['Recruiting'],
   planning: ['Planning'],
-  completed: ['Successful', 'Failure', 'Expired'],
+  completed: ['Successful', 'Failure'],
 };
 
 // D1 rejects statements with too many bound parameters (SQLITE_ERROR "too many
@@ -202,8 +202,14 @@ export async function getCrimes(request, env, user) {
       }
     }
 
-    // Resolve required item names + prices for display
-    const itemIds = [...new Set(slots.map(s => s.item_id).filter(Boolean))];
+    const parsedRewards = {};
+    for (const c of crimes) parsedRewards[c.id] = c.rewards_json ? JSON.parse(c.rewards_json) : null;
+
+    // Resolve item names + prices for display — covers both required-item
+    // slots and crime reward items (looked up against the same armory-cron
+    // item_prices_cache used for armory valuation, so values stay consistent).
+    const rewardItemIds = Object.values(parsedRewards).flatMap(r => (r?.items || []).map(i => i.id));
+    const itemIds = [...new Set([...slots.map(s => s.item_id).filter(Boolean), ...rewardItemIds])];
     const itemNameMap = {};
     const itemPriceMap = {};
     if (itemIds.length) {
@@ -211,16 +217,27 @@ export async function getCrimes(request, env, user) {
       for (const i of items) { itemNameMap[i.item_id] = i.name; itemPriceMap[i.item_id] = i.effective_price; }
     }
 
-    const enriched = crimes.map(c => ({
-      ...c,
-      rewards: c.rewards_json ? JSON.parse(c.rewards_json) : null,
-      slots: (slotsByCrime[c.id] || []).map(s => ({
-        ...s,
-        username: s.torn_user_id ? (memberMap[s.torn_user_id] ?? `#${s.torn_user_id}`) : null,
-        item_name: s.item_id ? (itemNameMap[s.item_id] ?? `Item #${s.item_id}`) : null,
-        item_unit_price: s.item_id ? (itemPriceMap[s.item_id] ?? 0) : 0,
-      })),
-    }));
+    const enriched = crimes.map(c => {
+      const rewards = parsedRewards[c.id];
+      const rewardItems = (rewards?.items || []).map(i => ({
+        ...i,
+        name: itemNameMap[i.id] ?? `Item #${i.id}`,
+        unit_price: itemPriceMap[i.id] ?? 0,
+        total_value: (itemPriceMap[i.id] ?? 0) * (i.quantity || 1),
+      }));
+      const rewardItemsValue = rewardItems.reduce((sum, i) => sum + i.total_value, 0);
+      return {
+        ...c,
+        rewards: rewards ? { ...rewards, items: rewardItems } : null,
+        reward_items_value: rewardItemsValue,
+        slots: (slotsByCrime[c.id] || []).map(s => ({
+          ...s,
+          username: s.torn_user_id ? (memberMap[s.torn_user_id] ?? `#${s.torn_user_id}`) : null,
+          item_name: s.item_id ? (itemNameMap[s.item_id] ?? `Item #${s.item_id}`) : null,
+          item_unit_price: s.item_id ? (itemPriceMap[s.item_id] ?? 0) : 0,
+        })),
+      };
+    });
 
     return jsonResponse({ crimes: enriched, members: memberMap });
   } catch (e) {
@@ -268,46 +285,11 @@ export async function getCrimeTemplates(request, env, user) {
   }
 }
 
-// Empirical importance of each individual slot instance to a crime's overall
-// success — derived from real history, not guessed. Same crime + same bare
-// position can have very different real weights per slot number (e.g. Break
-// the Bank's "Muscle #1" vs "Muscle #2" vs "Muscle #3"), so this groups by
-// (position, position_number) rather than by bare position. For each slot,
-// compares the crime's overall success rate in runs where that specific
-// slot's own outcome succeeded vs runs where it didn't; the gap (in
-// percentage points, floored at 0) is the "weight". Needs at least 3 samples
-// on both sides to be trusted, else 0 (treated as "no signal", not
-// "unimportant").
-async function computePositionWeights(env, crimeName) {
-  const { results } = await env.DB.prepare(
-    `SELECT s.position, s.position_number,
-            SUM(CASE WHEN s.outcome = 'Successful' AND c.status = 'Successful' THEN 1 ELSE 0 END) AS pos_succ_crime_succ,
-            SUM(CASE WHEN s.outcome = 'Successful' THEN 1 ELSE 0 END)                              AS pos_succ_total,
-            SUM(CASE WHEN s.outcome != 'Successful' AND c.status = 'Successful' THEN 1 ELSE 0 END) AS pos_fail_crime_succ,
-            SUM(CASE WHEN s.outcome != 'Successful' THEN 1 ELSE 0 END)                             AS pos_fail_total
-     FROM oc_crime_slots s
-     JOIN oc_crimes c ON c.id = s.crime_id
-     WHERE c.name = ? AND c.status IN ('Successful','Failure')
-       AND s.torn_user_id IS NOT NULL AND s.outcome IS NOT NULL AND s.position_number IS NOT NULL
-     GROUP BY s.position, s.position_number`
-  ).bind(crimeName).all();
-
-  const weights = {}; // key = `${position}|${position_number}` -> weight
-  for (const row of results) {
-    const key = `${row.position}|${row.position_number}`;
-    if (row.pos_succ_total < 3 || row.pos_fail_total < 3) { weights[key] = 0; continue; }
-    const succRate = row.pos_succ_crime_succ / row.pos_succ_total;
-    const failRate = row.pos_fail_crime_succ / row.pos_fail_total;
-    weights[key] = Math.max(0, Math.round((succRate - failRate) * 1000) / 10);
-  }
-  return weights;
-}
-
 // Keeps oc_position_weights in sync with reality: seeds any newly-seen
-// crime/slot combo (new Torn crime types show up automatically, no manual
-// entry needed) and refreshes empirically-derived weights for every row
-// leadership hasn't manually overridden. Rows with auto_computed = 0 are
-// never touched here again until leadership resets them.
+// crime/slot combo at a default weight of 100 (new Torn crime types show up
+// automatically, no manual entry needed). Weights are never auto-derived —
+// leadership sets the real value for a slot via the Config tab when they
+// have it; until then every slot sits at the 100 default.
 async function syncPositionWeights(env) {
   const { results: slotDefs } = await env.DB.prepare(
     `SELECT DISTINCT c.name AS crime_name, s.position, s.position_number, s.position_label
@@ -320,24 +302,9 @@ async function syncPositionWeights(env) {
   const CHUNK = 200;
   const seedStmts = slotDefs.map(s => env.DB.prepare(
     `INSERT OR IGNORE INTO oc_position_weights (crime_name, position, position_number, position_label, weight, auto_computed)
-     VALUES (?, ?, ?, ?, 0, 1)`
+     VALUES (?, ?, ?, ?, 100, 1)`
   ).bind(s.crime_name, s.position, s.position_number, s.position_label));
   for (let i = 0; i < seedStmts.length; i += CHUNK) await env.DB.batch(seedStmts.slice(i, i + CHUNK));
-
-  // Refresh empirical weights per crime, only for rows still auto-computed.
-  const crimeNames = [...new Set(slotDefs.map(s => s.crime_name))];
-  const updateStmts = [];
-  for (const crimeName of crimeNames) {
-    const weights = await computePositionWeights(env, crimeName);
-    for (const [key, weight] of Object.entries(weights)) {
-      const [position, positionNumber] = key.split('|');
-      updateStmts.push(env.DB.prepare(
-        `UPDATE oc_position_weights SET weight = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE crime_name = ? AND position = ? AND position_number = ? AND auto_computed = 1`
-      ).bind(weight, crimeName, position, Number(positionNumber)));
-    }
-  }
-  for (let i = 0; i < updateStmts.length; i += CHUNK) await env.DB.batch(updateStmts.slice(i, i + CHUNK));
 }
 
 // ── GET /api/leadership/oc/weights ────────────────────────────────────────────
@@ -445,7 +412,7 @@ async function buildTeamsForCrime(env, factionId, crimeName, teamCount, usedMemb
   // highest-impact instance gets first pick of the strongest remaining
   // candidates for its position.
   const slotInstances = templateSlots
-    .map(s => ({ ...s, weight: weightMap[`${s.position}|${s.position_number}`] ?? 0 }))
+    .map(s => ({ ...s, weight: weightMap[`${s.position}|${s.position_number}`] ?? 100 }))
     .sort((a, b) => b.weight - a.weight);
 
   const teams = Array.from({ length: teamCount }, (_, i) => ({ team_index: i, positions: [] }));
