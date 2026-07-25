@@ -223,6 +223,17 @@ function PredictOutcome({ factionId, crimeName, memberIds, avgCpr }) {
 
 // ─── Crime card ───────────────────────────────────────────────────────────────
 
+// A Successful crime with no money, no items, and no payout at all isn't
+// unpaid — it's a chained crime (e.g. "Gone Fission"): succeeding it opens a
+// follow-up crime, and only the FINAL crime in the chain actually pays out
+// everyone who took part across the whole chain. `previous_crime_id` links
+// back to the crime that spawned this one, confirming the chain relationship.
+function isChainCrime(crime) {
+  if (crime.status !== 'Successful' || !crime.rewards) return false
+  const { money, items, payout } = crime.rewards
+  return !money && !(items?.length) && !payout
+}
+
 // Non-reusable, faction-owned items actually burned (used or lost) running
 // this crime — real either way, whether the crime itself succeeded or failed.
 function crimeItemExpense(crime) {
@@ -279,7 +290,7 @@ function CrimeCard({ crime }) {
               {s.position_label || s.position}
               {(bucket === 'recruiting' || bucket === 'planning') && (
                 <span title="How much this slot's own outcome swings the crime's overall success — set via the Config tab" style={{ color: '#f97316', fontSize: '10px', marginLeft: '5px' }}>
-                  ⚡{s.weight}%
+                  {s.weight}%
                 </span>
               )}
             </span>
@@ -355,7 +366,12 @@ function CrimeCard({ crime }) {
               🧨 Item cost: {fmtMoney(itemExpense)}
             </span>
           )}
-          {crime.rewards?.payout && (
+          {isChainCrime(crime) ? (
+            <span title="Succeeding this crime opened a follow-up crime — the full chain pays out together once the final crime succeeds"
+              style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
+              CHAIN
+            </span>
+          ) : crime.rewards?.payout && (
             <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
               PAID
             </span>
@@ -398,9 +414,11 @@ function CrimesListView({ factionId }) {
     if (filters.participant && !c.slots.some(s => s.username?.toLowerCase().includes(filters.participant.toLowerCase()))) return false
     if (filters.outcome === 'successful' && c.status !== 'Successful') return false
     if (filters.outcome === 'failed' && c.status !== 'Failure') return false
-    // Paid/unpaid only makes sense for Successful crimes — Failure crimes never pay out.
-    if (filters.paid === 'paid' && (c.status !== 'Successful' || !c.rewards?.payout?.paid_at)) return false
-    if (filters.paid === 'unpaid' && (c.status !== 'Successful' || c.rewards?.payout?.paid_at)) return false
+    // Paid/unpaid only makes sense for Successful, non-chained crimes — Failure
+    // crimes never pay out, and chain crimes (empty rewards, pay out later as
+    // part of a follow-up crime) aren't "unpaid", they're just not final yet.
+    if (filters.paid === 'paid' && (c.status !== 'Successful' || isChainCrime(c) || !c.rewards?.payout?.paid_at)) return false
+    if (filters.paid === 'unpaid' && (c.status !== 'Successful' || isChainCrime(c) || c.rewards?.payout?.paid_at)) return false
     return true
   })
 
