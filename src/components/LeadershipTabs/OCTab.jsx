@@ -245,7 +245,24 @@ function crimeItemExpense(crime) {
   }, 0)
 }
 
-function CrimeCard({ crime }) {
+const chainLinkStyle = {
+  fontSize: '11px', color: '#a78bfa', background: 'none', border: '1px solid rgba(139,92,246,0.3)',
+  borderRadius: '6px', padding: '2px 8px', cursor: 'pointer',
+}
+
+// Scrolls a chained crime's card into view and briefly highlights it — only
+// works if that crime is currently rendered on the page (e.g. not hidden by
+// an active filter or on a different faction/status tab).
+function scrollToCrime(crimeId) {
+  const el = document.getElementById(`oc-crime-${crimeId}`)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.style.outline = '2px solid #a78bfa'
+  el.style.outlineOffset = '2px'
+  setTimeout(() => { el.style.outline = ''; el.style.outlineOffset = '' }, 1600)
+}
+
+function CrimeCard({ crime, prevCrime, nextCrime }) {
   const bucket = crime.status === 'Recruiting' ? 'recruiting' : crime.status === 'Planning' ? 'planning' : 'completed'
   const countdownTarget = bucket === 'recruiting' ? crime.expired_at : bucket === 'planning' ? crime.ready_at : null
   const countdown = useCountdown(countdownTarget)
@@ -255,7 +272,7 @@ function CrimeCard({ crime }) {
   const itemExpense = bucket === 'completed' ? crimeItemExpense(crime) : 0
 
   return (
-    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden', marginBottom: '12px' }}>
+    <div id={`oc-crime-${crime.id}`} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden', marginBottom: '12px', transition: 'outline 0.2s' }}>
       {/* Header */}
       <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -354,7 +371,7 @@ function CrimeCard({ crime }) {
               </>
             )
           })()}
-          {crime.rewards?.respect > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>⚡ {crime.rewards.respect} respect</span>}
+          {crime.rewards?.respect > 0 && <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{crime.rewards.respect} respect</span>}
           {crime.rewards?.items?.length > 0 && (
             <span title={crime.rewards.items.map(i => `${i.name} x${i.quantity}`).join(', ')} style={{ color: "var(--text-secondary)", fontSize: '12px' }}>
               📦 {crime.rewards.items.map(i => `${i.name}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ')}
@@ -363,14 +380,26 @@ function CrimeCard({ crime }) {
           )}
           {itemExpense > 0 && (
             <span title="Non-reusable faction-owned items used or lost running this crime" style={{ color: '#f87171', fontSize: '11px' }}>
-              🧨 Item cost: {fmtMoney(itemExpense)}
+              Consumed item cost: {fmtMoney(itemExpense)}
             </span>
           )}
           {isChainCrime(crime) ? (
-            <span title="Succeeding this crime opened a follow-up crime — the full chain pays out together once the final crime succeeds"
-              style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
-              CHAIN
-            </span>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {prevCrime && (
+                <button onClick={() => scrollToCrime(prevCrime.id)} title={`Previous in chain: ${prevCrime.name}`} style={chainLinkStyle}>
+                  ← Previous
+                </button>
+              )}
+              <span title="Succeeding this crime opened a follow-up crime — the full chain pays out together once the final crime succeeds"
+                style={{ fontSize: '11px', fontWeight: '700', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
+                CHAIN
+              </span>
+              {nextCrime && (
+                <button onClick={() => scrollToCrime(nextCrime.id)} title={`Next in chain: ${nextCrime.name}`} style={chainLinkStyle}>
+                  Next →
+                </button>
+              )}
+            </div>
           ) : crime.rewards?.payout && (
             <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
               PAID
@@ -421,6 +450,16 @@ function CrimesListView({ factionId }) {
     if (filters.paid === 'unpaid' && (c.status !== 'Successful' || isChainCrime(c) || c.rewards?.payout?.paid_at)) return false
     return true
   })
+
+  // Chain links only resolve to crimes actually rendered right now (so a
+  // filtered-out or off-page crime just doesn't show a button rather than
+  // linking somewhere that can't be scrolled to).
+  const crimeById = {}
+  const nextByPreviousId = {}
+  for (const c of filteredCrimes) {
+    crimeById[c.id] = c
+    if (c.previous_crime_id) nextByPreviousId[c.previous_crime_id] = c
+  }
 
   return (
     <div>
@@ -497,7 +536,11 @@ function CrimesListView({ factionId }) {
       {!loading && !error && crimes.length > 0 && filteredCrimes.length === 0 && (
         <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>No crimes match the current filters.</p>
       )}
-      {!loading && !error && filteredCrimes.map(c => <CrimeCard key={c.id} crime={c} />)}
+      {!loading && !error && filteredCrimes.map(c => (
+        <CrimeCard key={c.id} crime={c}
+          prevCrime={c.previous_crime_id ? crimeById[c.previous_crime_id] : null}
+          nextCrime={nextByPreviousId[c.id] || null} />
+      ))}
     </div>
   )
 }
