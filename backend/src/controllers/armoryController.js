@@ -67,6 +67,7 @@ function parseDepositEntry(text) {
 
 export async function fetchAndCacheArmoryDeposits(env) {
   const results = { fetched: 0, inserted: 0, errors: [] };
+  const MAX_PAGES = 5; // 500 news entries per faction per run — plenty of headroom
 
   for (const factionId of FACTION_IDS) {
     try {
@@ -76,24 +77,44 @@ export async function fetchAndCacheArmoryDeposits(env) {
         continue;
       }
 
-      const data = await fetchWithRetry(
-        `https://api.torn.com/v2/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryDeposit`,
-        { Authorization: `ApiKey ${apiKeyObj.key}` }
-      );
-      if (data?.error) {
-        results.errors.push({ factionId, error: `Torn API error ${data.error.code}: ${data.error.error}` });
-        continue;
-      }
+      // Fetch from a bit before our last known deposit — a plain "last 100,
+      // no from/pagination" fetch can permanently miss entries if more than
+      // 100 armoryDeposit news items land between runs (they'd be pushed
+      // past the 100-item window before we ever see them, and the next run
+      // would again only look at the newest 100). Padding by 1 hour covers
+      // any minor clock drift; falls back to 7 days for a cold start.
+      const lastRow = await env.DB.prepare(
+        `SELECT MAX(deposited_at) AS max_ts FROM armory_deposits WHERE faction_id=?`
+      ).bind(factionId).first();
+      const sevenDaysAgo = Math.floor(Date.now() / 1000) - 7 * 86400;
+      const from = lastRow?.max_ts ? lastRow.max_ts - 3600 : sevenDaysAgo;
 
       const stmts = [];
-      for (const item of data.news || []) {
-        const parsed = parseDepositEntry(item.text);
-        if (!parsed) continue;
-        stmts.push(env.DB.prepare(
-          `INSERT OR IGNORE INTO armory_deposits
-             (faction_id, torn_news_id, torn_user_id, username, item_name, quantity, deposited_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).bind(factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, parsed.quantity, item.timestamp));
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const offset = page * 100;
+        const data = await fetchWithRetry(
+          `https://api.torn.com/v2/faction/news?striptags=false&limit=100&offset=${offset}&sort=DESC&from=${from}&cat=armoryDeposit`,
+          { Authorization: `ApiKey ${apiKeyObj.key}` }
+        );
+        if (data?.error) {
+          results.errors.push({ factionId, error: `Torn API error ${data.error.code}: ${data.error.error}` });
+          break;
+        }
+
+        const items = data.news || [];
+        if (!items.length) break;
+
+        for (const item of items) {
+          const parsed = parseDepositEntry(item.text);
+          if (!parsed) continue;
+          stmts.push(env.DB.prepare(
+            `INSERT OR IGNORE INTO armory_deposits
+               (faction_id, torn_news_id, torn_user_id, username, item_name, quantity, deposited_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, parsed.quantity, item.timestamp));
+        }
+
+        if (items.length < 100) break; // last page
       }
 
       if (stmts.length) {
@@ -147,7 +168,10 @@ export async function getArmoryDeposits(request, env, user) {
     const factionId = url.searchParams.get('faction_id');
     const limit = Math.min(parseInt(url.searchParams.get('limit'), 10) || 200, 500);
 
-    const where = factionId ? 'WHERE d.faction_id = ?' : '';
+    // Deposits over 99 units are bulk restocks, not the kind of individual
+    // "gave it back" activity this log is meant to surface — excluded here,
+    // same threshold used for Energy Repaid and the war Armory tab.
+    const where = factionId ? 'WHERE d.faction_id = ? AND d.quantity <= 99' : 'WHERE d.quantity <= 99';
     const params = factionId ? [parseInt(factionId, 10)] : [];
 
     const { results } = await env.DB.prepare(

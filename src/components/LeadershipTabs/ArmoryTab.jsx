@@ -335,8 +335,9 @@ function ArmoryDepositsTab() {
     <div>
       <div style={{ marginBottom: '16px' }}>
         <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 10px' }}>
-          Items deposited into each faction's armory, most recent first. Xanax deposits of 99 or fewer also net against
-          Energy Out as "Energy Repaid" on the War Summary and Active War pages.
+          Items deposited into each faction's armory, most recent first. Deposits over 99 units are excluded here as
+          bulk restocks. Xanax deposits of 99 or fewer also net against Energy Out as "Energy Repaid" on the War
+          Summary and Active War pages.
         </p>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {[{ id: null, label: 'All Factions' }, ...FACTIONS].map(f => {

@@ -123,6 +123,13 @@ export default {
 
           const trackR = await trackActiveWars(env).catch(e => { console.error('[cron] war tracking failed:', e); return { checked: 0 }; });
           if (trackR.checked > 0) console.log(`[cron] war tracking: ${trackR.checked} wars checked`);
+
+          // Armory deposits (Energy Repaid, war Armory tab) also refresh on this
+          // 10-min cadence while a war is active/matched — the general 6-hour
+          // cron alone left too wide a gap for anything time-sensitive to a war.
+          const { fetchAndCacheArmoryDeposits } = await import('./controllers/armoryController.js');
+          const depR = await fetchAndCacheArmoryDeposits(env).catch(e => { console.error('[cron] armory deposits (war cadence) failed:', e); return { inserted: 0 }; });
+          if (depR.inserted > 0) console.log(`[cron] armory deposits (war cadence): ${depR.inserted} new`);
         })());
       } catch (error) {
         console.error('[cron] war tracking handler error:', error);
