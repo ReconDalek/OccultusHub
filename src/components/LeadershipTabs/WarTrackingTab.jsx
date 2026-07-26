@@ -99,6 +99,15 @@ function Section({ title, children }) {
 
 // ─── Member stats table ───────────────────────────────────────────────────────
 
+// Energy Net (Energy In − Energy Out): 500+ is a clear "consumed xanax
+// without attacking" flag (red), 250-499 is worth a glance (orange), below
+// that is normal and rendered as plain muted text.
+function energyNetColor(net) {
+  if (net >= 500) return '#ef4444'
+  if (net >= 250) return '#f59e0b'
+  return "var(--text-muted)"
+}
+
 const MEMBER_STATS_COLUMNS = [
   { key: 'attacker_name',   label: 'Member',     align: 'left' },
   { key: 'war_hits',        label: 'War Hits'    },
@@ -246,7 +255,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: "var(--text-secondary)" }}>{fmt(r.energy_used)}</td>
                 <td style={{ ...td, color: (r.energy_in || 0) > 0 ? '#38bdf8' : "var(--text-muted)" }}>{fmt(r.energy_in || 0)}</td>
                 <td title="Energy In minus Energy Out — a large positive value means xanax was consumed without attacking"
-                  style={{ ...td, color: r.energy_net > 0 ? '#ef4444' : "var(--text-muted)", fontWeight: r.energy_net > 0 ? '600' : '400' }}>
+                  style={{ ...td, color: energyNetColor(r.energy_net), fontWeight: r.energy_net >= 250 ? '600' : '400' }}>
                   {r.energy_net > 0 ? '+' : ''}{fmt(r.energy_net)}
                 </td>
                 <td style={{ ...td, color: (r.overdoses || 0) > 0 ? '#ef4444' : "var(--text-muted)" }}>{fmt(r.overdoses || 0)}</td>
