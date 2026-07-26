@@ -188,6 +188,11 @@ async function buildMemberStats(env, warId) {
 async function enrichEnergyAndOD(env, warId, rows) {
   if (!rows.length) return rows;
 
+  // Faction owning this war — armory_deposits is faction-wide (not war-scoped
+  // like war_armory_usage), so we scope it ourselves by faction + war period below.
+  const warRow = await env.DB.prepare(`SELECT faction_id FROM ranked_wars WHERE id=?`).bind(warId).first();
+  const factionId = warRow?.faction_id;
+
   // ── Energy In: Xanax used during this war (stacking + war period) ──────────
   const { results: xanaxRows } = await env.DB.prepare(
     `SELECT torn_user_id, COUNT(*) AS xanax_count
@@ -202,6 +207,22 @@ async function enrichEnergyAndOD(env, warId, rows) {
   const periodRow = await env.DB.prepare(
     `SELECT MIN(started_at) AS min_ts, MAX(started_at) AS max_ts FROM war_attacks WHERE ranked_war_id=?`
   ).bind(warId).first();
+
+  // ── Energy Repaid: Xanax deposited back into the armory during the war period —
+  // nets against Energy Out below, since energy spent on a Xanax that was then
+  // handed back wasn't actually burned attacking. Ignores any single deposit
+  // over 99 units — those are bulk restocks, not "gave back what I didn't use".
+  const repaidMap = {};
+  if (factionId && periodRow?.min_ts) {
+    const { results: repaidRows } = await env.DB.prepare(
+      `SELECT torn_user_id, SUM(quantity) AS total_deposited
+       FROM armory_deposits
+       WHERE faction_id=? AND item_name='Xanax' AND quantity <= 99
+         AND deposited_at >= ? AND deposited_at <= ?
+       GROUP BY torn_user_id`
+    ).bind(factionId, periodRow.min_ts, periodRow.max_ts || Math.floor(Date.now() / 1000)).all();
+    for (const r of repaidRows || []) repaidMap[r.torn_user_id] = r.total_deposited;
+  }
 
   const odMap = {};
   if (periodRow?.min_ts) {
@@ -233,9 +254,12 @@ async function enrichEnergyAndOD(env, warId, rows) {
   }
 
   for (const row of rows) {
-    row.xanax_used = xanaxMap[row.attacker_id] || 0;
-    row.energy_in  = row.xanax_used * 250;
-    row.overdoses  = odMap[row.attacker_id] || 0;
+    row.xanax_used      = xanaxMap[row.attacker_id] || 0;
+    row.energy_in       = row.xanax_used * 250;
+    row.xanax_deposited = repaidMap[row.attacker_id] || 0;
+    row.energy_repaid   = row.xanax_deposited * 250;
+    row.energy_used     = Math.max(0, (row.energy_used || 0) - row.energy_repaid);
+    row.overdoses       = odMap[row.attacker_id] || 0;
   }
 
   return rows;

@@ -125,6 +125,7 @@ const MEMBER_STATS_COLUMNS = [
   { key: 'friendly_hits',   label: 'Friendly'    },
   { key: 'energy_used',     label: 'Energy Out'  },
   { key: 'energy_in',       label: 'Energy In'   },
+  { key: 'energy_repaid',   label: 'Energy Repaid' },
   { key: 'energy_net',      label: 'Energy Net'  },
   { key: 'overdoses',       label: 'OD'          },
 ]
@@ -155,7 +156,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
         war_hits: 0, war_losses: 0, war_interrupted: 0,
         war_respect_gained: 0, bonus_respect: 0, avg_fair_fight: 0,
         outside_attacks: 0, outside_respect: 0, energy_used: 0,
-        energy_in: 0, overdoses: 0,
+        energy_in: 0, energy_repaid: 0, overdoses: 0,
       })
     }
   }
@@ -222,7 +223,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
 
   return (
     <div style={{ overflowX: 'auto', marginTop: '8px' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1020px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
         <thead>
           <tr>
             {MEMBER_STATS_COLUMNS.map(headerCell)}
@@ -254,6 +255,8 @@ function MemberStatsTable({ attackerStats, defendStats }) {
                 <td style={{ ...td, color: (r.friendly_hits || 0) > 0 ? '#fb923c' : "var(--text-muted)" }}>{fmt(r.friendly_hits || 0)}</td>
                 <td style={{ ...td, color: "var(--text-secondary)" }}>{fmt(r.energy_used)}</td>
                 <td style={{ ...td, color: (r.energy_in || 0) > 0 ? '#38bdf8' : "var(--text-muted)" }}>{fmt(r.energy_in || 0)}</td>
+                <td title="Xanax deposited back into the armory (250 energy each) — already netted out of Energy Out above"
+                  style={{ ...td, color: (r.energy_repaid || 0) > 0 ? '#4ade80' : "var(--text-muted)" }}>{fmt(r.energy_repaid || 0)}</td>
                 <td title="Energy In minus Energy Out — a large positive value means xanax was consumed without attacking"
                   style={{ ...td, color: energyNetColor(r.energy_net), fontWeight: r.energy_net >= 250 ? '600' : '400' }}>
                   {r.energy_net > 0 ? '+' : ''}{fmt(r.energy_net)}

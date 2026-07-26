@@ -305,11 +305,13 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
 // armoryDeposit news category. Does not affect any current calculations here —
 // the Accounting page's Armory expense is computed server-side separately.
 
+// "06:08:44 - 26/07/26" — matches the requested log-line format, UTC/TCT
+// (consistent with every other timestamp shown on this page).
 function formatDepositTime(unix) {
-  return new Date(unix * 1000).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    timeZone: 'UTC',
-  }) + ' UTC/TCT'
+  const d = new Date(unix * 1000)
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' })
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'UTC' })
+  return `${time} - ${date}`
 }
 
 function ArmoryDepositsTab() {
@@ -333,7 +335,8 @@ function ArmoryDepositsTab() {
     <div>
       <div style={{ marginBottom: '16px' }}>
         <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 10px' }}>
-          Items deposited into each faction's armory, most recent first. Display only — doesn't affect any current calculations.
+          Items deposited into each faction's armory, most recent first. Xanax deposits of 99 or fewer also net against
+          Energy Out as "Energy Repaid" on the War Summary and Active War pages.
         </p>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {[{ id: null, label: 'All Factions' }, ...FACTIONS].map(f => {
@@ -367,14 +370,14 @@ function ArmoryDepositsTab() {
             </div>
             {deposits.map(d => (
               <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '150px 90px 1fr 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>{formatDepositTime(d.deposited_at)}</span>
+                <span style={{ color: '#4ade80', fontSize: '12px', fontFamily: 'monospace' }}>{formatDepositTime(d.deposited_at)}</span>
                 <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{FACTIONS.find(f => f.id === d.faction_id)?.label ?? d.faction_id}</span>
-                <span style={{ color: '#d4d4d8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.item_name}</span>
+                <span style={{ color: '#4ade80', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.item_name}</span>
                 <a href={`https://www.torn.com/profiles.php?XID=${d.torn_user_id}`} target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#a78bfa', fontSize: '12px', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  style={{ color: '#4ade80', fontSize: '12px', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {d.username}
                 </a>
-                <span style={{ color: '#f4f4f5', fontSize: '13px', textAlign: 'right' }}>{d.quantity.toLocaleString()}</span>
+                <span style={{ color: '#4ade80', fontSize: '13px', textAlign: 'right' }}>{d.quantity.toLocaleString()}</span>
                 <span style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'right' }}>
                   {d.unit_price > 0 ? formatValue(d.quantity * d.unit_price) : '—'}
                 </span>
