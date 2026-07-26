@@ -214,9 +214,13 @@ async function enrichEnergyAndOD(env, warId, rows) {
   // nets against Energy Out below, since energy spent on a Xanax that was then
   // handed back wasn't actually burned attacking. Ignores any single deposit
   // over 99 units — those are bulk restocks, not "gave back what I didn't use".
+  // NOTE: toTs must fall back to "now" (not the last recorded attack's
+  // timestamp) when the war has no ended_at yet — a deposit can easily land
+  // after the most recent attack but before the war actually ends, and using
+  // periodRow.max_ts here previously excluded it until another attack happened.
   const repaidMap = {};
   const repaidFromTs = warRow?.scheduled_start ? warRow.scheduled_start - 3 * 86400 : (warRow?.started_at ?? periodRow?.min_ts);
-  const repaidToTs   = warRow?.ended_at ?? periodRow?.max_ts ?? Math.floor(Date.now() / 1000);
+  const repaidToTs   = warRow?.ended_at ?? Math.floor(Date.now() / 1000);
   if (factionId && repaidFromTs) {
     const { results: repaidRows } = await env.DB.prepare(
       `SELECT torn_user_id, SUM(quantity) AS total_deposited
