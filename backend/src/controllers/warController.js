@@ -258,7 +258,9 @@ async function enrichEnergyAndOD(env, warId, rows) {
     row.energy_in       = row.xanax_used * 250;
     row.xanax_deposited = repaidMap[row.attacker_id] || 0;
     row.energy_repaid   = row.xanax_deposited * 250;
-    row.energy_used     = Math.max(0, (row.energy_used || 0) - row.energy_repaid);
+    // Energy Out itself stays raw (attack count * 25) — Energy Repaid only
+    // factors into the overall Energy Net below, it doesn't get baked into
+    // either Energy In or Energy Out individually.
     row.overdoses       = odMap[row.attacker_id] || 0;
   }
 
