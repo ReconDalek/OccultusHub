@@ -189,8 +189,10 @@ async function enrichEnergyAndOD(env, warId, rows) {
   if (!rows.length) return rows;
 
   // Faction owning this war — armory_deposits is faction-wide (not war-scoped
-  // like war_armory_usage), so we scope it ourselves by faction + war period below.
-  const warRow = await env.DB.prepare(`SELECT faction_id FROM ranked_wars WHERE id=?`).bind(warId).first();
+  // like war_armory_usage), so we scope it ourselves below using the same
+  // window trackActiveWars uses to attribute armoryAction news to this war:
+  // from = scheduled_start - 3 days (covers the pre-war stacking window), to = ended_at (or now if still active).
+  const warRow = await env.DB.prepare(`SELECT faction_id, scheduled_start, started_at, ended_at FROM ranked_wars WHERE id=?`).bind(warId).first();
   const factionId = warRow?.faction_id;
 
   // ── Energy In: Xanax used during this war (stacking + war period) ──────────
@@ -213,14 +215,16 @@ async function enrichEnergyAndOD(env, warId, rows) {
   // handed back wasn't actually burned attacking. Ignores any single deposit
   // over 99 units — those are bulk restocks, not "gave back what I didn't use".
   const repaidMap = {};
-  if (factionId && periodRow?.min_ts) {
+  const repaidFromTs = warRow?.scheduled_start ? warRow.scheduled_start - 3 * 86400 : (warRow?.started_at ?? periodRow?.min_ts);
+  const repaidToTs   = warRow?.ended_at ?? periodRow?.max_ts ?? Math.floor(Date.now() / 1000);
+  if (factionId && repaidFromTs) {
     const { results: repaidRows } = await env.DB.prepare(
       `SELECT torn_user_id, SUM(quantity) AS total_deposited
        FROM armory_deposits
        WHERE faction_id=? AND item_name='Xanax' AND quantity <= 99
          AND deposited_at >= ? AND deposited_at <= ?
        GROUP BY torn_user_id`
-    ).bind(factionId, periodRow.min_ts, periodRow.max_ts || Math.floor(Date.now() / 1000)).all();
+    ).bind(factionId, repaidFromTs, repaidToTs).all();
     for (const r of repaidRows || []) repaidMap[r.torn_user_id] = r.total_deposited;
   }
 
@@ -750,6 +754,7 @@ export async function getWarArmory(request, env) {
     const match = request.url.match(/\/war\/(\d+)\/armory/);
     const warId = match ? parseInt(match[1], 10) : null;
     if (!warId) return errorResponse('Invalid war ID', 400);
+
     const { results } = await env.DB.prepare(
       `SELECT
          a.torn_user_id, a.username, a.item_name,
@@ -763,7 +768,34 @@ export async function getWarArmory(request, env) {
        GROUP BY a.torn_user_id, a.username, a.item_name
        ORDER BY a.torn_user_id, MAX(a.used_at) DESC`
     ).bind(warId).all();
-    return jsonResponse({ armory: results || [] });
+
+    // Deposits (items given back) — armory_deposits is faction-wide, not
+    // war-scoped, so we attribute rows to this war using the same window
+    // trackActiveWars uses to fetch armoryAction news for it (scheduled_start
+    // - 3 days through ended_at/now). Xanax deposits over 99 units are
+    // excluded — those are bulk restocks, not war-related "gave it back".
+    const war = await env.DB.prepare(
+      `SELECT faction_id, scheduled_start, started_at, ended_at FROM ranked_wars WHERE id=?`
+    ).bind(warId).first();
+
+    let depositResults = [];
+    if (war?.faction_id) {
+      const fromTs = war.scheduled_start ? war.scheduled_start - 3 * 86400 : war.started_at;
+      const toTs   = war.ended_at ?? Math.floor(Date.now() / 1000);
+      if (fromTs) {
+        const { results: deposits } = await env.DB.prepare(
+          `SELECT torn_user_id, username, item_name, SUM(quantity) AS count, MIN(deposited_at) AS first_used, MAX(deposited_at) AS last_used
+           FROM armory_deposits
+           WHERE faction_id=? AND deposited_at >= ? AND deposited_at <= ?
+             AND (item_name != 'Xanax' OR quantity <= 99)
+           GROUP BY torn_user_id, username, item_name
+           ORDER BY torn_user_id, MAX(deposited_at) DESC`
+        ).bind(war.faction_id, fromTs, toTs).all();
+        depositResults = deposits || [];
+      }
+    }
+
+    return jsonResponse({ armory: results || [], deposits: depositResults });
   } catch (err) {
     console.error('getWarArmory error:', err);
     return errorResponse('Failed to fetch armory data', 500);

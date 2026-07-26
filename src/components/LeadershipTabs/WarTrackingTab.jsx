@@ -273,8 +273,9 @@ function MemberStatsTable({ attackerStats, defendStats }) {
 
 // ─── Armory table ─────────────────────────────────────────────────────────────
 
-const BADGE_STACK = { bg: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#fcd34d' }
-const BADGE_WAR   = { bg: 'rgba(159,103,255,0.12)', border: '1px solid rgba(159,103,255,0.3)',  color: '#c4b5fd' }
+const BADGE_STACK  = { bg: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#fcd34d' }
+const BADGE_WAR    = { bg: 'rgba(159,103,255,0.12)', border: '1px solid rgba(159,103,255,0.3)',  color: '#c4b5fd' }
+const BADGE_REPAID = { bg: 'rgba(74,222,128,0.12)',  border: '1px solid rgba(74,222,128,0.35)',  color: '#86efac' }
 
 function ItemBadge({ name, count, style: s }) {
   return (
@@ -287,24 +288,32 @@ function ItemBadge({ name, count, style: s }) {
   )
 }
 
-function ArmoryTable({ armory }) {
-  if (!armory?.length) {
+function ArmoryTable({ armory, deposits }) {
+  if (!armory?.length && !deposits?.length) {
     return <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No armory data recorded.</p>
   }
 
-  const hasSplit = armory.some(r => (r.stacking_count ?? 0) > 0)
+  const hasSplit    = (armory || []).some(r => (r.stacking_count ?? 0) > 0)
+  const hasDeposits = (deposits?.length ?? 0) > 0
 
-  // Group by member
+  // Group by member — usage rows and deposit rows share the same member card.
   const byMember = {}
-  for (const row of armory) {
+  const getMember = (key, username, torn_user_id) => {
+    if (!byMember[key]) byMember[key] = { username, torn_user_id, items: [], deposits: [] }
+    return byMember[key]
+  }
+  for (const row of armory || []) {
     const key = row.torn_user_id || row.username
-    if (!byMember[key]) byMember[key] = { username: row.username, torn_user_id: row.torn_user_id, items: [] }
-    byMember[key].items.push(row)
+    getMember(key, row.username, row.torn_user_id).items.push(row)
+  }
+  for (const row of deposits || []) {
+    const key = row.torn_user_id || row.username
+    getMember(key, row.username, row.torn_user_id).deposits.push(row)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-      {hasSplit && (
+      {(hasSplit || hasDeposits) && (
         <div style={{ display: 'flex', gap: '14px', padding: '4px 2px', fontSize: '11px', color: "var(--text-secondary)" }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
@@ -313,6 +322,10 @@ function ArmoryTable({ armory }) {
           <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#9f67ff', display: 'inline-block' }} />
             War period
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
+            Repaid (deposited back)
           </span>
         </div>
       )}
@@ -332,6 +345,9 @@ function ArmoryTable({ armory }) {
               ))}
               {warItems.map((item, i) => (
                 <ItemBadge key={`w${i}`} name={item.item_name} count={item.war_count} style={BADGE_WAR} />
+              ))}
+              {member.deposits.map((item, i) => (
+                <ItemBadge key={`r${i}`} name={item.item_name} count={item.count} style={BADGE_REPAID} />
               ))}
             </div>
           </div>
@@ -1226,6 +1242,7 @@ function VerifyDiffPanel({ diff }) {
 function WarDetail({ warId, onPayoutSaved }) {
   const [data,      setData]      = useState(null)
   const [armory,    setArmory]    = useState(null)
+  const [deposits,  setDeposits]  = useState(null)
   const [loading,   setLoading]   = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
   const [activeSection, setActiveSection] = useState('stats')
@@ -1240,6 +1257,7 @@ function WarDetail({ warId, onPayoutSaved }) {
     ]).then(([detail, arm]) => {
       setData(detail)
       setArmory(arm.armory || [])
+      setDeposits(arm.deposits || [])
     }).catch((e) => { if (e.name !== 'AbortError') console.error('war detail fetch failed', e) })
       .finally(() => setLoading(false))
     return () => controller.abort()
@@ -1253,7 +1271,7 @@ function WarDetail({ warId, onPayoutSaved }) {
 
   const sectionBtns = [
     { value: 'stats',  label: 'Member Stats' },
-    { value: 'armory', label: `Armory (${armory?.length ?? 0} entries)` },
+    { value: 'armory', label: `Armory (${(armory?.length ?? 0) + (deposits?.length ?? 0)} entries)` },
     { value: 'payout', label: '💰 Payout' },
     { value: 'debug',  label: '🔍 Attack Log' },
     ...(isCompleted ? [{ value: 'verify', label: '✔ Verify Data' }] : []),
@@ -1293,7 +1311,7 @@ function WarDetail({ warId, onPayoutSaved }) {
       </div>
 
       {activeSection === 'stats'  && <MemberStatsTable attackerStats={attackerStats} defendStats={defendStats} />}
-      {activeSection === 'armory' && <ArmoryTable armory={armory} />}
+      {activeSection === 'armory' && <ArmoryTable armory={armory} deposits={deposits} />}
       {activeSection === 'debug'  && <AttackLogTab warId={warId} />}
       {activeSection === 'verify' && (
         <VerifyDataTab
