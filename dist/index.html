@@ -9,6 +9,33 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+    <!--
+      Self-heal from stale-deploy module load failures. Right after a new
+      deploy, a CDN edge node can briefly serve the new index.html before its
+      referenced hashed JS asset has finished propagating there, producing
+      "Failed to load module script ... MIME type of text/html" (the SPA
+      catch-all rewrites the momentarily-missing asset to index.html). This
+      catches that failure (script load errors don't bubble, so the listener
+      must run in the capture phase) and reloads once, which resolves itself
+      once propagation catches up a few seconds later. Rate-limited via
+      sessionStorage so a genuinely broken deploy doesn't reload-loop.
+    -->
+    <script>
+      (function () {
+        window.addEventListener('error', function (e) {
+          var t = e.target;
+          if (t && t.tagName === 'SCRIPT' && t.getAttribute && t.getAttribute('type') === 'module') {
+            var last = parseInt(sessionStorage.getItem('occ_reload_ts') || '0', 10);
+            var now = Date.now();
+            if (now - last > 15000) {
+              sessionStorage.setItem('occ_reload_ts', String(now));
+              location.reload();
+            }
+          }
+        }, true);
+      })();
+    </script>
     <script type="module" crossorigin src="/assets/index-Du8Db0x0.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-C-ATfS9p.css">
   </head>
