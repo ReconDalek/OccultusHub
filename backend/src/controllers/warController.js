@@ -1051,7 +1051,7 @@ async function fetchPageRotating(url, keyPool, page, usedKeys) {
     try {
       const data = await fetchWithRetry(url, { Authorization: `ApiKey ${keyObj.key}` });
       usedKeys.set(keyObj.tornUserId, keyObj.username);
-      return data;
+      return { data, keyUsed: keyObj.username };
     } catch (e) {
       lastErr = e;
       if (!/too many requests/i.test(e.message)) throw e; // non-rate-limit error: no point trying other keys
@@ -1090,9 +1090,9 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
   let fromUsed = startAt;
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    let data;
+    let data, keyUsed;
     try {
-      data = await fetchPageRotating(nextUrl, keyPool, page, usedKeys);
+      ({ data, keyUsed } = await fetchPageRotating(nextUrl, keyPool, page, usedKeys));
     } catch (e) {
       console.error(`fetchAttacksInRange p${page}: ${e.message}`);
       error = { message: e.message, page };
@@ -1128,7 +1128,7 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
     pageTrace.push({
       page, itemCount: attacks.length, newCount: seen.size - seenBefore,
       firstTs: attacks[0]?.started ?? null, lastTs: attacks[attacks.length - 1]?.started ?? null,
-      fromUsed, nextFrom: cursorFrom,
+      fromUsed, nextFrom: cursorFrom, keyUsed,
     });
 
     if (pastEnd) { truncated = false; break; }
@@ -1170,9 +1170,9 @@ async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
   let fromUsed = startAt;
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    let data;
+    let data, keyUsed;
     try {
-      data = await fetchPageRotating(nextUrl, keyPool, page, usedKeys);
+      ({ data, keyUsed } = await fetchPageRotating(nextUrl, keyPool, page, usedKeys));
     } catch (e) {
       console.error(`fetchArmoryNewsInRange p${page}: ${e.message}`);
       error = { message: e.message, page };
@@ -1201,7 +1201,7 @@ async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
     pageTrace.push({
       page, itemCount: items.length, newCount: seen.size - seenBefore,
       firstTs: items[0]?.timestamp ?? null, lastTs: items[items.length - 1]?.timestamp ?? null,
-      fromUsed, nextFrom: cursorFrom,
+      fromUsed, nextFrom: cursorFrom, keyUsed,
     });
 
     if (pastEnd) { truncated = false; break; }
@@ -1385,18 +1385,28 @@ export async function verifyWarData(request, env) {
       faction_id: war.faction_id,
       meta: { warId, keysUsed: [...allUsedKeys.entries()].map(([tornUserId, username]) => ({ tornUserId, username })) } }).catch(() => {});
 
-    // Proves/disproves whether the cursor is actually advancing page to page —
-    // if fromUsed repeats or newCount flatlines to 0 across most pages, the
-    // "next" link isn't progressing and we're re-scanning the same window.
-    const staleAttackPages = attacksTrace.filter(t => t.newCount === 0).length;
-    const staleArmoryPages = armoryTrace.filter(t => t.newCount === 0).length;
-    if (staleAttackPages > 5 || staleArmoryPages > 5) {
-      await logWarn(env, { category: 'war_verify', event: 'verify_pagination_stalled',
-        message: `War ${warId} verify: ${staleAttackPages}/${attacksPages} attack pages and ${staleArmoryPages}/${armoryPages} armory pages returned zero new items — cursor may not be advancing`,
+    // Proves/disproves whether the cursor is advancing efficiently — groups
+    // per-page yield by which key served that page. If specific keys
+    // consistently yield far fewer new items per page than others (rather
+    // than every key yielding ~0), that points to per-key visibility
+    // differences (Torn key access levels) rather than a fully broken cursor.
+    const byKey = (trace) => {
+      const agg = {};
+      for (const t of trace) {
+        const k = t.keyUsed ?? 'unknown';
+        if (!agg[k]) agg[k] = { pages: 0, itemCount: 0, newCount: 0 };
+        agg[k].pages++;
+        agg[k].itemCount += t.itemCount;
+        agg[k].newCount  += t.newCount;
+      }
+      return agg;
+    };
+    if (truncated || armoryTruncated) {
+      await logWarn(env, { category: 'war_verify', event: 'verify_pagination_yield',
+        message: `War ${warId} verify hit the page ceiling — ${attacksPages} attack pages yielded ${attacksRawCount} unique, ${armoryPages} armory pages yielded ${armoryRawCount} unique`,
         faction_id: war.faction_id,
-        meta: { warId, staleAttackPages, attacksPages, staleArmoryPages, armoryPages,
-          attacksTraceSample: [...attacksTrace.slice(0, 5), ...attacksTrace.slice(-5)],
-          armoryTraceSample: [...armoryTrace.slice(0, 5), ...armoryTrace.slice(-5)] } }).catch(() => {});
+        meta: { warId, attacksPages, attacksRawCount, armoryPages, armoryRawCount,
+          attacksByKey: byKey(attacksTrace), armoryByKey: byKey(armoryTrace) } }).catch(() => {});
     }
 
     const verifiedArmory = [];
