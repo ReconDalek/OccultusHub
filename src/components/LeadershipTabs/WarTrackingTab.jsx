@@ -26,6 +26,16 @@ function formatUnixDateTime(unix) {
     timeZone: 'UTC', hour12: false,
   }) + ' UTC/TCT'
 }
+// Same as above but with seconds — used only where the exact second sent to
+// Torn's API needs to be visible (e.g. the Verify Data range banner), since
+// formatUnixDateTime's minute-only display would hide second-level rounding bugs.
+function formatUnixDateTimeSec(unix) {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    timeZone: 'UTC', hour12: false,
+  }) + ' UTC/TCT'
+}
 
 function parseD1DateTime(str) {
   if (!str) return null
@@ -1087,7 +1097,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             <span style={{ color: '#a5b4fc', fontSize: '12px', fontWeight: '600' }}>{result.attack_count} attacks fetched</span>
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }} title={result.key_users?.join(', ') || undefined}>via {result.key_user}</span>
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>·</span>
-            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>{formatUnixDateTime(result.range?.start_at)} → {formatUnixDateTime(result.range?.end_at)}</span>
+            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>{formatUnixDateTimeSec(result.range?.start_at)} → {formatUnixDateTimeSec(result.range?.end_at)}</span>
             {result.truncated && (
               result.attacks_error
                 ? <span style={{ color: '#f87171', fontSize: '11px' }}>⚠ Attack fetch stopped early after {result.attacks_pages} page(s): {result.attacks_error}</span>
