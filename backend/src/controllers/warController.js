@@ -1066,6 +1066,12 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
   const seen      = new Set();
   const collected = [];
   const usedKeys  = new Map(); // tornUserId -> username, keys actually exercised
+  // Visibility into what was actually scanned vs. what made it into the
+  // returned stats — rawFirst/rawLast track every attack examined (including
+  // ones discarded as non-war-relevant), collectedFirst/collectedLast track
+  // only the ones that ended up counted.
+  let rawFirst = null, rawLast = null, rawCount = 0;
+  let collectedFirst = null, collectedLast = null;
   // `to=endAt` turned out not to actually bound the query server-side (confirmed
   // live: both this and the armory fetch below kept paginating for the full 300
   // pages well past the war's end). MAX_PAGES is now just a hard safety ceiling —
@@ -1097,10 +1103,17 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
       if (attack.started > endAt) { pastEnd = true; break; }
       if (seen.has(attack.id)) continue;
       seen.add(attack.id);
+      rawCount++;
+      if (rawFirst === null) rawFirst = attack.started;
+      rawLast = attack.started;
       if (attack.started < startAt) continue;
 
       const attack_type = categoriseAttack(attack, factionId, opponentFactionId);
-      if (attack_type) collected.push({ ...attack, attack_type });
+      if (attack_type) {
+        collected.push({ ...attack, attack_type });
+        if (collectedFirst === null) collectedFirst = attack.started;
+        collectedLast = attack.started;
+      }
     }
     if (pastEnd) { truncated = false; break; }
 
@@ -1115,7 +1128,10 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
     nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&comment=OccHub`;
   }
 
-  return { attacks: collected, truncated, error, pagesFetched, usedKeys };
+  return {
+    attacks: collected, truncated, error, pagesFetched, usedKeys,
+    rawFirst, rawLast, rawCount, collectedFirst, collectedLast,
+  };
 }
 
 // ── Verify: fetch all armoryAction news in a timestamp range from Torn API ────
@@ -1127,6 +1143,8 @@ async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
   const seen      = new Set();
   const collected = [];
   const usedKeys  = new Map();
+  let rawFirst = null, rawLast = null, rawCount = 0;
+  let collectedFirst = null, collectedLast = null;
   const MAX_PAGES = 300; // safety ceiling only — see fetchAttacksInRange
 
   let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${startAt}&to=${endAt}&cat=armoryAction&comment=OccHub`;
@@ -1151,8 +1169,13 @@ async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
       if (item.timestamp > endAt) { pastEnd = true; break; }
       if (seen.has(item.id)) continue;
       seen.add(item.id);
+      rawCount++;
+      if (rawFirst === null) rawFirst = item.timestamp;
+      rawLast = item.timestamp;
       if (item.timestamp < startAt) continue;
       collected.push(item);
+      if (collectedFirst === null) collectedFirst = item.timestamp;
+      collectedLast = item.timestamp;
     }
     if (pastEnd) { truncated = false; break; }
 
@@ -1163,7 +1186,10 @@ async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
     nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&cat=armoryAction&comment=OccHub`;
   }
 
-  return { items: collected, truncated, error, pagesFetched, usedKeys };
+  return {
+    items: collected, truncated, error, pagesFetched, usedKeys,
+    rawFirst, rawLast, rawCount, collectedFirst, collectedLast,
+  };
 }
 
 // ── Verify: aggregate raw attack objects into member stats (mirrors buildMemberStats) ─
@@ -1296,7 +1322,11 @@ export async function verifyWarData(request, env) {
     const keyPool = await getStaffApiKeysForFaction(env, war.faction_id);
     if (!keyPool.length) return errorResponse('No leadership API key available for this faction', 503);
 
-    const { attacks, truncated, error: attacksError, pagesFetched: attacksPages, usedKeys: attacksKeys } = await fetchAttacksInRange(
+    const {
+      attacks, truncated, error: attacksError, pagesFetched: attacksPages, usedKeys: attacksKeys,
+      rawFirst: attacksRawFirst, rawLast: attacksRawLast, rawCount: attacksRawCount,
+      collectedFirst: attacksVerifiedFirst, collectedLast: attacksVerifiedLast,
+    } = await fetchAttacksInRange(
       keyPool, war.faction_id, war.opponent_faction_id, startAt, endAt
     );
     if (attacksError) {
@@ -1309,7 +1339,10 @@ export async function verifyWarData(request, env) {
     stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
     // ── Verified armory usage over the same range ──────────────────────────
-    const { items: armoryNews, truncated: armoryTruncated, error: armoryError, pagesFetched: armoryPages, usedKeys: armoryKeys } = await fetchArmoryNewsInRange(
+    const {
+      items: armoryNews, truncated: armoryTruncated, error: armoryError, pagesFetched: armoryPages, usedKeys: armoryKeys,
+      rawFirst: armoryRawFirst, rawLast: armoryRawLast, rawCount: armoryRawCount,
+    } = await fetchArmoryNewsInRange(
       keyPool, startAt, endAt
     );
     if (armoryError) {
@@ -1338,6 +1371,11 @@ export async function verifyWarData(request, env) {
         used_at:      item.timestamp,
       });
     }
+
+    // armoryNews is already in ascending timestamp order, so filtering to
+    // verifiedArmory preserves that order — first/last element gives the range.
+    const armoryVerifiedFirst = verifiedArmory.length ? verifiedArmory[0].used_at : null;
+    const armoryVerifiedLast  = verifiedArmory.length ? verifiedArmory[verifiedArmory.length - 1].used_at : null;
 
     // Override the DB-sourced Xanax/Energy In figures from enrichEnergyAndOD
     // with freshly verified counts — same reasoning as attacks: recompute from
@@ -1411,11 +1449,19 @@ export async function verifyWarData(request, env) {
       truncated,
       attacks_pages: attacksPages,
       attacks_error: attacksError?.message ?? null,
+      // Fetched = every raw attack Torn returned that we actually examined (incl.
+      // ones discarded as non-war-relevant). Verified = only the ones counted
+      // into the stats above. A gap between these ranges and the requested
+      // range is the visibility the "still slightly off" report needs.
+      attacks_fetched_range:  { first: attacksRawFirst, last: attacksRawLast, count: attacksRawCount },
+      attacks_verified_range: { first: attacksVerifiedFirst, last: attacksVerifiedLast },
       armory: verifiedArmory,
       armory_count: verifiedArmory.length,
       armory_truncated: armoryTruncated,
       armory_pages: armoryPages,
       armory_error: armoryError?.message ?? null,
+      armory_fetched_range:  { first: armoryRawFirst, last: armoryRawLast, count: armoryRawCount },
+      armory_verified_range: { first: armoryVerifiedFirst, last: armoryVerifiedLast },
       armoryDiff,
       key_user: allUsedKeys.size === 1 ? [...allUsedKeys.values()][0] : `${allUsedKeys.size} leadership keys`,
       key_users: [...allUsedKeys.values()],

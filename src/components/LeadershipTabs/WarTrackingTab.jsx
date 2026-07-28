@@ -1112,6 +1112,19 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             )}
           </div>
 
+          {/* Scanned vs. verified ranges — visibility into how far pagination actually reached
+              vs. what timestamps ended up counted in the stats below */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '14px', padding: '8px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '11px', color: "var(--text-faint)" }}>
+            <div>
+              Attacks scanned: {formatUnixDateTimeSec(result.attacks_fetched_range?.first)} → {formatUnixDateTimeSec(result.attacks_fetched_range?.last)}
+              {' '}({result.attacks_fetched_range?.count ?? 0} raw) · Verified: {formatUnixDateTimeSec(result.attacks_verified_range?.first)} → {formatUnixDateTimeSec(result.attacks_verified_range?.last)}
+            </div>
+            <div>
+              Armory scanned: {formatUnixDateTimeSec(result.armory_fetched_range?.first)} → {formatUnixDateTimeSec(result.armory_fetched_range?.last)}
+              {' '}({result.armory_fetched_range?.count ?? 0} raw) · Verified: {formatUnixDateTimeSec(result.armory_verified_range?.first)} → {formatUnixDateTimeSec(result.armory_verified_range?.last)}
+            </div>
+          </div>
+
           {/* Summary comparison */}
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
             <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px 0' }}>Summary Comparison</p>
