@@ -505,12 +505,18 @@ export async function trackActiveWars(env, trigger = 'cron') {
             continue;
           }
 
-          // War started — "has begun"
+          // War started — "has begun". Wars always start exactly on the hour, and
+          // scheduled_start already holds that exact second (parsed from the
+          // earlier "will begin... HH:MM:SS" announcement) — use it rather than
+          // this news post's own timestamp, which Torn generates a few seconds
+          // after the real start (confirmed live: 18:00:17 vs the war report's
+          // actual 18:00:00, cutting off the war's opening seconds of attacks).
           if (status === 'matched' && item.text.includes('has begun')) {
+            const actualStart = scheduled_start ?? item.timestamp;
             await env.DB.prepare(
               `UPDATE ranked_wars SET status='active', started_at=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=? AND status='matched'`
-            ).bind(item.timestamp, warId).run();
-            warStartedAt = item.timestamp; // keep local value in sync — used by fetchAndStoreAttacks below this same poll
+            ).bind(actualStart, warId).run();
+            warStartedAt = actualStart; // keep local value in sync — used by fetchAndStoreAttacks below this same poll
             console.log(`trackActiveWars: war ${warId} now ACTIVE`);
             await logInfo(env, { category: 'war_cron', event: 'war_started', message: `War ${warId} (faction ${factionId} vs ${opponentId}) now ACTIVE`, meta: { warId, factionId, opponentId } }).catch(() => {});
             break;
