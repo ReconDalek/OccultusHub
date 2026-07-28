@@ -1085,7 +1085,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
           {/* Fetch summary */}
           <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '14px', padding: '10px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '8px', alignItems: 'center' }}>
             <span style={{ color: '#a5b4fc', fontSize: '12px', fontWeight: '600' }}>{result.attack_count} attacks fetched</span>
-            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>via {result.key_user}</span>
+            <span style={{ color: "var(--text-faint)", fontSize: '11px' }} title={result.key_users?.join(', ') || undefined}>via {result.key_user}</span>
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>·</span>
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>{formatUnixDateTime(result.range?.start_at)} → {formatUnixDateTime(result.range?.end_at)}</span>
             {result.truncated && (

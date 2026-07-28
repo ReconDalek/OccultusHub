@@ -66,6 +66,35 @@ export async function getRandomApiKeyForFaction(env, factionId) {
   }
 }
 
+// Returns every leadership member's key for the faction (not just one), shuffled —
+// for bulk pagination that needs to round-robin across keys. Torn rate-limits
+// per API key, so hundreds of rapid sequential calls on a single key trip
+// "Too many requests" long before a real per-faction ceiling is reached.
+export async function getStaffApiKeysForFaction(env, factionId) {
+  const positions = factionId === 9728
+    ? `('Leader','Co-leader')`
+    : `('Leader','Co-leader','Council','Archon')`;
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT api_key, torn_user_id, username FROM users
+       WHERE api_key IS NOT NULL AND faction_id = ? AND faction_position IN ${positions}`
+    ).bind(factionId).all();
+    const keys = [];
+    for (const r of (results || [])) {
+      try { keys.push({ key: atob(r.api_key), tornUserId: r.torn_user_id, username: r.username }); }
+      catch { /* undecodable key — skip */ }
+    }
+    for (let i = keys.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+    }
+    return keys;
+  } catch (e) {
+    console.error('Error getting staff API keys:', e);
+    return [];
+  }
+}
+
 // Returns { key, tornUserId, username } or null.
 // Only selects leadership ranks. Faction 9728 is temporarily restricted to Leader/Co-leader only
 // until Archon/Council permissions are granted in Torn.

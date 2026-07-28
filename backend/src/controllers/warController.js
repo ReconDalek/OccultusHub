@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
+import { getStaffApiKeyForFaction, getStaffApiKeysForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 const FACTION_IDS   = [33097, 9728, 9171];
@@ -1037,11 +1037,35 @@ export async function getWarAttackLog(request, env) {
   }
 }
 
+// ── Verify: rotate across a key pool for one paginated request ────────────────
+// Torn rate-limits per API key ("Torn API error: Too many requests" — a 200
+// response with an error body, not an HTTP 429), so hundreds of sequential
+// pages on one key trip it well before any real per-faction ceiling. Each
+// page starts at a different key (offset by page number) so load is spread
+// preemptively; on a rate-limit hit specifically, it also tries the other
+// keys in the pool before giving up on the page entirely.
+async function fetchPageRotating(url, keyPool, page, usedKeys) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < keyPool.length; attempt++) {
+    const keyObj = keyPool[(page + attempt) % keyPool.length];
+    try {
+      const data = await fetchWithRetry(url, { Authorization: `ApiKey ${keyObj.key}` });
+      usedKeys.set(keyObj.tornUserId, keyObj.username);
+      return data;
+    } catch (e) {
+      lastErr = e;
+      if (!/too many requests/i.test(e.message)) throw e; // non-rate-limit error: no point trying other keys
+    }
+  }
+  throw lastErr;
+}
+
 // ── Verify: fetch all attacks in a timestamp range from Torn API ──────────────
 
-async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt, endAt) {
+async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startAt, endAt) {
   const seen      = new Set();
   const collected = [];
+  const usedKeys  = new Map(); // tornUserId -> username, keys actually exercised
   const MAX_PAGES = 300; // safety ceiling only — `to=endAt` bounds the real query server-side
 
   let nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${startAt}&to=${endAt}&comment=OccHub`;
@@ -1052,7 +1076,7 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
     try {
-      data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
+      data = await fetchPageRotating(nextUrl, keyPool, page, usedKeys);
     } catch (e) {
       console.error(`fetchAttacksInRange p${page}: ${e.message}`);
       error = { message: e.message, page };
@@ -1081,7 +1105,7 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
     nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&comment=OccHub`;
   }
 
-  return { attacks: collected, truncated, error, pagesFetched };
+  return { attacks: collected, truncated, error, pagesFetched, usedKeys };
 }
 
 // ── Verify: fetch all armoryAction news in a timestamp range from Torn API ────
@@ -1090,9 +1114,10 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
 // categories' worth of paging before reaching the end of the range, and a
 // hand-rolled timestamp cursor can't safely split >100 news items sharing a second.
 
-async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
+async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
   const seen      = new Set();
   const collected = [];
+  const usedKeys  = new Map();
   const MAX_PAGES = 300;
 
   let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${startAt}&to=${endAt}&cat=armoryAction&comment=OccHub`;
@@ -1103,7 +1128,7 @@ async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
     try {
-      data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
+      data = await fetchPageRotating(nextUrl, keyPool, page, usedKeys);
     } catch (e) {
       console.error(`fetchArmoryNewsInRange p${page}: ${e.message}`);
       error = { message: e.message, page };
@@ -1126,7 +1151,7 @@ async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
     nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&cat=armoryAction&comment=OccHub`;
   }
 
-  return { items: collected, truncated, error, pagesFetched };
+  return { items: collected, truncated, error, pagesFetched, usedKeys };
 }
 
 // ── Verify: aggregate raw attack objects into member stats (mirrors buildMemberStats) ─
@@ -1256,30 +1281,38 @@ export async function verifyWarData(request, env) {
     const endAt     = body.end_at   ?? war.ended_at;
     if (!startAt || !endAt) return errorResponse('start_at and end_at are required', 400);
 
-    const apiKeyObj = await getStaffApiKeyForFaction(env, war.faction_id);
-    if (!apiKeyObj?.key) return errorResponse('No leadership API key available for this faction', 503);
+    const keyPool = await getStaffApiKeysForFaction(env, war.faction_id);
+    if (!keyPool.length) return errorResponse('No leadership API key available for this faction', 503);
 
-    const { attacks, truncated, error: attacksError, pagesFetched: attacksPages } = await fetchAttacksInRange(
-      apiKeyObj.key, war.faction_id, war.opponent_faction_id, startAt, endAt
+    const { attacks, truncated, error: attacksError, pagesFetched: attacksPages, usedKeys: attacksKeys } = await fetchAttacksInRange(
+      keyPool, war.faction_id, war.opponent_faction_id, startAt, endAt
     );
     if (attacksError) {
       await logError(env, { category: 'war_verify', event: 'attacks_fetch_aborted',
         message: `War ${warId} verify: attacks fetch aborted at page ${attacksError.page} (${attacksPages} pages fetched OK): ${attacksError.message}`,
-        meta: { warId, factionId: war.faction_id, ...attacksError, pagesFetched: attacksPages } }).catch(() => {});
+        meta: { warId, factionId: war.faction_id, ...attacksError, pagesFetched: attacksPages, keysUsed: [...attacksKeys.values()] } }).catch(() => {});
     }
 
     const stats = aggregateVerifiedAttacks(attacks);
     stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
     // ── Verified armory usage over the same range ──────────────────────────
-    const { items: armoryNews, truncated: armoryTruncated, error: armoryError, pagesFetched: armoryPages } = await fetchArmoryNewsInRange(
-      apiKeyObj.key, startAt, endAt
+    const { items: armoryNews, truncated: armoryTruncated, error: armoryError, pagesFetched: armoryPages, usedKeys: armoryKeys } = await fetchArmoryNewsInRange(
+      keyPool, startAt, endAt
     );
     if (armoryError) {
       await logError(env, { category: 'war_verify', event: 'armory_fetch_aborted',
         message: `War ${warId} verify: armory fetch aborted at page ${armoryError.page} (${armoryPages} pages fetched OK): ${armoryError.message}`,
-        meta: { warId, factionId: war.faction_id, ...armoryError, pagesFetched: armoryPages } }).catch(() => {});
+        meta: { warId, factionId: war.faction_id, ...armoryError, pagesFetched: armoryPages, keysUsed: [...armoryKeys.values()] } }).catch(() => {});
     }
+
+    // Combined record of every leadership key actually exercised this run —
+    // requested so admins can audit rotation instead of assuming a single key.
+    const allUsedKeys = new Map([...attacksKeys, ...armoryKeys]);
+    await logInfo(env, { category: 'war_verify', event: 'verify_keys_used',
+      message: `War ${warId} verify used ${allUsedKeys.size} key(s): ${[...allUsedKeys.values()].join(', ')}`,
+      faction_id: war.faction_id,
+      meta: { warId, keysUsed: [...allUsedKeys.entries()].map(([tornUserId, username]) => ({ tornUserId, username })) } }).catch(() => {});
 
     const verifiedArmory = [];
     for (const item of armoryNews) {
@@ -1372,7 +1405,8 @@ export async function verifyWarData(request, env) {
       armory_pages: armoryPages,
       armory_error: armoryError?.message ?? null,
       armoryDiff,
-      key_user: apiKeyObj.username,
+      key_user: allUsedKeys.size === 1 ? [...allUsedKeys.values()][0] : `${allUsedKeys.size} leadership keys`,
+      key_users: [...allUsedKeys.values()],
       range: { start_at: startAt, end_at: endAt },
       diff,
     });
