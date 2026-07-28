@@ -1080,6 +1080,47 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
   return { attacks: collected, truncated };
 }
 
+// ── Verify: fetch all armoryAction news in a timestamp range from Torn API ────
+// Mirrors fetchAttacksInRange above — same `to`-bounded, cursor-following
+// pagination, same reason: a `from`-only fetch would pull in unrelated news
+// categories' worth of paging before reaching the end of the range, and a
+// hand-rolled timestamp cursor can't safely split >100 news items sharing a second.
+
+async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
+  const seen      = new Set();
+  const collected = [];
+  const MAX_PAGES = 300;
+
+  let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${startAt}&to=${endAt}&cat=armoryAction&comment=OccHub`;
+  let truncated = true;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let data;
+    try {
+      data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
+    } catch (e) {
+      console.error(`fetchArmoryNewsInRange p${page}: ${e.message}`);
+      break;
+    }
+
+    const items = data.news || [];
+    for (const item of items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      if (item.timestamp < startAt || item.timestamp > endAt) continue;
+      collected.push(item);
+    }
+
+    const nextLink   = data._metadata?.links?.next;
+    const cursorFrom = nextLink ? new URL(nextLink).searchParams.get('from') : null;
+    if (!items.length || !nextLink || !cursorFrom) { truncated = false; break; }
+
+    nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&cat=armoryAction&comment=OccHub`;
+  }
+
+  return { items: collected, truncated };
+}
+
 // ── Verify: aggregate raw attack objects into member stats (mirrors buildMemberStats) ─
 
 const CHAIN_BONUS_COUNTS = new Set([10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000]);
@@ -1217,6 +1258,52 @@ export async function verifyWarData(request, env) {
     const stats = aggregateVerifiedAttacks(attacks);
     stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
+    // ── Verified armory usage over the same range ──────────────────────────
+    const { items: armoryNews, truncated: armoryTruncated } = await fetchArmoryNewsInRange(
+      apiKeyObj.key, startAt, endAt
+    );
+
+    const verifiedArmory = [];
+    for (const item of armoryNews) {
+      const parsed = parseArmoryEntry(item.text);
+      if (!parsed) continue;
+      verifiedArmory.push({
+        torn_news_id: item.id,
+        torn_user_id: parsed.torn_user_id,
+        username:     parsed.username,
+        item_name:    parsed.item_name,
+        used_at:      item.timestamp,
+      });
+    }
+
+    // Override the DB-sourced Xanax/Energy In figures from enrichEnergyAndOD
+    // with freshly verified counts — same reasoning as attacks: recompute from
+    // Torn's own history rather than trust whatever the live tracker logged.
+    const verifiedXanaxByUser = {};
+    for (const a of verifiedArmory) {
+      if (a.item_name === 'Xanax') verifiedXanaxByUser[a.torn_user_id] = (verifiedXanaxByUser[a.torn_user_id] || 0) + 1;
+    }
+    for (const row of stats.attackerStats) {
+      row.xanax_used = verifiedXanaxByUser[row.attacker_id] || 0;
+      row.energy_in  = row.xanax_used * 250;
+    }
+
+    // Diff against whatever's currently tracked in war_armory_usage.
+    const { results: liveArmoryRows } = await env.DB.prepare(
+      `SELECT torn_news_id, torn_user_id, username, item_name, used_at
+       FROM war_armory_usage WHERE ranked_war_id=?`
+    ).bind(warId).all();
+
+    let armoryDiff = null;
+    if (liveArmoryRows && liveArmoryRows.length > 0) {
+      const liveIds     = new Set(liveArmoryRows.map(r => r.torn_news_id));
+      const verifiedIds = new Set(verifiedArmory.map(a => a.torn_news_id));
+      armoryDiff = {
+        missingFromLive: verifiedArmory.filter(a => !liveIds.has(a.torn_news_id)),
+        extraInLive:     liveArmoryRows.filter(r => !verifiedIds.has(r.torn_news_id)),
+      };
+    }
+
     // Trimmed raw rows — sent back so "Apply" can replace war_attacks itself,
     // keeping the Attack Log debug tab in sync with the verified data too.
     const rawAttacks = attacks.map(a => ({
@@ -1259,6 +1346,10 @@ export async function verifyWarData(request, env) {
       attacks: rawAttacks,
       attack_count: attacks.length,
       truncated,
+      armory: verifiedArmory,
+      armory_count: verifiedArmory.length,
+      armory_truncated: armoryTruncated,
+      armoryDiff,
       key_user: apiKeyObj.username,
       range: { start_at: startAt, end_at: endAt },
       diff,
@@ -1281,7 +1372,7 @@ export async function applyVerifiedWarData(request, env) {
     const warId = match ? parseInt(match[1], 10) : null;
     if (!warId) return errorResponse('Invalid war ID', 400);
 
-    const { attackerStats, defendStats, totals, attacks } = await request.json();
+    const { attackerStats, defendStats, totals, attacks, armoryUsage } = await request.json();
 
     const war = await env.DB.prepare(`SELECT faction_id, hits_saved FROM ranked_wars WHERE id=?`).bind(warId).first();
     if (!war) return errorResponse('War not found', 404);
@@ -1313,11 +1404,36 @@ export async function applyVerifiedWarData(request, env) {
       }
     }
 
+    // Same replace treatment for verified armory usage, locked the same way
+    // once hits_saved (war_armory_usage isn't purged at payout time, but we
+    // still don't want a stray re-apply changing the log after the fact).
+    if (!war.hits_saved && Array.isArray(armoryUsage) && armoryUsage.length > 0) {
+      await env.DB.prepare(`DELETE FROM war_armory_usage WHERE ranked_war_id=?`).bind(warId).run();
+
+      const armoryInsertStmt = env.DB.prepare(
+        `INSERT OR IGNORE INTO war_armory_usage
+           (ranked_war_id, faction_id, torn_news_id, torn_user_id, username, item_name, used_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      );
+      const armoryBound = armoryUsage.map(a => armoryInsertStmt.bind(
+        warId, war.faction_id, a.torn_news_id, a.torn_user_id, a.username, a.item_name, a.used_at
+      ));
+
+      const CHUNK = 200;
+      for (let i = 0; i < armoryBound.length; i += CHUNK) {
+        await env.DB.batch(armoryBound.slice(i, i + CHUNK));
+      }
+    }
+
     await env.DB.prepare(
       `UPDATE ranked_wars SET summary_json=?, verified_override=1 WHERE id=?`
     ).bind(JSON.stringify({ attackerStats, defendStats, totals }), warId).run();
 
-    return jsonResponse({ ok: true, attacksReplaced: !war.hits_saved && Array.isArray(attacks) ? attacks.length : 0 });
+    return jsonResponse({
+      ok: true,
+      attacksReplaced: !war.hits_saved && Array.isArray(attacks) ? attacks.length : 0,
+      armoryReplaced:  !war.hits_saved && Array.isArray(armoryUsage) ? armoryUsage.length : 0,
+    });
   } catch (err) {
     console.error('applyVerifiedWarData error:', err);
     return errorResponse('Failed to apply verified data: ' + err.message, 500);
