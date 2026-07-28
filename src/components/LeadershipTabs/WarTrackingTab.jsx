@@ -976,14 +976,12 @@ function unixToInput(unix) {
 }
 function inputToUnix(val) {
   if (!val) return null
-  // datetime-local values are "YYYY-MM-DDTHH:MM" or, with a seconds-enabled
-  // input, "YYYY-MM-DDTHH:MM:SS". If seconds are missing we don't know how far
-  // into that minute the real moment was — round UP to the next minute rather
-  // than truncating to :00, so verification never cuts off trailing attacks
-  // (e.g. a war ending 11:25:52 must run through 11:26:00, not stop at 11:25:00).
+  // datetime-local (step="1") always carries second-level precision, but the
+  // browser's serialization drops the ":SS" component whenever seconds are
+  // exactly 0 — that's not missing precision, it just means :00. Padding with
+  // ":00" here is exact, not a fallback guess.
   const hasSeconds = val.length > 16
-  const unix = Math.floor(new Date((hasSeconds ? val : `${val}:00`) + 'Z').getTime() / 1000)
-  return hasSeconds ? unix : unix + 60
+  return Math.floor(new Date((hasSeconds ? val : `${val}:00`) + 'Z').getTime() / 1000)
 }
 
 function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
@@ -1090,10 +1088,18 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>via {result.key_user}</span>
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>·</span>
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>{formatUnixDateTime(result.range?.start_at)} → {formatUnixDateTime(result.range?.end_at)}</span>
-            {result.truncated && <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — attack range may be incomplete</span>}
+            {result.truncated && (
+              result.attacks_error
+                ? <span style={{ color: '#f87171', fontSize: '11px' }}>⚠ Attack fetch stopped early after {result.attacks_pages} page(s): {result.attacks_error}</span>
+                : <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — attack range may be incomplete</span>
+            )}
             <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>·</span>
             <span style={{ color: '#a5b4fc', fontSize: '12px', fontWeight: '600' }}>{result.armory_count ?? 0} armory events fetched</span>
-            {result.armory_truncated && <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — armory range may be incomplete</span>}
+            {result.armory_truncated && (
+              result.armory_error
+                ? <span style={{ color: '#f87171', fontSize: '11px' }}>⚠ Armory fetch stopped early after {result.armory_pages} page(s): {result.armory_error}</span>
+                : <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — armory range may be incomplete</span>
+            )}
           </div>
 
           {/* Summary comparison */}

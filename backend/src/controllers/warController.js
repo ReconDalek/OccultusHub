@@ -1046,6 +1046,8 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
 
   let nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${startAt}&to=${endAt}&comment=OccHub`;
   let truncated = true; // stays true unless we observe a natural end-of-data condition below
+  let error = null; // set only if a page fetch throws — distinguishes "gave up early" from a true page-limit hit
+  let pagesFetched = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
@@ -1053,8 +1055,10 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
       data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
     } catch (e) {
       console.error(`fetchAttacksInRange p${page}: ${e.message}`);
+      error = { message: e.message, page };
       break;
     }
+    pagesFetched++;
 
     const attacks = data.attacks || [];
     for (const attack of attacks) {
@@ -1077,7 +1081,7 @@ async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt
     nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&comment=OccHub`;
   }
 
-  return { attacks: collected, truncated };
+  return { attacks: collected, truncated, error, pagesFetched };
 }
 
 // ── Verify: fetch all armoryAction news in a timestamp range from Torn API ────
@@ -1093,6 +1097,8 @@ async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
 
   let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${startAt}&to=${endAt}&cat=armoryAction&comment=OccHub`;
   let truncated = true;
+  let error = null; // set only if a page fetch throws — distinguishes "gave up early" from a true page-limit hit
+  let pagesFetched = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
@@ -1100,8 +1106,10 @@ async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
       data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
     } catch (e) {
       console.error(`fetchArmoryNewsInRange p${page}: ${e.message}`);
+      error = { message: e.message, page };
       break;
     }
+    pagesFetched++;
 
     const items = data.news || [];
     for (const item of items) {
@@ -1118,7 +1126,7 @@ async function fetchArmoryNewsInRange(apiKey, startAt, endAt) {
     nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&cat=armoryAction&comment=OccHub`;
   }
 
-  return { items: collected, truncated };
+  return { items: collected, truncated, error, pagesFetched };
 }
 
 // ── Verify: aggregate raw attack objects into member stats (mirrors buildMemberStats) ─
@@ -1251,17 +1259,27 @@ export async function verifyWarData(request, env) {
     const apiKeyObj = await getStaffApiKeyForFaction(env, war.faction_id);
     if (!apiKeyObj?.key) return errorResponse('No leadership API key available for this faction', 503);
 
-    const { attacks, truncated } = await fetchAttacksInRange(
+    const { attacks, truncated, error: attacksError, pagesFetched: attacksPages } = await fetchAttacksInRange(
       apiKeyObj.key, war.faction_id, war.opponent_faction_id, startAt, endAt
     );
+    if (attacksError) {
+      await logError(env, { category: 'war_verify', event: 'attacks_fetch_aborted',
+        message: `War ${warId} verify: attacks fetch aborted at page ${attacksError.page} (${attacksPages} pages fetched OK): ${attacksError.message}`,
+        meta: { warId, factionId: war.faction_id, ...attacksError, pagesFetched: attacksPages } }).catch(() => {});
+    }
 
     const stats = aggregateVerifiedAttacks(attacks);
     stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
     // ── Verified armory usage over the same range ──────────────────────────
-    const { items: armoryNews, truncated: armoryTruncated } = await fetchArmoryNewsInRange(
+    const { items: armoryNews, truncated: armoryTruncated, error: armoryError, pagesFetched: armoryPages } = await fetchArmoryNewsInRange(
       apiKeyObj.key, startAt, endAt
     );
+    if (armoryError) {
+      await logError(env, { category: 'war_verify', event: 'armory_fetch_aborted',
+        message: `War ${warId} verify: armory fetch aborted at page ${armoryError.page} (${armoryPages} pages fetched OK): ${armoryError.message}`,
+        meta: { warId, factionId: war.faction_id, ...armoryError, pagesFetched: armoryPages } }).catch(() => {});
+    }
 
     const verifiedArmory = [];
     for (const item of armoryNews) {
@@ -1346,9 +1364,13 @@ export async function verifyWarData(request, env) {
       attacks: rawAttacks,
       attack_count: attacks.length,
       truncated,
+      attacks_pages: attacksPages,
+      attacks_error: attacksError?.message ?? null,
       armory: verifiedArmory,
       armory_count: verifiedArmory.length,
       armory_truncated: armoryTruncated,
+      armory_pages: armoryPages,
+      armory_error: armoryError?.message ?? null,
       armoryDiff,
       key_user: apiKeyObj.username,
       range: { start_at: startAt, end_at: endAt },
