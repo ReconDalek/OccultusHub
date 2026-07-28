@@ -1066,7 +1066,11 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
   const seen      = new Set();
   const collected = [];
   const usedKeys  = new Map(); // tornUserId -> username, keys actually exercised
-  const MAX_PAGES = 300; // safety ceiling only — `to=endAt` bounds the real query server-side
+  // `to=endAt` turned out not to actually bound the query server-side (confirmed
+  // live: both this and the armory fetch below kept paginating for the full 300
+  // pages well past the war's end). MAX_PAGES is now just a hard safety ceiling —
+  // the real stop condition is the ASC-order check inside the loop below.
+  const MAX_PAGES = 300;
 
   let nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${startAt}&to=${endAt}&comment=OccHub`;
   let truncated = true; // stays true unless we observe a natural end-of-data condition below
@@ -1085,14 +1089,20 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
     pagesFetched++;
 
     const attacks = data.attacks || [];
+    // Sorted ASC by Torn — the first attack past endAt proves everything after
+    // it (this page and all future pages) is also past endAt, since `to` isn't
+    // actually trimming the query. Stop here instead of paging to MAX_PAGES.
+    let pastEnd = false;
     for (const attack of attacks) {
+      if (attack.started > endAt) { pastEnd = true; break; }
       if (seen.has(attack.id)) continue;
       seen.add(attack.id);
-      if (attack.started < startAt || attack.started > endAt) continue;
+      if (attack.started < startAt) continue;
 
       const attack_type = categoriseAttack(attack, factionId, opponentFactionId);
       if (attack_type) collected.push({ ...attack, attack_type });
     }
+    if (pastEnd) { truncated = false; break; }
 
     // Follow Torn's own forward cursor rather than reconstructing a `from`
     // timestamp ourselves — a timestamp cursor can't tell apart >100 attacks
@@ -1109,16 +1119,15 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
 }
 
 // ── Verify: fetch all armoryAction news in a timestamp range from Torn API ────
-// Mirrors fetchAttacksInRange above — same `to`-bounded, cursor-following
-// pagination, same reason: a `from`-only fetch would pull in unrelated news
-// categories' worth of paging before reaching the end of the range, and a
-// hand-rolled timestamp cursor can't safely split >100 news items sharing a second.
+// Mirrors fetchAttacksInRange above — same cursor-following pagination and the
+// same ASC-order early-exit, since `to=endAt` doesn't actually bound either
+// endpoint's query server-side (confirmed live).
 
 async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
   const seen      = new Set();
   const collected = [];
   const usedKeys  = new Map();
-  const MAX_PAGES = 300;
+  const MAX_PAGES = 300; // safety ceiling only — see fetchAttacksInRange
 
   let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${startAt}&to=${endAt}&cat=armoryAction&comment=OccHub`;
   let truncated = true;
@@ -1137,12 +1146,15 @@ async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
     pagesFetched++;
 
     const items = data.news || [];
+    let pastEnd = false;
     for (const item of items) {
+      if (item.timestamp > endAt) { pastEnd = true; break; }
       if (seen.has(item.id)) continue;
       seen.add(item.id);
-      if (item.timestamp < startAt || item.timestamp > endAt) continue;
+      if (item.timestamp < startAt) continue;
       collected.push(item);
     }
+    if (pastEnd) { truncated = false; break; }
 
     const nextLink   = data._metadata?.links?.next;
     const cursorFrom = nextLink ? new URL(nextLink).searchParams.get('from') : null;
