@@ -82,22 +82,19 @@ function TypeBadge({ type, stage }) {
 function FactionCard({ faction, schedules }) {
   const now = Date.now()
 
-  // Pick the most relevant event for this faction:
-  // Active wars with a future scheduled_at take priority over enlisting; then sort by soonest date
-  const relevant = schedules
-    .filter((s) => s.faction_id === faction.id)
-    .filter((s) => s.stage === 'active' || s.stage === 'enlisting' || (s.scheduled_at && new Date(s.scheduled_at) > now))
-    .sort((a, b) => {
-      const aActive = a.stage === 'active' && a.scheduled_at && new Date(a.scheduled_at) > now
-      const bActive = b.stage === 'active' && b.scheduled_at && new Date(b.scheduled_at) > now
-      if (aActive && !bActive) return -1
-      if (bActive && !aActive) return 1
-      if (a.stage === 'enlisting' && b.stage !== 'enlisting' && !bActive) return -1
-      if (b.stage === 'enlisting' && a.stage !== 'enlisting' && !aActive) return 1
-      return new Date(a.scheduled_at) - new Date(b.scheduled_at)
-    })
+  // Pick the most relevant event for this faction: whichever has the soonest
+  // future scheduled_at, regardless of type or stage. Only fall back to an
+  // undated enlisting war (awaiting opponent/start time) when nothing else
+  // has a known date yet.
+  const factionSchedules = schedules.filter((s) => s.faction_id === faction.id)
 
-  const next = relevant[0] || null
+  const dated = factionSchedules
+    .filter((s) => s.scheduled_at && new Date(s.scheduled_at) > now)
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+
+  const undatedEnlisting = factionSchedules.find((s) => s.stage === 'enlisting' && !s.scheduled_at)
+
+  const next = dated[0] || undatedEnlisting || null
 
   const tct = next?.scheduled_at
     ? new Date(next.scheduled_at).toLocaleString('en-GB', {
