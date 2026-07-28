@@ -605,10 +605,24 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   // INSERT OR IGNORE handles any page-boundary overlaps automatically
 
   let nextUrl     = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
-  let maxId       = lastAttackId;
+  let maxId       = lastAttackId; // highest ID seen this poll, informational only — NOT what gets persisted
   let totalNew    = 0;
   let reachedBoundary = false; // true once we've connected back to lastAttackId or the war start
   const MAX_PAGES = 30; // 3,000 raw attacks/poll headroom; watermark logic below is the real gap guard
+
+  // A brand-new attack can take a short while to become visible via this endpoint
+  // (confirmed live: several real attacks were seen for the first time a poll or
+  // two after they actually happened, by which point a same-poll advance to the
+  // literal max ID already seen had moved the watermark past their eventual slot,
+  // permanently skipping them — id<=lastAttackId looked like "already processed"
+  // when it had never actually been inserted). So the persisted watermark is
+  // capped to attacks old enough to be past that visibility window, not to
+  // whatever the newest ID happened to be this poll — anything younger keeps
+  // getting re-scanned (harmlessly, via INSERT OR IGNORE) until it ages past
+  // the buffer, giving a straggler at least one more poll's chance to show up.
+  const WATERMARK_SAFETY_BUFFER = 600; // seconds — one full cron cycle of grace
+  const safeCutoff = Math.floor(Date.now() / 1000) - WATERMARK_SAFETY_BUFFER;
+  let safeMaxId   = lastAttackId; // highest ID old enough to safely persist as the new watermark
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
@@ -628,6 +642,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
 
       // Track max ID seen this run
       if (attack.id > maxId) maxId = attack.id;
+      if (attack.started <= safeCutoff && attack.id > safeMaxId) safeMaxId = attack.id;
 
       // Skip attacks that occurred after the war ended
       if (warEndedAt && attack.started > warEndedAt) continue;
@@ -676,10 +691,11 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   // mid-run, advancing anyway would permanently skip the unfetched middle section —
   // instead leave the watermark where it was so the next poll retries and expands
   // further back until it reconnects (INSERT OR IGNORE makes re-fetching safe).
-  if (reachedBoundary && maxId > lastAttackId) {
+  // Persists safeMaxId (buffered), not maxId (bleeding edge) — see comment above.
+  if (reachedBoundary && safeMaxId > lastAttackId) {
     await env.DB.prepare(
       `UPDATE ranked_wars SET last_attack_fetched=?, last_checked_at=CURRENT_TIMESTAMP WHERE id=?`
-    ).bind(maxId, warId).run();
+    ).bind(safeMaxId, warId).run();
   } else if (!reachedBoundary) {
     console.warn(`fetchAndStoreAttacks: war ${warId} — hit MAX_PAGES (${MAX_PAGES}) before reconnecting to watermark; will retry next poll`);
     await logWarn(env, {
@@ -688,7 +704,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
       meta: { warId, factionId, lastAttackId, maxIdSeen: maxId },
     }).catch(() => {});
   }
-  if (totalNew > 0) console.log(`fetchAndStoreAttacks: war ${warId} — ${totalNew} new attacks (maxId=${maxId}, reachedBoundary=${reachedBoundary})`);
+  if (totalNew > 0) console.log(`fetchAndStoreAttacks: war ${warId} — ${totalNew} new attacks (maxId=${maxId}, safeMaxId=${safeMaxId}, reachedBoundary=${reachedBoundary})`);
   return totalNew;
 }
 
