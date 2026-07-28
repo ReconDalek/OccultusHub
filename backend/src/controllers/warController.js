@@ -1088,6 +1088,16 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
   let error = null; // set only if a page fetch throws — distinguishes "gave up early" from a true page-limit hit
   let pagesFetched = 0;
   let fromUsed = startAt;
+  // Torn's own forward cursor isn't fully trustworthy — confirmed live that it
+  // can go stuck (repeat the same `from` forever) exactly where more real data
+  // may still exist, not just at the genuine end. Rather than treat a stuck/
+  // non-progressing cursor as proof we're done, fall back to a `from` we
+  // reconstruct ourselves (last raw timestamp seen + 1) and keep trying, up to
+  // a small cap — bounded because rawLast only advances on genuine new data,
+  // so a truly-finished window will exhaust the cap within a handful of pages
+  // instead of silently truncating.
+  let stuckRecoveries = 0;
+  const MAX_STUCK_RECOVERIES = 5;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data, keyUsed;
@@ -1123,27 +1133,34 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
       }
     }
 
+    const newCountThisPage = seen.size - seenBefore;
     const nextLink   = data._metadata?.links?.next;
     const cursorFrom = nextLink ? new URL(nextLink).searchParams.get('from') : null;
     pageTrace.push({
-      page, itemCount: attacks.length, newCount: seen.size - seenBefore,
+      page, itemCount: attacks.length, newCount: newCountThisPage,
       firstTs: attacks[0]?.started ?? null, lastTs: attacks[attacks.length - 1]?.started ?? null,
       fromUsed, nextFrom: cursorFrom, keyUsed,
     });
 
     if (pastEnd) { truncated = false; break; }
 
-    // Follow Torn's own forward cursor rather than reconstructing a `from`
-    // timestamp ourselves — a timestamp cursor can't tell apart >100 attacks
-    // sharing the same second and silently drops whatever didn't fit on the
-    // previous page. No next link (or an empty page) means we're genuinely done.
-    // Confirmed live: at the true end of data, Torn keeps returning a "next"
-    // link whose `from` is identical to the one we just used, instead of
-    // omitting it — an infinite self-referential cursor. Treat that as done too.
-    if (!attacks.length || !nextLink || !cursorFrom || cursorFrom === fromUsed) { truncated = false; break; }
+    // A truly empty page is the one unambiguous "nothing left" signal.
+    if (!attacks.length) { truncated = false; break; }
 
-    fromUsed = cursorFrom;
-    nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&comment=OccHub`;
+    // Torn's cursor not moving (or moving but yielding nothing new — same
+    // symptom) isn't proof there's no more data in range, just proof this
+    // particular cursor value is unreliable here. Reconstruct `from` from the
+    // last raw timestamp actually seen and keep going instead of stopping.
+    const cursorStuck = !cursorFrom || cursorFrom === fromUsed || newCountThisPage === 0;
+    if (cursorStuck) {
+      if (rawLast === null || stuckRecoveries >= MAX_STUCK_RECOVERIES) { truncated = false; break; }
+      stuckRecoveries++;
+      fromUsed = String(rawLast + 1);
+    } else {
+      stuckRecoveries = 0;
+      fromUsed = cursorFrom;
+    }
+    nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${fromUsed}&to=${endAt}&comment=OccHub`;
   }
 
   return {
