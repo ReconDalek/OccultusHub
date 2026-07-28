@@ -1073,9 +1073,9 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
   let rawFirst = null, rawLast = null, rawCount = 0;
   let collectedFirst = null, collectedLast = null;
   // `to=endAt` turned out not to actually bound the query server-side (confirmed
-  // live: both this and the armory fetch below kept paginating for the full 300
-  // pages well past the war's end). MAX_PAGES is now just a hard safety ceiling —
-  // the real stop condition is the ASC-order check inside the loop below.
+  // live: this kept paginating for the full 300 pages well past the war's end).
+  // MAX_PAGES is now just a hard safety ceiling — the real stop conditions are
+  // the ASC-order check and the non-advancing-cursor check inside the loop below.
   const MAX_PAGES = 300;
   // Per-page trace — proves or disproves whether the cursor is actually
   // advancing each page (fromUsed should differ page to page; newCount should
@@ -1137,7 +1137,10 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
     // timestamp ourselves — a timestamp cursor can't tell apart >100 attacks
     // sharing the same second and silently drops whatever didn't fit on the
     // previous page. No next link (or an empty page) means we're genuinely done.
-    if (!attacks.length || !nextLink || !cursorFrom) { truncated = false; break; }
+    // Confirmed live: at the true end of data, Torn keeps returning a "next"
+    // link whose `from` is identical to the one we just used, instead of
+    // omitting it — an infinite self-referential cursor. Treat that as done too.
+    if (!attacks.length || !nextLink || !cursorFrom || cursorFrom === fromUsed) { truncated = false; break; }
 
     fromUsed = cursorFrom;
     nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&comment=OccHub`;
@@ -1145,75 +1148,6 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
 
   return {
     attacks: collected, truncated, error, pagesFetched, usedKeys,
-    rawFirst, rawLast, rawCount, collectedFirst, collectedLast, pageTrace,
-  };
-}
-
-// ── Verify: fetch all armoryAction news in a timestamp range from Torn API ────
-// Mirrors fetchAttacksInRange above — same cursor-following pagination and the
-// same ASC-order early-exit, since `to=endAt` doesn't actually bound either
-// endpoint's query server-side (confirmed live).
-
-async function fetchArmoryNewsInRange(keyPool, startAt, endAt) {
-  const seen      = new Set();
-  const collected = [];
-  const usedKeys  = new Map();
-  let rawFirst = null, rawLast = null, rawCount = 0;
-  let collectedFirst = null, collectedLast = null;
-  const MAX_PAGES = 300; // safety ceiling only — see fetchAttacksInRange
-  const pageTrace = []; // see fetchAttacksInRange for what this proves
-
-  let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${startAt}&to=${endAt}&cat=armoryAction&comment=OccHub`;
-  let truncated = true;
-  let error = null; // set only if a page fetch throws — distinguishes "gave up early" from a true page-limit hit
-  let pagesFetched = 0;
-  let fromUsed = startAt;
-
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let data, keyUsed;
-    try {
-      ({ data, keyUsed } = await fetchPageRotating(nextUrl, keyPool, page, usedKeys));
-    } catch (e) {
-      console.error(`fetchArmoryNewsInRange p${page}: ${e.message}`);
-      error = { message: e.message, page };
-      break;
-    }
-    pagesFetched++;
-
-    const items = data.news || [];
-    const seenBefore = seen.size;
-    let pastEnd = false;
-    for (const item of items) {
-      if (item.timestamp > endAt) { pastEnd = true; break; }
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      rawCount++;
-      if (rawFirst === null) rawFirst = item.timestamp;
-      rawLast = item.timestamp;
-      if (item.timestamp < startAt) continue;
-      collected.push(item);
-      if (collectedFirst === null) collectedFirst = item.timestamp;
-      collectedLast = item.timestamp;
-    }
-
-    const nextLink   = data._metadata?.links?.next;
-    const cursorFrom = nextLink ? new URL(nextLink).searchParams.get('from') : null;
-    pageTrace.push({
-      page, itemCount: items.length, newCount: seen.size - seenBefore,
-      firstTs: items[0]?.timestamp ?? null, lastTs: items[items.length - 1]?.timestamp ?? null,
-      fromUsed, nextFrom: cursorFrom, keyUsed,
-    });
-
-    if (pastEnd) { truncated = false; break; }
-
-    if (!items.length || !nextLink || !cursorFrom) { truncated = false; break; }
-
-    fromUsed = cursorFrom;
-    nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&cat=armoryAction&comment=OccHub`;
-  }
-
-  return {
-    items: collected, truncated, error, pagesFetched, usedKeys,
     rawFirst, rawLast, rawCount, collectedFirst, collectedLast, pageTrace,
   };
 }
@@ -1364,95 +1298,31 @@ export async function verifyWarData(request, env) {
     const stats = aggregateVerifiedAttacks(attacks);
     stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
-    // ── Verified armory usage over the same range ──────────────────────────
-    const {
-      items: armoryNews, truncated: armoryTruncated, error: armoryError, pagesFetched: armoryPages, usedKeys: armoryKeys,
-      rawFirst: armoryRawFirst, rawLast: armoryRawLast, rawCount: armoryRawCount, pageTrace: armoryTrace,
-    } = await fetchArmoryNewsInRange(
-      keyPool, startAt, endAt
-    );
-    if (armoryError) {
-      await logError(env, { category: 'war_verify', event: 'armory_fetch_aborted',
-        message: `War ${warId} verify: armory fetch aborted at page ${armoryError.page} (${armoryPages} pages fetched OK): ${armoryError.message}`,
-        meta: { warId, factionId: war.faction_id, ...armoryError, pagesFetched: armoryPages, keysUsed: [...armoryKeys.values()] } }).catch(() => {});
-    }
-
-    // Combined record of every leadership key actually exercised this run —
-    // requested so admins can audit rotation instead of assuming a single key.
-    const allUsedKeys = new Map([...attacksKeys, ...armoryKeys]);
+    // Record of every leadership key actually exercised this run — requested
+    // so admins can audit rotation instead of assuming a single key.
     await logInfo(env, { category: 'war_verify', event: 'verify_keys_used',
-      message: `War ${warId} verify used ${allUsedKeys.size} key(s): ${[...allUsedKeys.values()].join(', ')}`,
+      message: `War ${warId} verify used ${attacksKeys.size} key(s): ${[...attacksKeys.values()].join(', ')}`,
       faction_id: war.faction_id,
-      meta: { warId, keysUsed: [...allUsedKeys.entries()].map(([tornUserId, username]) => ({ tornUserId, username })) } }).catch(() => {});
+      meta: { warId, keysUsed: [...attacksKeys.entries()].map(([tornUserId, username]) => ({ tornUserId, username })) } }).catch(() => {});
 
     // Proves/disproves whether the cursor is advancing efficiently — groups
     // per-page yield by which key served that page. If specific keys
     // consistently yield far fewer new items per page than others (rather
     // than every key yielding ~0), that points to per-key visibility
     // differences (Torn key access levels) rather than a fully broken cursor.
-    const byKey = (trace) => {
-      const agg = {};
-      for (const t of trace) {
+    if (truncated) {
+      const attacksByKey = {};
+      for (const t of attacksTrace) {
         const k = t.keyUsed ?? 'unknown';
-        if (!agg[k]) agg[k] = { pages: 0, itemCount: 0, newCount: 0 };
-        agg[k].pages++;
-        agg[k].itemCount += t.itemCount;
-        agg[k].newCount  += t.newCount;
+        if (!attacksByKey[k]) attacksByKey[k] = { pages: 0, itemCount: 0, newCount: 0 };
+        attacksByKey[k].pages++;
+        attacksByKey[k].itemCount += t.itemCount;
+        attacksByKey[k].newCount  += t.newCount;
       }
-      return agg;
-    };
-    if (truncated || armoryTruncated) {
       await logWarn(env, { category: 'war_verify', event: 'verify_pagination_yield',
-        message: `War ${warId} verify hit the page ceiling — ${attacksPages} attack pages yielded ${attacksRawCount} unique, ${armoryPages} armory pages yielded ${armoryRawCount} unique`,
+        message: `War ${warId} verify hit the page ceiling — ${attacksPages} attack pages yielded ${attacksRawCount} unique`,
         faction_id: war.faction_id,
-        meta: { warId, attacksPages, attacksRawCount, armoryPages, armoryRawCount,
-          attacksByKey: byKey(attacksTrace), armoryByKey: byKey(armoryTrace) } }).catch(() => {});
-    }
-
-    const verifiedArmory = [];
-    for (const item of armoryNews) {
-      const parsed = parseArmoryEntry(item.text);
-      if (!parsed) continue;
-      verifiedArmory.push({
-        torn_news_id: item.id,
-        torn_user_id: parsed.torn_user_id,
-        username:     parsed.username,
-        item_name:    parsed.item_name,
-        used_at:      item.timestamp,
-      });
-    }
-
-    // armoryNews is already in ascending timestamp order, so filtering to
-    // verifiedArmory preserves that order — first/last element gives the range.
-    const armoryVerifiedFirst = verifiedArmory.length ? verifiedArmory[0].used_at : null;
-    const armoryVerifiedLast  = verifiedArmory.length ? verifiedArmory[verifiedArmory.length - 1].used_at : null;
-
-    // Override the DB-sourced Xanax/Energy In figures from enrichEnergyAndOD
-    // with freshly verified counts — same reasoning as attacks: recompute from
-    // Torn's own history rather than trust whatever the live tracker logged.
-    const verifiedXanaxByUser = {};
-    for (const a of verifiedArmory) {
-      if (a.item_name === 'Xanax') verifiedXanaxByUser[a.torn_user_id] = (verifiedXanaxByUser[a.torn_user_id] || 0) + 1;
-    }
-    for (const row of stats.attackerStats) {
-      row.xanax_used = verifiedXanaxByUser[row.attacker_id] || 0;
-      row.energy_in  = row.xanax_used * 250;
-    }
-
-    // Diff against whatever's currently tracked in war_armory_usage.
-    const { results: liveArmoryRows } = await env.DB.prepare(
-      `SELECT torn_news_id, torn_user_id, username, item_name, used_at
-       FROM war_armory_usage WHERE ranked_war_id=?`
-    ).bind(warId).all();
-
-    let armoryDiff = null;
-    if (liveArmoryRows && liveArmoryRows.length > 0) {
-      const liveIds     = new Set(liveArmoryRows.map(r => r.torn_news_id));
-      const verifiedIds = new Set(verifiedArmory.map(a => a.torn_news_id));
-      armoryDiff = {
-        missingFromLive: verifiedArmory.filter(a => !liveIds.has(a.torn_news_id)),
-        extraInLive:     liveArmoryRows.filter(r => !verifiedIds.has(r.torn_news_id)),
-      };
+        meta: { warId, attacksPages, attacksRawCount, attacksByKey } }).catch(() => {});
     }
 
     // Trimmed raw rows — sent back so "Apply" can replace war_attacks itself,
@@ -1505,22 +1375,13 @@ export async function verifyWarData(request, env) {
       // range is the visibility the "still slightly off" report needs.
       attacks_fetched_range:  { first: attacksRawFirst, last: attacksRawLast, count: attacksRawCount },
       attacks_verified_range: { first: attacksVerifiedFirst, last: attacksVerifiedLast },
-      armory: verifiedArmory,
-      armory_count: verifiedArmory.length,
-      armory_truncated: armoryTruncated,
-      armory_pages: armoryPages,
-      armory_error: armoryError?.message ?? null,
-      armory_fetched_range:  { first: armoryRawFirst, last: armoryRawLast, count: armoryRawCount },
-      armory_verified_range: { first: armoryVerifiedFirst, last: armoryVerifiedLast },
-      armoryDiff,
-      key_user: allUsedKeys.size === 1 ? [...allUsedKeys.values()][0] : `${allUsedKeys.size} leadership keys`,
-      key_users: [...allUsedKeys.values()],
+      key_user: attacksKeys.size === 1 ? [...attacksKeys.values()][0] : `${attacksKeys.size} leadership keys`,
+      key_users: [...attacksKeys.values()],
       range: { start_at: startAt, end_at: endAt },
       // Per-page pagination trace (visible in the Network tab response) — shows
       // whether the cursor is genuinely advancing (fromUsed/newCount changing
       // each page) or stuck re-scanning the same window.
       attacks_trace: attacksTrace,
-      armory_trace: armoryTrace,
       diff,
     });
   } catch (err) {

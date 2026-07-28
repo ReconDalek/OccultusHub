@@ -1023,7 +1023,6 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
       // advances each page or gets stuck re-scanning. Logged, not rendered,
       // since it's only needed while diagnosing pagination behaviour.
       if (d.attacks_trace?.length) console.table(d.attacks_trace)
-      if (d.armory_trace?.length) console.table(d.armory_trace)
     } catch (e) { setError(e.message) }
     finally { setRunning(false) }
   }
@@ -1035,7 +1034,7 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
       const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/verify/apply`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attackerStats: result.attackerStats, defendStats: result.defendStats, totals: result.totals, attacks: result.attacks, armoryUsage: result.armory }),
+        body: JSON.stringify({ attackerStats: result.attackerStats, defendStats: result.defendStats, totals: result.totals, attacks: result.attacks }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Apply failed')
@@ -1108,13 +1107,6 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
                 ? <span style={{ color: '#f87171', fontSize: '11px' }}>⚠ Attack fetch stopped early after {result.attacks_pages} page(s): {result.attacks_error}</span>
                 : <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — attack range may be incomplete</span>
             )}
-            <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>·</span>
-            <span style={{ color: '#a5b4fc', fontSize: '12px', fontWeight: '600' }}>{result.armory_count ?? 0} armory events fetched</span>
-            {result.armory_truncated && (
-              result.armory_error
-                ? <span style={{ color: '#f87171', fontSize: '11px' }}>⚠ Armory fetch stopped early after {result.armory_pages} page(s): {result.armory_error}</span>
-                : <span style={{ color: '#f59e0b', fontSize: '11px' }}>⚠ Page limit reached — armory range may be incomplete</span>
-            )}
           </div>
 
           {/* Scanned vs. verified ranges — visibility into how far pagination actually reached
@@ -1124,17 +1116,12 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
               Attacks scanned: {formatUnixDateTimeSec(result.attacks_fetched_range?.first)} → {formatUnixDateTimeSec(result.attacks_fetched_range?.last)}
               {' '}({result.attacks_fetched_range?.count ?? 0} raw) · Verified: {formatUnixDateTimeSec(result.attacks_verified_range?.first)} → {formatUnixDateTimeSec(result.attacks_verified_range?.last)}
             </div>
-            <div>
-              Armory scanned: {formatUnixDateTimeSec(result.armory_fetched_range?.first)} → {formatUnixDateTimeSec(result.armory_fetched_range?.last)}
-              {' '}({result.armory_fetched_range?.count ?? 0} raw) · Verified: {formatUnixDateTimeSec(result.armory_verified_range?.first)} → {formatUnixDateTimeSec(result.armory_verified_range?.last)}
-            </div>
             {(() => {
               const staleAttacks = result.attacks_trace?.filter(t => t.newCount === 0).length ?? 0
-              const staleArmory  = result.armory_trace?.filter(t => t.newCount === 0).length ?? 0
-              if (!staleAttacks && !staleArmory) return null
+              if (!staleAttacks) return null
               return (
                 <div style={{ color: '#f87171' }}>
-                  ⚠ Pagination stalled — {staleAttacks}/{result.attacks_trace?.length ?? 0} attack page(s) and {staleArmory}/{result.armory_trace?.length ?? 0} armory page(s) returned zero new items (full trace logged to browser console)
+                  ⚠ Pagination stalled — {staleAttacks}/{result.attacks_trace?.length ?? 0} attack page(s) returned zero new items (full trace logged to browser console)
                 </div>
               )
             })()}
@@ -1188,11 +1175,6 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
             <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '0 0 14px' }}>
               No attack-level diff available — this war's raw tracked attacks were already purged (payout finalised), so only the aggregate comparison above is possible.
             </p>
-          )}
-
-          {/* Armory-level diff vs currently tracked data */}
-          {result.armoryDiff && (result.armoryDiff.missingFromLive.length > 0 || result.armoryDiff.extraInLive.length > 0) && (
-            <ArmoryDiffPanel diff={result.armoryDiff} />
           )}
 
           {/* New member stats */}
@@ -1280,64 +1262,6 @@ function VerifyDiffPanel({ diff }) {
         color="#4ade80"
       />
       <VerifyDiffTable
-        title="In live tracking but not in verified range"
-        note="Currently stored but not returned by this verification — check the time range, or these may be stale/duplicate rows."
-        rows={diff.extraInLive}
-        color="#f87171"
-      />
-    </div>
-  )
-}
-
-// ─── Armory diff panel — mirrors the attack-level diff above, for armory usage ─
-
-function ArmoryDiffRow({ a }) {
-  return (
-    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-      <td style={{ padding: '5px 8px', fontSize: '11px', color: "var(--text-faint)", whiteSpace: 'nowrap' }}>{formatUnixDateTime(a.used_at)}</td>
-      <td style={{ padding: '5px 8px', fontSize: '12px', color: '#e4e4e7' }}>{a.username || a.torn_user_id || '—'}</td>
-      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-muted)" }}>{a.item_name}</td>
-    </tr>
-  )
-}
-
-function ArmoryDiffTable({ title, rows, color, note }) {
-  if (!rows.length) return null
-  return (
-    <div style={{ marginBottom: '10px' }}>
-      <p style={{ color, fontSize: '11px', fontWeight: '600', margin: '0 0 4px' }}>{title} ({rows.length})</p>
-      {note && <p style={{ color: "var(--text-faint)", fontSize: '10px', margin: '0 0 6px' }}>{note}</p>}
-      <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px' }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-          <thead>
-            <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
-              {['Time', 'Member', 'Item'].map(h => (
-                <th key={h} style={{ padding: '5px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: "var(--text-faint)", textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((a, i) => <ArmoryDiffRow key={a.torn_news_id ?? i} a={a} />)}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function ArmoryDiffPanel({ diff }) {
-  return (
-    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
-      <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
-        Armory-Level Diff <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>— what actually changed</span>
-      </p>
-      <ArmoryDiffTable
-        title="Missing from live tracking"
-        note="Found by verification but not currently stored — the live tracker missed these."
-        rows={diff.missingFromLive}
-        color="#4ade80"
-      />
-      <ArmoryDiffTable
         title="In live tracking but not in verified range"
         note="Currently stored but not returned by this verification — check the time range, or these may be stale/duplicate rows."
         rows={diff.extraInLive}
