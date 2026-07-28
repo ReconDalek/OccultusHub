@@ -1019,6 +1019,11 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Verification failed')
       setResult(d)
+      // Full per-page pagination trace — proves whether the cursor actually
+      // advances each page or gets stuck re-scanning. Logged, not rendered,
+      // since it's only needed while diagnosing pagination behaviour.
+      if (d.attacks_trace?.length) console.table(d.attacks_trace)
+      if (d.armory_trace?.length) console.table(d.armory_trace)
     } catch (e) { setError(e.message) }
     finally { setRunning(false) }
   }
@@ -1123,6 +1128,16 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
               Armory scanned: {formatUnixDateTimeSec(result.armory_fetched_range?.first)} → {formatUnixDateTimeSec(result.armory_fetched_range?.last)}
               {' '}({result.armory_fetched_range?.count ?? 0} raw) · Verified: {formatUnixDateTimeSec(result.armory_verified_range?.first)} → {formatUnixDateTimeSec(result.armory_verified_range?.last)}
             </div>
+            {(() => {
+              const staleAttacks = result.attacks_trace?.filter(t => t.newCount === 0).length ?? 0
+              const staleArmory  = result.armory_trace?.filter(t => t.newCount === 0).length ?? 0
+              if (!staleAttacks && !staleArmory) return null
+              return (
+                <div style={{ color: '#f87171' }}>
+                  ⚠ Pagination stalled — {staleAttacks}/{result.attacks_trace?.length ?? 0} attack page(s) and {staleArmory}/{result.armory_trace?.length ?? 0} armory page(s) returned zero new items (full trace logged to browser console)
+                </div>
+              )
+            })()}
           </div>
 
           {/* Summary comparison */}
