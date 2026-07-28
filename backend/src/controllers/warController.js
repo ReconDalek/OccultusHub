@@ -1040,45 +1040,44 @@ export async function getWarAttackLog(request, env) {
 // ── Verify: fetch all attacks in a timestamp range from Torn API ──────────────
 
 async function fetchAttacksInRange(apiKey, factionId, opponentFactionId, startAt, endAt) {
-  const seen       = new Set();
-  const collected  = [];
-  let   fromTs     = startAt;
-  const MAX_PAGES  = 60;
+  const seen      = new Set();
+  const collected = [];
+  const MAX_PAGES = 300; // safety ceiling only — `to=endAt` bounds the real query server-side
+
+  let nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${startAt}&to=${endAt}&comment=OccHub`;
+  let truncated = true; // stays true unless we observe a natural end-of-data condition below
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
     try {
-      data = await fetchWithRetry(
-        `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${fromTs}&comment=OccHub`,
-        { Authorization: `ApiKey ${apiKey}` }
-      );
+      data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
     } catch (e) {
       console.error(`fetchAttacksInRange p${page}: ${e.message}`);
       break;
     }
 
     const attacks = data.attacks || [];
-    if (!attacks.length) break;
-
-    let advanced = false;
-
     for (const attack of attacks) {
       if (seen.has(attack.id)) continue;
       seen.add(attack.id);
-
-      // sort=ASC — first attack past endAt means we are done
-      if (attack.started > endAt) return { attacks: collected, truncated: false };
-
-      if (attack.started > fromTs) { fromTs = attack.started; advanced = true; }
+      if (attack.started < startAt || attack.started > endAt) continue;
 
       const attack_type = categoriseAttack(attack, factionId, opponentFactionId);
       if (attack_type) collected.push({ ...attack, attack_type });
     }
 
-    if (!advanced) fromTs += 1; // bump past timestamp ties to avoid infinite loop
+    // Follow Torn's own forward cursor rather than reconstructing a `from`
+    // timestamp ourselves — a timestamp cursor can't tell apart >100 attacks
+    // sharing the same second and silently drops whatever didn't fit on the
+    // previous page. No next link (or an empty page) means we're genuinely done.
+    const nextLink   = data._metadata?.links?.next;
+    const cursorFrom = nextLink ? new URL(nextLink).searchParams.get('from') : null;
+    if (!attacks.length || !nextLink || !cursorFrom) { truncated = false; break; }
+
+    nextUrl = `${TORN_API_BASE}/faction/attacks?limit=100&sort=ASC&from=${cursorFrom}&to=${endAt}&comment=OccHub`;
   }
 
-  return { attacks: collected, truncated: collected.length > 0 };
+  return { attacks: collected, truncated };
 }
 
 // ── Verify: aggregate raw attack objects into member stats (mirrors buildMemberStats) ─
