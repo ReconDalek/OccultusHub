@@ -103,6 +103,11 @@ function categoriseAttack(attack, ourFactionId, opponentFactionId) {
 }
 
 // ── Aggregate member stats from war_attacks (shared SQL) ─────────────────────
+// attackerStats excludes both 'war_defend' (attacker_id = enemy who hit us) and
+// 'outside_defend' (attacker_id = a random outsider, not enemy or ours, who hit
+// us) — attacker_id in either case is never one of our own members. Confirmed
+// live 2026-07-28: the original fix (2026-07-11) only excluded war_defend,
+// letting outside attackers show up as zero-stat ghost rows in Member Stats.
 
 async function buildMemberStats(env, warId) {
   const { results: attackerStats } = await env.DB.prepare(
@@ -120,7 +125,7 @@ async function buildMemberStats(env, warId) {
        COUNT(CASE WHEN attack_type='friendly_hit'      THEN 1 END)                                                       AS friendly_hits,
        ROUND(SUM(CASE WHEN attack_type='war_attack' AND chain_count IN (10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000) THEN respect_gain ELSE 0 END), 2) AS bonus_respect,
        COUNT(CASE WHEN attack_type IN ('war_attack','outside_attack','assist') THEN 1 END) * 25                          AS energy_used
-     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0 AND attack_type != 'war_defend'
+     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0 AND attack_type NOT IN ('war_defend','outside_defend')
      GROUP BY attacker_id, attacker_name ORDER BY war_hits DESC`
   ).bind(warId).all();
 
