@@ -59,7 +59,9 @@ function parseRewards(text) {
 }
 
 // Items to silently ignore in armory tracking (consumed freely, not worth reporting)
-const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer|chloroform|firewalk virus/i;
+// Exported — also used by armoryController.js's deposit parser, so an item
+// excluded from "used" tracking is excluded from "deposited back" too.
+export const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer|chloroform|firewalk virus/i;
 
 // A single armory_deposits row at or above this quantity is treated as a bulk
 // restock, not "gave back what wasn't used" — excluded everywhere deposits are

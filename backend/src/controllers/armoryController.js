@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getStaffApiKeyForFaction, fetchWithRetry, getRandomUserApiKey } from '../services/tornApiService.js';
+import { ARMORY_IGNORE } from './warController.js';
 
 const FACTION_IDS = [33097, 9171, 9728];
 const ARMORY_SELECTIONS = 'armor,boosters,caches,cesium,drugs,medical,temporary,weapons';
@@ -57,11 +58,13 @@ export async function fetchAndCacheArmory(env) {
 function parseDepositEntry(text) {
   const m = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>\s*deposited\s+(\d+)x\s+(.+)$/);
   if (!m) return null;
+  const item_name = m[4].trim();
+  if (ARMORY_IGNORE.test(item_name)) return null;
   return {
     torn_user_id: parseInt(m[1], 10),
     username: m[2].trim(),
     quantity: parseInt(m[3], 10),
-    item_name: m[4].trim(),
+    item_name,
   };
 }
 
