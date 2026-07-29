@@ -1117,11 +1117,16 @@ function VerifyDataTab({ warId, war, oldSummary, onApplied }) {
               {' '}({result.attacks_fetched_range?.count ?? 0} raw) · Verified: {formatUnixDateTimeSec(result.attacks_verified_range?.first)} → {formatUnixDateTimeSec(result.attacks_verified_range?.last)}
             </div>
             {(() => {
-              const staleAttacks = result.attacks_trace?.filter(t => t.newCount === 0).length ?? 0
-              if (!staleAttacks) return null
+              // Confirming genuine end-of-data costs 1 initial stalled page +
+              // up to 2 retries (MAX_STUCK_RECOVERIES) = 3 stalled pages as a
+              // routine, expected baseline — only flag anything beyond that.
+              const EXPECTED_STALL_BASELINE = 3
+              const rawStale = result.attacks_trace?.filter(t => t.newCount === 0).length ?? 0
+              const excess = rawStale - EXPECTED_STALL_BASELINE
+              if (excess <= 0) return null
               return (
                 <div style={{ color: '#f87171' }}>
-                  ⚠ Pagination stalled — {staleAttacks}/{result.attacks_trace?.length ?? 0} attack page(s) returned zero new items (full trace logged to browser console)
+                  ⚠ Pagination stalled — {excess} more page(s) than expected returned zero new items ({rawStale}/{result.attacks_trace?.length ?? 0} total, full trace logged to browser console)
                 </div>
               )
             })()}

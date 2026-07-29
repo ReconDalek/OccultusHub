@@ -1234,8 +1234,11 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
   // a small cap — bounded because rawLast only advances on genuine new data,
   // so a truly-finished window will exhaust the cap within a handful of pages
   // instead of silently truncating.
+  // 2 retries (3 total stalled pages incl. the one that first revealed the
+  // stall) is the expected, normal cost of confirming genuine end-of-data —
+  // the frontend treats that baseline as routine and only flags an excess.
   let stuckRecoveries = 0;
-  const MAX_STUCK_RECOVERIES = 5;
+  const MAX_STUCK_RECOVERIES = 2;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data, keyUsed;
