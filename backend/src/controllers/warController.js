@@ -59,7 +59,13 @@ function parseRewards(text) {
 }
 
 // Items to silently ignore in armory tracking (consumed freely, not worth reporting)
-const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer/i;
+const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer|chloroform|firewalk virus/i;
+
+// A single armory_deposits row at or above this quantity is treated as a bulk
+// restock, not "gave back what wasn't used" — excluded everywhere deposits are
+// counted (Energy Repaid, the Armory tab, and War Economics). 50 separate
+// single-item deposits are fine; one deposit of 50+ is not.
+const BULK_DEPOSIT_THRESHOLD = 50;
 
 function parseArmoryEntry(text) {
   const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
@@ -217,8 +223,8 @@ async function enrichEnergyAndOD(env, warId, rows) {
 
   // ── Energy Repaid: Xanax deposited back into the armory during the war period —
   // nets against Energy Out below, since energy spent on a Xanax that was then
-  // handed back wasn't actually burned attacking. Ignores any single deposit
-  // over 99 units — those are bulk restocks, not "gave back what I didn't use".
+  // handed back wasn't actually burned attacking. Ignores bulk restocks (see
+  // BULK_DEPOSIT_THRESHOLD) — those aren't "gave back what I didn't use".
   // NOTE: toTs must fall back to "now" (not the last recorded attack's
   // timestamp) when the war has no ended_at yet — a deposit can easily land
   // after the most recent attack but before the war actually ends, and using
@@ -230,10 +236,10 @@ async function enrichEnergyAndOD(env, warId, rows) {
     const { results: repaidRows } = await env.DB.prepare(
       `SELECT torn_user_id, SUM(quantity) AS total_deposited
        FROM armory_deposits
-       WHERE faction_id=? AND item_name='Xanax' AND quantity <= 99
+       WHERE faction_id=? AND item_name='Xanax' AND quantity < ?
          AND deposited_at >= ? AND deposited_at <= ?
        GROUP BY torn_user_id`
-    ).bind(factionId, repaidFromTs, repaidToTs).all();
+    ).bind(factionId, BULK_DEPOSIT_THRESHOLD, repaidFromTs, repaidToTs).all();
     for (const r of repaidRows || []) repaidMap[r.torn_user_id] = r.total_deposited;
   }
 
@@ -803,8 +809,8 @@ export async function getWarArmory(request, env) {
     // Deposits (items given back) — armory_deposits is faction-wide, not
     // war-scoped, so we attribute rows to this war using the same window
     // trackActiveWars uses to fetch armoryAction news for it (scheduled_start
-    // - 3 days through ended_at/now). Xanax deposits over 99 units are
-    // excluded — those are bulk restocks, not war-related "gave it back".
+    // - 3 days through ended_at/now). Bulk restocks are excluded (see
+    // BULK_DEPOSIT_THRESHOLD) for any item, not just Xanax.
     const war = await env.DB.prepare(
       `SELECT faction_id, scheduled_start, started_at, ended_at FROM ranked_wars WHERE id=?`
     ).bind(warId).first();
@@ -818,10 +824,10 @@ export async function getWarArmory(request, env) {
           `SELECT torn_user_id, username, item_name, SUM(quantity) AS count, MIN(deposited_at) AS first_used, MAX(deposited_at) AS last_used
            FROM armory_deposits
            WHERE faction_id=? AND deposited_at >= ? AND deposited_at <= ?
-             AND (item_name != 'Xanax' OR quantity <= 99)
+             AND quantity < ?
            GROUP BY torn_user_id, username, item_name
            ORDER BY torn_user_id, MAX(deposited_at) DESC`
-        ).bind(war.faction_id, fromTs, toTs).all();
+        ).bind(war.faction_id, fromTs, toTs, BULK_DEPOSIT_THRESHOLD).all();
         depositResults = deposits || [];
       }
     }
@@ -830,6 +836,104 @@ export async function getWarArmory(request, env) {
   } catch (err) {
     console.error('getWarArmory error:', err);
     return errorResponse('Failed to fetch armory data', 500);
+  }
+}
+
+// ── War Economics: faction's payout cut (profit) vs armory items consumed net
+// of items deposited back (expense, can go negative — more given back than
+// used nets as extra profit) vs a manual bounty-expense placeholder ─────────
+// Once hits_saved, this is frozen into economics_json and never recomputed —
+// item_prices_cache drifts every 6h, so a historic war's dollar figures must
+// not silently change after the fact. Called both by the GET route below and
+// by saveWarHits (which computes it live one last time, then freezes it).
+
+async function computeWarEconomics(env, warId) {
+  const war = await env.DB.prepare(
+    `SELECT payout_json, hits_saved, economics_json, faction_id, scheduled_start, started_at, ended_at
+     FROM ranked_wars WHERE id=?`
+  ).bind(warId).first();
+  if (!war) return null;
+
+  if (war.hits_saved && war.economics_json) {
+    return JSON.parse(war.economics_json);
+  }
+
+  const settings       = war.payout_json ? (JSON.parse(war.payout_json).settings || {}) : {};
+  const totalAmount    = parseFloat(settings.totalAmount) || 0;
+  const factionSharePct = settings.factionShare ?? 10;
+  const bountyExpense  = parseFloat(settings.bountyExpense) || 0;
+  const factionProfit  = Math.round(totalAmount * factionSharePct / 100 * 100) / 100;
+
+  const { results: usedRows } = await env.DB.prepare(
+    `SELECT item_name, COUNT(*) AS used_qty
+     FROM war_armory_usage
+     WHERE ranked_war_id=? AND (action_type IS NULL OR action_type != 'loaned')
+     GROUP BY item_name`
+  ).bind(warId).all();
+
+  // Same war-attribution window as getWarArmory — armory_deposits is faction-
+  // wide, not war-scoped, so we bound it ourselves.
+  const fromTs = war.scheduled_start ? war.scheduled_start - 3 * 86400 : war.started_at;
+  const toTs   = war.ended_at ?? Math.floor(Date.now() / 1000);
+  let depositedRows = [];
+  if (war.faction_id && fromTs) {
+    const { results } = await env.DB.prepare(
+      `SELECT item_name, SUM(quantity) AS deposited_qty
+       FROM armory_deposits
+       WHERE faction_id=? AND deposited_at >= ? AND deposited_at <= ? AND quantity < ?
+       GROUP BY item_name`
+    ).bind(war.faction_id, fromTs, toTs, BULK_DEPOSIT_THRESHOLD).all();
+    depositedRows = results || [];
+  }
+
+  const byItem = {};
+  for (const r of usedRows || [])      { (byItem[r.item_name] ??= { used_qty: 0, deposited_qty: 0 }).used_qty      = r.used_qty; }
+  for (const r of depositedRows)       { (byItem[r.item_name] ??= { used_qty: 0, deposited_qty: 0 }).deposited_qty = r.deposited_qty; }
+
+  const itemNames = Object.keys(byItem);
+  const priceMap = {};
+  if (itemNames.length) {
+    const placeholders = itemNames.map(() => '?').join(',');
+    const { results: priceRows } = await env.DB.prepare(
+      `SELECT name, effective_price FROM item_prices_cache WHERE name IN (${placeholders})`
+    ).bind(...itemNames).all();
+    for (const p of priceRows || []) priceMap[p.name] = p.effective_price;
+  }
+
+  const armoryBreakdown = itemNames.map(name => {
+    const { used_qty, deposited_qty } = byItem[name];
+    const unitPrice = priceMap[name] ?? 0;
+    const netQty = used_qty - deposited_qty;
+    return { item_name: name, used_qty, deposited_qty, net_qty: netQty, unit_price: unitPrice, value: Math.round(netQty * unitPrice * 100) / 100 };
+  }).sort((a, b) => b.value - a.value);
+
+  const armoryExpense = Math.round(armoryBreakdown.reduce((s, r) => s + r.value, 0) * 100) / 100;
+  const netProfit = Math.round((factionProfit - armoryExpense - bountyExpense) * 100) / 100;
+
+  return {
+    faction_profit: factionProfit,
+    armory_expense: armoryExpense,
+    armory_breakdown: armoryBreakdown,
+    bounty_expense: bountyExpense,
+    net_profit: netProfit,
+    computed_at: Math.floor(Date.now() / 1000),
+  };
+}
+
+// ── GET /api/leadership/war/:id/economics ────────────────────────────────────
+
+export async function getWarEconomics(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/economics/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const economics = await computeWarEconomics(env, warId);
+    if (!economics) return errorResponse('War not found', 404);
+    return jsonResponse(economics);
+  } catch (err) {
+    console.error('getWarEconomics error:', err);
+    return errorResponse('Failed to compute war economics', 500);
   }
 }
 
@@ -936,9 +1040,14 @@ export async function saveWarHits(request, env, user) {
       saved++;
     }
 
+    // Freeze the profit/expense snapshot now, one last time on the live path
+    // (hits_saved isn't set yet) — item_prices_cache drifts every 6h, so this
+    // war's dollar figures must not keep changing after payout is finalised.
+    const economics = await computeWarEconomics(env, id);
+
     await env.DB.prepare(
-      `UPDATE ranked_wars SET hits_saved=1, payout_verified=?, payout_processed_by=?, payout_processed_at=CURRENT_TIMESTAMP WHERE id=?`
-    ).bind(war.verified_override ? 1 : 0, user.userId, id).run();
+      `UPDATE ranked_wars SET hits_saved=1, payout_verified=?, payout_processed_by=?, payout_processed_at=CURRENT_TIMESTAMP, economics_json=? WHERE id=?`
+    ).bind(war.verified_override ? 1 : 0, user.userId, economics ? JSON.stringify(economics) : null, id).run();
     // Raw attack rows are no longer needed once payout is finalised and hits are in rankings
     await env.DB.prepare(`DELETE FROM war_attacks WHERE ranked_war_id=?`).bind(id).run();
     return jsonResponse({ saved, message: `${saved} member war records saved to rankings` });

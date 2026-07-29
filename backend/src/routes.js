@@ -423,6 +423,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/armory$/) && method === 'GET') {
       return warController.getWarArmory(request, env);
     }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/economics$/) && method === 'GET') {
+      return warController.getWarEconomics(request, env);
+    }
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/payout$/) && method === 'GET') {
       return warController.getWarPayout(request, env);
     }

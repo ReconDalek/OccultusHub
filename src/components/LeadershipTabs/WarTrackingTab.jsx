@@ -1271,6 +1271,138 @@ function VerifyDiffPanel({ diff }) {
   )
 }
 
+// ─── War Economics: faction's payout cut (profit) vs armory items consumed net
+// of items deposited back (expense) vs a manual bounty placeholder — frozen
+// permanently once payout is finalised (hits_saved), same as summary_json ──
+
+function fmtMoney(n) {
+  const v = Math.round(Number(n) || 0)
+  return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-GB')
+}
+
+function WarEconomicsTab({ warId, hitsSaved }) {
+  const [data,     setData]     = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState(null)
+  const [bounty,   setBounty]   = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [showBreakdown, setShowBreakdown] = useState(false)
+
+  const load = () => {
+    setLoading(true); setError(null)
+    fetch(`${API_BASE_URL}/api/leadership/war/${warId}/economics`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => { setData(d); setBounty(String(d.bounty_expense ?? 0)) })
+      .catch(() => setError('Failed to load war economics'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [warId])
+
+  const saveBounty = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, { headers: authHeaders() })
+      const d = await res.json()
+      const existing = d.payout || { settings: {} }
+      const newSettings = { ...existing.settings, bountyExpense: parseFloat(bounty) || 0 }
+      await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payout: { ...existing, settings: newSettings }, is_paid: !!d.is_paid }),
+      })
+      load()
+    } catch { setError('Failed to save bounty expense') }
+    finally { setSaving(false) }
+  }
+
+  if (loading) return <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '20px 0' }}>Loading war economics…</p>
+  if (error || !data) return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>{error || 'Failed to load war economics.'}</p>
+
+  const rowStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px' }
+  const labelStyle = { fontSize: '13px', color: "var(--text-secondary)" }
+  const netPositive = data.net_profit >= 0
+  const armoryExpensePositive = data.armory_expense >= 0
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      {hitsSaved && (
+        <div style={{ padding: '8px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', marginBottom: '14px' }}>
+          <p style={{ color: '#4ade80', fontSize: '12px', margin: 0 }}>✓ Frozen at payout — figures locked to prices at the time this war was finalised</p>
+        </div>
+      )}
+
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+        <div style={rowStyle}>
+          <span style={labelStyle}>Faction Share of Payout</span>
+          <span style={{ fontSize: '14px', fontWeight: '600', color: '#4ade80' }}>{fmtMoney(data.faction_profit)}</span>
+        </div>
+        <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)', flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={labelStyle}>
+              Armory (net of deposits)
+              {data.armory_breakdown?.length > 0 && (
+                <button onClick={() => setShowBreakdown(v => !v)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}>
+                  {showBreakdown ? 'hide' : 'show'} breakdown
+                </button>
+              )}
+            </span>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: armoryExpensePositive ? '#f87171' : '#4ade80' }}>
+              {armoryExpensePositive ? '-' : '+'}{fmtMoney(Math.abs(data.armory_expense))}
+            </span>
+          </div>
+          {showBreakdown && (
+            <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
+                    {['Item', 'Used', 'Deposited', 'Net Qty', 'Unit Price', 'Value'].map(h => (
+                      <th key={h} style={{ padding: '5px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: "var(--text-faint)", textAlign: h === 'Item' ? 'left' : 'right', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.armory_breakdown.map(r => (
+                    <tr key={r.item_name} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: '#e4e4e7' }}>{r.item_name}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-secondary)", textAlign: 'right' }}>{fmt(r.used_qty)}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-secondary)", textAlign: 'right' }}>{fmt(r.deposited_qty)}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-secondary)", textAlign: 'right' }}>{fmt(r.net_qty)}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-secondary)", textAlign: 'right' }}>{fmtMoney(r.unit_price)}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', textAlign: 'right', color: r.value >= 0 ? '#f87171' : '#4ade80' }}>{fmtMoney(r.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)' }}>
+          <span style={labelStyle}>Bounties</span>
+          {hitsSaved ? (
+            <span style={{ fontSize: '14px', fontWeight: '600', color: data.bounty_expense > 0 ? '#f87171' : "var(--text-ghost)" }}>
+              {data.bounty_expense > 0 ? `-${fmtMoney(data.bounty_expense)}` : '—'}
+            </span>
+          ) : (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <input type="number" min="0" value={bounty} onChange={e => setBounty(e.target.value)}
+                style={{ width: '110px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f4f4f5', padding: '5px 8px', fontSize: '12px', textAlign: 'right' }} />
+              <button onClick={saveBounty} disabled={saving} style={{ padding: '5px 10px', borderRadius: '6px', fontSize: '11px', cursor: saving ? 'not-allowed' : 'pointer', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc' }}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
+        </div>
+        <div style={{ ...rowStyle, borderTop: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+          <span style={{ ...labelStyle, fontWeight: '600', color: '#f4f4f5' }}>Net</span>
+          <span style={{ fontSize: '16px', fontWeight: '700', color: netPositive ? '#4ade80' : '#f87171' }}>
+            {netPositive ? '+' : '-'}{fmtMoney(Math.abs(data.net_profit))}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Expanded war detail ──────────────────────────────────────────────────────
 
 function WarDetail({ warId, onPayoutSaved }) {
@@ -1304,10 +1436,11 @@ function WarDetail({ warId, onPayoutSaved }) {
   const isCompleted = war.status === 'completed' || war.status === 'manual'
 
   const sectionBtns = [
-    { value: 'stats',  label: 'Member Stats' },
-    { value: 'armory', label: `Armory (${(armory?.length ?? 0) + (deposits?.length ?? 0)} entries)` },
-    { value: 'payout', label: '💰 Payout' },
-    { value: 'debug',  label: '🔍 Attack Log' },
+    { value: 'stats',     label: 'Member Stats' },
+    { value: 'armory',    label: `Armory (${(armory?.length ?? 0) + (deposits?.length ?? 0)} entries)` },
+    { value: 'payout',    label: '💰 Payout' },
+    { value: 'economics', label: '📊 War Economics' },
+    { value: 'debug',     label: '🔍 Attack Log' },
     ...(isCompleted ? [{ value: 'verify', label: '✔ Verify Data' }] : []),
   ]
 
@@ -1358,6 +1491,9 @@ function WarDetail({ warId, onPayoutSaved }) {
       {activeSection === 'payout' && (
         <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved}
           payoutVerified={!!war?.payout_verified} payoutProcessedBy={war?.payout_processed_by_username} payoutProcessedAt={war?.payout_processed_at} />
+      )}
+      {activeSection === 'economics' && (
+        <WarEconomicsTab warId={warId} hitsSaved={!!war?.hits_saved} />
       )}
     </div>
   )
