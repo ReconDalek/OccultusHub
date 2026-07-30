@@ -107,6 +107,16 @@ const CutLine = ({ value, color }) => (
   </div>
 )
 
+// Same star glyph throughout, filled vs unfilled told apart by colour rather
+// than by ★/☆ shape — the outline/solid distinction disappears at small sizes
+const RatingStars = ({ rating }) => (
+  <div style={{ fontSize: '13px', letterSpacing: '1px', marginTop: '2px' }}>
+    {Array.from({ length: 10 }, (_, i) => (
+      <span key={i} style={{ color: i < rating ? '#ffd166' : 'rgba(255,255,255,0.2)' }}>★</span>
+    ))}
+  </div>
+)
+
 export default function CompanySubTab({ factionId }) {
   const [companies, setCompanies]       = useState([])
   const [loading, setLoading]           = useState(true)
@@ -201,8 +211,8 @@ export default function CompanySubTab({ factionId }) {
           { label: 'API Keys',           value: `${withKey} / ${companies.length}`,             color: withKey === companies.length ? '#4ade80' : '#f97316' },
           { label: 'Principal Invested', value: fmtShort(totalPrincipalPaid),                   color: '#f4f4f5' },
           { label: 'Principal Owing',    value: fmtShort(totalPrincipalOwing),                  color: totalPrincipalOwing > 0 ? '#f97316' : "var(--text-muted)" },
-          { label: 'MTD Profit',         value: fmtShort(totalMtd),                             color: '#4ade80' },
-          { label: 'Current Month Est.', value: fmtShort(totalEstMonthly),                      color: '#a78bfa' },
+          { label: 'MTD Profit (30%)',         value: fmtShort(totalMtd * 0.3),                 color: '#4ade80' },
+          { label: 'Current Month Est. (30%)', value: fmtShort(totalEstMonthly * 0.3),          color: '#a78bfa' },
           { label: 'Days Tracked',       value: `${daysTracked} / ${daysExpected}`,             color: daysColor },
         ].map(({ label, value, color }) => (
           <div key={label} className="p-4 rounded-lg" style={{
@@ -321,9 +331,7 @@ export default function CompanySubTab({ factionId }) {
                 <tr key={c.company_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                   <TD>
                     <div style={{ fontWeight: '500' }}>{c.name}</div>
-                    {c.rating != null && (
-                      <div style={{ fontSize: '11px', color: '#ffd166', marginTop: '2px' }}>{'★'.repeat(c.rating)}{'☆'.repeat(Math.max(0, 10 - c.rating))}</div>
-                    )}
+                    {c.rating != null && <RatingStars rating={c.rating} />}
                     {!c.has_api_key && (
                       <div style={{ fontSize: '10px', color: '#f97316', marginTop: '2px' }}>No API key — principal only</div>
                     )}
