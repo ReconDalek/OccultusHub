@@ -1289,36 +1289,16 @@ function WarEconomicsTab({ warId, hitsSaved }) {
   const [data,     setData]     = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState(null)
-  const [bounty,   setBounty]   = useState('')
-  const [saving,   setSaving]   = useState(false)
   const [showBreakdown, setShowBreakdown] = useState(false)
 
-  const load = () => {
+  useEffect(() => {
     setLoading(true); setError(null)
     fetch(`${API_BASE_URL}/api/leadership/war/${warId}/economics`, { headers: authHeaders() })
       .then(r => r.json())
-      .then(d => { setData(d); setBounty(String(d.bounty_expense ?? 0)) })
+      .then(setData)
       .catch(() => setError('Failed to load war economics'))
       .finally(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [warId])
-
-  const saveBounty = async () => {
-    setSaving(true)
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, { headers: authHeaders() })
-      const d = await res.json()
-      const existing = d.payout || { settings: {} }
-      const newSettings = { ...existing.settings, bountyExpense: parseFloat(bounty) || 0 }
-      await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
-        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payout: { ...existing, settings: newSettings }, is_paid: !!d.is_paid }),
-      })
-      load()
-    } catch { setError('Failed to save bounty expense') }
-    finally { setSaving(false) }
-  }
+  }, [warId])
 
   if (loading) return <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '20px 0' }}>Loading war economics…</p>
   if (error || !data) return <p style={{ color: '#ef4444', fontSize: '13px', padding: '20px 0' }}>{error || 'Failed to load war economics.'}</p>
@@ -1382,20 +1362,15 @@ function WarEconomicsTab({ warId, hitsSaved }) {
           )}
         </div>
         <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)' }}>
-          <span style={labelStyle}>Bounties</span>
-          {hitsSaved ? (
-            <span style={{ fontSize: '14px', fontWeight: '600', color: data.bounty_expense > 0 ? '#f87171' : "var(--text-ghost)" }}>
-              {data.bounty_expense > 0 ? `-${fmtMoney(data.bounty_expense)}` : '—'}
+          <span style={labelStyle}>
+            Bounties
+            <span style={{ display: 'block', fontSize: '10px', color: "var(--text-faint)", marginTop: '2px' }}>
+              from the Bounties tab — assign a bounty to this war there
             </span>
-          ) : (
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <input type="number" min="0" value={bounty} onChange={e => setBounty(e.target.value)}
-                style={{ width: '110px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#f4f4f5', padding: '5px 8px', fontSize: '12px', textAlign: 'right' }} />
-              <button onClick={saveBounty} disabled={saving} style={{ padding: '5px 10px', borderRadius: '6px', fontSize: '11px', cursor: saving ? 'not-allowed' : 'pointer', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc' }}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          )}
+          </span>
+          <span style={{ fontSize: '14px', fontWeight: '600', color: data.bounty_expense > 0 ? '#f87171' : "var(--text-ghost)" }}>
+            {data.bounty_expense > 0 ? `-${fmtMoney(data.bounty_expense)}` : '—'}
+          </span>
         </div>
         <div style={{ ...rowStyle, borderTop: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
           <span style={{ ...labelStyle, fontWeight: '600', color: '#f4f4f5' }}>Net</span>

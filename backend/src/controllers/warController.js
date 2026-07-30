@@ -863,8 +863,14 @@ async function computeWarEconomics(env, warId) {
   const settings       = war.payout_json ? (JSON.parse(war.payout_json).settings || {}) : {};
   const totalAmount    = parseFloat(settings.totalAmount) || 0;
   const factionSharePct = settings.factionShare ?? 10;
-  const bountyExpense  = parseFloat(settings.bountyExpense) || 0;
   const factionProfit  = Math.round(totalAmount * factionSharePct / 100 * 100) / 100;
+
+  // Real bounty spend assigned to this war (see bountyController.js) — replaces
+  // the earlier manual placeholder now that actual bounty tracking exists.
+  const bountyRow = await env.DB.prepare(
+    `SELECT COALESCE(SUM(total_cost), 0) AS total FROM bounties WHERE ranked_war_id=?`
+  ).bind(warId).first();
+  const bountyExpense = bountyRow?.total ?? 0;
 
   const { results: usedRows } = await env.DB.prepare(
     `SELECT item_name, COUNT(*) AS used_qty

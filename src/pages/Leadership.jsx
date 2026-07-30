@@ -13,7 +13,7 @@ import OCTab from '../components/LeadershipTabs/OCTab'
 const tabs = [
   { id: 'notices',    label: 'Notices' },
   { id: 'events',     label: 'Events & Schedules' },
-  { id: 'chains',     label: 'Chain & War' },
+  { id: 'chains',     label: 'Warfare' },
   { id: 'ranks',      label: 'Ranks' },
   { id: 'accounting', label: 'Accounting' },
   { id: 'armory',     label: 'Armory' },

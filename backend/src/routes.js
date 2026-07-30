@@ -28,6 +28,7 @@ import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
 import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
+import * as bountyController from './controllers/bountyController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -442,6 +443,20 @@ export async function handleRequest(request, env, ctx) {
       return warController.getWarDetails(request, env);
     }
 
+    // Bounty tracking
+    if (pathname === '/api/leadership/bounties' && method === 'GET') {
+      return bountyController.getBounties(request, env);
+    }
+    if (pathname === '/api/leadership/bounties' && method === 'POST') {
+      return bountyController.createBounty(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/bounties\/\d+$/) && method === 'PUT') {
+      return bountyController.updateBounty(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/bounties\/\d+$/) && method === 'DELETE') {
+      return bountyController.deleteBounty(request, env);
+    }
+
     // Custom / miscellaneous hits
     if (pathname === '/api/leadership/custom-hits' && method === 'GET') {
       return customHitsController.getCustomHits(request, env);
@@ -574,6 +589,12 @@ export async function handleRequest(request, env, ctx) {
   // Discord endpoints
   if (pathname === '/api/discord/callback' && method === 'GET') {
     return discordController.handleCallback(request, env);
+  }
+
+  // Bounty-tracking webhook — called by the (external) Discord bot, not a
+  // logged-in user, so it authenticates via shared secret instead of a JWT.
+  if (pathname === '/api/discord/bounty-webhook' && method === 'POST') {
+    return bountyController.handleBountyWebhook(request, env);
   }
 
   if (pathname.startsWith('/api/discord/')) {
