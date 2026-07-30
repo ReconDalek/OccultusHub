@@ -348,21 +348,21 @@ export default function CompanySubTab({ factionId }) {
                   <TD right color={c.avg_daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_profit) : '—'}</TD>
                   <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : "var(--text-muted)"}>
                     {(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}
-                    {(c.prev_month_profit ?? 0) > 0 && <CutLine value={c.prev_month_profit} color="#94a3b8" />}
+                    {(c.prev_month_profit ?? 0) > 0 && <CutLine value={c.prev_month_profit} color="#94a3b899" />}
                   </TD>
                   <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>
                     {hasDays ? fmt(c.mtd_profit) : '—'}
-                    {hasDays && <CutLine value={c.mtd_profit} color="#4ade80" />}
+                    {hasDays && <CutLine value={c.mtd_profit} color="#4ade8099" />}
                   </TD>
                   <TD right color={hasDays ? '#60a5fa' : "var(--text-muted)"}>
                     {hasDays ? fmt(c.ytd_profit) : '—'}
-                    {hasDays && <CutLine value={c.ytd_profit} color="#60a5fa" />}
+                    {hasDays && <CutLine value={c.ytd_profit} color="#60a5fa99" />}
                   </TD>
                   <TD right color={hasDays ? '#a78bfa' : "var(--text-muted)"}>
                     {hasDays
                       ? <span title={`${c.month_snapshot_days} day${c.month_snapshot_days === 1 ? '' : 's'} of data`}>{fmt(c.est_monthly)}</span>
                       : '—'}
-                    {hasDays && <CutLine value={c.est_monthly} color="#a78bfa" />}
+                    {hasDays && <CutLine value={c.est_monthly} color="#a78bfa99" />}
                   </TD>
                   <td style={{ padding: '10px 12px' }}>
                     <button
@@ -386,7 +386,7 @@ export default function CompanySubTab({ factionId }) {
           <tfoot>
             <tr style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               <td colSpan={6} style={{ padding: '10px 12px', color: "var(--text-secondary)", fontSize: '12px', fontWeight: '600' }}>
-                Total ({withKey}/{companies.length} with key · {companies.filter(c => c.principal_paid).length}/{companies.length} principal paid)
+                Total
               </td>
               <TD right color='#94a3b8'>{totalPrevMonth > 0 ? fmt(totalPrevMonth) : '—'}</TD>
               <TD right color='#4ade80'>{fmt(totalMtd)}</TD>
