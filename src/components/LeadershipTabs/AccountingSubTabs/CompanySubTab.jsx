@@ -3,6 +3,10 @@ import { API_BASE_URL } from '../../../config/api'
 
 const PRINCIPAL   = 4_000_000_000
 const TRACK_START = '2026-06-01'
+// Tracking began mid-June, so that month can never be fully covered — exclude
+// it from the "missing data detected" flag (it still shows in the coverage
+// list itself, just doesn't trigger the warning).
+const [TRACK_START_YEAR, TRACK_START_MONTH] = TRACK_START.split('-').map(Number)
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -95,9 +99,10 @@ const TD = ({ children, right, muted, color }) => (
   }}>{children}</td>
 )
 
-// Small dulled "faction 30%" sub-line shown beneath a per-member amount
-const CutLine = ({ value }) => (
-  <div style={{ fontSize: '10px', color: "var(--text-faint)", marginTop: '2px', fontWeight: '400' }}>
+// "faction 30%" sub-line shown beneath a per-member amount — same colour as
+// its column so it reads as "this column, but the cut", not a separate muted note
+const CutLine = ({ value, color }) => (
+  <div style={{ fontSize: '12px', color, marginTop: '2px', fontWeight: '400' }}>
     30%: {fmt(value * 0.3)}
   </div>
 )
@@ -224,7 +229,7 @@ export default function CompanySubTab({ factionId }) {
           >
             <span style={{ fontSize: '10px' }}>{coverageOpen ? '▼' : '▶'}</span>
             Data Coverage
-            {!coverageOpen && coverage.some(m => m.anyMissing) && (
+            {!coverageOpen && coverage.some(m => m.anyMissing && !(m.year === TRACK_START_YEAR && m.month === TRACK_START_MONTH)) && (
               <span style={{ marginLeft: '6px', color: '#f97316', fontSize: '11px', fontWeight: '500', textTransform: 'none', letterSpacing: 0 }}>
                 — missing data detected
               </span>
@@ -316,32 +321,40 @@ export default function CompanySubTab({ factionId }) {
                 <tr key={c.company_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                   <TD>
                     <div style={{ fontWeight: '500' }}>{c.name}</div>
+                    {c.rating != null && (
+                      <div style={{ fontSize: '11px', color: '#ffd166', marginTop: '2px' }}>{'★'.repeat(c.rating)}{'☆'.repeat(Math.max(0, 10 - c.rating))}</div>
+                    )}
                     {!c.has_api_key && (
                       <div style={{ fontSize: '10px', color: '#f97316', marginTop: '2px' }}>No API key — principal only</div>
                     )}
                   </TD>
-                  <TD muted>{c.director_name ?? `#${c.director_id}`}</TD>
+                  <TD muted>
+                    <div>{c.director_name ?? `#${c.director_id}`}</div>
+                    {c.employees_capacity != null && (
+                      <div style={{ fontSize: '11px', color: "var(--text-faint)", marginTop: '2px' }}>{c.employees_hired}/{c.employees_capacity}</div>
+                    )}
+                  </TD>
                   <TD right>{hasDays ? fmt(c.avg_daily_income) : '—'}</TD>
                   <TD right color={c.daily_wages > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_wages) : '—'}</TD>
                   <TD right color={c.daily_advert > 0 ? '#f87171' : "var(--text-muted)"}>{c.has_api_key ? fmt(c.daily_advert) : '—'}</TD>
                   <TD right color={c.avg_daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_profit) : '—'}</TD>
                   <TD right color={(c.prev_month_profit ?? 0) > 0 ? '#94a3b8' : "var(--text-muted)"}>
                     {(c.prev_month_profit ?? 0) > 0 ? fmt(c.prev_month_profit) : '—'}
-                    {(c.prev_month_profit ?? 0) > 0 && <CutLine value={c.prev_month_profit} />}
+                    {(c.prev_month_profit ?? 0) > 0 && <CutLine value={c.prev_month_profit} color="#94a3b8" />}
                   </TD>
                   <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>
                     {hasDays ? fmt(c.mtd_profit) : '—'}
-                    {hasDays && <CutLine value={c.mtd_profit} />}
+                    {hasDays && <CutLine value={c.mtd_profit} color="#4ade80" />}
                   </TD>
                   <TD right color={hasDays ? '#60a5fa' : "var(--text-muted)"}>
                     {hasDays ? fmt(c.ytd_profit) : '—'}
-                    {hasDays && <CutLine value={c.ytd_profit} />}
+                    {hasDays && <CutLine value={c.ytd_profit} color="#60a5fa" />}
                   </TD>
                   <TD right color={hasDays ? '#a78bfa' : "var(--text-muted)"}>
                     {hasDays
                       ? <span title={`${c.month_snapshot_days} day${c.month_snapshot_days === 1 ? '' : 's'} of data`}>{fmt(c.est_monthly)}</span>
                       : '—'}
-                    {hasDays && <CutLine value={c.est_monthly} />}
+                    {hasDays && <CutLine value={c.est_monthly} color="#a78bfa" />}
                   </TD>
                   <td style={{ padding: '10px 12px' }}>
                     <button

@@ -286,10 +286,35 @@ export async function getCompanyProfits(request, env, user) {
       datesMap[row.company_id] = row.dates ? row.dates.split(',') : [];
     }
 
+    // Rating + employee headcount aren't stored in company_profit_cache — pull
+    // them from the raw API JSON already cached in company_cache (refreshed
+    // alongside profit data in fetchAndCacheCompanyProfits) instead of
+    // duplicating storage. Same profile.rating / profile.employees.{hired,
+    // capacity} shape the public Companies page already reads.
+    const companyIds = results.map(r => r.company_id);
+    const cacheMap = {};
+    if (companyIds.length) {
+      const placeholders = companyIds.map(() => '?').join(',');
+      const { results: cacheRows } = await env.DB.prepare(
+        `SELECT company_id, data FROM company_cache WHERE company_id IN (${placeholders})`
+      ).bind(...companyIds).all();
+      for (const row of cacheRows) {
+        try {
+          const profile = JSON.parse(row.data)?.profile;
+          cacheMap[row.company_id] = {
+            rating: profile?.rating ?? null,
+            employees_hired: profile?.employees?.hired ?? null,
+            employees_capacity: profile?.employees?.capacity ?? null,
+          };
+        } catch { /* skip malformed cache row */ }
+      }
+    }
+
     const companies = results.map(r => ({
       ...r,
       est_monthly:    Math.round((r.mtd_profit ?? 0) + (r.avg_daily_profit ?? 0) * Math.max(0, daysInMonth - (r.month_snapshot_days ?? 0))),
       snapshot_dates: datesMap[r.company_id] ?? [],
+      ...(cacheMap[r.company_id] ?? { rating: null, employees_hired: null, employees_capacity: null }),
     }));
 
     return jsonResponse({ companies });
