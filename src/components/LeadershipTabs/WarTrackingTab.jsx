@@ -1445,10 +1445,14 @@ function WarDetail({ warId, onPayoutSaved }) {
   const sectionBtns = [
     { value: 'stats',     label: 'Member Stats' },
     { value: 'armory',    label: `Armory (${(armory?.length ?? 0) + (deposits?.length ?? 0)} entries)` },
-    { value: 'payout',    label: '💰 Payout' },
-    { value: 'economics', label: '📊 War Economics' },
+    { value: 'economics', label: 'Economics' },
     { value: 'debug',     label: '🔍 Attack Log' },
-    ...(isCompleted ? [{ value: 'verify', label: '✔ Verify Data' }] : []),
+    ...(isCompleted 
+    ? [
+        { value: 'verify', label: '✔ Verify Data' },
+        { value: 'payout', label: '💰 Payout' }
+      ] 
+    : [])
   ]
 
   return (
