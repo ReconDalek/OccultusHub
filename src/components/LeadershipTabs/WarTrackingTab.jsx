@@ -1290,6 +1290,7 @@ function WarEconomicsTab({ warId, hitsSaved }) {
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState(null)
   const [showBreakdown, setShowBreakdown] = useState(false)
+  const [showBountyBreakdown, setShowBountyBreakdown] = useState(false)
 
   useEffect(() => {
     setLoading(true); setError(null)
@@ -1324,7 +1325,7 @@ function WarEconomicsTab({ warId, hitsSaved }) {
         <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)', flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={labelStyle}>
-              Armory (net of deposits)
+              Armory
               {data.armory_breakdown?.length > 0 && (
                 <button onClick={() => setShowBreakdown(v => !v)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}>
                   {showBreakdown ? 'hide' : 'show'} breakdown
@@ -1361,16 +1362,42 @@ function WarEconomicsTab({ warId, hitsSaved }) {
             </div>
           )}
         </div>
-        <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)' }}>
-          <span style={labelStyle}>
-            Bounties
-            <span style={{ display: 'block', fontSize: '10px', color: "var(--text-faint)", marginTop: '2px' }}>
-              from the Bounties tab — assign a bounty to this war there
+        <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)', flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={labelStyle}>
+              Bounties
+              {data.bounty_breakdown?.length > 0 && (
+                <button onClick={() => setShowBountyBreakdown(v => !v)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}>
+                  {showBountyBreakdown ? 'hide' : 'show'} breakdown
+                </button>
+              )}
             </span>
-          </span>
-          <span style={{ fontSize: '14px', fontWeight: '600', color: data.bounty_expense > 0 ? '#f87171' : "var(--text-ghost)" }}>
-            {data.bounty_expense > 0 ? `-${fmtMoney(data.bounty_expense)}` : '—'}
-          </span>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: data.bounty_expense > 0 ? '#f87171' : "var(--text-ghost)" }}>
+              {data.bounty_expense > 0 ? `-${fmtMoney(data.bounty_expense)}` : '—'}
+            </span>
+          </div>
+          {showBountyBreakdown && (
+            <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
+                    {['Target', 'Count', 'Cost'].map(h => (
+                      <th key={h} style={{ padding: '5px 8px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: "var(--text-faint)", textAlign: h === 'Target' ? 'left' : 'right', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.bounty_breakdown.map(r => (
+                    <tr key={r.target_username} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: '#e4e4e7' }}>{r.target_username}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', color: "var(--text-secondary)", textAlign: 'right' }}>{fmt(r.count)}</td>
+                      <td style={{ padding: '5px 8px', fontSize: '12px', textAlign: 'right', color: '#f87171' }}>{fmtMoney(r.total_cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
         <div style={{ ...rowStyle, borderTop: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
           <span style={{ ...labelStyle, fontWeight: '600', color: '#f4f4f5' }}>Net</span>

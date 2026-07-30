@@ -867,10 +867,14 @@ async function computeWarEconomics(env, warId) {
 
   // Real bounty spend assigned to this war (see bountyController.js) — replaces
   // the earlier manual placeholder now that actual bounty tracking exists.
-  const bountyRow = await env.DB.prepare(
-    `SELECT COALESCE(SUM(total_cost), 0) AS total FROM bounties WHERE ranked_war_id=?`
-  ).bind(warId).first();
-  const bountyExpense = bountyRow?.total ?? 0;
+  const { results: bountyRows } = await env.DB.prepare(
+    `SELECT target_username, SUM(bounty_count) AS count, SUM(total_cost) AS total_cost
+     FROM bounties WHERE ranked_war_id=?
+     GROUP BY target_username
+     ORDER BY total_cost DESC`
+  ).bind(warId).all();
+  const bountyBreakdown = bountyRows || [];
+  const bountyExpense = Math.round(bountyBreakdown.reduce((s, r) => s + r.total_cost, 0) * 100) / 100;
 
   const { results: usedRows } = await env.DB.prepare(
     `SELECT item_name, COUNT(*) AS used_qty
@@ -923,6 +927,7 @@ async function computeWarEconomics(env, warId) {
     armory_expense: armoryExpense,
     armory_breakdown: armoryBreakdown,
     bounty_expense: bountyExpense,
+    bounty_breakdown: bountyBreakdown,
     net_profit: netProfit,
     computed_at: Math.floor(Date.now() / 1000),
   };
