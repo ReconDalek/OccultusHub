@@ -87,7 +87,7 @@ function buildCoverage(companies, monthRange) {
 const TH = ({ children, right }) => (
   <th style={{
     padding: '8px 12px', textAlign: right ? 'right' : 'left',
-    color: "var(--text-muted)", fontWeight: '500', fontSize: '11px',
+    color: "var(--text-muted)", fontWeight: '500', fontSize: '12px',
     textTransform: 'uppercase', letterSpacing: '0.05em',
   }}>{children}</th>
 )
@@ -102,7 +102,7 @@ const TD = ({ children, right, muted, color }) => (
 // "faction 30%" sub-line shown beneath a per-member amount — same colour as
 // its column so it reads as "this column, but the cut", not a separate muted note
 const CutLine = ({ value, color }) => (
-  <div style={{ fontSize: '12px', color, marginTop: '2px', fontWeight: '400' }}>
+  <div style={{ fontSize: '13px', color, marginTop: '2px', fontWeight: '400' }}>
     30%: {fmt(value * 0.3)}
   </div>
 )
@@ -218,7 +218,7 @@ export default function CompanySubTab({ factionId }) {
           <div key={label} className="p-4 rounded-lg" style={{
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', minWidth: '130px',
           }}>
-            <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
             <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
           </div>
         ))}
@@ -339,7 +339,7 @@ export default function CompanySubTab({ factionId }) {
                   <TD muted>
                     <div>{c.director_name ?? `#${c.director_id}`}</div>
                     {c.employees_capacity != null && (
-                      <div style={{ fontSize: '11px', color: "var(--text-faint)", marginTop: '2px' }}>{c.employees_hired}/{c.employees_capacity}</div>
+                      <div style={{ fontSize: '13px', color: "var(--text-faint)", marginTop: '2px' }}>{c.employees_hired}/{c.employees_capacity}</div>
                     )}
                   </TD>
                   <TD right>{hasDays ? fmt(c.avg_daily_income) : '—'}</TD>
@@ -370,7 +370,7 @@ export default function CompanySubTab({ factionId }) {
                       disabled={toggling === c.company_id}
                       style={{
                         padding: '3px 10px', borderRadius: '99px', border: 'none', cursor: 'pointer',
-                        fontSize: '11px', fontWeight: '600',
+                        fontSize: '12px', fontWeight: '600',
                         background: c.principal_paid ? 'rgba(74,222,128,0.15)' : 'rgba(249,115,22,0.15)',
                         color: c.principal_paid ? '#4ade80' : '#f97316',
                         opacity: toggling === c.company_id ? 0.5 : 1,
@@ -395,7 +395,7 @@ export default function CompanySubTab({ factionId }) {
               <td />
             </tr>
             <tr style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <td colSpan={6} style={{ padding: '6px 12px', color: "var(--text-faint)", fontSize: '11px', fontWeight: '600' }}>
+              <td colSpan={6} style={{ padding: '6px 12px', color: "var(--text-faint)", fontSize: '13px', fontWeight: '600' }}>
                 Faction 30%
               </td>
               <TD right color='#64748b'>{totalPrevMonth > 0 ? fmt(totalPrevMonth * 0.3) : '—'}</TD>
