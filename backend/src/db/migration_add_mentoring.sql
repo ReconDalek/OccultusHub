@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS mentees (
   step_mansion_offer INTEGER NOT NULL DEFAULT 0,
   step_joined_discord INTEGER NOT NULL DEFAULT 0,
   step_joined_tornstats INTEGER NOT NULL DEFAULT 0,
-  auto_detect_pending INTEGER NOT NULL DEFAULT 1,
+  account_age_at_added INTEGER,
   level_15_reached_at TEXT,
   account_age_days_at_level_15 INTEGER,
   incentive_amount REAL,

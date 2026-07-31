@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
+import { useMentorStatus } from '../hooks/useMentorStatus'
 import { useCipher } from '../contexts/CipherContext'
 import { useSite } from '../contexts/SiteContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
@@ -40,6 +41,7 @@ function buildNavLinks(user, pages) {
 
 export default function Navbar() {
   const { user, logout } = useSession()
+  const { isMentor } = useMentorStatus()
   const { cipherActive, toggleCipher } = useCipher()
   const { pages } = useSite()
   const location = useLocation()
@@ -233,6 +235,16 @@ export default function Navbar() {
                           onClick={() => setDropdown(false)}
                         >
                           Leadership
+                        </Link>
+                      )}
+                      {!user.isLeader && isMentor && (
+                        <Link
+                          to="/leadership"
+                          className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80 block text-center no-underline"
+                          style={{ background: 'rgba(109,40,217,0.2)' }}
+                          onClick={() => setDropdown(false)}
+                        >
+                          Mentoring
                         </Link>
                       )}
                       {user.isAdmin && (

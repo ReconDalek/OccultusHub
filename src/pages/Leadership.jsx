@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSession } from '../hooks/useSession'
+import { useMentorStatus } from '../hooks/useMentorStatus'
 import InternalNoticesTab from '../components/LeadershipTabs/InternalNoticesTab'
 import EventsSchedulesTab from '../components/LeadershipTabs/EventsSchedulesTab'
 import LeaderToolsTab from '../components/LeadershipTabs/LeaderToolsTab'
@@ -26,15 +27,18 @@ const tabs = [
 
 export default function Leadership() {
   const { user, loading } = useSession()
+  const mentorStatus = useMentorStatus()
   const [activeTab, setActiveTab] = useState('notices')
 
-  if (loading) {
+  if (loading || (!user?.isLeader && mentorStatus.loading)) {
     return (
       <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
         <p style={{ color: "var(--text-secondary)" }}>Checking access…</p>
       </div>
     )
   }
+
+  const isMentorOnly = !user?.isLeader && mentorStatus.isMentor
 
   return (
     <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
@@ -45,19 +49,26 @@ export default function Leadership() {
             className="font-cinzel text-white mb-2"
             style={{ fontSize: '40px', letterSpacing: '2px' }}
           >
-            LEADERSHIP DASHBOARD
+            {isMentorOnly ? 'MENTORING' : 'LEADERSHIP DASHBOARD'}
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>
-            Command controls and leadership tools
+            {isMentorOnly ? 'Track your mentees’ onboarding progress' : 'Command controls and leadership tools'}
           </p>
         </div>
 
-        {!user?.isLeader ? (
+        {isMentorOnly ? (
+          <div
+            className="rounded-2xl p-8"
+            style={{ background: 'rgba(22, 22, 32, 0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <MentoringTab restricted mentorId={mentorStatus.mentorId} />
+          </div>
+        ) : !user?.isLeader ? (
           <div
             className="max-w-3xl p-10 rounded-3xl text-center"
             style={{ background: 'rgba(255,255,255,0.03)', color: "var(--text-secondary)" }}
           >
-             — Access Restricted — 
+             — Access Restricted —
           </div>
         ) : (
           <>

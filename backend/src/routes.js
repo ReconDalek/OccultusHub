@@ -1,4 +1,4 @@
-import { verifyToken, requireAdmin, requireLeadership } from './middleware/auth.js';
+import { verifyToken, requireAdmin, requireLeadership, getMentoringAccess } from './middleware/auth.js';
 import { errorResponse, jsonResponse } from './middleware/errorHandler.js';
 import * as authController from './controllers/authController.js';
 import * as adminController from './controllers/adminController.js';
@@ -266,6 +266,61 @@ export async function handleRequest(request, env, ctx) {
     return memberProfileController.getMemberProfile(request, env, user);
   }
 
+  // Mentor/mentee program — registered outside the blanket /api/leadership/
+  // gate (like the routes above) because mentors need access too, not just
+  // leadership. Every mutation is leader-only except updateMentee/complete/
+  // remove, which a mentor may use on mentees assigned to them — enforced
+  // inside the controller via `access`, not here.
+  if (pathname === '/api/mentoring/my-access' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    const access = await getMentoringAccess(user, env);
+    return mentoringController.getMyMentoringAccess(request, env, user, access);
+  }
+  if (pathname.startsWith('/api/leadership/mentoring/')) {
+    if (!user) return errorResponse('Authentication required', 401);
+    const access = await getMentoringAccess(user, env);
+    if (!access.isLeader && !access.isMentor) return errorResponse('Leadership or mentor access required', 403);
+
+    if (pathname === '/api/leadership/mentoring/overview' && method === 'GET') {
+      return mentoringController.getMentoringOverview(request, env, user, access);
+    }
+    if (pathname === '/api/leadership/mentoring/resources' && method === 'GET') {
+      return mentoringController.getMentorResources(request, env, user, access);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+$/) && method === 'PUT') {
+      return mentoringController.updateMentee(request, env, user, access);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/complete$/) && method === 'POST') {
+      return mentoringController.completeMentee(request, env, user, access);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/remove$/) && method === 'POST') {
+      return mentoringController.removeMentee(request, env, user, access);
+    }
+
+    // Everything below is leader-only (adding mentors/mentees/resources, the
+    // member picker, mentor edits) — mentors never need these.
+    if (!access.isLeader) return errorResponse('Leadership access required', 403);
+
+    if (pathname === '/api/leadership/mentoring/members' && method === 'GET') {
+      return mentoringController.getMentorshipMembers(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/mentors' && method === 'POST') {
+      return mentoringController.addMentor(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentors\/\d+$/) && method === 'PUT') {
+      return mentoringController.updateMentor(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/mentees' && method === 'POST') {
+      return mentoringController.addMentee(request, env, user);
+    }
+    if (pathname === '/api/leadership/mentoring/resources' && method === 'POST') {
+      return mentoringController.addMentorResource(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/resources\/\d+$/) && method === 'DELETE') {
+      return mentoringController.deleteMentorResource(request, env);
+    }
+  }
+
   // Forums endpoints (member auth required)
   if (pathname === '/api/forums/posts' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
@@ -406,41 +461,6 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/warnings\/\d+\/comment$/) && method === 'PUT') {
       return warningsController.updateWarningComment(request, env);
-    }
-
-    // Mentor/mentee program
-    if (pathname === '/api/leadership/mentoring/overview' && method === 'GET') {
-      return mentoringController.getMentoringOverview(request, env);
-    }
-    if (pathname === '/api/leadership/mentoring/members' && method === 'GET') {
-      return mentoringController.getMentorshipMembers(request, env);
-    }
-    if (pathname === '/api/leadership/mentoring/mentors' && method === 'POST') {
-      return mentoringController.addMentor(request, env, user);
-    }
-    if (pathname.match(/^\/api\/leadership\/mentoring\/mentors\/\d+$/) && method === 'PUT') {
-      return mentoringController.updateMentor(request, env);
-    }
-    if (pathname === '/api/leadership/mentoring/mentees' && method === 'POST') {
-      return mentoringController.addMentee(request, env, user);
-    }
-    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+$/) && method === 'PUT') {
-      return mentoringController.updateMentee(request, env);
-    }
-    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/complete$/) && method === 'POST') {
-      return mentoringController.completeMentee(request, env);
-    }
-    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/remove$/) && method === 'POST') {
-      return mentoringController.removeMentee(request, env);
-    }
-    if (pathname === '/api/leadership/mentoring/resources' && method === 'GET') {
-      return mentoringController.getMentorResources(request, env);
-    }
-    if (pathname === '/api/leadership/mentoring/resources' && method === 'POST') {
-      return mentoringController.addMentorResource(request, env, user);
-    }
-    if (pathname.match(/^\/api\/leadership\/mentoring\/resources\/\d+$/) && method === 'DELETE') {
-      return mentoringController.deleteMentorResource(request, env);
     }
 
     // Monthly xanax distribution tracking

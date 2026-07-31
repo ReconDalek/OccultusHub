@@ -158,6 +158,7 @@ function AddMentorModal({ members, mentors, onClose, onAdded }) {
 function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
   const [picked, setPicked] = useState(null)
   const [timezone, setTimezone] = useState('')
+  const [accountAge, setAccountAge] = useState('')
   const [mentorId, setMentorId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -173,6 +174,7 @@ function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
         body: JSON.stringify({
           torn_user_id: picked.torn_user_id, username: picked.username, faction_id: picked.faction_id,
           timezone_offset: timezone !== '' ? parseFloat(timezone) : null,
+          account_age_at_added: accountAge !== '' ? parseInt(accountAge, 10) : null,
           mentor_id: mentorId !== '' ? parseInt(mentorId, 10) : null,
         }),
       })
@@ -203,11 +205,13 @@ function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
             ) : (
               <MemberPicker members={members} excludeIds={mentees.filter(m => m.status === 'active').map(m => m.torn_user_id)} onPick={setPicked} />
             )}
-            {picked && picked.level >= 15 && (
-              <p style={{ color: '#fbbf24', fontSize: '11px', margin: '6px 0 0' }}>
-                Already level {picked.level} — level-15 age won't auto-detect; enter it manually after adding.
-              </p>
-            )}
+          </div>
+          <div>
+            <label style={labelStyle}>Current account age (days) *</label>
+            <input type="number" min="0" style={inputStyle} value={accountAge} onChange={e => setAccountAge(e.target.value)} placeholder="e.g. 8" />
+            <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '4px 0 0' }}>
+              Counts up by 1 each day automatically and freezes once level 15 is detected — editable later if entered wrong.
+            </p>
           </div>
           <div>
             <label style={labelStyle}>GMT Offset (e.g. -5, 5.5)</label>
@@ -237,7 +241,7 @@ function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
 
 // ─── Mentors panel ──────────────────────────────────────────────────────────
 
-function MentorsPanel({ mentors, members, mentees, onRefresh }) {
+function MentorsPanel({ mentors, members, mentees, onRefresh, restricted }) {
   const [showAdd, setShowAdd] = useState(false)
 
   async function toggleActive(mentor) {
@@ -252,9 +256,11 @@ function MentorsPanel({ mentors, members, mentees, onRefresh }) {
     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '15px', letterSpacing: '0.5px', margin: 0 }}>Mentors</h3>
-        <button onClick={() => setShowAdd(true)} style={{ padding: '6px 16px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.7)', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
-          + Add Mentor
-        </button>
+        {!restricted && (
+          <button onClick={() => setShowAdd(true)} style={{ padding: '6px 16px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.7)', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
+            + Add Mentor
+          </button>
+        )}
       </div>
       {mentors.length === 0 ? (
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No mentors added yet.</p>
@@ -276,9 +282,11 @@ function MentorsPanel({ mentors, members, mentees, onRefresh }) {
               <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '700', background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>
                 {m.active_mentees} mentee{m.active_mentees !== 1 ? 's' : ''}
               </span>
-              <button onClick={() => toggleActive(m)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px' }}>
-                {m.is_active ? 'Deactivate' : 'Reactivate'}
-              </button>
+              {!restricted && (
+                <button onClick={() => toggleActive(m)} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px' }}>
+                  {m.is_active ? 'Deactivate' : 'Reactivate'}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -290,8 +298,9 @@ function MentorsPanel({ mentors, members, mentees, onRefresh }) {
 
 // ─── Mentee card ────────────────────────────────────────────────────────────
 
-function MenteeCard({ mentee, mentors, onRefresh }) {
+function MenteeCard({ mentee, mentors, onRefresh, canEdit }) {
   const [expanded, setExpanded] = useState(false)
+  const [ageAtAddedInput, setAgeAtAddedInput] = useState(mentee.account_age_at_added ?? '')
   const [ageInput, setAgeInput] = useState(mentee.account_age_days_at_level_15 ?? '')
   const [dateInput, setDateInput] = useState(mentee.level_15_reached_at ?? '')
   const [notesInput, setNotesInput] = useState(mentee.notes ?? '')
@@ -309,6 +318,10 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
 
   async function toggleStep(key) {
     await patch({ [key]: mentee[key] ? 0 : 1 })
+  }
+
+  async function saveAgeAtAdded() {
+    await patch({ account_age_at_added: ageAtAddedInput !== '' ? parseInt(ageAtAddedInput, 10) : null })
   }
 
   async function saveAgeOverride() {
@@ -332,6 +345,7 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
   const allStepsDone = STEPS.every(s => mentee[s.key])
   const eligible = mentee.incentive_amount != null && allStepsDone
   const statusStyle = STATUS_COLOR[mentee.status] || STATUS_COLOR.active
+  const levelFifteenFrozen = mentee.level_15_reached_at != null
 
   return (
     <div style={{ border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', overflow: 'hidden', marginBottom: '8px' }}>
@@ -386,12 +400,16 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
           {/* Mentor assignment */}
           <div>
             <label style={labelStyle}>Mentor</label>
-            <select style={{ ...inputStyle, maxWidth: '280px' }} value={mentee.mentor_id ?? ''} onChange={e => patch({ mentor_id: e.target.value !== '' ? parseInt(e.target.value, 10) : null })}>
-              <option value="">— Unassigned{mentee.recommended_mentor_username ? ` (recommended: ${mentee.recommended_mentor_username})` : ''} —</option>
-              {mentors.filter(m => m.is_active).map(m => (
-                <option key={m.id} value={m.id}>{m.username} ({m.active_mentees} mentee{m.active_mentees !== 1 ? 's' : ''})</option>
-              ))}
-            </select>
+            {canEdit ? (
+              <select style={{ ...inputStyle, maxWidth: '280px' }} value={mentee.mentor_id ?? ''} onChange={e => patch({ mentor_id: e.target.value !== '' ? parseInt(e.target.value, 10) : null })}>
+                <option value="">— Unassigned{mentee.recommended_mentor_username ? ` (recommended: ${mentee.recommended_mentor_username})` : ''} —</option>
+                {mentors.filter(m => m.is_active).map(m => (
+                  <option key={m.id} value={m.id}>{m.username} ({m.active_mentees} mentee{m.active_mentees !== 1 ? 's' : ''})</option>
+                ))}
+              </select>
+            ) : (
+              <p style={{ color: '#f4f4f5', fontSize: '13px', margin: 0 }}>{mentee.mentor_username || '—'}</p>
+            )}
           </div>
 
           {/* Steps */}
@@ -399,8 +417,8 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
             <label style={labelStyle}>Mentoring Steps</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {STEPS.map(s => (
-                <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#f4f4f5', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!mentee[s.key]} onChange={() => toggleStep(s.key)} />
+                <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#f4f4f5', cursor: canEdit ? 'pointer' : 'default' }}>
+                  <input type="checkbox" checked={!!mentee[s.key]} disabled={!canEdit} onChange={() => toggleStep(s.key)} />
                   {s.label}
                 </label>
               ))}
@@ -410,26 +428,59 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
           {/* Level 15 / incentive tracking */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
             <label style={labelStyle}>Level 15 Incentive Tracking</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
-              <div>
-                <label style={{ ...labelStyle, fontSize: '11px' }}>Date reached level 15</label>
-                <input type="date" style={inputStyle} value={dateInput} onChange={e => setDateInput(e.target.value)} />
-              </div>
-              <div>
-                <label style={{ ...labelStyle, fontSize: '11px' }}>Account age (days) at level 15</label>
-                <input type="number" style={inputStyle} value={ageInput} onChange={e => setAgeInput(e.target.value)} placeholder={mentee.auto_detect_pending ? 'auto-detects on next sync' : 'enter manually'} />
-              </div>
-            </div>
-            <button onClick={saveAgeOverride} disabled={saving} style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px' }}>
-              Save
-            </button>
+            {!levelFifteenFrozen ? (
+              <>
+                <div style={{ marginBottom: '8px' }}>
+                  <label style={{ ...labelStyle, fontSize: '11px' }}>Account age at time added (days)</label>
+                  {canEdit ? (
+                    <input type="number" style={inputStyle} value={ageAtAddedInput} onChange={e => setAgeAtAddedInput(e.target.value)} />
+                  ) : (
+                    <p style={{ color: '#f4f4f5', fontSize: '13px', margin: 0 }}>{fmt(mentee.account_age_at_added)}</p>
+                  )}
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '0 0 8px' }}>
+                  Current estimate: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(mentee.current_account_age_estimate)} days</span> — auto-incrementing daily, freezes once level 15 is detected
+                </p>
+                {canEdit && (
+                  <button onClick={saveAgeAtAdded} disabled={saving} style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px' }}>
+                    Save
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ ...labelStyle, fontSize: '11px' }}>Date reached level 15</label>
+                    {canEdit ? (
+                      <input type="date" style={inputStyle} value={dateInput} onChange={e => setDateInput(e.target.value)} />
+                    ) : (
+                      <p style={{ color: '#f4f4f5', fontSize: '13px', margin: 0 }}>{fmtDate(mentee.level_15_reached_at)}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label style={{ ...labelStyle, fontSize: '11px' }}>Account age (days) at level 15</label>
+                    {canEdit ? (
+                      <input type="number" style={inputStyle} value={ageInput} onChange={e => setAgeInput(e.target.value)} />
+                    ) : (
+                      <p style={{ color: '#f4f4f5', fontSize: '13px', margin: 0 }}>{fmt(mentee.account_age_days_at_level_15)}</p>
+                    )}
+                  </div>
+                </div>
+                {canEdit && (
+                  <button onClick={saveAgeOverride} disabled={saving} style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px' }}>
+                    Save
+                  </button>
+                )}
+              </>
+            )}
             {mentee.incentive_amount != null && (
               <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '13px', color: eligible ? '#4ade80' : 'var(--text-secondary)' }}>
                   Incentive: {fmtMoney(mentee.incentive_amount)} {eligible ? '(all steps complete)' : '(steps incomplete)'}
                 </span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#f4f4f5', cursor: eligible ? 'pointer' : 'default', opacity: eligible ? 1 : 0.5 }}>
-                  <input type="checkbox" disabled={!eligible} checked={!!mentee.incentive_paid} onChange={() => patch({ incentive_paid: !mentee.incentive_paid })} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#f4f4f5', cursor: (eligible && canEdit) ? 'pointer' : 'default', opacity: eligible ? 1 : 0.5 }}>
+                  <input type="checkbox" disabled={!eligible || !canEdit} checked={!!mentee.incentive_paid} onChange={() => patch({ incentive_paid: !mentee.incentive_paid })} />
                   Paid
                 </label>
               </div>
@@ -439,10 +490,14 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
           {/* Notes */}
           <div>
             <label style={labelStyle}>Notes</label>
-            <textarea rows={2} style={{ ...inputStyle, resize: 'vertical' }} value={notesInput} onChange={e => setNotesInput(e.target.value)} onBlur={() => patch({ notes: notesInput })} />
+            {canEdit ? (
+              <textarea rows={2} style={{ ...inputStyle, resize: 'vertical' }} value={notesInput} onChange={e => setNotesInput(e.target.value)} onBlur={() => patch({ notes: notesInput })} />
+            ) : (
+              <p style={{ color: '#f4f4f5', fontSize: '13px', margin: 0, whiteSpace: 'pre-wrap' }}>{mentee.notes || '—'}</p>
+            )}
           </div>
 
-          {mentee.status === 'active' && (
+          {canEdit && mentee.status === 'active' && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={complete} style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.2)', background: 'rgba(74,222,128,0.08)', color: '#4ade80', cursor: 'pointer', fontSize: '12px' }}>
                 Mark Completed
@@ -460,7 +515,7 @@ function MenteeCard({ mentee, mentors, onRefresh }) {
 
 // ─── Overview sub-tab ───────────────────────────────────────────────────────
 
-function OverviewSubTab() {
+function OverviewSubTab({ restricted, mentorId }) {
   const [mentees, setMentees] = useState([])
   const [mentors, setMentors] = useState([])
   const [members, setMembers] = useState([])
@@ -468,29 +523,36 @@ function OverviewSubTab() {
   const [statusFilter, setStatusFilter] = useState('active')
   const [showAddMentee, setShowAddMentee] = useState(false)
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll(false) }, [])
 
-  async function fetchAll() {
-    setLoading(true)
+  // silent=true skips the loading flag so the list never unmounts mid-refresh
+  // — otherwise every checkbox/field edit collapses every expanded card back
+  // to its default state (MenteeCard's `expanded` is local, destroyed on unmount).
+  async function fetchAll(silent) {
+    if (!silent) setLoading(true)
     try {
-      const [overviewRes, membersRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/leadership/mentoring/overview`, { headers: { Authorization: token() } }),
-        fetch(`${API_BASE_URL}/api/leadership/mentoring/members`, { headers: { Authorization: token() } }),
-      ])
+      const requests = [fetch(`${API_BASE_URL}/api/leadership/mentoring/overview`, { headers: { Authorization: token() } })]
+      if (!restricted) requests.push(fetch(`${API_BASE_URL}/api/leadership/mentoring/members`, { headers: { Authorization: token() } }))
+
+      const [overviewRes, membersRes] = await Promise.all(requests)
       const overview = await overviewRes.json()
-      const membersData = await membersRes.json()
       setMentees(overview.mentees || [])
       setMentors(overview.mentors || [])
-      setMembers(membersData.members || [])
+      if (membersRes) {
+        const membersData = await membersRes.json()
+        setMembers(membersData.members || [])
+      }
     } catch { /* ignore */ }
-    finally { setLoading(false) }
+    finally { if (!silent) setLoading(false) }
   }
+
+  const refresh = () => fetchAll(true)
 
   const displayed = mentees.filter(m => statusFilter === 'all' || m.status === statusFilter)
 
   return (
     <div>
-      <MentorsPanel mentors={mentors} members={members} mentees={mentees} onRefresh={fetchAll} />
+      <MentorsPanel mentors={mentors} members={members} mentees={mentees} onRefresh={refresh} restricted={restricted} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
         <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '15px', letterSpacing: '0.5px', margin: 0 }}>Mentees</h3>
@@ -503,9 +565,11 @@ function OverviewSubTab() {
               color: statusFilter === s ? '#f4f4f5' : 'var(--text-secondary)',
             }}>{s}</button>
           ))}
-          <button onClick={() => setShowAddMentee(true)} style={{ padding: '6px 16px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.7)', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '500', marginLeft: '6px' }}>
-            + Add Mentee
-          </button>
+          {!restricted && (
+            <button onClick={() => setShowAddMentee(true)} style={{ padding: '6px 16px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.7)', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '500', marginLeft: '6px' }}>
+              + Add Mentee
+            </button>
+          )}
         </div>
       </div>
 
@@ -514,11 +578,19 @@ function OverviewSubTab() {
       ) : displayed.length === 0 ? (
         <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>No mentees in this view.</p>
       ) : (
-        displayed.map(m => <MenteeCard key={m.id} mentee={m} mentors={mentors} onRefresh={fetchAll} />)
+        displayed.map(m => (
+          <MenteeCard
+            key={m.id}
+            mentee={m}
+            mentors={mentors}
+            onRefresh={refresh}
+            canEdit={!restricted || m.mentor_id === mentorId}
+          />
+        ))
       )}
 
       {showAddMentee && (
-        <AddMenteeModal members={members} mentees={mentees} mentors={mentors} onClose={() => setShowAddMentee(false)} onAdded={fetchAll} />
+        <AddMenteeModal members={members} mentees={mentees} mentors={mentors} onClose={() => setShowAddMentee(false)} onAdded={refresh} />
       )}
     </div>
   )
@@ -528,7 +600,7 @@ function OverviewSubTab() {
 
 const CATEGORY_LABEL = { link: 'Helpful Links', mailer: 'Example Mailers', other: 'Other' }
 
-function ToolsSubTab() {
+function ToolsSubTab({ restricted }) {
   const [resources, setResources] = useState([])
   const [loading, setLoading] = useState(true)
   const [category, setCategory] = useState('link')
@@ -572,29 +644,31 @@ function ToolsSubTab() {
 
   return (
     <div>
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
-        <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '15px', letterSpacing: '0.5px', margin: '0 0 12px' }}>Add Resource</h3>
-        <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {['link', 'mailer', 'other'].map(c => (
-              <button key={c} type="button" onClick={() => setCategory(c)} style={{
-                padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
-                border: `1px solid ${category === c ? 'rgba(179,18,63,0.6)' : 'rgba(255,255,255,0.12)'}`,
-                background: category === c ? 'rgba(179,18,63,0.18)' : 'transparent',
-                color: category === c ? '#f4f4f5' : 'var(--text-secondary)',
-              }}>{CATEGORY_LABEL[c]}</button>
-            ))}
-          </div>
-          <input style={inputStyle} placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
-          {category === 'link' && (
-            <input style={inputStyle} placeholder="URL" value={url} onChange={e => setUrl(e.target.value)} />
-          )}
-          <textarea rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Body / description (optional)" value={body} onChange={e => setBody(e.target.value)} />
-          <button type="submit" disabled={saving || !title.trim()} style={{ alignSelf: 'flex-end', padding: '8px 20px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.8)', color: '#fff', cursor: 'pointer', fontSize: '13px', opacity: (saving || !title.trim()) ? 0.5 : 1 }}>
-            {saving ? 'Saving…' : 'Add'}
-          </button>
-        </form>
-      </div>
+      {!restricted && (
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+          <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '15px', letterSpacing: '0.5px', margin: '0 0 12px' }}>Add Resource</h3>
+          <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {['link', 'mailer', 'other'].map(c => (
+                <button key={c} type="button" onClick={() => setCategory(c)} style={{
+                  padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+                  border: `1px solid ${category === c ? 'rgba(179,18,63,0.6)' : 'rgba(255,255,255,0.12)'}`,
+                  background: category === c ? 'rgba(179,18,63,0.18)' : 'transparent',
+                  color: category === c ? '#f4f4f5' : 'var(--text-secondary)',
+                }}>{CATEGORY_LABEL[c]}</button>
+              ))}
+            </div>
+            <input style={inputStyle} placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
+            {category === 'link' && (
+              <input style={inputStyle} placeholder="URL" value={url} onChange={e => setUrl(e.target.value)} />
+            )}
+            <textarea rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Body / description (optional)" value={body} onChange={e => setBody(e.target.value)} />
+            <button type="submit" disabled={saving || !title.trim()} style={{ alignSelf: 'flex-end', padding: '8px 20px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.8)', color: '#fff', cursor: 'pointer', fontSize: '13px', opacity: (saving || !title.trim()) ? 0.5 : 1 }}>
+              {saving ? 'Saving…' : 'Add'}
+            </button>
+          </form>
+        </div>
+      )}
 
       {loading ? (
         <p style={{ color: 'var(--text-secondary)' }}>Loading…</p>
@@ -612,7 +686,9 @@ function ToolsSubTab() {
                       {r.body && <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{r.body}</p>}
                       <p style={{ color: 'var(--text-faint)', fontSize: '10px', margin: '4px 0 0' }}>Added by {r.created_by_username || 'unknown'}</p>
                     </div>
-                    <button onClick={() => handleDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}>×</button>
+                    {!restricted && (
+                      <button onClick={() => handleDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}>×</button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -627,7 +703,7 @@ function ToolsSubTab() {
 
 // ─── Main tab ───────────────────────────────────────────────────────────────
 
-export default function MentoringTab() {
+export default function MentoringTab({ restricted = false, mentorId = null }) {
   const [activeSubTab, setActiveSubTab] = useState('overview')
 
   const subTabStyle = (id) => ({
@@ -639,10 +715,12 @@ export default function MentoringTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: '20px' }}>
-        <h2 className="font-cinzel" style={{ fontSize: '20px', color: '#f4f4f5', marginBottom: '4px' }}>Mentoring</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Track mentee onboarding progress and mentor assignments.</p>
-      </div>
+      {!restricted && (
+        <div style={{ marginBottom: '20px' }}>
+          <h2 className="font-cinzel" style={{ fontSize: '20px', color: '#f4f4f5', marginBottom: '4px' }}>Mentoring</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Track mentee onboarding progress and mentor assignments.</p>
+        </div>
+      )}
 
       <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '24px', overflowX: 'auto', scrollbarWidth: 'none' }}>
         <div style={{ display: 'flex', minWidth: 'max-content' }}>
@@ -655,8 +733,8 @@ export default function MentoringTab() {
         </div>
       </div>
 
-      {activeSubTab === 'overview' && <OverviewSubTab />}
-      {activeSubTab === 'tools' && <ToolsSubTab />}
+      {activeSubTab === 'overview' && <OverviewSubTab restricted={restricted} mentorId={mentorId} />}
+      {activeSubTab === 'tools' && <ToolsSubTab restricted={restricted} />}
     </div>
   )
 }

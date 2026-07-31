@@ -70,6 +70,20 @@ export async function requireLeadership(user, env) {
   return !!row && isOverrideActive(row) && row.access_override === 'leader';
 }
 
+// Access check for the mentoring feature. isLeader reuses requireLeadership's
+// JWT-first + live-override-fallback logic (leaders always get unrestricted
+// access, per the mentoring feature's requirements). isMentor/mentorId are
+// always freshly queried, never JWT-cached — mentee-ownership checks need the
+// real mentors.id, and mentor status can change without the user re-logging in.
+export async function getMentoringAccess(user, env) {
+  if (!user) return { isLeader: false, isMentor: false, mentorId: null };
+  const isLeader = await requireLeadership(user, env);
+  const mentorRow = await env.DB.prepare(
+    'SELECT id FROM mentors WHERE torn_user_id = ? AND is_active = 1'
+  ).bind(user.tornUserId).first();
+  return { isLeader, isMentor: !!mentorRow, mentorId: mentorRow?.id ?? null };
+}
+
 // Generate JWT token for user
 export async function generateToken(user, env) {
   const secret = new TextEncoder().encode(env.JWT_SECRET);
