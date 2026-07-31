@@ -1,0 +1,319 @@
+import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { fetchTornAccountAge } from '../services/tornApiService.js';
+
+// Frozen bracket lookup — account age (days) at the moment a mentee first
+// reaches level 15 in Torn, NOT days in faction. Reused by the auto-detect
+// cron step and by manual age overrides in updateMentee.
+export function getIncentiveAmount(ageDays) {
+  if (ageDays == null) return null;
+  if (ageDays <= 15) return 10_000_000;
+  if (ageDays <= 20) return 7_000_000;
+  if (ageDays <= 25) return 5_000_000;
+  if (ageDays <= 30) return 2_000_000;
+  if (ageDays <= 42) return 1_000_000;
+  return null; // 43+ days old at level 15 — not eligible
+}
+
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Scores an active mentor against an unassigned mentee — higher is better.
+// Soft faction preference + timezone closeness + current mentee load.
+function scoreMentor(mentor, mentee) {
+  const factionScore = mentor.faction_id === mentee.faction_id ? 5 : 0;
+  const tzDiff = Math.abs((mentor.timezone_offset ?? 0) - (mentee.timezone_offset ?? 0));
+  const loadPenalty = (mentor.active_mentees ?? 0) * 2;
+  return factionScore - tzDiff * 0.5 - loadPenalty;
+}
+
+// GET /api/leadership/mentoring/overview
+export async function getMentoringOverview(request, env) {
+  try {
+    const [menteesResult, mentorsResult] = await Promise.all([
+      env.DB.prepare(`
+        SELECT
+          me.*,
+          fm.level, fm.days_in_faction, fm.joined_at, fm.is_active AS member_is_active,
+          fm.faction_id AS current_faction_id,
+          mt.username AS mentor_username
+        FROM mentees me
+        LEFT JOIN faction_members fm ON fm.torn_user_id = me.torn_user_id
+        LEFT JOIN mentors mt ON mt.id = me.mentor_id
+        ORDER BY me.status ASC, me.added_at DESC
+      `).all(),
+      env.DB.prepare(`
+        SELECT mt.*, COALESCE(counts.active_mentees, 0) AS active_mentees
+        FROM mentors mt
+        LEFT JOIN (
+          SELECT mentor_id, COUNT(*) AS active_mentees
+          FROM mentees WHERE status = 'active' AND mentor_id IS NOT NULL
+          GROUP BY mentor_id
+        ) counts ON counts.mentor_id = mt.id
+        ORDER BY mt.is_active DESC, mt.username ASC
+      `).all(),
+    ]);
+
+    const mentees = menteesResult.results || [];
+    const activeMentors = (mentorsResult.results || []).filter(m => m.is_active);
+
+    for (const mentee of mentees) {
+      if (mentee.mentor_id) continue;
+      let best = null;
+      for (const mentor of activeMentors) {
+        const score = scoreMentor(mentor, mentee);
+        if (!best || score > best.score) best = { mentor, score };
+      }
+      if (best) {
+        mentee.recommended_mentor_id = best.mentor.id;
+        mentee.recommended_mentor_username = best.mentor.username;
+      }
+    }
+
+    return jsonResponse({ mentees, mentors: mentorsResult.results || [] });
+  } catch (err) {
+    console.error('getMentoringOverview error:', err);
+    return errorResponse('Failed to fetch mentoring overview', 500);
+  }
+}
+
+// GET /api/leadership/mentoring/members
+export async function getMentorshipMembers(request, env) {
+  try {
+    const { results } = await env.DB.prepare(`
+      SELECT torn_user_id, username, faction_id, level, is_active, faction_position
+      FROM faction_members
+      ORDER BY is_active DESC, username ASC
+    `).all();
+    return jsonResponse({ members: results || [] });
+  } catch (err) {
+    console.error('getMentorshipMembers error:', err);
+    return errorResponse('Failed to fetch members', 500);
+  }
+}
+
+// POST /api/leadership/mentoring/mentors
+// Body: { torn_user_id, username, faction_id, timezone_offset?, notes? }
+export async function addMentor(request, env, user) {
+  try {
+    const { torn_user_id, username, faction_id, timezone_offset, notes } = await request.json();
+    if (!torn_user_id || !username) return errorResponse('Missing required fields: torn_user_id, username', 400);
+
+    const { meta } = await env.DB.prepare(`
+      INSERT INTO mentors (torn_user_id, username, faction_id, timezone_offset, notes, added_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(torn_user_id) DO UPDATE SET
+        is_active = 1, removed_at = NULL, username = excluded.username,
+        faction_id = excluded.faction_id, timezone_offset = excluded.timezone_offset, notes = excluded.notes
+    `).bind(torn_user_id, username, faction_id ?? null, timezone_offset ?? null, notes || null, user.tornUserId).run();
+
+    return jsonResponse({ message: 'Mentor added', id: meta.last_row_id });
+  } catch (err) {
+    console.error('addMentor error:', err);
+    return errorResponse('Failed to add mentor', 500);
+  }
+}
+
+// PUT /api/leadership/mentoring/mentors/:id
+// Body: any of { timezone_offset, notes, is_active }
+export async function updateMentor(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').pop(), 10);
+    if (!id) return errorResponse('Invalid mentor ID', 400);
+    const { timezone_offset, notes, is_active } = await request.json();
+
+    await env.DB.prepare(`
+      UPDATE mentors SET
+        timezone_offset = COALESCE(?, timezone_offset),
+        notes = COALESCE(?, notes),
+        is_active = COALESCE(?, is_active),
+        removed_at = CASE WHEN ? = 0 THEN CURRENT_TIMESTAMP WHEN ? = 1 THEN NULL ELSE removed_at END
+      WHERE id = ?
+    `).bind(timezone_offset ?? null, notes ?? null, is_active ?? null, is_active, is_active, id).run();
+
+    return jsonResponse({ message: 'Mentor updated' });
+  } catch (err) {
+    console.error('updateMentor error:', err);
+    return errorResponse('Failed to update mentor', 500);
+  }
+}
+
+// POST /api/leadership/mentoring/mentees
+// Body: { torn_user_id, username, faction_id, timezone_offset?, mentor_id?, notes? }
+export async function addMentee(request, env, user) {
+  try {
+    const { torn_user_id, username, faction_id, timezone_offset, mentor_id, notes } = await request.json();
+    if (!torn_user_id || !username) return errorResponse('Missing required fields: torn_user_id, username', 400);
+
+    const memberRow = await env.DB.prepare(`SELECT level FROM faction_members WHERE torn_user_id = ?`).bind(torn_user_id).first();
+    const autoDetectPending = (memberRow?.level ?? 0) >= 15 ? 0 : 1;
+
+    const { meta } = await env.DB.prepare(`
+      INSERT INTO mentees (torn_user_id, username, faction_id, timezone_offset, mentor_id, notes, added_by, auto_detect_pending)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      torn_user_id, username, faction_id ?? null, timezone_offset ?? null,
+      mentor_id ?? null, notes || null, user.tornUserId, autoDetectPending
+    ).run();
+
+    return jsonResponse({ message: 'Mentee added', id: meta.last_row_id, autoDetectPending: !!autoDetectPending });
+  } catch (err) {
+    console.error('addMentee error:', err);
+    return errorResponse('Failed to add mentee', 500);
+  }
+}
+
+// PUT /api/leadership/mentoring/mentees/:id
+// Body: any of { mentor_id, timezone_offset, notes, incentive_paid,
+//                step_first_mailer, step_mansion_offer, step_joined_discord, step_joined_tornstats,
+//                level_15_reached_at, account_age_days_at_level_15 (manual override — recomputes incentive_amount) }
+export async function updateMentee(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').pop(), 10);
+    if (!id) return errorResponse('Invalid mentee ID', 400);
+    const body = await request.json();
+
+    const current = await env.DB.prepare(`SELECT * FROM mentees WHERE id = ?`).bind(id).first();
+    if (!current) return errorResponse('Mentee not found', 404);
+
+    const mentor_id = body.mentor_id !== undefined ? body.mentor_id : current.mentor_id;
+    const timezone_offset = body.timezone_offset !== undefined ? body.timezone_offset : current.timezone_offset;
+    const notes = body.notes !== undefined ? body.notes : current.notes;
+    const incentive_paid = body.incentive_paid !== undefined ? (body.incentive_paid ? 1 : 0) : current.incentive_paid;
+    const step_first_mailer = body.step_first_mailer !== undefined ? (body.step_first_mailer ? 1 : 0) : current.step_first_mailer;
+    const step_mansion_offer = body.step_mansion_offer !== undefined ? (body.step_mansion_offer ? 1 : 0) : current.step_mansion_offer;
+    const step_joined_discord = body.step_joined_discord !== undefined ? (body.step_joined_discord ? 1 : 0) : current.step_joined_discord;
+    const step_joined_tornstats = body.step_joined_tornstats !== undefined ? (body.step_joined_tornstats ? 1 : 0) : current.step_joined_tornstats;
+
+    let level_15_reached_at = current.level_15_reached_at;
+    let account_age_days_at_level_15 = current.account_age_days_at_level_15;
+    let incentive_amount = current.incentive_amount;
+
+    if (body.level_15_reached_at !== undefined) level_15_reached_at = body.level_15_reached_at;
+    if (body.account_age_days_at_level_15 !== undefined) {
+      account_age_days_at_level_15 = body.account_age_days_at_level_15;
+      incentive_amount = getIncentiveAmount(account_age_days_at_level_15);
+    }
+
+    await env.DB.prepare(`
+      UPDATE mentees SET
+        mentor_id=?, timezone_offset=?, notes=?, incentive_paid=?,
+        incentive_paid_at=CASE WHEN ?=1 AND incentive_paid_at IS NULL THEN CURRENT_TIMESTAMP WHEN ?=0 THEN NULL ELSE incentive_paid_at END,
+        step_first_mailer=?, step_mansion_offer=?, step_joined_discord=?, step_joined_tornstats=?,
+        level_15_reached_at=?, account_age_days_at_level_15=?, incentive_amount=?
+      WHERE id=?
+    `).bind(
+      mentor_id, timezone_offset, notes, incentive_paid, incentive_paid, incentive_paid,
+      step_first_mailer, step_mansion_offer, step_joined_discord, step_joined_tornstats,
+      level_15_reached_at, account_age_days_at_level_15, incentive_amount, id
+    ).run();
+
+    return jsonResponse({ message: 'Mentee updated' });
+  } catch (err) {
+    console.error('updateMentee error:', err);
+    return errorResponse('Failed to update mentee', 500);
+  }
+}
+
+// POST /api/leadership/mentoring/mentees/:id/complete
+export async function completeMentee(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').slice(-2, -1)[0], 10);
+    if (!id) return errorResponse('Invalid mentee ID', 400);
+    await env.DB.prepare(`UPDATE mentees SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE id=?`).bind(id).run();
+    return jsonResponse({ message: 'Mentee marked complete' });
+  } catch (err) {
+    console.error('completeMentee error:', err);
+    return errorResponse('Failed to complete mentee', 500);
+  }
+}
+
+// POST /api/leadership/mentoring/mentees/:id/remove
+export async function removeMentee(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').slice(-2, -1)[0], 10);
+    if (!id) return errorResponse('Invalid mentee ID', 400);
+    await env.DB.prepare(`UPDATE mentees SET status='removed', removed_at=CURRENT_TIMESTAMP WHERE id=?`).bind(id).run();
+    return jsonResponse({ message: 'Mentee removed' });
+  } catch (err) {
+    console.error('removeMentee error:', err);
+    return errorResponse('Failed to remove mentee', 500);
+  }
+}
+
+// GET /api/leadership/mentoring/resources
+export async function getMentorResources(request, env) {
+  try {
+    const { results } = await env.DB.prepare(`
+      SELECT r.*, u.username AS created_by_username
+      FROM mentor_resources r
+      LEFT JOIN users u ON u.id = r.created_by
+      ORDER BY r.category ASC, r.created_at DESC
+    `).all();
+    return jsonResponse({ resources: results || [] });
+  } catch (err) {
+    console.error('getMentorResources error:', err);
+    return errorResponse('Failed to fetch resources', 500);
+  }
+}
+
+// POST /api/leadership/mentoring/resources
+// Body: { category, title, url?, body? }
+export async function addMentorResource(request, env, user) {
+  try {
+    const { category, title, url, body } = await request.json();
+    if (!category || !title) return errorResponse('Missing required fields: category, title', 400);
+    if (!['link', 'mailer', 'other'].includes(category)) return errorResponse('Invalid category', 400);
+
+    const { meta } = await env.DB.prepare(`
+      INSERT INTO mentor_resources (category, title, url, body, created_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(category, title, url || null, body || null, user.userId ?? null).run();
+
+    return jsonResponse({ message: 'Resource added', id: meta.last_row_id });
+  } catch (err) {
+    console.error('addMentorResource error:', err);
+    return errorResponse('Failed to add resource', 500);
+  }
+}
+
+// DELETE /api/leadership/mentoring/resources/:id
+export async function deleteMentorResource(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').pop(), 10);
+    if (!id) return errorResponse('Invalid resource ID', 400);
+    await env.DB.prepare(`DELETE FROM mentor_resources WHERE id = ?`).bind(id).run();
+    return jsonResponse({ message: 'Resource deleted' });
+  } catch (err) {
+    console.error('deleteMentorResource error:', err);
+    return errorResponse('Failed to delete resource', 500);
+  }
+}
+
+// Called from the 12h faction sync cron, right after syncMembersFromCache —
+// piggybacks on the level data that sync already refreshed rather than
+// running its own cron. Only fires once per mentee (guarded by
+// level_15_reached_at IS NULL) and only for mentees who weren't already
+// level>=15 when they joined the program (auto_detect_pending — see addMentee).
+export async function checkMentorshipLevel15Crossings(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT me.id, me.torn_user_id, me.faction_id
+    FROM mentees me
+    JOIN faction_members fm ON fm.torn_user_id = me.torn_user_id
+    WHERE me.status = 'active' AND me.level_15_reached_at IS NULL
+      AND me.auto_detect_pending = 1 AND fm.level >= 15
+  `).all();
+
+  let updated = 0;
+  for (const row of (results || [])) {
+    const age = await fetchTornAccountAge(env, row.faction_id, row.torn_user_id);
+    if (age == null) continue;
+    const amount = getIncentiveAmount(age);
+    await env.DB.prepare(`
+      UPDATE mentees SET level_15_reached_at=?, account_age_days_at_level_15=?, incentive_amount=?
+      WHERE id=?
+    `).bind(todayDateString(), age, amount, row.id).run();
+    updated++;
+  }
+  return { checked: (results || []).length, updated };
+}

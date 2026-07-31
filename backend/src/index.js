@@ -201,6 +201,7 @@ export default {
     if (event.cron === '15 */12 * * *') try {
       const { fetchAndCacheFactions, getRandomUserApiKey } = await import('./services/tornApiService.js');
       const { syncMembersFromCache } = await import('./controllers/memberController.js');
+      const { checkMentorshipLevel15Crossings } = await import('./controllers/mentoringController.js');
 
       const apiKeyObj = await getRandomUserApiKey(env);
       if (!apiKeyObj?.key) {
@@ -229,6 +230,16 @@ export default {
               }
             } catch (memberErr) {
               console.error('Member sync failed:', memberErr);
+            }
+
+            // Piggyback on the freshly-synced levels to detect mentees crossing level 15
+            try {
+              const mentorResult = await checkMentorshipLevel15Crossings(env);
+              if (mentorResult.checked) {
+                console.log(`Mentorship level-15 check: ${mentorResult.updated}/${mentorResult.checked} updated`);
+              }
+            } catch (mentorErr) {
+              console.error('Mentorship level-15 check failed:', mentorErr);
             }
           }).catch(error => {
             console.error('Scheduled faction cache refresh failed:', error);

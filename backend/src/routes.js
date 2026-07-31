@@ -26,6 +26,7 @@ import * as companyProfitController from './controllers/companyProfitController.
 import * as webhookController from './controllers/webhookController.js';
 import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
+import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
@@ -405,6 +406,41 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/warnings\/\d+\/comment$/) && method === 'PUT') {
       return warningsController.updateWarningComment(request, env);
+    }
+
+    // Mentor/mentee program
+    if (pathname === '/api/leadership/mentoring/overview' && method === 'GET') {
+      return mentoringController.getMentoringOverview(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/members' && method === 'GET') {
+      return mentoringController.getMentorshipMembers(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/mentors' && method === 'POST') {
+      return mentoringController.addMentor(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentors\/\d+$/) && method === 'PUT') {
+      return mentoringController.updateMentor(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/mentees' && method === 'POST') {
+      return mentoringController.addMentee(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+$/) && method === 'PUT') {
+      return mentoringController.updateMentee(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/complete$/) && method === 'POST') {
+      return mentoringController.completeMentee(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/remove$/) && method === 'POST') {
+      return mentoringController.removeMentee(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/resources' && method === 'GET') {
+      return mentoringController.getMentorResources(request, env);
+    }
+    if (pathname === '/api/leadership/mentoring/resources' && method === 'POST') {
+      return mentoringController.addMentorResource(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/resources\/\d+$/) && method === 'DELETE') {
+      return mentoringController.deleteMentorResource(request, env);
     }
 
     // Monthly xanax distribution tracking

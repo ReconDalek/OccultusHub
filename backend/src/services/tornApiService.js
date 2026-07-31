@@ -134,6 +134,24 @@ export async function getRandomUserApiKey(env) {
   }
 }
 
+// Returns a Torn account's age in days (profile.age), or null on any failure —
+// callers should treat null as "retry later", not "age is zero".
+export async function fetchTornAccountAge(env, factionId, tornUserId) {
+  const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
+  if (!apiKeyObj?.key) return null;
+  try {
+    const data = await fetchWithRetry(
+      `${TORN_API_BASE}/user/${tornUserId}?selections=profile&comment=OccHub`,
+      authHeader(apiKeyObj.key)
+    );
+    const age = data?.profile?.age;
+    return typeof age === 'number' ? age : null;
+  } catch (e) {
+    console.error(`fetchTornAccountAge failed for ${tornUserId}:`, e.message);
+    return null;
+  }
+}
+
 // Fetches faction data for all factions using a faction-specific API key per faction.
 export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigger = 'cron') {
   let fetched = 0;
