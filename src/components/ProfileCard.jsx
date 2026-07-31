@@ -67,7 +67,7 @@ export default function ProfileCard({ tornUserId, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <img
-              src={DEFAULT_AVATAR} alt="avatar"
+              src={data?.identity?.image_url || DEFAULT_AVATAR} alt="avatar"
               className="w-14 h-14 rounded-full object-cover"
               style={{ border: '3px solid #4f0051' }}
             />
@@ -99,7 +99,6 @@ export default function ProfileCard({ tornUserId, onClose }) {
               <Row label="Total War Hits" value={fmt(data.combat.war_hits?.war_hits)} color="#4ade80" />
               <Row label="Total War Payouts" value={fmtMoney(data.combat.war_hits?.payout_amount)} color="#4ade80" />
               <Row label="Total Custom / Event Hits" value={fmt(data.combat.custom_hits)} />
-              <Row label="Total OCs Completed" value={fmt(data.combat.oc_participation)} />
               {data.combat.recent_wars?.length > 0 && (
                 <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
                   <p style={{ fontSize: '11px', color: "var(--text-faint)", margin: '0 0 6px' }}>Recent wars</p>
@@ -111,10 +110,19 @@ export default function ProfileCard({ tornUserId, onClose }) {
                   ))}
                 </div>
               )}
-              {data.combat.oc_cpr?.length > 0 && (
+            </div>
+
+            {/* Organized Crime */}
+            <div style={sectionStyle}>
+              <p style={sectionTitle}>Organized Crime</p>
+              <Row label="Total OCs Joined" value={fmt(data.oc?.joined)} />
+              <Row label="Total Successful" value={fmt(data.oc?.successful)} color="#4ade80" />
+              <Row label="Total Failed" value={fmt(data.oc?.failed)} color={data.oc?.failed > 0 ? '#f87171' : undefined} />
+              <Row label="Success Rate" value={data.oc?.success_pct != null ? `${data.oc.success_pct}%` : '—'} />
+              {data.oc?.cpr?.length > 0 && (
                 <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
                   <p style={{ fontSize: '11px', color: "var(--text-faint)", margin: '0 0 6px' }}>Best OC pass rates</p>
-                  {data.combat.oc_cpr.slice(0, 5).map((c, i) => (
+                  {data.oc.cpr.slice(0, 5).map((c, i) => (
                     <div key={i} style={{ ...rowStyle, fontSize: '12px' }}>
                       <span style={labelStyle}>{c.crime_name} — {c.position}</span>
                       <span>{c.best_pass_rate}%</span>
@@ -164,18 +172,37 @@ export default function ProfileCard({ tornUserId, onClose }) {
               )}
             </div>
 
+            {/* Games */}
+            {data.games && (
+              <div style={sectionStyle}>
+                <p style={sectionTitle}>Games</p>
+                <Row label="Fishing" value={`${fmt(data.games.fishing?.essence)} essence · ${fmt(data.games.fishing?.catches)} catches`} />
+                <Row label="Rune Casting" value={`${fmt(data.games.runes?.essence)} essence · ${fmt(data.games.runes?.casts)} casts`} />
+                {data.games.sanctum && (
+                  <Row label="The Sanctum" value={`${fmt(data.games.sanctum.essence)} essence (${fmt(data.games.sanctum.total_essence)} lifetime)`} />
+                )}
+                {data.games.binding_game && (
+                  <Row label="The Binding Game" value={`${data.games.binding_game.species || '—'}, Lv.${data.games.binding_game.level ?? '—'} · ${fmt(data.games.binding_game.wins)}W / ${fmt(data.games.binding_game.battles)} battles`} />
+                )}
+                <Row label="Cards Against Occultus" value={`${fmt(data.games.cah?.essence)} essence · ${fmt(data.games.cah?.games_played)} games`} />
+                <Row label="The Rite" value={`${fmt(data.games.rite?.games_played)} games`} />
+              </div>
+            )}
+
             {/* Warnings */}
-            {data.warnings?.length > 0 && (
-              <div style={{ ...sectionStyle, background: 'rgba(248,113,113,0.04)', borderColor: 'rgba(248,113,113,0.15)' }}>
-                <p style={sectionTitle}>Warnings ({data.warnings.length})</p>
-                {data.warnings.slice(0, 5).map(w => (
+            <div style={{ ...sectionStyle, background: 'rgba(248,113,113,0.04)', borderColor: 'rgba(248,113,113,0.15)' }}>
+              <p style={sectionTitle}>Warnings {data.warnings?.length > 0 ? `(${data.warnings.length})` : ''}</p>
+              {data.warnings?.length > 0 ? (
+                data.warnings.slice(0, 5).map(w => (
                   <div key={w.id} style={{ fontSize: '12px', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <div style={{ color: '#f87171', fontWeight: '500' }}>{w.warning_type} — {w.period}</div>
                     {w.comment && <div style={{ color: "var(--text-secondary)", marginTop: '2px' }}>{w.comment}</div>}
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              ) : (
+                <p style={{ fontSize: '12px', color: "var(--text-secondary)", margin: 0 }}>No warnings recorded</p>
+              )}
+            </div>
           </>
         )}
       </div>

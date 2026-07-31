@@ -1,7 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { requireLeadership } from '../middleware/auth.js';
 import { getWarningsForMember } from './warningsController.js';
-import { PERSONAL_STAT_FIELDS } from './activityController.js';
+import { PERSONAL_STAT_FIELDS, getEnergyDeltaForUser } from './activityController.js';
 
 // Small curated subset of the 135 personal-stat fields — this is a summary
 // card, not the full breakdown PersonalStatsPanel already provides.
@@ -14,6 +14,11 @@ function getPath(obj, pathArr) {
 function monthStartDate() {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+function monthEndDate() {
+  const now = new Date();
+  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 }
 
 // GET /api/members/:tornUserId/profile
@@ -33,14 +38,16 @@ export async function getMemberProfile(request, env, user) {
     }
 
     const monthStart = monthStartDate();
+    const monthEnd   = monthEndDate();
 
     const [
       identity,
+      accountRow, // occultusHub's own account for this torn_user_id, if they've ever logged in
       chainRow,
       warRow,
       recentWars,
       customRow,
-      ocParticipation,
+      ocSummary,
       ocCpr,
       armoryThisMonth,
       recentArmoryUsed,
@@ -49,13 +56,17 @@ export async function getMemberProfile(request, env, user) {
       stocks,
       bountiesPlaced,
       bountiesReceived,
-      energyRow,
+      energy,
       monthStatsRows,
       warnings,
     ] = await Promise.all([
       env.DB.prepare(
         `SELECT torn_user_id, username, faction_id, faction_position, level, is_active, joined_at
          FROM faction_members WHERE torn_user_id=?`
+      ).bind(tornUserId).first(),
+
+      env.DB.prepare(
+        `SELECT id, image_url, fishing_points, rune_points FROM users WHERE torn_user_id=?`
       ).bind(tornUserId).first(),
 
       env.DB.prepare(
@@ -81,8 +92,12 @@ export async function getMemberProfile(request, env, user) {
         `SELECT COALESCE(SUM(hits),0) AS total_hits FROM custom_hits WHERE torn_user_id=?`
       ).bind(tornUserId).first(),
 
+      // Organized Crime summary — own section, not folded into Combat totals.
       env.DB.prepare(
-        `SELECT COUNT(*) AS count FROM oc_crime_slots WHERE torn_user_id=? AND outcome='Successful'`
+        `SELECT COUNT(*) AS joined,
+                SUM(CASE WHEN outcome='Successful' THEN 1 ELSE 0 END) AS successful,
+                SUM(CASE WHEN outcome IN ('Failed','Hospitalized','Jailed','Injured') THEN 1 ELSE 0 END) AS failed
+         FROM oc_crime_slots WHERE torn_user_id=?`
       ).bind(tornUserId).first(),
 
       env.DB.prepare(
@@ -125,13 +140,12 @@ export async function getMemberProfile(request, env, user) {
          FROM bounties WHERE target_torn_id=?`
       ).bind(tornUserId).first(),
 
-      // COUNT(DISTINCT snapshot_date), not COUNT(*) — confirmed live that
-      // energy_snapshots has duplicate rows for the same date per user
-      // (~2x), which would silently deflate the average if counted raw.
-      env.DB.prepare(
-        `SELECT MAX(energy_total) - MIN(energy_total) AS energy_this_month, COUNT(DISTINCT snapshot_date) AS snapshot_days
-         FROM energy_snapshots WHERE torn_user_id=? AND snapshot_date >= ?`
-      ).bind(tornUserId, monthStart).first(),
+      // Same per-faction-delta + calendar-day-average calc the Energy tab
+      // itself uses (getEnergyActivity) — NOT a naive MAX-MIN, which silently
+      // mixes energy_total baselines across a mid-period faction switch and
+      // can wildly overstate the total (confirmed live: 52x too high for one
+      // member before this fix).
+      getEnergyDeltaForUser(env, tornUserId, monthStart, monthEnd),
 
       // First and latest snapshot of THIS month, in one query — delta between
       // them is this month's activity, not the lifetime cumulative total.
@@ -159,19 +173,63 @@ export async function getMemberProfile(request, env, user) {
       } catch { /* malformed snapshot — leave personalStats null */ }
     }
 
-    const avgEnergyThisMonth = energyRow?.snapshot_days > 1
-      ? Math.round((energyRow.energy_this_month ?? 0) / (energyRow.snapshot_days - 1))
-      : null;
+    const ocJoined     = ocSummary?.joined ?? 0;
+    const ocSuccessful = ocSummary?.successful ?? 0;
+    const ocFailed     = ocSummary?.failed ?? 0;
+
+    // Minigame stats only exist if this person has an occultusHub account
+    // (users.id) — fishing/runes/sanctum/familiars/CAH/Rite all key off that
+    // internal id, not torn_user_id. Skip the whole batch if they've never logged in.
+    let games = null;
+    if (accountRow?.id) {
+      const internalId = accountRow.id;
+      const [fishing, runes, sanctum, familiar, cah, rite] = await Promise.all([
+        env.DB.prepare(`SELECT COUNT(*) AS catches FROM fishing_catches WHERE user_id=?`).bind(internalId).first(),
+        env.DB.prepare(`SELECT COUNT(*) AS casts FROM rune_casts WHERE user_id=?`).bind(internalId).first(),
+        env.DB.prepare(`SELECT essence, total_essence FROM sanctum_saves WHERE user_id=?`).bind(internalId).first(),
+        env.DB.prepare(`SELECT id, species, nature, level, stage FROM familiars WHERE user_id=?`).bind(internalId).first(),
+        env.DB.prepare(
+          `SELECT COUNT(DISTINCT room_id) AS games_played, COALESCE(SUM(souls),0) AS total_souls
+           FROM cah_players WHERE user_id=?`
+        ).bind(internalId).first(),
+        env.DB.prepare(`SELECT COUNT(DISTINCT room_id) AS games_played FROM game_players WHERE user_id=?`).bind(internalId).first(),
+      ]);
+
+      let familiarBattles = null;
+      if (familiar?.id) {
+        familiarBattles = await env.DB.prepare(
+          `SELECT COUNT(*) AS total, SUM(CASE WHEN winner_id=? THEN 1 ELSE 0 END) AS wins
+           FROM familiar_battles WHERE challenger_id=? OR defender_id=?`
+        ).bind(familiar.id, familiar.id, familiar.id).first();
+      }
+
+      games = {
+        fishing: { essence: accountRow.fishing_points ?? 0, catches: fishing?.catches ?? 0 },
+        runes: { essence: accountRow.rune_points ?? 0, casts: runes?.casts ?? 0 },
+        sanctum: sanctum ? { essence: sanctum.essence, total_essence: sanctum.total_essence } : null,
+        binding_game: familiar ? {
+          species: familiar.species, nature: familiar.nature, level: familiar.level, stage: familiar.stage,
+          battles: familiarBattles?.total ?? 0, wins: familiarBattles?.wins ?? 0,
+        } : null,
+        cah: { games_played: cah?.games_played ?? 0, essence: cah?.total_souls ?? 0 },
+        rite: { games_played: rite?.games_played ?? 0 },
+      };
+    }
 
     return jsonResponse({
-      identity: identity ?? { torn_user_id: tornUserId },
+      identity: { ...(identity ?? { torn_user_id: tornUserId }), image_url: accountRow?.image_url ?? null },
       combat: {
         chain_hits: chainRow,
         war_hits: warRow,
         recent_wars: recentWars.results || [],
         custom_hits: customRow?.total_hits ?? 0,
-        oc_participation: ocParticipation?.count ?? 0,
-        oc_cpr: ocCpr.results || [],
+      },
+      oc: {
+        joined: ocJoined,
+        successful: ocSuccessful,
+        failed: ocFailed,
+        success_pct: ocJoined > 0 ? Math.round((ocSuccessful / ocJoined) * 1000) / 10 : null,
+        cpr: ocCpr.results || [],
       },
       financial: {
         armory_deposits_this_month: armoryThisMonth,
@@ -183,10 +241,11 @@ export async function getMemberProfile(request, env, user) {
         bounties_received: bountiesReceived,
       },
       activity: {
-        energy_this_month_total: energyRow?.energy_this_month ?? null,
-        energy_this_month_avg: avgEnergyThisMonth,
+        energy_this_month_total: energy.total_energy,
+        energy_this_month_avg: energy.avg_per_day,
         personal_stats: personalStats,
       },
+      games,
       warnings,
     });
   } catch (err) {

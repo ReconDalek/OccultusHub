@@ -307,6 +307,40 @@ export async function takeEnergySnapshot(env) {
   return summary;
 }
 
+// Single-member version of the energy-delta calc below — same per-faction-
+// delta logic (a member who switched factions mid-period gets credit summed
+// across both, rather than a raw MAX-MIN silently mixing two factions'
+// energy_total baselines together) and the same calendar-day average.
+// Used by memberProfileController so the profile card's energy figures
+// always match what the Energy tab itself would show for the same period.
+export async function getEnergyDeltaForUser(env, tornUserId, fromDate, toDate) {
+  const row = await env.DB.prepare(`
+    SELECT torn_user_id, SUM(faction_delta) AS total_energy
+    FROM (
+      SELECT
+        torn_user_id,
+        faction_id,
+        MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) -
+          MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS faction_delta,
+        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
+        MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date
+      FROM energy_snapshots
+      WHERE torn_user_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
+      GROUP BY torn_user_id, faction_id
+      HAVING start_date IS NOT NULL AND end_date IS NOT NULL AND faction_delta > 0
+    )
+    GROUP BY torn_user_id
+    HAVING total_energy > 0
+  `).bind(toDate, fromDate, fromDate, toDate, tornUserId, fromDate, toDate).first();
+
+  const totalEnergy = row?.total_energy ?? 0;
+  const fromTs = Date.UTC(...fromDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
+  const toTs   = Date.UTC(...toDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
+  const days   = Math.max(1, (toTs - fromTs) / 86400);
+
+  return { total_energy: totalEnergy, avg_per_day: Math.round(totalEnergy / days) };
+}
+
 // GET /api/leadership/energy?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Diffs stored snapshots between two dates to calculate energy trained in that period.
 export async function getEnergyActivity(request, env) {
