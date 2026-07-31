@@ -50,7 +50,7 @@ export async function getMemberProfile(request, env, user) {
       bountiesPlaced,
       bountiesReceived,
       energyRow,
-      latestStats,
+      monthStatsRows,
       warnings,
     ] = await Promise.all([
       env.DB.prepare(
@@ -82,7 +82,7 @@ export async function getMemberProfile(request, env, user) {
       ).bind(tornUserId).first(),
 
       env.DB.prepare(
-        `SELECT COUNT(*) AS count FROM oc_crime_slots WHERE torn_user_id=?`
+        `SELECT COUNT(*) AS count FROM oc_crime_slots WHERE torn_user_id=? AND outcome='Successful'`
       ).bind(tornUserId).first(),
 
       env.DB.prepare(
@@ -125,30 +125,43 @@ export async function getMemberProfile(request, env, user) {
          FROM bounties WHERE target_torn_id=?`
       ).bind(tornUserId).first(),
 
+      // COUNT(DISTINCT snapshot_date), not COUNT(*) — confirmed live that
+      // energy_snapshots has duplicate rows for the same date per user
+      // (~2x), which would silently deflate the average if counted raw.
       env.DB.prepare(
-        `SELECT MAX(energy_total) - MIN(energy_total) AS energy_this_month
+        `SELECT MAX(energy_total) - MIN(energy_total) AS energy_this_month, COUNT(DISTINCT snapshot_date) AS snapshot_days
          FROM energy_snapshots WHERE torn_user_id=? AND snapshot_date >= ?`
       ).bind(tornUserId, monthStart).first(),
 
+      // First and latest snapshot of THIS month, in one query — delta between
+      // them is this month's activity, not the lifetime cumulative total.
       env.DB.prepare(
         `SELECT snapshot_date, stats FROM personal_stats_snapshots
-         WHERE torn_user_id=? ORDER BY snapshot_date DESC LIMIT 1`
-      ).bind(tornUserId).first(),
+         WHERE torn_user_id=? AND snapshot_date >= ? ORDER BY snapshot_date ASC`
+      ).bind(tornUserId, monthStart).all(),
 
       getWarningsForMember(env, tornUserId),
     ]);
 
+    // This-month delta, not lifetime cumulative — same MIN/MAX-date pattern
+    // enrichEnergyAndOD (warController.js) uses for OD deltas over a war period.
     let personalStats = null;
-    if (latestStats?.stats) {
+    const statsRows = monthStatsRows.results || [];
+    if (statsRows.length) {
       try {
-        const statsObj = JSON.parse(latestStats.stats);
-        personalStats = { snapshot_date: latestStats.snapshot_date };
+        const firstObj = JSON.parse(statsRows[0].stats);
+        const lastObj  = JSON.parse(statsRows[statsRows.length - 1].stats);
+        personalStats = { since_date: statsRows[0].snapshot_date, as_of_date: statsRows[statsRows.length - 1].snapshot_date };
         for (const key of PROFILE_STAT_KEYS) {
           const field = PERSONAL_STAT_FIELDS.find(f => f.key === key);
-          if (field) personalStats[key] = { label: field.label, value: getPath(statsObj, field.path) };
+          if (field) personalStats[key] = { label: field.label, value: getPath(lastObj, field.path) - getPath(firstObj, field.path) };
         }
       } catch { /* malformed snapshot — leave personalStats null */ }
     }
+
+    const avgEnergyThisMonth = energyRow?.snapshot_days > 1
+      ? Math.round((energyRow.energy_this_month ?? 0) / (energyRow.snapshot_days - 1))
+      : null;
 
     return jsonResponse({
       identity: identity ?? { torn_user_id: tornUserId },
@@ -170,7 +183,8 @@ export async function getMemberProfile(request, env, user) {
         bounties_received: bountiesReceived,
       },
       activity: {
-        energy_this_month: energyRow?.energy_this_month ?? null,
+        energy_this_month_total: energyRow?.energy_this_month ?? null,
+        energy_this_month_avg: avgEnergyThisMonth,
         personal_stats: personalStats,
       },
       warnings,

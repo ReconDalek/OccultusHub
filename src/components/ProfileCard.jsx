@@ -92,14 +92,14 @@ export default function ProfileCard({ tornUserId, onClose }) {
 
         {data && !loading && !error && (
           <>
-            {/* Combat / War */}
+            {/* Combat / War — all lifetime totals, not this-month */}
             <div style={sectionStyle}>
-              <p style={sectionTitle}>Combat & War</p>
-              <Row label="Chain Attacks / Respect" value={`${fmt(data.combat.chain_hits?.total_attacks)} / ${fmt(Math.round(data.combat.chain_hits?.total_respect))}`} />
-              <Row label="War Hits" value={fmt(data.combat.war_hits?.war_hits)} color="#4ade80" />
-              <Row label="War Payout Total" value={fmtMoney(data.combat.war_hits?.payout_amount)} color="#4ade80" />
-              <Row label="Custom / Event Hits" value={fmt(data.combat.custom_hits)} />
-              <Row label="OC Slots Filled" value={fmt(data.combat.oc_participation)} />
+              <p style={sectionTitle}>Combat & War (Totals)</p>
+              <Row label="Total Chain Attacks / Respect" value={`${fmt(data.combat.chain_hits?.total_attacks)} / ${fmt(Math.round(data.combat.chain_hits?.total_respect))}`} />
+              <Row label="Total War Hits" value={fmt(data.combat.war_hits?.war_hits)} color="#4ade80" />
+              <Row label="Total War Payouts" value={fmtMoney(data.combat.war_hits?.payout_amount)} color="#4ade80" />
+              <Row label="Total Custom / Event Hits" value={fmt(data.combat.custom_hits)} />
+              <Row label="Total OCs Completed" value={fmt(data.combat.oc_participation)} />
               {data.combat.recent_wars?.length > 0 && (
                 <div style={{ marginTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
                   <p style={{ fontSize: '11px', color: "var(--text-faint)", margin: '0 0 6px' }}>Recent wars</p>
@@ -149,16 +149,17 @@ export default function ProfileCard({ tornUserId, onClose }) {
               )}
             </div>
 
-            {/* Activity */}
+            {/* Activity — this month only, not lifetime totals */}
             <div style={sectionStyle}>
-              <p style={sectionTitle}>Activity</p>
-              <Row label="Energy Trained (this month)" value={fmt(data.activity.energy_this_month)} />
+              <p style={sectionTitle}>Activity (This Month)</p>
+              <Row label="Total Energy Trained" value={fmt(data.activity.energy_this_month_total)} />
+              <Row label="Average Daily Energy" value={fmt(data.activity.energy_this_month_avg)} />
               {data.activity.personal_stats && (
                 <>
-                  {Object.entries(data.activity.personal_stats).filter(([k]) => k !== 'snapshot_date').map(([k, v]) => (
+                  {Object.entries(data.activity.personal_stats).filter(([k]) => !['since_date', 'as_of_date'].includes(k)).map(([k, v]) => (
                     <Row key={k} label={v.label} value={fmt(v.value)} color={k === 'drug_overdoses' && v.value > 0 ? '#f87171' : undefined} />
                   ))}
-                  <p style={{ fontSize: '10px', color: "var(--text-faint)", marginTop: '6px' }}>as of {data.activity.personal_stats.snapshot_date}</p>
+                  <p style={{ fontSize: '10px', color: "var(--text-faint)", marginTop: '6px' }}>{data.activity.personal_stats.since_date} → {data.activity.personal_stats.as_of_date}</p>
                 </>
               )}
             </div>
