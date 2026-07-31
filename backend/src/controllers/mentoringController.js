@@ -1,5 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { fetchTornAccountAge } from '../services/tornApiService.js';
+import { getWarningsForMember } from './warningsController.js';
+import { getEnergyDeltaForUser } from './activityController.js';
 
 // Frozen bracket lookup — account age (days) at the moment a mentee first
 // reaches level 15 in Torn, NOT days in faction. Reused by the auto-detect
@@ -16,6 +18,16 @@ export function getIncentiveAmount(ageDays) {
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function monthStartDate() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+function monthEndDate() {
+  const now = new Date();
+  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 }
 
 // D1 DATETIME strings have no timezone marker — must append 'Z' before
@@ -172,14 +184,18 @@ export async function addMentee(request, env, user) {
     const { torn_user_id, username, faction_id, timezone_offset, mentor_id, notes } = await request.json();
     if (!torn_user_id || !username) return errorResponse('Missing required fields: torn_user_id, username', 400);
 
-    const account_age_at_added = await fetchTornAccountAge(env, torn_user_id);
+    const [account_age_at_added, memberRow] = await Promise.all([
+      fetchTornAccountAge(env, torn_user_id),
+      env.DB.prepare(`SELECT level FROM faction_members WHERE torn_user_id=?`).bind(torn_user_id).first(),
+    ]);
+    const level_at_added = memberRow?.level ?? null;
 
     const { meta } = await env.DB.prepare(`
-      INSERT INTO mentees (torn_user_id, username, faction_id, timezone_offset, mentor_id, notes, added_by, account_age_at_added)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO mentees (torn_user_id, username, faction_id, timezone_offset, mentor_id, notes, added_by, account_age_at_added, level_at_added)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       torn_user_id, username, faction_id ?? null, timezone_offset ?? null,
-      mentor_id ?? null, notes || null, user.tornUserId, account_age_at_added
+      mentor_id ?? null, notes || null, user.tornUserId, account_age_at_added, level_at_added
     ).run();
 
     return jsonResponse({ message: 'Mentee added', id: meta.last_row_id, accountAgeDetected: account_age_at_added != null });
@@ -296,6 +312,113 @@ export async function removeMentee(request, env, user, access) {
   } catch (err) {
     console.error('removeMentee error:', err);
     return errorResponse('Failed to remove mentee', 500);
+  }
+}
+
+// GET /api/leadership/mentoring/mentees/:id/report — leader or mentor,
+// unrestricted read (no per-mentee ownership check — it's read-only info
+// already visible in the overview list to both roles). A "minimized profile
+// card" oriented around new-player progress rather than full member detail —
+// reuses the same queries/helpers memberProfileController.js already built.
+export async function getMenteeReport(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').slice(-2, -1)[0], 10);
+    if (!id) return errorResponse('Invalid mentee ID', 400);
+
+    const mentee = await env.DB.prepare(`
+      SELECT me.*, fm.level, fm.faction_position, fm.days_in_faction, fm.joined_at, fm.is_active AS member_is_active,
+             fm.faction_id AS current_faction_id, mt.username AS mentor_username
+      FROM mentees me
+      LEFT JOIN faction_members fm ON fm.torn_user_id = me.torn_user_id
+      LEFT JOIN mentors mt ON mt.id = me.mentor_id
+      WHERE me.id = ?
+    `).bind(id).first();
+    if (!mentee) return errorResponse('Mentee not found', 404);
+
+    const tornUserId = mentee.torn_user_id;
+    const monthStart = monthStartDate();
+    const monthEnd = monthEndDate();
+
+    const [chainRow, warRow, recentWars, customRow, ocSummary, energy, warnings] = await Promise.all([
+      env.DB.prepare(
+        `SELECT COALESCE(SUM(total_attacks),0) AS total_attacks, COALESCE(SUM(total_respect),0) AS total_respect
+         FROM chain_hits WHERE torn_user_id=?`
+      ).bind(tornUserId).first(),
+
+      env.DB.prepare(
+        `SELECT COALESCE(SUM(war_hits),0) AS war_hits, COALESCE(SUM(outside_hits),0) AS outside_hits,
+                COALESCE(SUM(assists),0) AS assists, COALESCE(SUM(respect_gained),0) AS respect_gained,
+                COALESCE(SUM(payout_amount),0) AS payout_amount
+         FROM war_hits WHERE torn_user_id=?`
+      ).bind(tornUserId).first(),
+
+      env.DB.prepare(
+        `SELECT wh.ranked_war_id, wh.war_hits, wh.respect_gained, wh.payout_amount,
+                w.opponent_faction_name, w.ended_at
+         FROM war_hits wh LEFT JOIN ranked_wars w ON w.id = wh.ranked_war_id
+         WHERE wh.torn_user_id=? ORDER BY w.ended_at DESC LIMIT 5`
+      ).bind(tornUserId).all(),
+
+      env.DB.prepare(
+        `SELECT COALESCE(SUM(hits),0) AS total_hits FROM custom_hits WHERE torn_user_id=?`
+      ).bind(tornUserId).first(),
+
+      env.DB.prepare(
+        `SELECT COUNT(*) AS joined,
+                SUM(CASE WHEN outcome='Successful' THEN 1 ELSE 0 END) AS successful,
+                SUM(CASE WHEN outcome IN ('Failed','Hospitalized','Jailed','Injured') THEN 1 ELSE 0 END) AS failed
+         FROM oc_crime_slots WHERE torn_user_id=?`
+      ).bind(tornUserId).first(),
+
+      getEnergyDeltaForUser(env, tornUserId, monthStart, monthEnd),
+
+      getWarningsForMember(env, tornUserId),
+    ]);
+
+    const daysTracked = daysElapsedSince(mentee.added_at);
+    const levelsGained = (mentee.level_at_added != null && mentee.level != null)
+      ? mentee.level - mentee.level_at_added
+      : null;
+    const avgDailyLevelGain = (levelsGained != null && daysTracked > 0)
+      ? Math.round((levelsGained / daysTracked) * 100) / 100
+      : null;
+
+    const ocJoined = ocSummary?.joined ?? 0;
+    const ocSuccessful = ocSummary?.successful ?? 0;
+    const ocFailed = ocSummary?.failed ?? 0;
+
+    return jsonResponse({
+      identity: {
+        torn_user_id: tornUserId, username: mentee.username, level: mentee.level,
+        faction_position: mentee.faction_position, current_faction_id: mentee.current_faction_id,
+        is_active: mentee.member_is_active, joined_at: mentee.joined_at, days_in_faction: mentee.days_in_faction,
+      },
+      progress: {
+        added_at: mentee.added_at, days_tracked: daysTracked,
+        level_at_added: mentee.level_at_added, levels_gained: levelsGained, avg_daily_level_gain: avgDailyLevelGain,
+      },
+      mentoring: {
+        status: mentee.status, mentor_username: mentee.mentor_username,
+        steps: {
+          first_mailer: !!mentee.step_first_mailer, mansion_offer: !!mentee.step_mansion_offer,
+          joined_discord: !!mentee.step_joined_discord, joined_tornstats: !!mentee.step_joined_tornstats,
+        },
+        incentive_amount: mentee.incentive_amount, incentive_paid: !!mentee.incentive_paid,
+      },
+      combat: {
+        chain_hits: chainRow, war_hits: warRow, recent_wars: recentWars.results || [],
+        custom_hits: customRow?.total_hits ?? 0,
+      },
+      oc: {
+        joined: ocJoined, successful: ocSuccessful, failed: ocFailed,
+        success_pct: ocJoined > 0 ? Math.round((ocSuccessful / ocJoined) * 1000) / 10 : null,
+      },
+      activity: { energy_this_month_total: energy.total_energy, energy_this_month_avg: energy.avg_per_day },
+      warnings,
+    });
+  } catch (err) {
+    console.error('getMenteeReport error:', err);
+    return errorResponse('Failed to generate mentee report', 500);
   }
 }
 

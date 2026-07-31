@@ -287,6 +287,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/mentoring/resources' && method === 'GET') {
       return mentoringController.getMentorResources(request, env, user, access);
     }
+    if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+\/report$/) && method === 'GET') {
+      return mentoringController.getMenteeReport(request, env, user, access);
+    }
     if (pathname.match(/^\/api\/leadership\/mentoring\/mentees\/\d+$/) && method === 'PUT') {
       return mentoringController.updateMentee(request, env, user, access);
     }

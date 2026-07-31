@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
+import MenteeReportModal from './MenteeReportModal'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
 const token = () => localStorage.getItem('occultusSession')
@@ -310,6 +311,7 @@ function MentorsPanel({ mentors, members, mentees, onRefresh, restricted }) {
 
 function MenteeCard({ mentee, mentors, onRefresh, canEdit }) {
   const [expanded, setExpanded] = useState(false)
+  const [showReport, setShowReport] = useState(false)
   const [ageAtAddedInput, setAgeAtAddedInput] = useState(mentee.account_age_at_added ?? '')
   const [ageInput, setAgeInput] = useState(mentee.account_age_days_at_level_15 ?? '')
   const [dateInput, setDateInput] = useState(mentee.level_15_reached_at ?? '')
@@ -520,17 +522,25 @@ function MenteeCard({ mentee, mentors, onRefresh, canEdit }) {
             )}
           </div>
 
-          {canEdit && mentee.status === 'active' && (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={complete} style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.2)', background: 'rgba(74,222,128,0.08)', color: '#4ade80', cursor: 'pointer', fontSize: '12px' }}>
-                Mark Completed
-              </button>
-              <button onClick={remove} style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: 'pointer', fontSize: '12px' }}>
-                Remove
-              </button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button onClick={() => setShowReport(true)} style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid rgba(139,92,246,0.3)', background: 'rgba(139,92,246,0.1)', color: '#a78bfa', cursor: 'pointer', fontSize: '12px' }}>
+              Generate Report
+            </button>
+            {canEdit && mentee.status === 'active' && (
+              <>
+                <button onClick={complete} style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.2)', background: 'rgba(74,222,128,0.08)', color: '#4ade80', cursor: 'pointer', fontSize: '12px' }}>
+                  Mark Completed
+                </button>
+                <button onClick={remove} style={{ padding: '6px 16px', borderRadius: '6px', border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: 'pointer', fontSize: '12px' }}>
+                  Remove
+                </button>
+              </>
+            )}
+          </div>
         </div>
+      )}
+      {showReport && (
+        <MenteeReportModal menteeId={mentee.id} menteeName={mentee.username} onClose={() => setShowReport(false)} />
       )}
     </div>
   )
