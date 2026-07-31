@@ -134,6 +134,44 @@ export async function getRandomUserApiKey(env) {
   }
 }
 
+// Fetches a Torn account's age in days at the moment this is called (profile.age).
+// Public endpoint — no faction-specific permission needed, so any stored key works,
+// not just a staff/leadership one. Used by the mentoring feature at add-time to
+// auto-detect a mentee's current account age instead of manual entry. Returns null
+// on any failure (no key available, API error) — callers should treat that as
+// "unknown, needs manual entry," not "age is zero."
+export async function fetchTornAccountAge(env, tornUserId) {
+  const apiKeyObj = await getRandomUserApiKey(env);
+  if (!apiKeyObj?.key) {
+    await logError(env, { category: 'api_error', event: 'mentoring_age_fetch_no_key', message: 'No API key available for mentee age lookup', meta: { targetTornUserId: tornUserId } });
+    return null;
+  }
+  const url = `${TORN_API_BASE}/user/${tornUserId}/profile?striptags=true&comment=OccHub`;
+  try {
+    const data = await fetchWithRetry(url, authHeader(apiKeyObj.key));
+    const age = data?.profile?.age;
+    if (typeof age !== 'number') {
+      await logError(env, { category: 'api_error', event: 'mentoring_age_fetch_bad_shape', message: 'Torn profile response had no numeric age field', torn_user_id: apiKeyObj.tornUserId, username: apiKeyObj.username, meta: { targetTornUserId: tornUserId, endpoint: url } });
+      return null;
+    }
+    await logInfo(env, {
+      category: 'api_call', event: 'mentoring_age_fetch_success',
+      message: `Fetched account age for mentee ${tornUserId}: ${age} days`,
+      torn_user_id: apiKeyObj.tornUserId, username: apiKeyObj.username,
+      meta: { targetTornUserId: tornUserId, age, endpoint: url },
+    });
+    return age;
+  } catch (error) {
+    await logError(env, {
+      category: 'api_error', event: 'mentoring_age_fetch_failed',
+      message: `Failed to fetch account age for mentee ${tornUserId}: ${error.message}`,
+      torn_user_id: apiKeyObj.tornUserId, username: apiKeyObj.username,
+      meta: { targetTornUserId: tornUserId, endpoint: url, error: error.message },
+    });
+    return null;
+  }
+}
+
 // Fetches faction data for all factions using a faction-specific API key per faction.
 export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigger = 'cron') {
   let fetched = 0;

@@ -158,10 +158,10 @@ function AddMentorModal({ members, mentors, onClose, onAdded }) {
 function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
   const [picked, setPicked] = useState(null)
   const [timezone, setTimezone] = useState('')
-  const [accountAge, setAccountAge] = useState('')
   const [mentorId, setMentorId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [ageWarning, setAgeWarning] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -174,16 +174,30 @@ function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
         body: JSON.stringify({
           torn_user_id: picked.torn_user_id, username: picked.username, faction_id: picked.faction_id,
           timezone_offset: timezone !== '' ? parseFloat(timezone) : null,
-          account_age_at_added: accountAge !== '' ? parseInt(accountAge, 10) : null,
           mentor_id: mentorId !== '' ? parseInt(mentorId, 10) : null,
         }),
       })
       const data = await res.json()
       if (data.error) { setError(data.error); return }
       onAdded()
+      if (!data.accountAgeDetected) { setAgeWarning(true); return }
       onClose()
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
+  }
+
+  if (ageWarning) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', padding: '16px' }}
+        onClick={e => e.target === e.currentTarget && onClose()}>
+        <div style={{ background: '#12121a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '420px' }}>
+          <p style={{ color: '#fbbf24', fontSize: '13px', margin: '0 0 16px' }}>
+            {picked?.username} was added, but automatic account-age detection failed (Torn API error). Enter their age manually on the mentee's card under "Level 15 Incentive Tracking".
+          </p>
+          <button onClick={onClose} style={{ padding: '9px 24px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.8)', color: '#fff', cursor: 'pointer', fontSize: '13px' }}>OK</button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -205,12 +219,8 @@ function AddMenteeModal({ members, mentees, mentors, onClose, onAdded }) {
             ) : (
               <MemberPicker members={members} excludeIds={mentees.filter(m => m.status === 'active').map(m => m.torn_user_id)} onPick={setPicked} />
             )}
-          </div>
-          <div>
-            <label style={labelStyle}>Current account age (days) *</label>
-            <input type="number" min="0" style={inputStyle} value={accountAge} onChange={e => setAccountAge(e.target.value)} placeholder="e.g. 8" />
-            <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '4px 0 0' }}>
-              Counts up by 1 each day automatically and freezes once level 15 is detected — editable later if entered wrong.
+            <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '6px 0 0' }}>
+              Account age is auto-detected via the Torn API on add and counts up daily from there.
             </p>
           </div>
           <div>
@@ -431,7 +441,7 @@ function MenteeCard({ mentee, mentors, onRefresh, canEdit }) {
             {!levelFifteenFrozen ? (
               <>
                 <div style={{ marginBottom: '8px' }}>
-                  <label style={{ ...labelStyle, fontSize: '11px' }}>Account age at time added (days)</label>
+                  <label style={{ ...labelStyle, fontSize: '11px' }}>Account age when added (days, auto-detected)</label>
                   {canEdit ? (
                     <input type="number" style={inputStyle} value={ageAtAddedInput} onChange={e => setAgeAtAddedInput(e.target.value)} />
                   ) : (

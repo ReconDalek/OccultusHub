@@ -1,4 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { fetchTornAccountAge } from '../services/tornApiService.js';
 
 // Frozen bracket lookup — account age (days) at the moment a mentee first
 // reaches level 15 in Torn, NOT days in faction. Reused by the auto-detect
@@ -158,21 +159,25 @@ export async function updateMentor(request, env) {
 }
 
 // POST /api/leadership/mentoring/mentees — leader only
-// Body: { torn_user_id, username, faction_id, timezone_offset?, mentor_id?, notes?, account_age_at_added? }
+// Body: { torn_user_id, username, faction_id, timezone_offset?, mentor_id?, notes? }
+// Account age is auto-detected via Torn's public profile endpoint, not entered
+// manually — falls back to NULL (editable later in the UI) if the fetch fails.
 export async function addMentee(request, env, user) {
   try {
-    const { torn_user_id, username, faction_id, timezone_offset, mentor_id, notes, account_age_at_added } = await request.json();
+    const { torn_user_id, username, faction_id, timezone_offset, mentor_id, notes } = await request.json();
     if (!torn_user_id || !username) return errorResponse('Missing required fields: torn_user_id, username', 400);
+
+    const account_age_at_added = await fetchTornAccountAge(env, torn_user_id);
 
     const { meta } = await env.DB.prepare(`
       INSERT INTO mentees (torn_user_id, username, faction_id, timezone_offset, mentor_id, notes, added_by, account_age_at_added)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       torn_user_id, username, faction_id ?? null, timezone_offset ?? null,
-      mentor_id ?? null, notes || null, user.tornUserId, account_age_at_added ?? null
+      mentor_id ?? null, notes || null, user.tornUserId, account_age_at_added
     ).run();
 
-    return jsonResponse({ message: 'Mentee added', id: meta.last_row_id });
+    return jsonResponse({ message: 'Mentee added', id: meta.last_row_id, accountAgeDetected: account_age_at_added != null });
   } catch (err) {
     console.error('addMentee error:', err);
     return errorResponse('Failed to add mentee', 500);
