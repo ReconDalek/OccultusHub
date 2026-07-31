@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS mentor_resources (
   title TEXT NOT NULL,
   url TEXT,
   body TEXT,
+  source_code TEXT,
   created_by INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

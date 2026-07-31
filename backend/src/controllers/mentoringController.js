@@ -442,14 +442,14 @@ export async function getMentorResources(request, env) {
 // Body: { category, title, url?, body? }
 export async function addMentorResource(request, env, user) {
   try {
-    const { category, title, url, body } = await request.json();
+    const { category, title, url, body, source_code } = await request.json();
     if (!category || !title) return errorResponse('Missing required fields: category, title', 400);
     if (!['link', 'mailer', 'other'].includes(category)) return errorResponse('Invalid category', 400);
 
     const { meta } = await env.DB.prepare(`
-      INSERT INTO mentor_resources (category, title, url, body, created_by)
-      VALUES (?, ?, ?, ?, ?)
-    `).bind(category, title, url || null, body || null, user.userId ?? null).run();
+      INSERT INTO mentor_resources (category, title, url, body, source_code, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(category, title, url || null, body || null, source_code || null, user.userId ?? null).run();
 
     return jsonResponse({ message: 'Resource added', id: meta.last_row_id });
   } catch (err) {

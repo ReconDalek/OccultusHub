@@ -633,6 +633,60 @@ function OverviewSubTab({ restricted, mentorId }) {
 
 const CATEGORY_LABEL = { link: 'Helpful Links', mailer: 'Example Mailers', other: 'Other' }
 
+function ResourceRow({ r, restricted, onDelete }) {
+  const [showCode, setShowCode] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(r.source_code || '')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* clipboard unavailable — ignore */ }
+  }
+
+  return (
+    <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{r.title}</div>
+          {r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: '12px' }}>{r.url}</a>}
+          {r.body && <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{r.body}</p>}
+          <p style={{ color: 'var(--text-faint)', fontSize: '10px', margin: '4px 0 0' }}>Added by {r.created_by_username || 'unknown'}</p>
+        </div>
+        {!restricted && (
+          <button onClick={() => onDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}>×</button>
+        )}
+      </div>
+
+      {r.source_code && (
+        <div style={{ marginTop: '8px' }}>
+          <button onClick={() => setShowCode(s => !s)} style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '11px', padding: 0 }}>
+            {showCode ? '▲ Hide Source Code' : '▼ Show Source Code'}
+          </button>
+          {showCode && (
+            <div style={{ marginTop: '6px', position: 'relative' }}>
+              <pre style={{
+                margin: 0, padding: '10px 12px', paddingRight: '70px', borderRadius: '6px',
+                background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.08)',
+                color: '#d1d5db', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                maxHeight: '260px', overflowY: 'auto',
+              }}>{r.source_code}</pre>
+              <button onClick={copyCode} style={{
+                position: 'absolute', top: '8px', right: '8px', padding: '3px 10px', borderRadius: '6px',
+                border: '1px solid rgba(139,92,246,0.3)', background: copied ? 'rgba(74,222,128,0.15)' : 'rgba(139,92,246,0.1)',
+                color: copied ? '#4ade80' : '#a78bfa', cursor: 'pointer', fontSize: '11px',
+              }}>
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ToolsSubTab({ restricted }) {
   const [resources, setResources] = useState([])
   const [loading, setLoading] = useState(true)
@@ -640,6 +694,7 @@ function ToolsSubTab({ restricted }) {
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
   const [body, setBody] = useState('')
+  const [sourceCode, setSourceCode] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { fetchResources() }, [])
@@ -660,9 +715,9 @@ function ToolsSubTab({ restricted }) {
     setSaving(true)
     await fetch(`${API_BASE_URL}/api/leadership/mentoring/resources`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: token() },
-      body: JSON.stringify({ category, title: title.trim(), url: url.trim() || null, body: body.trim() || null }),
+      body: JSON.stringify({ category, title: title.trim(), url: url.trim() || null, body: body.trim() || null, source_code: sourceCode.trim() || null }),
     })
-    setTitle(''); setUrl(''); setBody('')
+    setTitle(''); setUrl(''); setBody(''); setSourceCode('')
     setSaving(false)
     fetchResources()
   }
@@ -696,6 +751,12 @@ function ToolsSubTab({ restricted }) {
               <input style={inputStyle} placeholder="URL" value={url} onChange={e => setUrl(e.target.value)} />
             )}
             <textarea rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Body / description (optional)" value={body} onChange={e => setBody(e.target.value)} />
+            {category === 'mailer' && (
+              <div>
+                <label style={labelStyle}>Source Code (optional — hidden until expanded on the card)</label>
+                <textarea rows={5} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace' }} placeholder="Paste the mailer's source code…" value={sourceCode} onChange={e => setSourceCode(e.target.value)} />
+              </div>
+            )}
             <button type="submit" disabled={saving || !title.trim()} style={{ alignSelf: 'flex-end', padding: '8px 20px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.8)', color: '#fff', cursor: 'pointer', fontSize: '13px', opacity: (saving || !title.trim()) ? 0.5 : 1 }}>
               {saving ? 'Saving…' : 'Add'}
             </button>
@@ -711,19 +772,7 @@ function ToolsSubTab({ restricted }) {
             <h4 style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>{CATEGORY_LABEL[cat]}</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {items.map(r => (
-                <div key={r.id} style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{r.title}</div>
-                      {r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: '12px' }}>{r.url}</a>}
-                      {r.body && <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{r.body}</p>}
-                      <p style={{ color: 'var(--text-faint)', fontSize: '10px', margin: '4px 0 0' }}>Added by {r.created_by_username || 'unknown'}</p>
-                    </div>
-                    {!restricted && (
-                      <button onClick={() => handleDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}>×</button>
-                    )}
-                  </div>
-                </div>
+                <ResourceRow key={r.id} r={r} restricted={restricted} onDelete={handleDelete} />
               ))}
             </div>
           </div>
