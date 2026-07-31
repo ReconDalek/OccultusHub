@@ -635,6 +635,7 @@ const CATEGORY_LABEL = { link: 'Helpful Links', mailer: 'Example Mailers', other
 
 function ResourceRow({ r, restricted, onDelete }) {
   const [showCode, setShowCode] = useState(false)
+  const [viewMode, setViewMode] = useState('source') // 'source' | 'preview'
   const [copied, setCopied] = useState(false)
 
   async function copyCode() {
@@ -644,6 +645,13 @@ function ResourceRow({ r, restricted, onDelete }) {
       setTimeout(() => setCopied(false), 2000)
     } catch { /* clipboard unavailable — ignore */ }
   }
+
+  const toggleBtnStyle = (active) => ({
+    padding: '3px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+    border: `1px solid ${active ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
+    background: active ? 'rgba(139,92,246,0.18)' : 'transparent',
+    color: active ? '#a78bfa' : 'var(--text-secondary)',
+  })
 
   return (
     <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -665,20 +673,35 @@ function ResourceRow({ r, restricted, onDelete }) {
             {showCode ? '▲ Hide Source Code' : '▼ Show Source Code'}
           </button>
           {showCode && (
-            <div style={{ marginTop: '6px', position: 'relative' }}>
-              <pre style={{
-                margin: 0, padding: '10px 12px', paddingRight: '70px', borderRadius: '6px',
-                background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.08)',
-                color: '#d1d5db', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                maxHeight: '260px', overflowY: 'auto',
-              }}>{r.source_code}</pre>
-              <button onClick={copyCode} style={{
-                position: 'absolute', top: '8px', right: '8px', padding: '3px 10px', borderRadius: '6px',
-                border: '1px solid rgba(139,92,246,0.3)', background: copied ? 'rgba(74,222,128,0.15)' : 'rgba(139,92,246,0.1)',
-                color: copied ? '#4ade80' : '#a78bfa', cursor: 'pointer', fontSize: '11px',
-              }}>
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
+            <div style={{ marginTop: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => setViewMode('source')} style={toggleBtnStyle(viewMode === 'source')}>Source</button>
+                  <button onClick={() => setViewMode('preview')} style={toggleBtnStyle(viewMode === 'preview')}>Preview</button>
+                </div>
+                <button onClick={copyCode} style={{
+                  padding: '3px 10px', borderRadius: '6px',
+                  border: '1px solid rgba(139,92,246,0.3)', background: copied ? 'rgba(74,222,128,0.15)' : 'rgba(139,92,246,0.1)',
+                  color: copied ? '#4ade80' : '#a78bfa', cursor: 'pointer', fontSize: '11px',
+                }}>
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              {viewMode === 'source' ? (
+                <pre style={{
+                  margin: 0, padding: '10px 12px', borderRadius: '6px',
+                  background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.08)',
+                  color: '#d1d5db', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  maxHeight: '260px', overflowY: 'auto',
+                }}>{r.source_code}</pre>
+              ) : (
+                <iframe
+                  srcDoc={r.source_code}
+                  sandbox=""
+                  title={`Preview: ${r.title}`}
+                  style={{ width: '100%', height: '300px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', background: '#fff' }}
+                />
+              )}
             </div>
           )}
         </div>

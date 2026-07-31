@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { API_BASE_URL } from '../config/api'
 
 const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
@@ -52,7 +53,7 @@ export default function ProfileCard({ tornUserId, onClose }) {
       .finally(() => setLoading(false))
   }, [tornUserId])
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}
@@ -206,6 +207,7 @@ export default function ProfileCard({ tornUserId, onClose }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
