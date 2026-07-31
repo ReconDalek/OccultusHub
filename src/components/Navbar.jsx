@@ -6,6 +6,7 @@ import { useSite } from '../contexts/SiteContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
 import LoginModal from './LoginModal'
 import Grimoire   from './Grimoire'
+import ProfileCard from './ProfileCard'
 
 const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
 
@@ -46,6 +47,7 @@ export default function Navbar() {
   const [dropdownOpen, setDropdown]     = useState(false)
   const [grimoireOpen, setGrimoire]     = useState(false)
   const [grimoirePage, setGrimoirePage] = useState(null)
+  const [profileOpen, setProfileOpen]   = useState(false)
   const dropdownRef  = useRef(null)
   const logoClickRef = useRef({ count: 0, timer: null })
 
@@ -214,6 +216,15 @@ export default function Navbar() {
                     </div>
 
                     <div className="mt-4 flex flex-col gap-2">
+                      {user.tornUserId && (
+                        <button
+                          onClick={() => { setProfileOpen(true); setDropdown(false) }}
+                          className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"
+                          style={{ background: 'rgba(255,255,255,0.06)' }}
+                        >
+                          View Full Profile
+                        </button>
+                      )}
                       {user.isLeader && pages.leadership && (
                         <Link
                           to="/leadership"
@@ -334,6 +345,9 @@ export default function Navbar() {
 
       <LoginModal open={modalOpen} onClose={() => setModalOpen(false)} />
       <Grimoire open={grimoireOpen} onClose={() => { setGrimoire(false); setGrimoirePage(null) }} openToPage={grimoirePage} />
+      {profileOpen && user?.tornUserId && (
+        <ProfileCard tornUserId={user.tornUserId} onClose={() => setProfileOpen(false)} />
+      )}
     </>
   )
 }

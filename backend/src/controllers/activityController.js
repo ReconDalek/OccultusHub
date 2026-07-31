@@ -5,7 +5,7 @@ import { logInfo, logWarn, logError } from '../services/logger.js';
 // ── Personal stats field definitions ─────────────────────────────────────────
 // Each entry: key (internal), path (nested cat=all format), label, category,
 // stat (Torn v2 ?stat= name — null means private/unavailable via public API).
-const PERSONAL_STAT_FIELDS = [
+export const PERSONAL_STAT_FIELDS = [
   // Attacking — Attacks
   { key: 'atk_won',          path: ['attacking','attacks','won'],                         label: 'Attacks Won',          category: 'attacking',     stat: 'attackswon'            },
   { key: 'atk_lost',         path: ['attacking','attacks','lost'],                        label: 'Attacks Lost',         category: 'attacking',     stat: 'attackslost'           },

@@ -2,6 +2,37 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 
+// Shared by getWarnings (?member=) and memberProfileController — one member's
+// warnings, joined with faction_members for is_active + level.
+export async function getWarningsForMember(env, tornUserId) {
+  const { results } = await env.DB.prepare(
+    `SELECT
+       w.id,
+       w.torn_user_id,
+       w.username,
+       w.date_reported,
+       w.date_issued,
+       w.period,
+       w.period_month,
+       w.period_year,
+       w.warning_type,
+       w.target_value,
+       w.achieved_value,
+       w.comment,
+       w.issued_by,
+       w.issued_by_username,
+       w.created_at,
+       fm.is_active,
+       fm.level,
+       fm.faction_id AS current_faction_id
+     FROM member_warnings w
+     LEFT JOIN faction_members fm ON fm.torn_user_id = w.torn_user_id
+     WHERE w.torn_user_id = ?
+     ORDER BY w.date_reported DESC, w.id DESC`
+  ).bind(tornUserId).all();
+  return results || [];
+}
+
 // GET /api/leadership/warnings
 // Returns all warnings joined with faction_members for is_active + level.
 // Optional ?member=torn_user_id to filter to one member.
@@ -10,42 +41,37 @@ export async function getWarnings(request, env) {
     const url      = new URL(request.url);
     const memberId = url.searchParams.get('member');
 
-    let query = `
-      SELECT
-        w.id,
-        w.torn_user_id,
-        w.username,
-        w.date_reported,
-        w.date_issued,
-        w.period,
-        w.period_month,
-        w.period_year,
-        w.warning_type,
-        w.target_value,
-        w.achieved_value,
-        w.comment,
-        w.issued_by,
-        w.issued_by_username,
-        w.created_at,
-        fm.is_active,
-        fm.level,
-        fm.faction_id AS current_faction_id
-      FROM member_warnings w
-      LEFT JOIN faction_members fm ON fm.torn_user_id = w.torn_user_id
-    `;
-
-    const binds = [];
     if (memberId) {
-      query += ` WHERE w.torn_user_id = ?`;
-      binds.push(parseInt(memberId, 10));
+      const warnings = await getWarningsForMember(env, parseInt(memberId, 10));
+      return jsonResponse({ warnings });
     }
 
-    query += ` ORDER BY w.date_reported DESC, w.id DESC`;
+    const { results } = await env.DB.prepare(
+      `SELECT
+         w.id,
+         w.torn_user_id,
+         w.username,
+         w.date_reported,
+         w.date_issued,
+         w.period,
+         w.period_month,
+         w.period_year,
+         w.warning_type,
+         w.target_value,
+         w.achieved_value,
+         w.comment,
+         w.issued_by,
+         w.issued_by_username,
+         w.created_at,
+         fm.is_active,
+         fm.level,
+         fm.faction_id AS current_faction_id
+       FROM member_warnings w
+       LEFT JOIN faction_members fm ON fm.torn_user_id = w.torn_user_id
+       ORDER BY w.date_reported DESC, w.id DESC`
+    ).all();
 
-    const stmt   = binds.length ? env.DB.prepare(query).bind(...binds) : env.DB.prepare(query);
-    const result = await stmt.all();
-
-    return jsonResponse({ warnings: result.results || [] });
+    return jsonResponse({ warnings: results || [] });
   } catch (err) {
     console.error('getWarnings error:', err);
     return errorResponse('Failed to fetch warnings', 500);

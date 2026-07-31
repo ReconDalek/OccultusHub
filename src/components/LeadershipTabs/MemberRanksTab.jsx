@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
+import ProfileCard from '../ProfileCard'
 
 function authHeaders() {
   const token = localStorage.getItem('occultusSession')
@@ -94,6 +95,7 @@ function MemberRow({ member, showFaction }) {
   const derived   = getDerivedRank(totalHits)
   const tier      = getRankTier(derived)
   const mismatch  = isMismatch(member.faction_position, derived)
+  const [showProfile, setShowProfile] = useState(false)
 
   return (
     <div
@@ -110,9 +112,17 @@ function MemberRow({ member, showFaction }) {
     >
       {/* Member name + optional faction tag */}
       <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
-        <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>
+        <button
+          onClick={() => setShowProfile(true)}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#f4f4f5', fontSize: '13px', fontWeight: '500', textDecoration: 'none' }}
+          onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline' }}
+          onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none' }}
+        >
           {member.username}
-        </span>
+        </button>
+        {showProfile && (
+          <ProfileCard tornUserId={member.torn_user_id} onClose={() => setShowProfile(false)} />
+        )}
         {member.level && (
           <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>Lv.{member.level}</span>
         )}

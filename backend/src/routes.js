@@ -29,6 +29,7 @@ import * as warningsController from './controllers/warningsController.js';
 import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
+import * as memberProfileController from './controllers/memberProfileController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -253,6 +254,15 @@ export async function handleRequest(request, env, ctx) {
     if (!user) return errorResponse('Authentication required', 401);
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return activityController.getEnergyActivity(request, env);
+  }
+
+  // Member profile card — self-view always allowed, viewing another member
+  // requires leadership (checked inside the controller since it depends on
+  // whether the requested id matches the caller's own).
+  const memberProfileMatch = pathname.match(/^\/api\/members\/(\d+)\/profile$/);
+  if (memberProfileMatch && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return memberProfileController.getMemberProfile(request, env, user);
   }
 
   // Forums endpoints (member auth required)
