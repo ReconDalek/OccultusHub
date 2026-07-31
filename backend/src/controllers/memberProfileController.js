@@ -253,3 +253,52 @@ export async function getMemberProfile(request, env, user) {
     return errorResponse('Failed to fetch member profile', 500);
   }
 }
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+// Same 6-month rolling window WarningsTab.jsx uses for its kick-count badge —
+// ported to the backend (UTC-explicit) rather than re-derived on the frontend.
+function getSixMonthWindowUTC() {
+  const now = new Date();
+  const endYear = now.getUTCFullYear();
+  const endMonth = now.getUTCMonth(); // 0-indexed; exclusive end = 1st of this month
+  let startYear = endYear;
+  let startMonth = endMonth - 6;
+  if (startMonth < 0) { startMonth += 12; startYear -= 1; }
+  return {
+    start: `${startYear}-${pad2(startMonth + 1)}-01`,
+    end: `${endYear}-${pad2(endMonth + 1)}-01`,
+  };
+}
+function isInWindow(periodYear, periodMonth, win) {
+  if (periodYear == null || periodMonth == null) return false;
+  const periodStr = `${periodYear}-${pad2(periodMonth)}-01`;
+  return periodStr >= win.start && periodStr < win.end;
+}
+
+// GET /api/members/nav-summary — always self (the navbar dropdown never shows
+// anyone else's data), no id param needed. Reuses the exact same
+// getEnergyDeltaForUser/getWarningsForMember calls getMemberProfile already
+// uses — no new calculations, just a lighter-weight response for a widget that
+// loads every time the dropdown opens rather than the full profile aggregate.
+export async function getNavSummary(request, env, user) {
+  try {
+    if (!user) return errorResponse('Authentication required', 401);
+    const tornUserId = user.tornUserId;
+    const monthStart = monthStartDate();
+    const monthEnd = monthEndDate();
+
+    const [energy, warnings] = await Promise.all([
+      getEnergyDeltaForUser(env, tornUserId, monthStart, monthEnd),
+      getWarningsForMember(env, tornUserId),
+    ]);
+
+    const window = getSixMonthWindowUTC();
+    const recentWarningCount = warnings.filter(w => isInWindow(w.period_year, w.period_month, window)).length;
+
+    return jsonResponse({ energy_avg: energy.avg_per_day, recent_warning_count: recentWarningCount });
+  } catch (err) {
+    console.error('getNavSummary error:', err);
+    return errorResponse('Failed to fetch nav summary', 500);
+  }
+}

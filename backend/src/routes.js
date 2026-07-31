@@ -266,6 +266,12 @@ export async function handleRequest(request, env, ctx) {
     return memberProfileController.getMemberProfile(request, env, user);
   }
 
+  // Navbar dropdown summary — always self, no id needed.
+  if (pathname === '/api/members/nav-summary' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return memberProfileController.getNavSummary(request, env, user);
+  }
+
   // Mentor/mentee program — registered outside the blanket /api/leadership/
   // gate (like the routes above) because mentors need access too, not just
   // leadership. Every mutation is leader-only except updateMentee/complete/

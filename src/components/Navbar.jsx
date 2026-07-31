@@ -5,6 +5,7 @@ import { useMentorStatus } from '../hooks/useMentorStatus'
 import { useCipher } from '../contexts/CipherContext'
 import { useSite } from '../contexts/SiteContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
+import { API_BASE_URL } from '../config/api'
 import LoginModal from './LoginModal'
 import Grimoire   from './Grimoire'
 import ProfileCard from './ProfileCard'
@@ -50,8 +51,18 @@ export default function Navbar() {
   const [grimoireOpen, setGrimoire]     = useState(false)
   const [grimoirePage, setGrimoirePage] = useState(null)
   const [profileOpen, setProfileOpen]   = useState(false)
+  const [navStats, setNavStats]         = useState(null)
   const dropdownRef  = useRef(null)
   const logoClickRef = useRef({ count: 0, timer: null })
+
+  useEffect(() => {
+    if (!dropdownOpen || !user?.tornUserId) return
+    const token = localStorage.getItem('occultusSession')
+    fetch(`${API_BASE_URL}/api/members/nav-summary`, { headers: { Authorization: token } })
+      .then(r => r.json())
+      .then(setNavStats)
+      .catch(() => {})
+  }, [dropdownOpen, user?.tornUserId])
 
   useEffect(() => {
     function handler(e) {
@@ -194,25 +205,19 @@ export default function Navbar() {
                         <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
                           {factionLabel}
                         </div>
-                        {user.fishingPoints != null && (
-                          <button
-                            onClick={() => { window.dispatchEvent(new CustomEvent('openFishingLeaderboard')); setDropdown(false) }}
-                            className="border-none bg-transparent p-0 cursor-pointer text-left block"
-                            style={{ color: '#a78bfa', fontSize: '12px', marginTop: '3px', letterSpacing: '0.03em' }}
-                            title="View void seers leaderboard"
-                          >
-                            ◈ {user.fishingPoints.toLocaleString()} void essence
-                          </button>
-                        )}
-                        {user.runePoints != null && (
-                          <button
-                            onClick={() => { window.dispatchEvent(new CustomEvent('openRuneLeaderboard')); setDropdown(false) }}
-                            className="border-none bg-transparent p-0 cursor-pointer text-left block"
-                            style={{ color: '#a78bfa', fontSize: '12px', marginTop: '1px', letterSpacing: '0.03em' }}
-                            title="View rune seers leaderboard"
-                          >
-                            ᚠ {user.runePoints.toLocaleString()} rune essence
-                          </button>
+                        {navStats && (
+                          <>
+                            <div style={{
+                              fontSize: '12px', marginTop: '3px',
+                              color: navStats.energy_avg != null && navStats.energy_avg > (Number(user.factionId) === 33097 ? 600 : 400)
+                                ? '#4ade80' : '#f87171',
+                            }}>
+                              Daily energy avg: {navStats.energy_avg != null ? navStats.energy_avg.toLocaleString('en-GB') : '—'}
+                            </div>
+                            <div style={{ fontSize: '12px', marginTop: '1px', color: navStats.recent_warning_count === 0 ? '#4ade80' : '#f87171' }}>
+                              Recent warnings: {navStats.recent_warning_count}
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
