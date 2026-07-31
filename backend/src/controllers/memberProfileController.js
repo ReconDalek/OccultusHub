@@ -187,7 +187,7 @@ export async function getMemberProfile(request, env, user) {
         env.DB.prepare(`SELECT COUNT(*) AS catches FROM fishing_catches WHERE user_id=?`).bind(internalId).first(),
         env.DB.prepare(`SELECT COUNT(*) AS casts FROM rune_casts WHERE user_id=?`).bind(internalId).first(),
         env.DB.prepare(`SELECT essence, total_essence FROM sanctum_saves WHERE user_id=?`).bind(internalId).first(),
-        env.DB.prepare(`SELECT id, species, nature, level, stage FROM familiars WHERE user_id=?`).bind(internalId).first(),
+        env.DB.prepare(`SELECT id, species, nature, name, level, stage FROM familiars WHERE user_id=?`).bind(internalId).first(),
         env.DB.prepare(
           `SELECT COUNT(DISTINCT room_id) AS games_played, COALESCE(SUM(souls),0) AS total_souls
            FROM cah_players WHERE user_id=?`
@@ -208,7 +208,7 @@ export async function getMemberProfile(request, env, user) {
         runes: { essence: accountRow.rune_points ?? 0, casts: runes?.casts ?? 0 },
         sanctum: sanctum ? { essence: sanctum.essence, total_essence: sanctum.total_essence } : null,
         binding_game: familiar ? {
-          species: familiar.species, nature: familiar.nature, level: familiar.level, stage: familiar.stage,
+          species: familiar.species, name: familiar.name, nature: familiar.nature, level: familiar.level, stage: familiar.stage,
           battles: familiarBattles?.total ?? 0, wins: familiarBattles?.wins ?? 0,
         } : null,
         cah: { games_played: cah?.games_played ?? 0, essence: cah?.total_souls ?? 0 },

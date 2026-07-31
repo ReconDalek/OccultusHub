@@ -312,8 +312,42 @@ function DuelCooldownTimer({ secs: initSecs }) {
   return <>{formatCooldown(secs)}</>
 }
 
+// Consolidates consecutive 'challenged' events from the same real attacker into
+// one group (event._group = underlying event list) so repeated duels while away
+// show as "X's familiar challenged yours N times" instead of N separate cards.
+// Only 'challenged' is a real other player's action — 'resting_challenger' etc.
+// are the login-event system simulating a random encounter using someone else's
+// stats for flavor, not something that user actually did, so those are left alone.
+function consolidateEvents(events) {
+  const result = []
+  const grouped = new Set()
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i]
+    if (grouped.has(ev.id)) continue
+    if (ev.event_type === 'challenged') {
+      const d = typeof ev.detail_json === 'string' ? JSON.parse(ev.detail_json) : ev.detail_json
+      const group = [ev]
+      for (let j = i + 1; j < events.length; j++) {
+        const other = events[j]
+        if (grouped.has(other.id) || other.event_type !== 'challenged') continue
+        const od = typeof other.detail_json === 'string' ? JSON.parse(other.detail_json) : other.detail_json
+        if (od.challenger_username === d.challenger_username) {
+          group.push(other)
+          grouped.add(other.id)
+        }
+      }
+      result.push(group.length > 1 ? { ...ev, _group: group } : ev)
+    } else {
+      result.push(ev)
+    }
+    grouped.add(ev.id)
+  }
+  return result
+}
+
 function EventCard({ event, onDismiss }) {
   const d = typeof event.detail_json === 'string' ? JSON.parse(event.detail_json) : event.detail_json
+  const group = event._group
 
   const TITLES = {
     void_surge:         'Void Surge',
@@ -328,6 +362,16 @@ function EventCard({ event, onDismiss }) {
   const ICONS = {
     void_surge: '⚡', shard_cache: '◆', nature_revelation: '✦',
     omen: '☽', shadow_encounter: '◈', resting_challenger: '⚔', challenged: '⚔',
+  }
+
+  let message = d.message
+  if (group) {
+    const wins = group.filter(g => {
+      const gd = typeof g.detail_json === 'string' ? JSON.parse(g.detail_json) : g.detail_json
+      return gd.defender_won
+    }).length
+    const losses = group.length - wins
+    message = `${d.challenger_username}'s familiar challenged yours ${group.length} times while you were away — you won ${wins}, lost ${losses}.`
   }
 
   return (
@@ -345,8 +389,8 @@ function EventCard({ event, onDismiss }) {
           {TITLES[event.event_type]}
         </span>
       </div>
-      <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.65, margin: 0 }}>{d.message}</p>
-      {(d.xp || d.shards || d.bonusXp || d.bonusShards) && (
+      <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.65, margin: 0 }}>{message}</p>
+      {!group && (d.xp || d.shards || d.bonusXp || d.bonusShards) && (
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           {(d.xp || d.bonusXp) && (
             <span style={{ fontSize: 11, padding: '2px 8px', background: 'rgba(109,40,217,0.2)',
@@ -944,11 +988,20 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
     finally { setLoading(false) }
   }
 
-  async function dismissEvent(eventId) {
-    setEvents(ev => ev.filter(e => e.id !== eventId))
-    await fetch(`${API_BASE_URL}/api/binding/events/${eventId}/seen`, {
-      method: 'POST', headers: authHeaders(),
-    })
+  async function dismissEvent(eventIds) {
+    const ids = Array.isArray(eventIds) ? eventIds : [eventIds]
+    setEvents(ev => ev.filter(e => !ids.includes(e.id)))
+    await Promise.all(ids.map(id =>
+      fetch(`${API_BASE_URL}/api/binding/events/${id}/seen`, { method: 'POST', headers: authHeaders() })
+    ))
+  }
+
+  async function clearAllEvents() {
+    const ids = events.map(e => e.id)
+    setEvents([])
+    await Promise.all(ids.map(id =>
+      fetch(`${API_BASE_URL}/api/binding/events/${id}/seen`, { method: 'POST', headers: authHeaders() })
+    ))
   }
 
   useEffect(() => {
@@ -1173,11 +1226,23 @@ function FamiliarDashboard({ familiar: initFamiliar, events: initEvents, onRefre
         {/* Events */}
         {events.length > 0 && (
           <div style={{ marginBottom: 24 }}>
-            <p className="font-cinzel" style={{ fontSize: 11, letterSpacing: 3, color: "var(--text-faint)", marginBottom: 10 }}>
-              EVENTS WHILE YOU WERE AWAY
-            </p>
-            {events.map(ev => (
-              <EventCard key={ev.id} event={ev} onDismiss={() => dismissEvent(ev.id)} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <p className="font-cinzel" style={{ fontSize: 11, letterSpacing: 3, color: "var(--text-faint)", margin: 0 }}>
+                EVENTS WHILE YOU WERE AWAY
+              </p>
+              <button onClick={clearAllEvents} style={{
+                background: 'none', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
+                color: "var(--text-secondary)", cursor: 'pointer', fontSize: 11, padding: '4px 10px',
+              }}>
+                Clear All
+              </button>
+            </div>
+            {consolidateEvents(events).map(ev => (
+              <EventCard
+                key={ev.id}
+                event={ev}
+                onDismiss={() => dismissEvent(ev._group ? ev._group.map(g => g.id) : ev.id)}
+              />
             ))}
           </div>
         )}

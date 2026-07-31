@@ -183,7 +183,7 @@ export default function ProfileCard({ tornUserId, onClose }) {
                   <Row label="The Sanctum" value={<>{fmt(data.games.sanctum.essence)} essence<br />({fmt(data.games.sanctum.total_essence)} lifetime)</>} />
                 )}
                 {data.games.binding_game && (
-                  <Row label="The Binding Game" value={`${data.games.binding_game.species || '—'}, Lv.${data.games.binding_game.level ?? '—'} · ${fmt(data.games.binding_game.wins)}W / ${fmt(data.games.binding_game.battles)} battles`} />
+                  <Row label="The Binding Game" value={`${data.games.binding_game.name || data.games.binding_game.species || '—'}, Lv.${data.games.binding_game.level ?? '—'} · ${fmt(data.games.binding_game.wins)}W / ${fmt(data.games.binding_game.battles)} battles`} />
                 )}
                 <Row label="Cards Against Occultus" value={`${fmt(data.games.cah?.essence)} essence · ${fmt(data.games.cah?.games_played)} games`} />
                 <Row label="The Rite" value={`${fmt(data.games.rite?.games_played)} games`} />
