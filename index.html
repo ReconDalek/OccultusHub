@@ -11,15 +11,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
 
     <!--
-      Self-heal from stale-deploy module load failures. Right after a new
-      deploy, a CDN edge node can briefly serve the new index.html before its
-      referenced hashed JS asset has finished propagating there, producing
-      "Failed to load module script ... MIME type of text/html" (the SPA
-      catch-all rewrites the momentarily-missing asset to index.html). This
-      catches that failure (script load errors don't bubble, so the listener
-      must run in the capture phase) and reloads once, which resolves itself
-      once propagation catches up a few seconds later. Rate-limited via
-      sessionStorage so a genuinely broken deploy doesn't reload-loop.
+      Self-heal from transient module load failures. Occasionally Cloudflare's
+      edge returns index.html's body (200, MIME text/html) for the exact hashed
+      JS asset URL instead of the real file — confirmed live 2026-07-31: a
+      cache-busted request (any query string) reliably got the correct file
+      even while the bare exact path was affected, and it self-corrected within
+      about a minute on its own. This catches that failure (script load errors
+      don't bubble, so the listener must run in the capture phase) and forces a
+      cache-busted reload, which reliably dodges it rather than a plain
+      location.reload() that could hit the same bad lookup again. Rate-limited
+      via sessionStorage so a genuinely broken deploy doesn't reload-loop.
     -->
     <script>
       (function () {
@@ -30,7 +31,8 @@
             var now = Date.now();
             if (now - last > 15000) {
               sessionStorage.setItem('occ_reload_ts', String(now));
-              location.reload();
+              var sep = location.search ? '&' : '?';
+              location.replace(location.pathname + location.search + sep + '_occcb=' + now);
             }
           }
         }, true);
