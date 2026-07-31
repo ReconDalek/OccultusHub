@@ -75,6 +75,10 @@ export async function getMentoringOverview(request, env, user, access) {
     const activeMentors = (mentorsResult.results || []).filter(m => m.is_active);
 
     for (const mentee of mentees) {
+      if (mentee.status === 'active' && mentee.level_15_reached_at == null && mentee.level >= 15) {
+        const frozen = await freezeLevel15(env, mentee);
+        if (frozen) Object.assign(mentee, frozen);
+      }
       if (mentee.level_15_reached_at == null) {
         mentee.current_account_age_estimate = currentAccountAgeEstimate(mentee);
         mentee.projected_incentive_amount = getIncentiveAmount(mentee.current_account_age_estimate);
@@ -349,13 +353,31 @@ export async function getMyMentoringAccess(request, env, user, access) {
   return jsonResponse(access);
 }
 
+// Freezes level_15_reached_at/account_age_days_at_level_15/incentive_amount for
+// one mentee who just crossed level 15 — pure date math off account_age_at_added
+// + added_at, no Torn API call. Shared by the 12h cron sweep (backstop, catches
+// mentees nobody happens to be viewing) and getMentoringOverview (opportunistic,
+// so eligibility shows correctly the moment anyone loads the page instead of
+// waiting up to 12h for the next cron run — this gap was reported live: a
+// member already at level 15 still showed "ineligible — not yet level 15").
+// Returns the frozen fields, or null if there's no age baseline to freeze yet.
+async function freezeLevel15(env, mentee) {
+  const age = currentAccountAgeEstimate(mentee);
+  if (age == null) return null;
+  const amount = getIncentiveAmount(age);
+  const level_15_reached_at = todayDateString();
+  await env.DB.prepare(`
+    UPDATE mentees SET level_15_reached_at=?, account_age_days_at_level_15=?, incentive_amount=?
+    WHERE id=?
+  `).bind(level_15_reached_at, age, amount, mentee.id).run();
+  return { level_15_reached_at, account_age_days_at_level_15: age, incentive_amount: amount };
+}
+
 // Called from the 12h faction sync cron, right after syncMembersFromCache —
 // piggybacks on the level data that sync already refreshed rather than
-// running its own cron. Only fires once per mentee (guarded by
-// level_15_reached_at IS NULL). Pure date math off account_age_at_added +
-// added_at — no Torn API call, so it can't fail/need a retry. Works
-// correctly even for a mentee already >=15 when added (elapsed=0 at that
-// point, freezes immediately at whatever age was entered at add-time).
+// running its own cron. Backstop for mentees nobody views between cron runs;
+// getMentoringOverview freezes eagerly for everyone else. Only fires once per
+// mentee (guarded by level_15_reached_at IS NULL).
 export async function checkMentorshipLevel15Crossings(env) {
   const { results } = await env.DB.prepare(`
     SELECT me.id, me.account_age_at_added, me.added_at
@@ -366,14 +388,7 @@ export async function checkMentorshipLevel15Crossings(env) {
 
   let updated = 0;
   for (const row of (results || [])) {
-    const age = currentAccountAgeEstimate(row);
-    if (age == null) continue; // no baseline entered — leave for manual entry
-    const amount = getIncentiveAmount(age);
-    await env.DB.prepare(`
-      UPDATE mentees SET level_15_reached_at=?, account_age_days_at_level_15=?, incentive_amount=?
-      WHERE id=?
-    `).bind(todayDateString(), age, amount, row.id).run();
-    updated++;
+    if (await freezeLevel15(env, row)) updated++;
   }
   return { checked: (results || []).length, updated };
 }
