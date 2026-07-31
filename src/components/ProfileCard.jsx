@@ -33,7 +33,7 @@ function Row({ label, value, color }) {
   return (
     <div style={rowStyle}>
       <span style={labelStyle}>{label}</span>
-      <span style={{ color: color || '#f4f4f5', fontWeight: '500' }}>{value}</span>
+      <span style={{ color: color || '#f4f4f5', fontWeight: '500', textAlign: 'right' }}>{value}</span>
     </div>
   )
 }
@@ -179,7 +179,7 @@ export default function ProfileCard({ tornUserId, onClose }) {
                 <Row label="Fishing" value={`${fmt(data.games.fishing?.essence)} essence · ${fmt(data.games.fishing?.catches)} catches`} />
                 <Row label="Rune Casting" value={`${fmt(data.games.runes?.essence)} essence · ${fmt(data.games.runes?.casts)} casts`} />
                 {data.games.sanctum && (
-                  <Row label="The Sanctum" value={`${fmt(data.games.sanctum.essence)} essence (${fmt(data.games.sanctum.total_essence)} lifetime)`} />
+                  <Row label="The Sanctum" value={<>{fmt(data.games.sanctum.essence)} essence<br />({fmt(data.games.sanctum.total_essence)} lifetime)</>} />
                 )}
                 {data.games.binding_game && (
                   <Row label="The Binding Game" value={`${data.games.binding_game.species || '—'}, Lv.${data.games.binding_game.level ?? '—'} · ${fmt(data.games.binding_game.wins)}W / ${fmt(data.games.binding_game.battles)} battles`} />
