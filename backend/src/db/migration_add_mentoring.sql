@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS mentees (
   incentive_amount REAL,
   incentive_paid INTEGER NOT NULL DEFAULT 0,
   incentive_paid_at DATETIME,
+  incentive_paid_by INTEGER,
+  incentive_paid_by_username TEXT,
   notes TEXT,
   added_by INTEGER,
   added_at DATETIME DEFAULT CURRENT_TIMESTAMP,

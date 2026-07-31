@@ -449,7 +449,10 @@ function MenteeCard({ mentee, mentors, onRefresh, canEdit }) {
                   )}
                 </div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '0 0 8px' }}>
-                  Current estimate: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(mentee.current_account_age_estimate)} days</span> — auto-incrementing daily, freezes once level 15 is detected
+                  Current account age: <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(mentee.current_account_age_estimate)} days</span> — counts up daily, freezes once level 15 is detected
+                  {mentee.projected_incentive_amount != null && (
+                    <> · If they reached level 15 today: <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmtMoney(mentee.projected_incentive_amount)}</span></>
+                  )}
                 </p>
                 {canEdit && (
                   <button onClick={saveAgeAtAdded} disabled={saving} style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px' }}>
@@ -484,17 +487,27 @@ function MenteeCard({ mentee, mentors, onRefresh, canEdit }) {
                 )}
               </>
             )}
-            {mentee.incentive_amount != null && (
-              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '13px', color: eligible ? '#4ade80' : 'var(--text-secondary)' }}>
-                  Incentive: {fmtMoney(mentee.incentive_amount)} {eligible ? '(all steps complete)' : '(steps incomplete)'}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', color: eligible ? '#4ade80' : 'var(--text-secondary)' }}>
+                Incentive: {mentee.incentive_amount != null ? fmtMoney(mentee.incentive_amount) : '—'}
+                {!levelFifteenFrozen ? ' (ineligible — not yet level 15)' : !allStepsDone ? ' (ineligible — steps incomplete)' : ''}
+              </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#f4f4f5', cursor: (eligible && canEdit) ? 'pointer' : 'default', opacity: eligible ? 1 : 0.5 }}>
+                <input type="checkbox" disabled={!eligible || !canEdit} checked={!!mentee.incentive_paid} onChange={() => patch({ incentive_paid: !mentee.incentive_paid })} />
+                Paid
+              </label>
+              {mentee.incentive_paid ? (
+                <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
+                  by {mentee.incentive_paid_by_username || '—'}{mentee.incentive_paid_at ? ` on ${fmtDate(mentee.incentive_paid_at)}` : ''}
                 </span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#f4f4f5', cursor: (eligible && canEdit) ? 'pointer' : 'default', opacity: eligible ? 1 : 0.5 }}>
-                  <input type="checkbox" disabled={!eligible || !canEdit} checked={!!mentee.incentive_paid} onChange={() => patch({ incentive_paid: !mentee.incentive_paid })} />
-                  Paid
-                </label>
-              </div>
-            )}
+              ) : eligible && (
+                <a href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${mentee.torn_user_id}&money=${Math.round(mentee.incentive_amount)}`}
+                  target="_blank" rel="noreferrer"
+                  style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '6px', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                  Pay ↗
+                </a>
+              )}
+            </div>
           </div>
 
           {/* Notes */}

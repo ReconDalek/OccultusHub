@@ -77,6 +77,7 @@ export async function getMentoringOverview(request, env, user, access) {
     for (const mentee of mentees) {
       if (mentee.level_15_reached_at == null) {
         mentee.current_account_age_estimate = currentAccountAgeEstimate(mentee);
+        mentee.projected_incentive_amount = getIncentiveAmount(mentee.current_account_age_estimate);
       }
       if (mentee.mentor_id) continue;
       let best = null;
@@ -208,6 +209,19 @@ export async function updateMentee(request, env, user, access) {
     const notes = body.notes !== undefined ? body.notes : current.notes;
     const account_age_at_added = body.account_age_at_added !== undefined ? body.account_age_at_added : current.account_age_at_added;
     const incentive_paid = body.incentive_paid !== undefined ? (body.incentive_paid ? 1 : 0) : current.incentive_paid;
+
+    let incentive_paid_by = current.incentive_paid_by;
+    let incentive_paid_by_username = current.incentive_paid_by_username;
+    if (body.incentive_paid !== undefined) {
+      if (incentive_paid === 1 && current.incentive_paid !== 1) {
+        incentive_paid_by = user.tornUserId;
+        incentive_paid_by_username = user.username;
+      } else if (incentive_paid === 0) {
+        incentive_paid_by = null;
+        incentive_paid_by_username = null;
+      }
+    }
+
     const step_first_mailer = body.step_first_mailer !== undefined ? (body.step_first_mailer ? 1 : 0) : current.step_first_mailer;
     const step_mansion_offer = body.step_mansion_offer !== undefined ? (body.step_mansion_offer ? 1 : 0) : current.step_mansion_offer;
     const step_joined_discord = body.step_joined_discord !== undefined ? (body.step_joined_discord ? 1 : 0) : current.step_joined_discord;
@@ -227,11 +241,13 @@ export async function updateMentee(request, env, user, access) {
       UPDATE mentees SET
         mentor_id=?, timezone_offset=?, notes=?, account_age_at_added=?, incentive_paid=?,
         incentive_paid_at=CASE WHEN ?=1 AND incentive_paid_at IS NULL THEN CURRENT_TIMESTAMP WHEN ?=0 THEN NULL ELSE incentive_paid_at END,
+        incentive_paid_by=?, incentive_paid_by_username=?,
         step_first_mailer=?, step_mansion_offer=?, step_joined_discord=?, step_joined_tornstats=?,
         level_15_reached_at=?, account_age_days_at_level_15=?, incentive_amount=?
       WHERE id=?
     `).bind(
       mentor_id, timezone_offset, notes, account_age_at_added, incentive_paid, incentive_paid, incentive_paid,
+      incentive_paid_by, incentive_paid_by_username,
       step_first_mailer, step_mansion_offer, step_joined_discord, step_joined_tornstats,
       level_15_reached_at, account_age_days_at_level_15, incentive_amount, id
     ).run();
