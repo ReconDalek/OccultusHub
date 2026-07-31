@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "node -e \"const fs=require('fs');if(fs.existsSync('.wrangler'))fs.rmSync('.wrangler',{recursive:true,force:true});fs.copyFileSync('dist/index.html','dist/404.html')\"",
+    "postbuild": "node -e \"const fs=require('fs');if(fs.existsSync('.wrangler'))fs.rmSync('.wrangler',{recursive:true,force:true});let h=fs.readFileSync('dist/index.html','utf8');h=h.replace(/ crossorigin(?=[ >])/g,'');fs.writeFileSync('dist/index.html',h);fs.copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy"
   },
