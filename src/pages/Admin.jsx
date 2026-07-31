@@ -38,33 +38,41 @@ export default function Admin() {
 
         {/* Tab navigation */}
         <div
-          className="flex gap-0 mb-8 border-b"
-          style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+          className="mb-8 border-b"
+          style={{
+            borderColor: 'rgba(255,255,255,0.08)',
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
+          }}
         >
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="px-6 py-3 font-medium border-none cursor-pointer transition-all"
-              style={{
-                background: activeTab === tab.id ? 'transparent' : 'transparent',
-                color: activeTab === tab.id ? '#f4f4f5' : "var(--text-secondary)",
-                borderBottom: activeTab === tab.id ? '2px solid #b3123f' : 'none',
-              }}
-              onMouseEnter={(e) => {
-                if (activeTab !== tab.id) {
-                  e.target.style.color = '#f4f4f5'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (activeTab !== tab.id) {
-                  e.target.style.color = "var(--text-secondary)"
-                }
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          <div className="flex gap-0" style={{ minWidth: 'max-content' }}>
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className="px-6 py-3 font-medium border-none cursor-pointer transition-all whitespace-nowrap"
+                style={{
+                  background: activeTab === tab.id ? 'transparent' : 'transparent',
+                  color: activeTab === tab.id ? '#f4f4f5' : "var(--text-secondary)",
+                  borderBottom: activeTab === tab.id ? '2px solid #b3123f' : 'none',
+                }}
+                onMouseEnter={(e) => {
+                  if (activeTab !== tab.id) {
+                    e.target.style.color = '#f4f4f5'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeTab !== tab.id) {
+                    e.target.style.color = "var(--text-secondary)"
+                  }
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab content */}
