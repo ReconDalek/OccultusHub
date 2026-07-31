@@ -145,90 +145,20 @@ const PHRASES = [
 // ── Cipher definitions ────────────────────────────────────────────────────────
 
 const CIPHER_TYPES = [
-  {
-    type: 'caesar',
-    name: 'Caesar Cipher',
-    difficulty: 'Easy',
-    hint: 'Each letter has been shifted a fixed number of places along the alphabet.',
-  },
-  {
-    type: 'atbash',
-    name: 'Atbash Cipher',
-    difficulty: 'Easy',
-    hint: 'The alphabet has been flipped — A becomes Z, B becomes Y, and so on.',
-  },
-  {
-    type: 'rot13',
-    name: 'ROT-13',
-    difficulty: 'Easy',
-    hint: 'Every letter has been rotated exactly 13 positions forward through the alphabet.',
-  },
-  {
-    type: 'reverse',
-    name: 'Reversed Text',
-    difficulty: 'Easy',
-    hint: 'The message has simply been written backwards.',
-  },
-  {
-    type: 'nums',
-    name: 'Number Substitution',
-    difficulty: 'Medium',
-    hint: 'Each number corresponds to its position in the alphabet.',
-  },
-  {
-    type: 'rail',
-    name: 'Rail Fence Cipher',
-    difficulty: 'Medium',
-    hint: 'Letters were written in a zigzag pattern across multiple rows. Reconstruct the zigzag to recover the original order.',
-  },
-  {
-    type: 'vigenere',
-    name: 'Vigenère Cipher',
-    difficulty: 'Hard',
-    hint: 'A repeating keyword shifts each letter by a different amount, so the same letter can appear encoded differently throughout the message.',
-  },
-  {
-    type: 'bacon',
-    name: 'Bacon Cipher',
-    difficulty: 'Medium',
-    hint: 'Each letter is encoded as a five-character sequence using only two distinct symbols.',
-  },
-  {
-    type: 'simple_sub',
-    name: 'Simple Substitution',
-    difficulty: 'Hard',
-    hint: 'Every letter has been consistently swapped for a different one using a scrambled alphabet.',
-  },
-  {
-    type: 'keyword',
-    name: 'Keyword Cipher',
-    difficulty: 'Hard',
-    hint: 'A secret keyword reshapes the alphabet, which is then used to substitute each letter in the message.',
-  },
-  {
-    type: 'polybius',
-    name: 'Polybius Square',
-    difficulty: 'Medium',
-    hint: 'Letters are encoded as coordinate pairs on a 5×5 grid.',
-  },
-  {
-    type: 'columnar',
-    name: 'Columnar Transposition',
-    difficulty: 'Medium',
-    hint: 'The message was written into a grid row by row, then the columns were read out in a specific order.',
-  },
-  {
-    type: 'affine',
-    name: 'Affine Cipher',
-    difficulty: 'Hard',
-    hint: 'Each letter\'s position was transformed using a mathematical formula involving multiplication and a shift.',
-  },
-  {
-    type: 'morse',
-    name: 'Morse-Like Code',
-    difficulty: 'Medium',
-    hint: 'Each letter is represented by a unique pattern of dots and dashes.',
-  },
+  { type: 'caesar',     name: 'Caesar Cipher',          difficulty: 'Easy'   },
+  { type: 'atbash',     name: 'Atbash Cipher',          difficulty: 'Easy'   },
+  { type: 'rot13',      name: 'ROT-13',                 difficulty: 'Easy'   },
+  { type: 'reverse',    name: 'Reversed Text',          difficulty: 'Easy'   },
+  { type: 'nums',       name: 'Number Substitution',    difficulty: 'Medium' },
+  { type: 'rail',       name: 'Rail Fence Cipher',      difficulty: 'Medium' },
+  { type: 'vigenere',   name: 'Vigenère Cipher',        difficulty: 'Hard'   },
+  { type: 'bacon',      name: 'Bacon Cipher',           difficulty: 'Medium' },
+  { type: 'simple_sub', name: 'Simple Substitution',    difficulty: 'Hard'   },
+  { type: 'keyword',    name: 'Keyword Cipher',         difficulty: 'Hard'   },
+  { type: 'polybius',   name: 'Polybius Square',        difficulty: 'Medium' },
+  { type: 'columnar',   name: 'Columnar Transposition', difficulty: 'Medium' },
+  { type: 'affine',     name: 'Affine Cipher',          difficulty: 'Hard'   },
+  { type: 'morse',      name: 'Morse-Like Code',        difficulty: 'Medium' },
 ];
 
 const VIGENERE_KEYS = ['SHADOW', 'OCCULT', 'ORDER', 'VEIL', 'CIPHER', 'DARK', 'NIGHT'];
@@ -311,7 +241,8 @@ function encodeSimpleSub(text, seed) {
   alphabet.forEach((letter, i) => {
     map[letter] = shuffled[i];
   });
-  return text.split('').map(c => map[c] || c).join('');
+  const ciphertext = text.split('').map(c => map[c] || c).join('');
+  return { ciphertext, map };
 }
 
 function encodeKeyword(text, keyword) {
@@ -376,7 +307,7 @@ function encodeColumnar(text, seed) {
     }
     result += ' ';
   }
-  return result.trim();
+  return { ciphertext: result.trim(), cols };
 }
 
 function encodeAffine(text, seed) {
@@ -384,11 +315,12 @@ function encodeAffine(text, seed) {
   const a = [5, 7, 9, 11, 15, 17, 19, 21, 23, 25][Math.floor(rng() * 10)]; // coprime to 26
   const b = Math.floor(rng() * 26);
 
-  return text.split('').map(c => {
+  const ciphertext = text.split('').map(c => {
     const x = c.charCodeAt(0) - 65;
     const y = (a * x + b) % 26;
     return String.fromCharCode(65 + y);
   }).join('');
+  return { ciphertext, a, b };
 }
 
 function encodeMorse(text) {
@@ -418,10 +350,16 @@ export function generateCipherForDate(dateStr) {
 
   let ciphertext;
   let extra = '';
+  // Hint now states the cipher type plus whatever key/keyword/parameter is
+  // actually needed to decode it, replacing the old conceptual description —
+  // this is a casual community puzzle, not a security mechanism, so handing
+  // over the exact key is the intended difficulty level.
+  let hint = def.name;
 
   switch (def.type) {
     case 'caesar':
       ciphertext = encodeCaesar(plaintext, extraParam);
+      hint = `${def.name} — shift of ${extraParam}`;
       break;
     case 'atbash':
       ciphertext = encodeAtbash(plaintext);
@@ -439,36 +377,50 @@ export function generateCipherForDate(dateStr) {
       const rails = (extraParam % 2) + 2; // 2 or 3 rails
       ciphertext = encodeRailFence(plaintext, rails);
       extra = `${rails} rails`;
+      hint = `${def.name} — ${rails} rails`;
       break;
     }
     case 'vigenere': {
       const key = VIGENERE_KEYS[extraParam % VIGENERE_KEYS.length];
       ciphertext = encodeVigenere(plaintext, key);
       extra = `Key length: ${key.length}`;
+      hint = `${def.name} — key: ${key}`;
       break;
     }
     case 'bacon':
       ciphertext = encodeBacon(plaintext);
       break;
-    case 'simple_sub':
-      ciphertext = encodeSimpleSub(plaintext, dateToSeed(dateStr));
+    case 'simple_sub': {
+      const result = encodeSimpleSub(plaintext, dateToSeed(dateStr));
+      ciphertext = result.ciphertext;
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+      const mapStr = alphabet.map(l => result.map[l]).join('');
+      hint = `${def.name} — cipher alphabet (A-Z maps to): ${mapStr}`;
       break;
+    }
     case 'keyword': {
       const keys = ['SHADOW', 'OCCULT', 'ORDER', 'VEIL', 'CIPHER', 'DARK', 'NIGHT', 'HIDDEN', 'POWER', 'SACRED'];
       const keyword = keys[extraParam % keys.length];
       ciphertext = encodeKeyword(plaintext, keyword);
       extra = `Keyword: ${keyword.length} letters`;
+      hint = `${def.name} — keyword: ${keyword}`;
       break;
     }
     case 'polybius':
       ciphertext = encodePolybius(plaintext);
       break;
-    case 'columnar':
-      ciphertext = encodeColumnar(plaintext, dateToSeed(dateStr));
+    case 'columnar': {
+      const result = encodeColumnar(plaintext, dateToSeed(dateStr));
+      ciphertext = result.ciphertext;
+      hint = `${def.name} — ${result.cols} columns`;
       break;
-    case 'affine':
-      ciphertext = encodeAffine(plaintext, dateToSeed(dateStr));
+    }
+    case 'affine': {
+      const result = encodeAffine(plaintext, dateToSeed(dateStr));
+      ciphertext = result.ciphertext;
+      hint = `${def.name} — a=${result.a}, b=${result.b}`;
       break;
+    }
     case 'morse':
       ciphertext = encodeMorse(plaintext);
       break;
@@ -476,7 +428,7 @@ export function generateCipherForDate(dateStr) {
       ciphertext = plaintext;
   }
 
-  return { plaintext, ciphertext, type: def.type, name: def.name, difficulty: def.difficulty, hint: def.hint, extra };
+  return { plaintext, ciphertext, type: def.type, name: def.name, difficulty: def.difficulty, hint, extra };
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────────────
