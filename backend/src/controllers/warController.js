@@ -740,6 +740,29 @@ export async function getWars(request, env) {
   }
 }
 
+// ── GET /api/leadership/wars/archive — full war history for a faction (same
+// ordering as getWars, no LIMIT), lightweight fields only — used to populate
+// the "browse other past wars" dropdown below the most-recent-5 view. Full
+// detail for a selected war is fetched on demand via getWarDetails.
+export async function getWarsArchive(request, env) {
+  try {
+    const url       = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+    if (!factionId || !FACTION_IDS.includes(factionId)) {
+      return errorResponse('Invalid or missing faction_id', 400);
+    }
+    const { results } = await env.DB.prepare(
+      `SELECT id, opponent_faction_name, opponent_faction_id, status, result,
+              started_at, ended_at, scheduled_start, is_paid
+       FROM ranked_wars WHERE faction_id=? ORDER BY COALESCE(scheduled_start, 0) DESC`
+    ).bind(factionId).all();
+    return jsonResponse({ wars: results || [] });
+  } catch (err) {
+    console.error('getWarsArchive error:', err);
+    return errorResponse('Failed to fetch war archive', 500);
+  }
+}
+
 // ── GET /api/leadership/war/:id ───────────────────────────────────────────────
 // Falls back to summary_json when raw attack rows have been purged.
 

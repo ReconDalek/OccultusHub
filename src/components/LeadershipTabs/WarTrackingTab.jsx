@@ -1779,9 +1779,85 @@ function FactionWars({ factionId }) {
     </p>
   )
 
+  const factionName = FACTIONS.find(f => f.id === factionId)?.name || 'Us'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-      {wars.map((war) => <WarCard key={war.id} war={war} factionName={FACTIONS.find(f => f.id === factionId)?.name || 'Us'} />)}
+      {wars.map((war) => <WarCard key={war.id} war={war} factionName={factionName} />)}
+      <WarArchive factionId={factionId} factionName={factionName} />
+    </div>
+  )
+}
+
+// ─── War archive (browse any past war beyond the most recent 5) ──────────────
+
+function warArchiveLabel(war) {
+  const dateUnix = war.ended_at || war.started_at || war.scheduled_start
+  const date = dateUnix ? formatUnixDate(dateUnix).replace(' UTC/TCT', '') : 'Undated'
+  const outcome = war.status === 'completed' ? (war.result === 'won' ? 'WON' : 'LOST') : (war.status || '').toUpperCase()
+  return `vs ${war.opponent_faction_name || `Faction #${war.opponent_faction_id}`} — ${date} (${outcome})`
+}
+
+function WarArchive({ factionId, factionName }) {
+  const [list,        setList]        = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [selectedId,  setSelectedId]  = useState('')
+  const [selectedWar, setSelectedWar] = useState(null)
+  const [warLoading,  setWarLoading]  = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setSelectedId('')
+    setSelectedWar(null)
+    fetch(`${API_BASE_URL}/api/leadership/wars/archive?faction_id=${factionId}`, { headers: authHeaders(), signal: controller.signal })
+      .then((r) => r.json())
+      .then((d) => setList(d.wars || []))
+      .catch((e) => { if (e.name !== 'AbortError') console.error('war archive fetch failed', e) })
+      .finally(() => setLoading(false))
+    return () => controller.abort()
+  }, [factionId])
+
+  const olderWars = list.slice(5)
+
+  const selectWar = (id) => {
+    setSelectedId(id)
+    setSelectedWar(null)
+    if (!id) return
+    setWarLoading(true)
+    fetch(`${API_BASE_URL}/api/leadership/war/${id}`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => setSelectedWar(d.war || null))
+      .catch((e) => console.error('archived war fetch failed', e))
+      .finally(() => setWarLoading(false))
+  }
+
+  const selectStyle = {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px', color: '#f4f4f5', padding: '8px 12px', fontSize: '13px', width: '100%',
+  }
+
+  if (loading) return null
+  if (olderWars.length === 0) return null
+
+  return (
+    <div style={{ borderRadius: '12px', border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)', padding: '16px 18px' }}>
+      <p style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
+        War Archive — {olderWars.length} older war{olderWars.length === 1 ? '' : 's'}
+      </p>
+      <select value={selectedId} onChange={(e) => selectWar(e.target.value)} style={selectStyle}>
+        <option value="">Select a past war to view…</option>
+        {olderWars.map((war) => (
+          <option key={war.id} value={war.id}>{warArchiveLabel(war)}</option>
+        ))}
+      </select>
+
+      {warLoading && <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '14px 0 0' }}>Loading war…</p>}
+      {selectedWar && (
+        <div style={{ marginTop: '12px' }}>
+          <WarCard war={selectedWar} factionName={factionName} />
+        </div>
+      )}
     </div>
   )
 }
