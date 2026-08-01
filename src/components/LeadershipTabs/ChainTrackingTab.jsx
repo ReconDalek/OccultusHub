@@ -966,16 +966,15 @@ function FactionChains({ factionId }) {
     return () => controller.abort()
   }, [factionId])
 
+  let topSection
   if (loading) {
-    return (
+    topSection = (
       <div style={{ padding: '40px 0', textAlign: 'center' }}>
         <p style={{ color: "var(--text-secondary)", fontSize: '14px' }}>Loading chains…</p>
       </div>
     )
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    topSection = (
       <div
         style={{
           padding: '14px 16px',
@@ -988,10 +987,8 @@ function FactionChains({ factionId }) {
         <p style={{ color: '#ff6b6b', fontSize: '13px', margin: 0 }}>Error: {error}</p>
       </div>
     )
-  }
-
-  if (!chains || chains.length === 0) {
-    return (
+  } else if (!chains || chains.length === 0) {
+    topSection = (
       <div
         style={{
           padding: '40px',
@@ -1008,16 +1005,188 @@ function FactionChains({ factionId }) {
         </p>
       </div>
     )
+  } else {
+    topSection = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+        {chains.map((chain) => (
+          <ChainCard key={chain.torn_chain_id} chain={chain} />
+        ))}
+        <p style={{ color: "var(--text-secondary)", fontSize: '11px', marginTop: '4px', textAlign: 'right' }}>
+          Showing last {chains.length} chain{chains.length !== 1 ? 's' : ''} ≥ 1,000 hits
+        </p>
+      </div>
+    )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-      {chains.map((chain) => (
-        <ChainCard key={chain.torn_chain_id} chain={chain} />
-      ))}
-      <p style={{ color: "var(--text-secondary)", fontSize: '11px', marginTop: '4px', textAlign: 'right' }}>
-        Showing last {chains.length} chain{chains.length !== 1 ? 's' : ''} ≥ 1,000 hits
+    <div>
+      {topSection}
+      <ChainArchive factionId={factionId} excludeIds={(chains || []).map((c) => c.torn_chain_id)} />
+    </div>
+  )
+}
+
+// ─── Chain archive (browse any saved chain beyond the recent-5 view) ─────────
+// Unlike the ≥1,000-hit cache list above, this only lists chains that already
+// have member-hit data saved (chain_hits) — no live Torn API call, just what
+// was frozen when the chain was saved/imported.
+
+function SavedChainCard({ data }) {
+  const { chain, hits, usernames } = data
+  const totalBonus = (hits || []).reduce((s, h) => s + (h.bonus_hits || 0), 0)
+  const respect     = chain.respect?.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) ?? '—'
+
+  return (
+    <div
+      style={{
+        marginTop: '14px',
+        borderRadius: '12px',
+        border: '1px solid rgba(179,18,63,0.28)',
+        background: 'rgba(179,18,63,0.04)',
+        padding: '16px 18px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+        <span style={{ fontSize: '16px' }}>⛓</span>
+        <span style={{ color: '#f4f4f5', fontWeight: '700', fontSize: '15px' }}>{fmt(chain.chain_length)} hits</span>
+        <span
+          style={{
+            background: 'rgba(109,40,217,0.15)', border: '1px solid rgba(109,40,217,0.35)',
+            borderRadius: '8px', padding: '3px 10px', color: '#9f67ff', fontWeight: '600', fontSize: '12px',
+          }}
+        >
+          {respect} RP
+        </span>
+      </div>
+      <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>{formatUnixDate(chain.start_at)}</span>
+
+      <Section title="Chain Details">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' }}>
+          <Stat label="Duration" value={formatDuration(chain.start_at, chain.end_at)} />
+          <Stat label="Ended"    value={formatUnixDate(chain.end_at)} />
+          <Stat label="Members"  value={fmt((hits || []).length)} />
+          <Stat label="Bonuses"  value={fmt(totalBonus)} />
+        </div>
+      </Section>
+
+      <Section title="Member Contributions">
+        {(!hits || hits.length === 0) ? (
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No saved member data.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 80px 60px', padding: '4px 10px', gap: '8px' }}>
+              {['Member', 'Hits', 'Respect', 'Bonuses'].map((h) => (
+                <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+              ))}
+            </div>
+            {hits.map((h, idx) => {
+              const name    = memberLabel(h.torn_user_id, usernames)
+              const isKnown = !!usernames[h.torn_user_id]
+              return (
+                <div
+                  key={h.torn_user_id}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 70px 80px 60px', alignItems: 'center', gap: '8px',
+                    padding: '8px 10px', borderRadius: '8px', background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    {isKnown
+                      ? <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
+                      : <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{h.torn_user_id}]</span>}
+                  </div>
+                  <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '700' }}>{fmt(h.total_attacks)}</span>
+                  <span style={{ color: '#9f67ff', fontSize: '13px' }}>{fmt(h.total_respect, 2)}</span>
+                  {h.bonus_hits > 0 ? (
+                    <span
+                      style={{
+                        display: 'inline-block', background: 'rgba(109,40,217,0.2)', border: '1px solid rgba(109,40,217,0.4)',
+                        borderRadius: '5px', padding: '1px 6px', color: '#9f67ff', fontSize: '11px', fontWeight: '700', textAlign: 'center',
+                      }}
+                    >
+                      ×{h.bonus_hits}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Section>
+    </div>
+  )
+}
+
+function ChainArchive({ factionId, excludeIds }) {
+  const [list,     setList]     = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [selectedId, setSelectedId] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setSelectedId('')
+    setSelected(null)
+    const token = localStorage.getItem('occultusSession')
+    fetch(`${API_BASE_URL}/api/leadership/chains/archive?faction_id=${factionId}`, {
+      headers: { Authorization: token }, signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((d) => setList(d.chains || []))
+      .catch((e) => { if (e.name !== 'AbortError') console.error('chain archive fetch failed', e) })
+      .finally(() => setLoading(false))
+    return () => controller.abort()
+  }, [factionId])
+
+  const excludeSet  = new Set(excludeIds)
+  const olderChains = list.filter((c) => !excludeSet.has(c.torn_chain_id))
+
+  const selectChain = (id) => {
+    setSelectedId(id)
+    setSelected(null)
+    if (!id) return
+    setDetailLoading(true)
+    const token = localStorage.getItem('occultusSession')
+    fetch(`${API_BASE_URL}/api/leadership/chains/${id}/hits`, { headers: { Authorization: token } })
+      .then((r) => r.json())
+      .then((d) => setSelected(d))
+      .catch((e) => console.error('saved chain hits fetch failed', e))
+      .finally(() => setDetailLoading(false))
+  }
+
+  const selectStyle = {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px', color: '#f4f4f5', padding: '8px 12px', fontSize: '13px', width: '100%',
+  }
+
+  if (loading) return null
+  if (olderChains.length === 0) return null
+
+  return (
+    <div
+      style={{
+        borderRadius: '12px', border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)',
+        padding: '16px 18px', marginTop: '16px',
+      }}
+    >
+      <p style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
+        Chain Archive — {olderChains.length} saved chain{olderChains.length === 1 ? '' : 's'}
       </p>
+      <select value={selectedId} onChange={(e) => selectChain(e.target.value)} style={selectStyle}>
+        <option value="">Select a saved chain to view…</option>
+        {olderChains.map((c) => (
+          <option key={c.torn_chain_id} value={c.torn_chain_id}>
+            {fmt(c.chain_length)} hits — {formatUnixDate(c.start_at)}
+          </option>
+        ))}
+      </select>
+
+      {detailLoading && <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '14px 0 0' }}>Loading chain…</p>}
+      {selected && <SavedChainCard data={selected} />}
     </div>
   )
 }

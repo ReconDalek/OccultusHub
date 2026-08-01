@@ -435,6 +435,15 @@ export async function handleRequest(request, env, ctx) {
       return chainController.getChains(request, env);
     }
 
+    // Chain archive — full list of saved chains (hits already recorded), for
+    // browsing any historic chain beyond the most-recent-5 view
+    if (pathname === '/api/leadership/chains/archive' && method === 'GET') {
+      return chainController.getChainsArchive(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/chains\/\d+\/hits$/) && method === 'GET') {
+      return chainController.getSavedChainHits(request, env);
+    }
+
     // Chain report — live proxy to Torn API (cached by frontend)
     if (pathname === '/api/leadership/chain-report' && method === 'GET') {
       return chainController.getChainReport(request, env);

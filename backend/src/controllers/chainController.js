@@ -131,6 +131,85 @@ export async function getChains(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/leadership/chains/archive?faction_id=XXXXX
+// Full list of chains that already have saved member-hit data (chain_hits),
+// no LIMIT — used to populate the "browse other saved chains" dropdown below
+// the most-recent-5 view. Unlike getChains, unsaved cached chains (≥1,000
+// hits but never opened/saved) are excluded — only real saved history.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getChainsArchive(request, env) {
+  try {
+    const url       = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+
+    if (!factionId || !FACTION_IDS.includes(factionId)) {
+      return errorResponse('Invalid or missing faction_id. Valid values: 33097, 9728, 9171', 400);
+    }
+
+    const { results } = await env.DB.prepare(
+      `SELECT cc.torn_chain_id, cc.faction_id, cc.chain_length, cc.respect, cc.start_at, cc.end_at
+       FROM chain_cache cc
+       WHERE cc.faction_id = ?
+         AND EXISTS(SELECT 1 FROM chain_hits ch WHERE ch.torn_chain_id = cc.torn_chain_id)
+       ORDER BY cc.start_at DESC`
+    ).bind(factionId).all();
+
+    return jsonResponse({ chains: results || [] });
+  } catch (err) {
+    console.error('getChainsArchive error:', err);
+    return errorResponse('Failed to fetch chain archive', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/leadership/chains/:id/hits
+// Returns the already-saved member-hit data for one chain, straight from
+// chain_hits/chain_cache — no live Torn API call (that data was frozen when
+// the chain was originally saved).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getSavedChainHits(request, env) {
+  try {
+    const match   = request.url.match(/\/chains\/(\d+)\/hits/);
+    const chainId = match ? parseInt(match[1], 10) : null;
+    if (!chainId) return errorResponse('Invalid chain ID', 400);
+
+    const chain = await env.DB.prepare(
+      `SELECT torn_chain_id, faction_id, chain_length, respect, start_at, end_at FROM chain_cache WHERE torn_chain_id=?`
+    ).bind(chainId).first();
+    if (!chain) return errorResponse('Chain not found', 404);
+
+    const { results: hits } = await env.DB.prepare(
+      `SELECT torn_user_id, total_attacks, total_respect, bonus_hits
+       FROM chain_hits WHERE torn_chain_id=? ORDER BY total_attacks DESC`
+    ).bind(chainId).all();
+
+    const ids = (hits || []).map((h) => h.torn_user_id);
+    const usernames = {};
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',');
+      const fm = await env.DB.prepare(
+        `SELECT torn_user_id, username FROM faction_members WHERE torn_user_id IN (${placeholders})`
+      ).bind(...ids).all();
+      for (const row of fm.results || []) usernames[row.torn_user_id] = row.username;
+
+      const missing = ids.filter((id) => !usernames[id]);
+      if (missing.length > 0) {
+        const missingPlaceholders = missing.map(() => '?').join(',');
+        const us = await env.DB.prepare(
+          `SELECT torn_user_id, username FROM users WHERE torn_user_id IN (${missingPlaceholders})`
+        ).bind(...missing).all();
+        for (const row of us.results || []) usernames[row.torn_user_id] = row.username;
+      }
+    }
+
+    return jsonResponse({ chain, hits: hits || [], usernames });
+  } catch (err) {
+    console.error('getSavedChainHits error:', err);
+    return errorResponse('Failed to fetch saved chain hits', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/leadership/chain-report?chain_id=XXXXXXXX
 // Proxies the Torn API chainreport and enriches attacker IDs with site usernames.
 // ─────────────────────────────────────────────────────────────────────────────
