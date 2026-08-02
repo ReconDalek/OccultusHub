@@ -48,6 +48,7 @@ const COLUMNS = [
   { key: 'bounty_count',    label: 'Count',   align: 'right' },
   { key: 'bounty_value',    label: 'Value',   align: 'right' },
   { key: 'total_cost',      label: 'Cost',    align: 'right' },
+  { key: 'paid',            label: 'Paid',    align: 'center' },
 ]
 
 const inputStyle = {
@@ -228,6 +229,22 @@ export default function BountiesTab() {
     setEditing(null); load()
   }
 
+  const [togglingPaid, setTogglingPaid] = useState(null)
+  const togglePaid = async (b) => {
+    setTogglingPaid(b.id)
+    try {
+      await fetch(`${API_BASE_URL}/api/leadership/bounties/${b.id}`, {
+        method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid: !b.paid }),
+      })
+      setBounties(prev => prev.map(row => row.id === b.id ? { ...row, paid: row.paid ? 0 : 1 } : row))
+    } catch (e) {
+      console.error('Failed to toggle bounty paid:', e)
+    } finally {
+      setTogglingPaid(null)
+    }
+  }
+
   const remove = async (id) => {
     if (!confirm('Delete this bounty record?')) return
     await fetch(`${API_BASE_URL}/api/leadership/bounties/${id}`, { method: 'DELETE', headers: authHeaders() })
@@ -311,7 +328,7 @@ export default function BountiesTab() {
                   <td style={td('left')}>{formatDateTime(b.placed_at)}</td>
                   <td style={td('left')}>
                     {b.placer_username || '—'}
-                    {b.placer_torn_id && (
+                    {b.placer_torn_id && !b.paid && (
                       <a href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${b.placer_torn_id}&money=${b.total_cost}`}
                         target="_blank" rel="noreferrer"
                         style={{ marginLeft: '6px', fontSize: '10px', padding: '2px 6px', borderRadius: '5px', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', textDecoration: 'none' }}>
@@ -331,6 +348,20 @@ export default function BountiesTab() {
                   <td style={td('right')}>{b.bounty_count}</td>
                   <td style={td('right')}>{fmtMoney(b.bounty_value)}</td>
                   <td style={{ ...td('right'), fontWeight: '600', color: '#f87171' }}>{fmtMoney(b.total_cost)}</td>
+                  <td style={td('center')}>
+                    <button
+                      onClick={() => togglePaid(b)}
+                      disabled={togglingPaid === b.id}
+                      title={b.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                      style={{
+                        width: '22px', height: '22px', borderRadius: '6px', cursor: 'pointer',
+                        border: `1px solid ${b.paid ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                        background: b.paid ? 'rgba(34,197,94,0.2)' : 'transparent',
+                        color: b.paid ? '#4ade80' : "var(--text-faint)", fontSize: '13px', lineHeight: 1,
+                        opacity: togglingPaid === b.id ? 0.5 : 1,
+                      }}
+                    >{b.paid ? '✓' : ''}</button>
+                  </td>
                   <td style={td('center')}>
                     <button onClick={() => setEditing(b)} style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', cursor: 'pointer', marginRight: '4px' }}>Edit</button>
                     <button onClick={() => remove(b.id)} style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', color: '#f87171', cursor: 'pointer' }}>Delete</button>

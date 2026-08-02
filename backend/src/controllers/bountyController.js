@@ -103,7 +103,7 @@ export async function handleBountyWebhook(request, env) {
 
 const SORTABLE_COLUMNS = new Set([
   'placed_at', 'placer_username', 'target_username', 'faction_id',
-  'ranked_war_id', 'bounty_count', 'bounty_value', 'total_cost',
+  'ranked_war_id', 'bounty_count', 'bounty_value', 'total_cost', 'paid',
 ]);
 
 export async function getBounties(request, env) {
@@ -192,9 +192,10 @@ export async function createBounty(request, env, user) {
   }
 }
 
-// ── PUT /api/leadership/bounties/:id — edit (e.g. assign/reassign a war) ─────
+// ── PUT /api/leadership/bounties/:id — edit (e.g. assign/reassign a war),
+// or toggle `paid` (repaid-the-placer status) — sets paid_by/paid_at too. ────
 
-export async function updateBounty(request, env) {
+export async function updateBounty(request, env, user) {
   try {
     const id = parseInt(request.url.match(/\/bounties\/(\d+)/)?.[1], 10);
     if (!id) return errorResponse('Invalid bounty id', 400);
@@ -205,6 +206,11 @@ export async function updateBounty(request, env) {
     const binds = [];
     for (const f of fields) {
       if (Object.prototype.hasOwnProperty.call(body, f)) { sets.push(`${f}=?`); binds.push(body[f]); }
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'paid')) {
+      const paid = body.paid ? 1 : 0;
+      sets.push('paid=?', 'paid_by=?', 'paid_at=?');
+      binds.push(paid, paid ? (user?.userId ?? null) : null, paid ? new Date().toISOString() : null);
     }
     if (!sets.length) return errorResponse('No fields to update', 400);
 

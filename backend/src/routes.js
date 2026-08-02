@@ -543,7 +543,7 @@ export async function handleRequest(request, env, ctx) {
       return bountyController.createBounty(request, env, user);
     }
     if (pathname.match(/^\/api\/leadership\/bounties\/\d+$/) && method === 'PUT') {
-      return bountyController.updateBounty(request, env);
+      return bountyController.updateBounty(request, env, user);
     }
     if (pathname.match(/^\/api\/leadership\/bounties\/\d+$/) && method === 'DELETE') {
       return bountyController.deleteBounty(request, env);
