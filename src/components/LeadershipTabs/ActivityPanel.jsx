@@ -512,10 +512,219 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
   )
 }
 
+// ─── Member breakdown ─────────────────────────────────────────────────────────
+
+function MemberBreakdownTable({ data }) {
+  const colTemplate = '120px 100px 120px 120px 130px'
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: '590px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: colTemplate,
+          gap: '8px', padding: '6px 12px', marginBottom: '4px',
+        }}>
+          {['Date', 'Day', 'Energy That Day', 'Month Total', 'Rolling Avg'].map(h => (
+            <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {h}
+            </span>
+          ))}
+        </div>
+
+        {data.days.map((d, i) => {
+          const isWeekend = d.weekday === 'Saturday' || d.weekday === 'Sunday'
+          return (
+            <div
+              key={d.date}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: colTemplate,
+                alignItems: 'center',
+                gap: '8px', padding: '9px 12px', borderRadius: '8px',
+                background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+              }}
+            >
+              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{d.date}</span>
+              <span style={{ color: isWeekend ? '#fbbf24' : "var(--text-secondary)", fontSize: '12px' }}>{d.weekday}</span>
+              <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>
+                {d.daily_energy != null ? fmt(d.daily_energy) : '—'}
+              </span>
+              <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>
+                {d.month_total != null ? fmt(d.month_total) : '—'}
+              </span>
+              <span style={{ color: '#ff2f6d', fontSize: '13px', fontWeight: '600' }}>
+                {d.rolling_avg != null ? `${fmt(d.rolling_avg)} / day` : '—'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function MemberBreakdownPanel() {
+  const now = new Date()
+  const [roster, setRoster] = useState([])
+  const [rosterLoading, setRosterLoading] = useState(true)
+  const [rosterError, setRosterError] = useState(null)
+
+  const [selectedUserId, setSelectedUserId] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
+
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setRosterLoading(true)
+    setRosterError(null)
+
+    Promise.all(
+      Object.keys(FACTION_LABEL).map(factionId =>
+        fetch(`${API_BASE_URL}/api/leadership/members?faction_id=${factionId}`, {
+          headers: authHeaders(), signal: controller.signal,
+        }).then(r => r.json())
+      )
+    )
+      .then(results => {
+        const failed = results.find(r => r.error)
+        if (failed) { setRosterError(failed.error); return }
+        const combined = results
+          .flatMap(r => r.members || [])
+          .sort((a, b) => a.username.localeCompare(b.username))
+        setRoster(combined)
+        if (combined.length > 0) setSelectedUserId(String(combined[0].torn_user_id))
+      })
+      .catch(e => { if (e.name !== 'AbortError') setRosterError(e.message) })
+      .finally(() => { if (!controller.signal.aborted) setRosterLoading(false) })
+
+    return () => controller.abort()
+  }, [])
+
+  const load = useCallback(() => {
+    if (!selectedUserId) return undefined
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
+    const { year, month } = selectedMonth
+    fetch(
+      `${API_BASE_URL}/api/leadership/energy/member-breakdown?userId=${selectedUserId}&year=${year}&month=${month + 1}`,
+      { headers: authHeaders(), signal: controller.signal }
+    )
+      .then(res => res.json().then(json => ({ res, json })))
+      .then(({ res, json }) => {
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+        setData(json)
+      })
+      .catch(e => { if (e.name !== 'AbortError') setError(e.message) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return controller
+  }, [selectedUserId, selectedMonth])
+
+  useEffect(() => {
+    if (!selectedUserId) return undefined
+    const controller = load()
+    return () => controller?.abort()
+  }, [selectedUserId, selectedMonth]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const months = buildMonthOptions()
+  const selectedMember = roster.find(m => String(m.torn_user_id) === String(selectedUserId))
+
+  return (
+    <div>
+      {rosterError && (
+        <div style={{
+          padding: '14px 16px', borderRadius: '10px',
+          background: 'rgba(255,0,0,0.08)', border: '1px solid rgba(255,0,0,0.2)', marginBottom: '16px',
+        }}>
+          <p style={{ color: '#f87171', fontSize: '13px', margin: 0 }}>{rosterError}</p>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Member</label>
+          <select
+            value={selectedUserId}
+            disabled={rosterLoading || roster.length === 0}
+            onChange={e => setSelectedUserId(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px', color: '#f4f4f5', padding: '7px 12px', fontSize: '13px', cursor: 'pointer',
+              minWidth: '180px',
+            }}
+          >
+            {roster.map(m => (
+              <option key={m.torn_user_id} value={m.torn_user_id}>
+                {m.username} {FACTION_LABEL[m.faction_id] ? `(${FACTION_LABEL[m.faction_id]})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Month</label>
+          <select
+            value={`${selectedMonth.year}-${selectedMonth.month}`}
+            onChange={e => {
+              const [y, mo] = e.target.value.split('-').map(Number)
+              setSelectedMonth({ year: y, month: mo })
+            }}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px', color: '#f4f4f5', padding: '7px 12px', fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            {months.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                {monthLabel(year, month)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{ padding: '48px', textAlign: 'center', color: "var(--text-secondary)", fontSize: '14px' }}>
+          Loading…
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          padding: '14px 16px', borderRadius: '10px',
+          background: 'rgba(255,0,0,0.08)', border: '1px solid rgba(255,0,0,0.2)', marginBottom: '16px',
+        }}>
+          <p style={{ color: '#f87171', fontSize: '13px', margin: 0 }}>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && data && (
+        data.days.length === 0 ? (
+          <div style={{
+            padding: '48px', textAlign: 'center',
+            background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: 0 }}>
+              No energy snapshots for {selectedMember?.username || 'this member'} in {monthLabel(selectedMonth.year, selectedMonth.month)}.
+            </p>
+          </div>
+        ) : (
+          <MemberBreakdownTable data={data} />
+        )
+      )}
+    </div>
+  )
+}
+
 // ─── Main energy panel ────────────────────────────────────────────────────────
 
 export default function EnergyActivityPanel() {
   const now = new Date()
+  const [view, setView] = useState('overview')
   const [mode, setMode] = useState('month')
   const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
   const todayStr = now.toISOString().slice(0, 10)
@@ -591,6 +800,31 @@ export default function EnergyActivityPanel() {
         </p>
       </div>
 
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        {[['overview', 'Overview'], ['breakdown', 'Member Breakdown']].map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              padding: '7px 16px',
+              borderRadius: '8px',
+              border: `1px solid ${view === v ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: view === v ? 'rgba(167,139,250,0.15)' : 'transparent',
+              color: view === v ? '#f4f4f5' : "var(--text-secondary)",
+              fontSize: '13px',
+              fontWeight: view === v ? '600' : '400',
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'breakdown' && <MemberBreakdownPanel />}
+
+      {view === 'overview' && (
+      <>
       <PeriodPicker
         mode={mode} setMode={setMode}
         selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth}
@@ -679,6 +913,8 @@ export default function EnergyActivityPanel() {
             </>
           )}
         </>
+      )}
+      </>
       )}
       <ScrollToTop />
     </div>

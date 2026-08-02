@@ -16,9 +16,7 @@ function monthStartDate() {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 function monthEndDate() {
-  const now = new Date();
-  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 // GET /api/members/:tornUserId/profile

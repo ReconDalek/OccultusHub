@@ -341,6 +341,106 @@ export async function getEnergyDeltaForUser(env, tornUserId, fromDate, toDate) {
   return { total_energy: totalEnergy, avg_per_day: Math.round(totalEnergy / days) };
 }
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// GET /api/leadership/energy/member-breakdown?userId=X&year=YYYY&month=M(1-12)
+// Day-by-day snapshot breakdown for a single member across one calendar month:
+// energy trained that specific day, the running month-to-date total, and the
+// rolling average (month-to-date total / day-of-month) as of that date — lets
+// a leader see exactly which days moved a member's monthly average.
+export async function getEnergyMemberBreakdown(request, env) {
+  try {
+    const url = new URL(request.url);
+    const tornUserId = url.searchParams.get('userId');
+    if (!tornUserId) return errorResponse('userId is required', 400);
+
+    const now = new Date();
+    const year  = parseInt(url.searchParams.get('year'), 10)  || now.getUTCFullYear();
+    const month = parseInt(url.searchParams.get('month'), 10) || (now.getUTCMonth() + 1);
+    if (month < 1 || month > 12) return errorResponse('month must be 1-12', 400);
+
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const isCurrentMonth = year === now.getUTCFullYear() && month === (now.getUTCMonth() + 1);
+    const monthEnd = isCurrentMonth
+      ? now.toISOString().slice(0, 10)
+      : `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+    // A member can carry a stale row in a faction they've left (frozen energy_total
+    // that never updates again) alongside their live faction's row on the same date —
+    // same reason getEnergyDeltaForUser/getEnergyActivity sum deltas per faction_id
+    // rather than a raw MAX-MIN: mixing two factions' baselines together silently
+    // corrupts the numbers. Baseline is therefore tracked per faction_id, and each
+    // faction only starts contributing once its own first snapshot is seen.
+    const priorRows = await env.DB.prepare(
+      `SELECT faction_id, energy_total, snapshot_date, username FROM energy_snapshots
+       WHERE torn_user_id = ? AND snapshot_date < ? AND energy_total > 0
+       ORDER BY snapshot_date ASC`
+    ).bind(tornUserId, monthStart).all();
+
+    const rows = await env.DB.prepare(
+      `SELECT faction_id, snapshot_date, energy_total, username FROM energy_snapshots
+       WHERE torn_user_id = ? AND snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
+       ORDER BY snapshot_date ASC`
+    ).bind(tornUserId, monthStart, monthEnd).all();
+
+    const priorList = priorRows.results || [];
+    const snapshotRows = rows.results || [];
+    const username = snapshotRows[snapshotRows.length - 1]?.username
+      ?? priorList[priorList.length - 1]?.username ?? null;
+
+    const baselineDate = priorList[priorList.length - 1]?.snapshot_date ?? null;
+
+    // Latest pre-month value per faction (list is ASC, so later entries overwrite).
+    const baselineByFaction = {};
+    for (const r of priorList) baselineByFaction[r.faction_id] = r.energy_total;
+
+    const byDate = new Map();
+    for (const r of snapshotRows) {
+      if (!byDate.has(r.snapshot_date)) byDate.set(r.snapshot_date, []);
+      byDate.get(r.snapshot_date).push(r);
+    }
+
+    const cumulativeByFaction = {};
+    let prevMonthTotal = 0;
+    const days = [...byDate.keys()].sort().map(date => {
+      const dayOfMonth = parseInt(date.slice(8, 10), 10);
+      const weekday = WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()];
+
+      for (const r of byDate.get(date)) {
+        if (baselineByFaction[r.faction_id] == null) baselineByFaction[r.faction_id] = r.energy_total;
+        cumulativeByFaction[r.faction_id] = Math.max(0, r.energy_total - baselineByFaction[r.faction_id]);
+      }
+      const monthTotal = Object.values(cumulativeByFaction).reduce((s, v) => s + v, 0);
+      const dailyEnergy = Math.max(0, monthTotal - prevMonthTotal);
+      const rollingAvg = Math.round(monthTotal / dayOfMonth);
+      prevMonthTotal = monthTotal;
+
+      return {
+        date,
+        weekday,
+        day_of_month: dayOfMonth,
+        daily_energy: dailyEnergy,
+        month_total: monthTotal,
+        rolling_avg: rollingAvg,
+      };
+    });
+
+    return jsonResponse({
+      torn_user_id: Number(tornUserId),
+      username,
+      year, month,
+      month_start: monthStart,
+      month_end: monthEnd,
+      baseline_date: baselineDate,
+      days,
+    });
+  } catch (err) {
+    console.error('getEnergyMemberBreakdown error:', err);
+    return errorResponse('Failed to fetch energy breakdown', 500);
+  }
+}
+
 // GET /api/leadership/energy?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Diffs stored snapshots between two dates to calculate energy trained in that period.
 export async function getEnergyActivity(request, env) {

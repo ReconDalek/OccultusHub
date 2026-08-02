@@ -256,6 +256,11 @@ export async function handleRequest(request, env, ctx) {
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return activityController.getEnergyActivity(request, env);
   }
+  if (pathname === '/api/leadership/energy/member-breakdown' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return activityController.getEnergyMemberBreakdown(request, env);
+  }
 
   // Member profile card — self-view always allowed, viewing another member
   // requires leadership (checked inside the controller since it depends on
