@@ -619,6 +619,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/accounting\/companies\/\d+\/breakdown$/) && method === 'GET') {
       return companyProfitController.getCompanyBreakdown(request, env, user);
     }
+    if (pathname === '/api/leadership/accounting/companies/history' && method === 'GET') {
+      return companyProfitController.getCompanyMonthHistory(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/accounting\/companies\/\d+\/month-paid$/) && method === 'POST') {
+      return companyProfitController.setCompanyMonthPaid(request, env, user);
+    }
 
     // Armory cache + minimums (read-only for inventory highlights)
     if (pathname === '/api/leadership/armory' && method === 'GET') {

@@ -119,6 +119,224 @@ const RatingStars = ({ rating }) => (
   </div>
 )
 
+// ─── Monthly payout history ─────────────────────────────────────────────────
+// "Pay" opens the same faction give-money control the war payout buttons use,
+// with a negative amount — pulling the director's own personal share of the
+// company's collected profit back out for the faction's 30% cut, rather than
+// adding money to them. "Paid" persists per (company, year, month) so it
+// survives switching months/reloading, separate from the one-time principal
+// repayment flag.
+
+function CompanyMonthTab({ factionId, token }) {
+  const monthRange = useMemo(getMonthRange, [])
+  const defaultMonth = monthRange[1] ?? monthRange[0]
+  const [monthKey, setMonthKey] = useState(defaultMonth ? `${defaultMonth.year}-${defaultMonth.month}` : '')
+  const [companies, setCompanies] = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
+  const [toggling, setToggling]   = useState(null)
+
+  useEffect(() => {
+    if (!monthKey) return undefined
+    const [year, month] = monthKey.split('-').map(Number)
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
+    const qs = factionId != null ? `&faction_id=${factionId}` : ''
+    fetch(`${API_BASE_URL}/api/leadership/accounting/companies/history?year=${year}&month=${month}${qs}`, {
+      headers: { Authorization: token }, signal: controller.signal,
+    })
+      .then(r => r.json().then(json => ({ r, json })))
+      .then(({ r, json }) => {
+        if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`)
+        setCompanies(json.companies || [])
+      })
+      .catch(e => { if (e.name !== 'AbortError') setError(e.message) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [monthKey, factionId, token])
+
+  const togglePaid = async (company) => {
+    const [year, month] = monthKey.split('-').map(Number)
+    setToggling(company.company_id)
+    try {
+      await fetch(`${API_BASE_URL}/api/leadership/accounting/companies/${company.company_id}/month-paid`, {
+        method: 'POST',
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, month, paid: !company.paid }),
+      })
+      setCompanies(prev => prev.map(c =>
+        c.company_id === company.company_id ? { ...c, paid: c.paid ? 0 : 1 } : c
+      ))
+    } catch (e) {
+      console.error('Failed to toggle company month paid:', e)
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  const totalProfit = companies.reduce((s, c) => s + (c.total_profit ?? 0), 0)
+  const totalCut    = companies.reduce((s, c) => s + (c.total_cut ?? 0), 0)
+  const paidCount   = companies.filter(c => c.paid).length
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Month</label>
+          <select
+            value={monthKey}
+            onChange={e => setMonthKey(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px', color: '#f4f4f5', padding: '7px 12px', fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            {monthRange.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>{fmtMonthLabel(year, month)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading && <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Loading…</p>}
+
+      {error && (
+        <div style={{
+          padding: '14px 16px', borderRadius: '10px',
+          background: 'rgba(255,0,0,0.08)', border: '1px solid rgba(255,0,0,0.2)', marginBottom: '16px',
+        }}>
+          <p style={{ color: '#f87171', fontSize: '13px', margin: 0 }}>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && (
+        companies.length === 0 ? (
+          <div style={{
+            padding: '48px', textAlign: 'center',
+            background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: 0 }}>No companies tracked.</p>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
+              {[
+                { label: 'Companies',       value: companies.length,                    color: '#f4f4f5' },
+                { label: 'Total Profit',    value: fmtShort(totalProfit),               color: '#4ade80' },
+                { label: 'Faction Cut (30%)', value: fmtShort(totalCut),                 color: '#a78bfa' },
+                { label: 'Paid',            value: `${paidCount} / ${companies.length}`, color: paidCount === companies.length ? '#4ade80' : '#f97316' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="p-4 rounded-lg" style={{
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', minWidth: '130px',
+                }}>
+                  <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+                  <p style={{ color, fontSize: '18px', fontWeight: '700', margin: 0 }}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                    <TH>Company</TH>
+                    <TH>Director</TH>
+                    <TH right>Daily Income Avg</TH>
+                    <TH right>Wages</TH>
+                    <TH right>Advert</TH>
+                    <TH right>Daily Profit Avg</TH>
+                    <TH right>Total Profit</TH>
+                    <TH>Payout</TH>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companies.map(c => {
+                    const hasDays = (c.days_tracked ?? 0) > 0
+                    const canPay  = c.director_id > 0 && hasDays && c.total_cut > 0
+                    return (
+                      <tr key={c.company_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <TD>
+                          <div style={{ fontWeight: '500' }}>{c.name}</div>
+                          {c.rating != null && <RatingStars rating={c.rating} />}
+                          {!c.has_api_key && (
+                            <div style={{ fontSize: '10px', color: '#f97316', marginTop: '2px' }}>No API key — no data</div>
+                          )}
+                        </TD>
+                        <TD muted>
+                          <div>{c.director_name ?? `#${c.director_id}`}</div>
+                          {c.employees_capacity != null && (
+                            <div style={{ fontSize: '13px', color: "var(--text-faint)", marginTop: '2px' }}>{c.employees_hired}/{c.employees_capacity}</div>
+                          )}
+                        </TD>
+                        <TD right>{hasDays ? fmt(c.avg_daily_income) : '—'}</TD>
+                        <TD right color={c.avg_daily_wages > 0 ? '#f87171' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_wages) : '—'}</TD>
+                        <TD right color={c.avg_daily_advert > 0 ? '#f87171' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_advert) : '—'}</TD>
+                        <TD right color={c.avg_daily_profit > 0 ? '#4ade80' : "var(--text-muted)"}>{hasDays ? fmt(c.avg_daily_profit) : '—'}</TD>
+                        <TD right color={hasDays ? '#4ade80' : "var(--text-muted)"}>
+                          {hasDays ? fmt(c.total_profit) : '—'}
+                          {hasDays && <CutLine value={c.total_profit} color="#4ade8099" />}
+                        </TD>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {c.paid ? (
+                              <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '6px', color: "var(--text-faint)", border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+                                Paid
+                              </span>
+                            ) : canPay ? (
+                              <a
+                                href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${c.director_id}&money=-${Math.round(c.total_cut)}`}
+                                target="_blank" rel="noreferrer"
+                                style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '6px', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                              >
+                                Pay ↗
+                              </a>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>—</span>
+                            )}
+                            <button
+                              onClick={() => togglePaid(c)}
+                              disabled={toggling === c.company_id}
+                              title={c.paid ? 'Mark as unpaid' : 'Mark as paid'}
+                              style={{
+                                width: '22px', height: '22px', borderRadius: '6px', cursor: 'pointer',
+                                border: `1px solid ${c.paid ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                                background: c.paid ? 'rgba(34,197,94,0.2)' : 'transparent',
+                                color: c.paid ? '#4ade80' : "var(--text-faint)", fontSize: '13px', lineHeight: 1,
+                                opacity: toggling === c.company_id ? 0.5 : 1,
+                              }}
+                            >{c.paid ? '✓' : ''}</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <td colSpan={6} style={{ padding: '10px 12px', color: "var(--text-secondary)", fontSize: '12px', fontWeight: '600' }}>
+                      Total
+                    </td>
+                    <TD right color='#4ade80'>
+                      {fmt(totalProfit)}
+                      <CutLine value={totalProfit} color="#4ade8099" />
+                    </TD>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <p style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '16px' }}>
+              Pay opens the faction give-money control with the director's 30% cut pre-filled as a negative amount (removes it from them) — apply it, then mark Paid.
+            </p>
+          </>
+        )
+      )}
+    </div>
+  )
+}
+
 // ─── Company breakdown ─────────────────────────────────────────────────────
 
 function CompanyBreakdownPanel({ companies, token }) {
@@ -344,7 +562,7 @@ export default function CompanySubTab({ factionId }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-        {[['overview', 'Overview'], ['breakdown', 'Company Breakdown']].map(([v, label]) => (
+        {[['overview', 'Overview'], ['month', 'Prev Month'], ['breakdown', 'Company Breakdown']].map(([v, label]) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -365,6 +583,7 @@ export default function CompanySubTab({ factionId }) {
       </div>
 
       {view === 'breakdown' && <CompanyBreakdownPanel companies={companies} token={token} />}
+      {view === 'month' && <CompanyMonthTab factionId={factionId} token={token} />}
 
       {view === 'overview' && (
       <>

@@ -298,6 +298,109 @@ export async function getCompanyBreakdown(request, env, user) {
   }
 }
 
+// GET /api/leadership/accounting/companies/history?year=YYYY&month=M(1-12)&faction_id=X
+// Per-company aggregate for one specific calendar month (not "this month" —
+// any past month, selected by the Prev Month / historic-month picker) plus
+// whether that month's 30% faction cut has been collected from the director.
+export async function getCompanyMonthHistory(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const year  = parseInt(url.searchParams.get('year'), 10);
+    const month = parseInt(url.searchParams.get('month'), 10);
+    if (!year || !month || month < 1 || month > 12) {
+      return errorResponse('year and month (1-12) are required', 400);
+    }
+    const factionId = url.searchParams.get('faction_id');
+    const whereClause = factionId ? `WHERE c.faction_id = ${parseInt(factionId)}` : '';
+
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+    const { results } = await env.DB.prepare(
+      `SELECT
+         c.company_id, c.name, c.director_id, c.director_name, c.faction_id, c.principal, c.has_api_key,
+         COALESCE(s.days_tracked, 0)  AS days_tracked,
+         COALESCE(s.avg_income, 0)    AS avg_daily_income,
+         COALESCE(s.avg_wages, 0)     AS avg_daily_wages,
+         COALESCE(s.avg_advert, 0)    AS avg_daily_advert,
+         COALESCE(s.avg_profit, 0)    AS avg_daily_profit,
+         COALESCE(s.total_profit, 0)  AS total_profit,
+         COALESCE(s.total_cut, 0)     AS total_cut,
+         COALESCE(p.paid, 0)          AS paid
+       FROM company_profit_cache c
+       LEFT JOIN (
+         SELECT
+           company_id,
+           COUNT(*)                        AS days_tracked,
+           AVG(CAST(daily_income AS REAL))  AS avg_income,
+           AVG(CAST(daily_wages  AS REAL))  AS avg_wages,
+           AVG(CAST(daily_advert AS REAL))  AS avg_advert,
+           AVG(CAST(daily_profit AS REAL))  AS avg_profit,
+           SUM(daily_profit)               AS total_profit,
+           SUM(faction_cut)                AS total_cut
+         FROM company_profit_snapshots
+         WHERE snapshot_date >= ? AND snapshot_date <= ?
+         GROUP BY company_id
+       ) s ON s.company_id = c.company_id
+       LEFT JOIN company_payouts p ON p.company_id = c.company_id AND p.year = ? AND p.month = ?
+       ${whereClause}
+       ORDER BY total_profit DESC`
+    ).bind(monthStart, monthEnd, year, month).all();
+
+    // Same rating/employee enrichment getCompanyProfits uses — pulled from the
+    // raw API JSON already cached in company_cache, not duplicated in storage.
+    const companyIds = results.map(r => r.company_id);
+    const cacheMap = {};
+    if (companyIds.length) {
+      const placeholders = companyIds.map(() => '?').join(',');
+      const { results: cacheRows } = await env.DB.prepare(
+        `SELECT company_id, data FROM company_cache WHERE company_id IN (${placeholders})`
+      ).bind(...companyIds).all();
+      for (const row of cacheRows) {
+        try {
+          const profile = JSON.parse(row.data)?.profile;
+          cacheMap[row.company_id] = {
+            rating: profile?.rating ?? null,
+            employees_hired: profile?.employees?.hired ?? null,
+            employees_capacity: profile?.employees?.capacity ?? null,
+          };
+        } catch { /* skip malformed cache row */ }
+      }
+    }
+
+    const companies = results.map(r => ({
+      ...r,
+      ...(cacheMap[r.company_id] ?? { rating: null, employees_hired: null, employees_capacity: null }),
+    }));
+
+    return jsonResponse({ year, month, month_start: monthStart, month_end: monthEnd, companies });
+  } catch (e) {
+    return errorResponse('Failed to fetch company month history: ' + e.message, 500);
+  }
+}
+
+// POST /api/leadership/accounting/companies/:id/month-paid  body: { year, month, paid }
+export async function setCompanyMonthPaid(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const companyId = parseInt(url.pathname.match(/\/companies\/(\d+)\/month-paid/)?.[1], 10);
+    const { year, month, paid } = await request.json();
+    if (!companyId || !year || !month) return errorResponse('company id, year, and month are required', 400);
+
+    await env.DB.prepare(
+      `INSERT INTO company_payouts (company_id, year, month, paid, paid_by, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(company_id, year, month) DO UPDATE SET
+         paid = excluded.paid, paid_by = excluded.paid_by, paid_at = excluded.paid_at`
+    ).bind(companyId, year, month, paid ? 1 : 0, user.userId, paid ? new Date().toISOString() : null).run();
+
+    return jsonResponse({ success: true });
+  } catch (e) {
+    return errorResponse('Failed to update company month paid status: ' + e.message, 500);
+  }
+}
+
 export async function getCompanyProfits(request, env, user) {
   try {
     const url = new URL(request.url);
