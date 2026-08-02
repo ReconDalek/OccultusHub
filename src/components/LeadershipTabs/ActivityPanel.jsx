@@ -240,7 +240,7 @@ function CoverageBar({ coverage, days }) {
   if (!coverage?.days_covered) return null
 
   const snapshotDays = coverage.days_covered
-  const totalDates   = Math.round(days) + 1
+  const totalDates   = Math.round(days) // backend's period.days is already an inclusive day count
   const missingDays  = Math.max(0, totalDates - snapshotDays)
   const fillPct      = Math.min(100, Math.round((snapshotDays / totalDates) * 100))
   const hasMissing   = missingDays > 0
@@ -411,8 +411,14 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, snapshot
 
 function ComparisonTable({ members, extras, includeRevives, includeAttacks, periodFrom }) {
   const augmented = members.map(m => {
+    // +1: inclusive of start_date itself, since the backend's per-member total
+    // now uses a baseline from BEFORE start_date (not start_date's own value as
+    // the zero-point) — so start_date's own training is counted and needs to be
+    // counted in the day divisor too. Slightly overcounts for a flagged
+    // partialStart row (no real prior baseline, first day fell back to a
+    // self-baseline of 0) — an acceptable imprecision on an already-flagged row.
     const daysBetween  = m.start_date && m.end_date
-      ? Math.max(1, Math.round((Date.parse(m.end_date) - Date.parse(m.start_date)) / 86400000))
+      ? Math.max(1, Math.round((Date.parse(m.end_date) - Date.parse(m.start_date)) / 86400000) + 1)
       : 1
     const gymEnergy    = m.energy
     const reviveEnergy = includeRevives ? (extras?.revives?.[m.id] ?? 0) * 25 : 0
@@ -728,10 +734,13 @@ export default function EnergyActivityPanel() {
   const [mode, setMode] = useState('month')
   const [selectedMonth, setSelectedMonth] = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
   const todayStr = now.toISOString().slice(0, 10)
+  // Snapshots are stamped with the date their data represents (yesterday,
+  // relative to when the cron actually ran) — today's row can't exist yet.
+  const yesterdayStr = new Date(now.getTime() - 86400000).toISOString().slice(0, 10)
   const firstOfMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
   const [customFrom, setCustomFrom] = useState(firstOfMonth)
-  const [customTo,   setCustomTo]   = useState(todayStr)
-  const [customDay,  setCustomDay]  = useState(todayStr)
+  const [customTo,   setCustomTo]   = useState(yesterdayStr)
+  const [customDay,  setCustomDay]  = useState(yesterdayStr)
 
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(false)
@@ -749,7 +758,7 @@ export default function EnergyActivityPanel() {
       const fromStr = `${year}-${String(month + 1).padStart(2, '0')}-01`
       const isCurrentMonth = year === now.getUTCFullYear() && month === now.getUTCMonth()
       const toStr = isCurrentMonth
-        ? now.toISOString().slice(0, 10)
+        ? yesterdayStr
         : new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
       return { from: fromStr, to: toStr }
     }

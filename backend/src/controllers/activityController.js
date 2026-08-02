@@ -237,20 +237,24 @@ async function fetchGymEnergy(apiKey) {
 }
 
 // Called by daily cron — snapshot current energy totals for all factions.
+// Torn's gymenergy contributor totals only advance once per day — whatever we
+// read here (even at 01:00 UTC, an hour into the new day) is still the value
+// as of yesterday's end, not today's. Stamp the snapshot with yesterday's
+// date to match (same reasoning already applied to personal_stats_snapshots).
 export async function takeEnergySnapshot(env) {
-  const today     = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const yesterday    = new Date(Date.now() - 86400000).toISOString().slice(0, 10); // date being stamped
+  const twoDaysAgo    = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10); // what the previous run should have stamped
   const now       = Math.floor(Date.now() / 1000);
 
-  // Gap detection — warn if yesterday's snapshot is absent
-  const { count: yesterdayCount } = await env.DB.prepare(
+  // Gap detection — warn if the previous run's snapshot is absent
+  const { count: prevRunCount } = await env.DB.prepare(
     `SELECT COUNT(*) as count FROM energy_snapshots WHERE snapshot_date = ?`
-  ).bind(yesterday).first();
-  if (!yesterdayCount) {
+  ).bind(twoDaysAgo).first();
+  if (!prevRunCount) {
     await logWarn(env, {
       category: 'cron', event: 'energy_snapshot_gap',
-      message: `Energy snapshot gap detected: no data for ${yesterday}. Yesterday's cron may have failed.`,
-      meta: { missing_date: yesterday },
+      message: `Energy snapshot gap detected: no data for ${twoDaysAgo}. Yesterday's cron may have failed.`,
+      meta: { missing_date: twoDaysAgo },
     });
   }
 
@@ -274,7 +278,7 @@ export async function takeEnergySnapshot(env) {
       const validContributors = contributors.filter(c => c.value > 0);
       if (validContributors.length) {
         await env.DB.batch(
-          validContributors.map(c => stmt.bind(c.id, c.username, factionId, c.value, today, now))
+          validContributors.map(c => stmt.bind(c.id, c.username, factionId, c.value, yesterday, now))
         );
       }
 
@@ -313,30 +317,49 @@ export async function takeEnergySnapshot(env) {
 // energy_total baselines together) and the same calendar-day average.
 // Used by memberProfileController so the profile card's energy figures
 // always match what the Energy tab itself would show for the same period.
+//
+// Baseline is the last snapshot per faction STRICTLY BEFORE fromDate, not the
+// first snapshot inside the period — using an in-period snapshot as its own
+// zero-point would make that day's own training invisible (delta against
+// itself is 0). Falls back to a faction's own first-in-period snapshot only
+// when it has no prior data at all (new member/faction combo), same as
+// getEnergyMemberBreakdown. Day count is therefore inclusive of both
+// endpoints (fromDate through toDate), not the exclusive date difference.
 export async function getEnergyDeltaForUser(env, tornUserId, fromDate, toDate) {
-  const row = await env.DB.prepare(`
-    SELECT torn_user_id, SUM(faction_delta) AS total_energy
-    FROM (
-      SELECT
-        torn_user_id,
-        faction_id,
-        MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) -
-          MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS faction_delta,
-        MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
-        MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date
-      FROM energy_snapshots
-      WHERE torn_user_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
-      GROUP BY torn_user_id, faction_id
-      HAVING start_date IS NOT NULL AND end_date IS NOT NULL AND faction_delta > 0
-    )
-    GROUP BY torn_user_id
-    HAVING total_energy > 0
-  `).bind(toDate, fromDate, fromDate, toDate, tornUserId, fromDate, toDate).first();
+  const [priorRows, rows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT faction_id, energy_total FROM energy_snapshots e1
+       WHERE torn_user_id = ? AND snapshot_date < ? AND energy_total > 0
+       AND snapshot_date = (
+         SELECT MAX(snapshot_date) FROM energy_snapshots e2
+         WHERE e2.torn_user_id = e1.torn_user_id AND e2.faction_id = e1.faction_id
+           AND e2.snapshot_date < ? AND e2.energy_total > 0
+       )`
+    ).bind(tornUserId, fromDate, fromDate).all(),
+    env.DB.prepare(
+      `SELECT faction_id, snapshot_date, energy_total FROM energy_snapshots
+       WHERE torn_user_id = ? AND snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
+       ORDER BY snapshot_date ASC`
+    ).bind(tornUserId, fromDate, toDate).all(),
+  ]);
 
-  const totalEnergy = row?.total_energy ?? 0;
+  const baselineByFaction = {};
+  for (const r of priorRows.results || []) baselineByFaction[r.faction_id] = r.energy_total;
+
+  const latestByFaction = {};
+  for (const r of rows.results || []) {
+    if (baselineByFaction[r.faction_id] == null) baselineByFaction[r.faction_id] = r.energy_total;
+    latestByFaction[r.faction_id] = r.energy_total; // rows ASC — last write wins = latest date
+  }
+
+  let totalEnergy = 0;
+  for (const factionId of Object.keys(latestByFaction)) {
+    totalEnergy += Math.max(0, latestByFaction[factionId] - baselineByFaction[factionId]);
+  }
+
   const fromTs = Date.UTC(...fromDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
   const toTs   = Date.UTC(...toDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
-  const days   = Math.max(1, (toTs - fromTs) / 86400);
+  const days   = Math.max(1, (toTs - fromTs) / 86400 + 1);
 
   return { total_energy: totalEnergy, avg_per_day: Math.round(totalEnergy / days) };
 }
@@ -362,8 +385,9 @@ export async function getEnergyMemberBreakdown(request, env) {
     const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const isCurrentMonth = year === now.getUTCFullYear() && month === (now.getUTCMonth() + 1);
+    // Current month caps at yesterday — today's row can't exist until tomorrow's cron.
     const monthEnd = isCurrentMonth
-      ? now.toISOString().slice(0, 10)
+      ? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
       : `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
 
     // A member can carry a stale row in a faction they've left (frozen energy_total
@@ -447,19 +471,54 @@ export async function getEnergyActivity(request, env) {
   try {
     const url = new URL(request.url);
 
-    // Default: start of current UTC month → today
+    // Default: start of current UTC month → yesterday (today's snapshot can't
+    // exist yet — Torn only updates gymenergy totals once per day, so the
+    // earliest today could have a row is tomorrow's cron run).
     const nowDate = new Date();
     const defaultFrom = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}-01`;
-    const defaultTo   = nowDate.toISOString().slice(0, 10);
+    const defaultTo   = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
     const fromDate = url.searchParams.get('from') || defaultFrom;
     const toDate   = url.searchParams.get('to')   || defaultTo;
 
     // Sum per-faction deltas so members who switch between factions mid-period
     // get credit for contributions in both factions rather than one overwriting the other.
-    // Inner query groups by (torn_user_id, faction_id) to get each faction's delta;
-    // outer query sums those deltas per member.
+    // Baseline is the last snapshot per (member, faction) STRICTLY BEFORE fromDate,
+    // not the first snapshot inside the period — using an in-period snapshot as its
+    // own zero-point would make that day's own training invisible. Falls back to a
+    // faction's own first-in-period value only when there's no prior data at all
+    // (new member/faction combo within the period) — same pattern getEnergyDeltaForUser
+    // and getEnergyMemberBreakdown use.
     const rows = await env.DB.prepare(`
+      WITH baseline AS (
+        SELECT torn_user_id, faction_id, energy_total AS baseline_value
+        FROM (
+          SELECT torn_user_id, faction_id, energy_total,
+                 ROW_NUMBER() OVER (PARTITION BY torn_user_id, faction_id ORDER BY snapshot_date DESC) AS rn
+          FROM energy_snapshots
+          WHERE snapshot_date < ? AND energy_total > 0
+        )
+        WHERE rn = 1
+      ),
+      in_period AS (
+        SELECT
+          torn_user_id, faction_id,
+          MAX(username)      AS username,
+          MIN(snapshot_date)  AS start_date,
+          MAX(snapshot_date)  AS end_date,
+          MIN(energy_total)   AS first_value,
+          MAX(energy_total)   AS latest_value
+        FROM energy_snapshots
+        WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
+        GROUP BY torn_user_id, faction_id
+      ),
+      per_faction AS (
+        SELECT
+          ip.torn_user_id, ip.username, ip.start_date, ip.end_date,
+          MAX(0, ip.latest_value - COALESCE(b.baseline_value, ip.first_value)) AS faction_delta
+        FROM in_period ip
+        LEFT JOIN baseline b ON b.torn_user_id = ip.torn_user_id AND b.faction_id = ip.faction_id
+      )
       SELECT
         agg.torn_user_id,
         agg.username,
@@ -476,30 +535,19 @@ export async function getEnergyActivity(request, env) {
           MIN(start_date)    AS start_date,
           MAX(end_date)      AS end_date,
           SUM(faction_delta) AS total_energy
-        FROM (
-          SELECT
-            torn_user_id,
-            faction_id,
-            MAX(username) AS username,
-            MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN snapshot_date END) AS start_date,
-            MAX(CASE WHEN snapshot_date <= ? THEN snapshot_date END) AS end_date,
-            MAX(CASE WHEN snapshot_date <= ? THEN energy_total END) -
-              MIN(CASE WHEN snapshot_date >= ? AND energy_total > 0 THEN energy_total END) AS faction_delta
-          FROM energy_snapshots
-          WHERE snapshot_date >= ? AND snapshot_date <= ?
-          GROUP BY torn_user_id, faction_id
-          HAVING start_date IS NOT NULL AND end_date IS NOT NULL AND faction_delta > 0
-        )
+        FROM per_faction
         GROUP BY torn_user_id
         HAVING total_energy > 0
       ) agg
       LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
-    `).bind(fromDate, toDate, toDate, fromDate, fromDate, toDate).all();
+    `).bind(fromDate, fromDate, toDate).all();
 
-    // Calculate days for avg/day (calendar days in range)
+    // Calculate days for avg/day — inclusive of both endpoints (fromDate through
+    // toDate), matching the baseline-before-fromDate logic above: every day from
+    // fromDate to toDate now genuinely contributes its own measured delta.
     const fromTs = Date.UTC(...fromDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
     const toTs   = Date.UTC(...toDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v)) / 1000;
-    const days   = Math.max(1, (toTs - fromTs) / 86400);
+    const days   = Math.max(1, (toTs - fromTs) / 86400 + 1);
 
     const members = (rows.results || [])
       .map(r => ({
@@ -1209,7 +1257,9 @@ export async function triggerPersonalStatsSnapshotAdmin(request, env) {
 // ── Admin: personal stats snapshot status ────────────────────────────────────
 export async function getPersonalStatsSnapshotStatus(request, env) {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    // Snapshots are stamped with the date their data represents (yesterday,
+    // relative to when the cron actually ran) — "today" can never have a row.
+    const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const [overall, todayRow] = await Promise.all([
       env.DB.prepare(
         `SELECT COUNT(DISTINCT torn_user_id) AS members, COUNT(DISTINCT snapshot_date) AS days,

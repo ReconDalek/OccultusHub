@@ -28,7 +28,12 @@ export async function fetchAndCacheCompanyProfits(env) {
     try { keyMap[u.torn_user_id] = atob(u.api_key); } catch { /* skip malformed */ }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Torn only updates a company's daily income/wages/advertising figures once
+  // per day — whatever we read here (even at 01:00 UTC, an hour into the new
+  // Torn day) is still yesterday's completed data, not today's. Stamp the
+  // snapshot with yesterday's date to match (same reasoning already applied
+  // to personal_stats_snapshots).
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   for (const row of configRows) {
     let profile;
@@ -109,7 +114,7 @@ export async function fetchAndCacheCompanyProfits(env) {
         `INSERT OR IGNORE INTO company_profit_snapshots
            (company_id, snapshot_date, daily_income, daily_wages, daily_advert, daily_profit, faction_cut)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(row.company_id, today, dailyIncome, dailyWages, dailyAdvert, dailyProfit, factionCut).run();
+      ).bind(row.company_id, yesterday, dailyIncome, dailyWages, dailyAdvert, dailyProfit, factionCut).run();
 
       // Also refresh company_cache with the richer director-key data
       await env.DB.prepare(
@@ -134,7 +139,9 @@ export async function fetchAndCacheCompanyProfits(env) {
 
 export async function getCompanyProfitStatus(request, env, user) {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    // Snapshots are stamped with the date their data represents (yesterday,
+    // relative to when the cron actually ran) — "today" can never have a row.
+    const latestPossible = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const [cacheRow, snapshotRow] = await Promise.all([
       env.DB.prepare(
         `SELECT COUNT(*) as total,
@@ -148,7 +155,7 @@ export async function getCompanyProfitStatus(request, env, user) {
                 MIN(snapshot_date) as earliest,
                 MAX(snapshot_date) as latest
          FROM company_profit_snapshots`
-      ).bind(today).first(),
+      ).bind(latestPossible).first(),
     ]);
     return jsonResponse({
       ...(cacheRow ?? { total: 0, with_key: 0, principal_paid_count: 0, fetched_at: null }),
@@ -242,8 +249,9 @@ export async function getCompanyBreakdown(request, env, user) {
     const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const isCurrentMonth = year === now.getUTCFullYear() && month === (now.getUTCMonth() + 1);
+    // Current month caps at yesterday — today's row can't exist until tomorrow's cron.
     const monthEnd = isCurrentMonth
-      ? now.toISOString().slice(0, 10)
+      ? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
       : `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
 
     const [companyRow, rows] = await Promise.all([

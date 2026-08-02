@@ -33,13 +33,15 @@ function fmtDay(dateStr) {
   return `${d} ${mon}`
 }
 
-// Returns list of YYYY-MM-DD strings for every day from monthStart up to min(today, monthEnd)
+// Returns list of YYYY-MM-DD strings for every day from monthStart up to min(yesterday, monthEnd).
+// Yesterday, not today: snapshots are stamped with the date their data represents, and Torn only
+// updates company figures once per day — today's row can't exist until tomorrow's cron runs.
 function daysInRange(year, month) {
-  const now      = new Date()
-  const today    = `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())}`
+  const yesterdayDate = new Date(Date.now() - 86400000)
+  const yesterday = `${yesterdayDate.getUTCFullYear()}-${pad(yesterdayDate.getUTCMonth()+1)}-${pad(yesterdayDate.getUTCDate())}`
   const lastDay  = new Date(Date.UTC(year, month, 0)).getUTCDate()
   const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`
-  const end      = today < monthEnd ? today : monthEnd
+  const end      = yesterday < monthEnd ? yesterday : monthEnd
   const dates    = []
   for (let d = 1; d <= lastDay; d++) {
     const s = `${year}-${pad(month)}-${pad(d)}`

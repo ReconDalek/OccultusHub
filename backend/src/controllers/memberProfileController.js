@@ -15,8 +15,14 @@ function monthStartDate() {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
+// "Yesterday", not today: energy_snapshots is stamped with the date its data
+// represents, and Torn only updates that data once per day — the row for
+// today literally cannot exist until tomorrow's cron runs. Using "today" here
+// would count today as an elapsed day with zero data, understating the
+// average (the same bug this function was fixed for once already, recurring
+// from a different cause once snapshot dating itself was corrected).
 function monthEndDate() {
-  return new Date().toISOString().slice(0, 10);
+  return new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 }
 
 // GET /api/members/:tornUserId/profile
