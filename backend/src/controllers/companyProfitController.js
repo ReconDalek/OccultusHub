@@ -222,6 +222,74 @@ export async function refreshCompanyProfitCache(request, env, user) {
   }
 }
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// GET /api/leadership/accounting/companies/:id/breakdown?year=YYYY&month=M(1-12)
+// Day-by-day snapshot breakdown for a single company across one calendar month:
+// income/wages/advert/profit for that specific day, plus a running month-to-date
+// profit total — lets a leader see exactly which days drove a company's month.
+export async function getCompanyBreakdown(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const companyId = parseInt(url.pathname.match(/\/companies\/(\d+)\/breakdown/)?.[1], 10);
+    if (!companyId) return errorResponse('Invalid company id', 400);
+
+    const now = new Date();
+    const year  = parseInt(url.searchParams.get('year'), 10)  || now.getUTCFullYear();
+    const month = parseInt(url.searchParams.get('month'), 10) || (now.getUTCMonth() + 1);
+    if (month < 1 || month > 12) return errorResponse('month must be 1-12', 400);
+
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const isCurrentMonth = year === now.getUTCFullYear() && month === (now.getUTCMonth() + 1);
+    const monthEnd = isCurrentMonth
+      ? now.toISOString().slice(0, 10)
+      : `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+    const [companyRow, rows] = await Promise.all([
+      env.DB.prepare(`SELECT name FROM company_profit_cache WHERE company_id = ?`).bind(companyId).first(),
+      env.DB.prepare(
+        `SELECT snapshot_date, daily_income, daily_wages, daily_advert, daily_profit, faction_cut
+         FROM company_profit_snapshots
+         WHERE company_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
+         ORDER BY snapshot_date ASC`
+      ).bind(companyId, monthStart, monthEnd).all(),
+    ]);
+
+    let runningProfit = 0;
+    let runningCut = 0;
+    const days = (rows.results || []).map(r => {
+      const dayOfMonth = parseInt(r.snapshot_date.slice(8, 10), 10);
+      const weekday = WEEKDAY_NAMES[new Date(`${r.snapshot_date}T00:00:00Z`).getUTCDay()];
+      runningProfit += r.daily_profit;
+      runningCut += r.faction_cut;
+      return {
+        date: r.snapshot_date,
+        weekday,
+        day_of_month: dayOfMonth,
+        income: r.daily_income,
+        wages: r.daily_wages,
+        advert: r.daily_advert,
+        profit: r.daily_profit,
+        faction_cut: r.faction_cut,
+        month_profit: runningProfit,
+        month_faction_cut: runningCut,
+      };
+    });
+
+    return jsonResponse({
+      company_id: companyId,
+      name: companyRow?.name ?? `Company ${companyId}`,
+      year, month,
+      month_start: monthStart,
+      month_end: monthEnd,
+      days,
+    });
+  } catch (e) {
+    return errorResponse('Failed to fetch company breakdown: ' + e.message, 500);
+  }
+}
+
 export async function getCompanyProfits(request, env, user) {
   try {
     const url = new URL(request.url);

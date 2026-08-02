@@ -117,7 +117,144 @@ const RatingStars = ({ rating }) => (
   </div>
 )
 
+// ─── Company breakdown ─────────────────────────────────────────────────────
+
+function CompanyBreakdownPanel({ companies, token }) {
+  const monthRange = useMemo(getMonthRange, [])
+  const [companyId, setCompanyId] = useState(companies[0]?.company_id ?? '')
+  const [monthKey, setMonthKey]   = useState(monthRange[0] ? `${monthRange[0].year}-${monthRange[0].month}` : '')
+  const [data, setData]           = useState(null)
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState(null)
+
+  useEffect(() => {
+    if (!companyId || !monthKey) return undefined
+    const [year, month] = monthKey.split('-').map(Number)
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
+    fetch(`${API_BASE_URL}/api/leadership/accounting/companies/${companyId}/breakdown?year=${year}&month=${month}`, {
+      headers: { Authorization: token }, signal: controller.signal,
+    })
+      .then(r => r.json().then(json => ({ r, json })))
+      .then(({ r, json }) => {
+        if (!r.ok) throw new Error(json.error || `HTTP ${r.status}`)
+        setData(json)
+      })
+      .catch(e => { if (e.name !== 'AbortError') setError(e.message) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [companyId, monthKey, token])
+
+  const selectedCompany = companies.find(c => String(c.company_id) === String(companyId))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Company</label>
+          <select
+            value={companyId}
+            onChange={e => setCompanyId(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px', color: '#f4f4f5', padding: '7px 12px', fontSize: '13px', cursor: 'pointer',
+              minWidth: '200px',
+            }}
+          >
+            {companies.map(c => (
+              <option key={c.company_id} value={c.company_id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Month</label>
+          <select
+            value={monthKey}
+            onChange={e => setMonthKey(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px', color: '#f4f4f5', padding: '7px 12px', fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            {monthRange.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>{fmtMonthLabel(year, month)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading && <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Loading…</p>}
+
+      {error && (
+        <div style={{
+          padding: '14px 16px', borderRadius: '10px',
+          background: 'rgba(255,0,0,0.08)', border: '1px solid rgba(255,0,0,0.2)', marginBottom: '16px',
+        }}>
+          <p style={{ color: '#f87171', fontSize: '13px', margin: 0 }}>{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && data && (
+        data.days.length === 0 ? (
+          <div style={{
+            padding: '48px', textAlign: 'center',
+            background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: 0 }}>
+              No profit snapshots for {selectedCompany?.name || data.name} in {fmtMonthLabel(data.year, data.month)}.
+            </p>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '800px' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <TH>Date</TH>
+                  <TH>Day</TH>
+                  <TH right>Income</TH>
+                  <TH right>Wages</TH>
+                  <TH right>Advert</TH>
+                  <TH right>Profit</TH>
+                  <TH right>Month Profit</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {data.days.map((d, i) => {
+                  const isWeekend = d.weekday === 'Saturday' || d.weekday === 'Sunday'
+                  return (
+                    <tr key={d.date} style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                    }}>
+                      <TD>{d.date}</TD>
+                      <TD color={isWeekend ? '#fbbf24' : "var(--text-secondary)"}>{d.weekday}</TD>
+                      <TD right>{fmt(d.income)}</TD>
+                      <TD right color={d.wages > 0 ? '#f87171' : "var(--text-muted)"}>{fmt(d.wages)}</TD>
+                      <TD right color={d.advert > 0 ? '#f87171' : "var(--text-muted)"}>{fmt(d.advert)}</TD>
+                      <TD right color={d.profit > 0 ? '#4ade80' : "var(--text-muted)"}>
+                        {fmt(d.profit)}
+                        <CutLine value={d.profit} color="#4ade8099" />
+                      </TD>
+                      <TD right color="#a78bfa">
+                        {fmt(d.month_profit)}
+                        <CutLine value={d.month_profit} color="#a78bfa99" />
+                      </TD>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 export default function CompanySubTab({ factionId }) {
+  const [view, setView]                 = useState('overview')
   const [companies, setCompanies]       = useState([])
   const [loading, setLoading]           = useState(true)
   const [addId, setAddId]               = useState('')
@@ -204,6 +341,31 @@ export default function CompanySubTab({ factionId }) {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        {[['overview', 'Overview'], ['breakdown', 'Company Breakdown']].map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              padding: '7px 16px',
+              borderRadius: '8px',
+              border: `1px solid ${view === v ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: view === v ? 'rgba(167,139,250,0.15)' : 'transparent',
+              color: view === v ? '#f4f4f5' : "var(--text-secondary)",
+              fontSize: '13px',
+              fontWeight: view === v ? '600' : '400',
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'breakdown' && <CompanyBreakdownPanel companies={companies} token={token} />}
+
+      {view === 'overview' && (
+      <>
       {/* Summary stats */}
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
         {[
@@ -448,6 +610,8 @@ export default function CompanySubTab({ factionId }) {
         MTD / YTD / Prev Month = sum of daily profit snapshots · Current Month Est. = daily average × days in month ·
         Days Tracked = days where all companies with API keys have data · Only paid principal counts toward networth
       </p>
+      </>
+      )}
     </div>
   )
 }
