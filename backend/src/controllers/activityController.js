@@ -184,7 +184,7 @@ function getPath(obj, pathArr) {
   return pathArr.reduce((curr, key) => curr?.[key], obj) ?? 0;
 }
 
-function extractStats(statsObj) {
+export function extractStats(statsObj) {
   const out = {};
   // Flat backfill format: keys are our internal field keys directly
   if (statsObj.__backfill) {

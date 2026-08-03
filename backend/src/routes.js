@@ -30,6 +30,7 @@ import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
+import * as leaderboardController from './controllers/leaderboardController.js';
 import * as memberProfileController from './controllers/memberProfileController.js';
 
 export async function handleRequest(request, env, ctx) {
@@ -69,6 +70,11 @@ export async function handleRequest(request, env, ctx) {
 
   if (pathname === '/api/wars/summary' && method === 'GET') {
     return warController.getWarsSummary(request, env);
+  }
+
+  // Public — Discord bot + anything else reads current leaderboard standings here
+  if (pathname === '/api/leaderboards' && method === 'GET') {
+    return leaderboardController.getPublicLeaderboards(request, env);
   }
 
   if (pathname === '/api/events' && method === 'GET') {
@@ -550,6 +556,14 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/bounties\/\d+$/) && method === 'DELETE') {
       return bountyController.deleteBounty(request, env);
+    }
+
+    // Stat-gain leaderboards (Scheduling > Leaderboards)
+    if (pathname === '/api/leadership/leaderboards' && method === 'GET') {
+      return leaderboardController.getLeaderboardConfigs(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/leaderboards\/\w+$/) && method === 'PUT') {
+      return leaderboardController.updateLeaderboardConfig(request, env, user);
     }
 
     // Custom / miscellaneous hits

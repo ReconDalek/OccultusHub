@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import EventCalendar from '../EventCalendar'
+import LeaderboardsSection from './LeaderboardsSection'
 
 const FACTIONS = [
   { id: 33097, name: 'Occultus' },
@@ -775,7 +776,7 @@ export default function EventsSchedulesTab() {
 
       {/* Sub-navigation */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '28px' }}>
-        {[{ id: 'events', label: 'Calendar Events' }, { id: 'schedules', label: 'Faction Schedules' }].map((s) => (
+        {[{ id: 'events', label: 'Calendar Events' }, { id: 'schedules', label: 'Faction Schedules' }, { id: 'leaderboards', label: 'Leaderboards' }].map((s) => (
           <button
             key={s.id}
             onClick={() => setSection(s.id)}
@@ -797,6 +798,7 @@ export default function EventsSchedulesTab() {
 
       {section === 'events' && <EventsSection token={token} />}
       {section === 'schedules' && <SchedulesSection token={token} />}
+      {section === 'leaderboards' && <LeaderboardsSection />}
     </div>
   )
 }
