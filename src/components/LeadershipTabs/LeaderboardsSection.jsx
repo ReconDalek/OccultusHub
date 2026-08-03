@@ -149,10 +149,12 @@ export default function LeaderboardsSection() {
                     minWidth: '220px',
                   }}
                 >
-                  <option value="">Select a stat…</option>
+                  <option value="" style={{ background: '#18181b', color: '#f4f4f5' }}>Select a stat…</option>
                   {Object.entries(statsByCategory).map(([category, stats]) => (
-                    <optgroup key={category} label={category}>
-                      {stats.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    <optgroup key={category} label={category} style={{ background: '#18181b', color: '#a78bfa' }}>
+                      {stats.map(s => (
+                        <option key={s.key} value={s.key} style={{ background: '#18181b', color: '#f4f4f5' }}>{s.label}</option>
+                      ))}
                     </optgroup>
                   ))}
                 </select>
