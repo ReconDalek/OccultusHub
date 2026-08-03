@@ -115,6 +115,7 @@ export async function getBounties(request, env) {
     const from     = url.searchParams.get('from');  // unix
     const to       = url.searchParams.get('to');    // unix
     const user     = url.searchParams.get('user');
+    const paid     = url.searchParams.get('paid');  // '0' | '1'
     const sort     = SORTABLE_COLUMNS.has(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'placed_at';
     const dir      = url.searchParams.get('dir') === 'asc' ? 'ASC' : 'DESC';
     const limit    = Math.min(parseInt(url.searchParams.get('limit') || '200', 10), 500);
@@ -122,12 +123,20 @@ export async function getBounties(request, env) {
     const where = [];
     const binds = [];
 
-    if (warId === 'none') {
-      where.push('b.ranked_war_id IS NULL');
-    } else if (warId) {
-      where.push('b.ranked_war_id=?'); binds.push(parseInt(warId, 10));
+    // war_id accepts a single id, 'none' (unassigned), or a comma-separated
+    // mix of both (e.g. "none,178,176") — used by Bulk Pay to tally across
+    // several wars (and/or unassigned bounties) at once.
+    if (warId) {
+      const tokens = warId.split(',').map(s => s.trim()).filter(Boolean);
+      const hasNone = tokens.includes('none');
+      const ids = tokens.filter(t => t !== 'none').map(t => parseInt(t, 10)).filter(Number.isFinite);
+      const parts = [];
+      if (hasNone) parts.push('b.ranked_war_id IS NULL');
+      if (ids.length) parts.push(`b.ranked_war_id IN (${ids.map(() => '?').join(',')})`);
+      if (parts.length) { where.push(`(${parts.join(' OR ')})`); binds.push(...ids); }
     }
     if (factionId) { where.push('b.faction_id=?'); binds.push(parseInt(factionId, 10)); }
+    if (paid === '0' || paid === '1') { where.push('b.paid=?'); binds.push(parseInt(paid, 10)); }
     if (month && /^\d{4}-\d{2}$/.test(month)) {
       const [y, m] = month.split('-').map(Number);
       const monthFrom = Math.floor(Date.UTC(y, m - 1, 1) / 1000);
@@ -219,6 +228,30 @@ export async function updateBounty(request, env, user) {
   } catch (err) {
     console.error('updateBounty error:', err);
     return errorResponse('Failed to update bounty', 500);
+  }
+}
+
+// ── POST /api/leadership/bounties/bulk-paid — Bulk Pay: mark many bounty rows
+// paid/unpaid in one shot (one lump-sum payment covers several individual
+// bounty rows for the same placer). Body: { ids: number[], paid: boolean } ──
+
+export async function bulkSetBountiesPaid(request, env, user) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const ids = Array.isArray(body.ids) ? body.ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return errorResponse('ids array is required', 400);
+
+    const paid = body.paid ? 1 : 0;
+    const paidBy = paid ? (user?.userId ?? null) : null;
+    const paidAt = paid ? new Date().toISOString() : null;
+
+    const stmt = env.DB.prepare(`UPDATE bounties SET paid=?, paid_by=?, paid_at=? WHERE id=?`);
+    await env.DB.batch(ids.map(id => stmt.bind(paid, paidBy, paidAt, id)));
+
+    return jsonResponse({ ok: true, updated: ids.length });
+  } catch (err) {
+    console.error('bulkSetBountiesPaid error:', err);
+    return errorResponse('Failed to bulk-update bounty paid status', 500);
   }
 }
 

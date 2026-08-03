@@ -542,6 +542,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/bounties' && method === 'POST') {
       return bountyController.createBounty(request, env, user);
     }
+    if (pathname === '/api/leadership/bounties/bulk-paid' && method === 'POST') {
+      return bountyController.bulkSetBountiesPaid(request, env, user);
+    }
     if (pathname.match(/^\/api\/leadership\/bounties\/\d+$/) && method === 'PUT') {
       return bountyController.updateBounty(request, env, user);
     }

@@ -157,7 +157,203 @@ function BountyForm({ initial, wars, onSave, onCancel }) {
   )
 }
 
+// ─── Bulk Pay ────────────────────────────────────────────────────────────────
+// Tallies all currently-unpaid bounties across one or more selected wars into
+// one lump-sum total per placer, so leadership pays each person once instead
+// of individually per bounty — then marks every underlying row paid in one
+// batch request when the lump sum is settled.
+
+function BulkPayTab({ wars }) {
+  const [selectedWarIds, setSelectedWarIds] = useState([])
+  const [includeUnassigned, setIncludeUnassigned] = useState(false)
+  const [bounties, setBounties] = useState([])
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(null)
+  const [expanded, setExpanded] = useState({})
+  const [paying,   setPaying]   = useState(null)
+
+  const hasSelection = selectedWarIds.length > 0 || includeUnassigned
+
+  const load = useCallback(() => {
+    if (!hasSelection) { setBounties([]); return undefined }
+    const controller = new AbortController()
+    setLoading(true); setError(null)
+    const tokens = [...selectedWarIds.map(String), ...(includeUnassigned ? ['none'] : [])]
+    const params = new URLSearchParams({ war_id: tokens.join(','), paid: '0', limit: '500' })
+    fetch(`${API_BASE_URL}/api/leadership/bounties?${params}`, { headers: authHeaders(), signal: controller.signal })
+      .then(r => r.json())
+      .then(d => setBounties(d.bounties || []))
+      .catch(e => { if (e.name !== 'AbortError') setError('Failed to load bounties') })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [selectedWarIds, includeUnassigned, hasSelection])
+
+  useEffect(() => { const cleanup = load(); return cleanup }, [load])
+
+  const toggleWar = (id) => {
+    setSelectedWarIds(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id])
+  }
+
+  const groups = bounties.reduce((acc, b) => {
+    const key = b.placer_torn_id ? `id:${b.placer_torn_id}` : `name:${b.placer_username || 'Unknown'}`
+    if (!acc[key]) acc[key] = { key, placer_torn_id: b.placer_torn_id, placer_username: b.placer_username, total: 0, rows: [] }
+    acc[key].total += b.total_cost
+    acc[key].rows.push(b)
+    return acc
+  }, {})
+  const groupList = Object.values(groups).sort((a, b) => b.total - a.total)
+  const grandTotal = groupList.reduce((s, g) => s + g.total, 0)
+
+  const markGroupPaid = async (group) => {
+    setPaying(group.key)
+    try {
+      await fetch(`${API_BASE_URL}/api/leadership/bounties/bulk-paid`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: group.rows.map(b => b.id), paid: true }),
+      })
+      const paidIds = new Set(group.rows.map(b => b.id))
+      setBounties(prev => prev.filter(b => !paidIds.has(b.id)))
+    } catch (e) {
+      console.error('Failed to bulk-mark bounties paid:', e)
+    } finally {
+      setPaying(null)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: '14px' }}>
+        <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+          Wars to tally (select one or more)
+        </label>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setIncludeUnassigned(v => !v)}
+            style={{
+              padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+              border: `1px solid ${includeUnassigned ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              background: includeUnassigned ? 'rgba(245,158,11,0.15)' : 'transparent',
+              color: includeUnassigned ? '#f59e0b' : "var(--text-secondary)",
+            }}
+          >
+            Unassigned
+          </button>
+          {wars.map(w => {
+            const active = selectedWarIds.includes(w.id)
+            return (
+              <button
+                key={w.id}
+                onClick={() => toggleWar(w.id)}
+                style={{
+                  padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                  border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: active ? 'rgba(167,139,250,0.15)' : 'transparent',
+                  color: active ? '#c4b5fd' : "var(--text-secondary)",
+                }}
+              >
+                vs {w.opponent_faction_name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {!hasSelection && (
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '20px 0' }}>Select at least one war (or Unassigned) to tally.</p>
+      )}
+
+      {error && <p style={{ color: '#f87171', fontSize: '13px' }}>{error}</p>}
+
+      {hasSelection && loading && (
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '20px 0' }}>Loading…</p>
+      )}
+
+      {hasSelection && !loading && !error && (
+        groupList.length === 0 ? (
+          <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No unpaid bounties for the selected war(s).</p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '18px' }}>
+              {[
+                { label: 'Placers',      value: groupList.length },
+                { label: 'Bounties',     value: bounties.length },
+                { label: 'Grand Total',  value: fmtMoney(grandTotal), color: '#f87171' },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 16px', minWidth: '120px' }}>
+                  <p style={{ color: "var(--text-secondary)", fontSize: '11px', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+                  <p style={{ color: color || '#f4f4f5', fontSize: '17px', fontWeight: '700', margin: 0 }}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {groupList.map(g => {
+                const isOpen = !!expanded[g.key]
+                return (
+                  <div key={g.key} style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: 'rgba(255,255,255,0.02)' }}>
+                      <button
+                        onClick={() => setExpanded(s => ({ ...s, [g.key]: !s[g.key] }))}
+                        style={{ background: 'none', border: 'none', color: "var(--text-muted)", cursor: 'pointer', fontSize: '10px', padding: 0 }}
+                      >
+                        {isOpen ? '▼' : '▶'}
+                      </button>
+                      <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600', flex: 1 }}>
+                        {g.placer_username || 'Unknown'}
+                        <span style={{ color: "var(--text-faint)", fontSize: '11px', fontWeight: '400', marginLeft: '8px' }}>
+                          {g.rows.length} bount{g.rows.length === 1 ? 'y' : 'ies'}
+                        </span>
+                      </span>
+                      <span style={{ color: '#f87171', fontSize: '15px', fontWeight: '700' }}>{fmtMoney(g.total)}</span>
+                      {g.placer_torn_id ? (
+                        <a
+                          href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${g.placer_torn_id}&money=${g.total}`}
+                          target="_blank" rel="noreferrer"
+                          style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                        >
+                          Pay ↗
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: "var(--text-faint)" }} title="No Torn ID recorded for this placer">No ID</span>
+                      )}
+                      <button
+                        onClick={() => markGroupPaid(g)}
+                        disabled={paying === g.key}
+                        style={{
+                          fontSize: '11px', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer',
+                          background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc',
+                          opacity: paying === g.key ? 0.5 : 1, whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {paying === g.key ? 'Marking…' : 'Mark All Paid'}
+                      </button>
+                    </div>
+
+                    {isOpen && (
+                      <div style={{ padding: '4px 14px 10px 34px' }}>
+                        {g.rows.map(b => (
+                          <div key={b.id} style={{ display: 'flex', gap: '10px', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <span style={{ color: "var(--text-faint)", minWidth: '150px' }}>{formatDateTime(b.placed_at)}</span>
+                            <span style={{ color: "var(--text-secondary)", flex: 1 }}>on {b.target_username}</span>
+                            <span style={{ color: "var(--text-faint)" }}>{b.ranked_war_id ? `vs ${b.opponent_faction_name}` : 'Unassigned'}</span>
+                            <span style={{ color: '#e4e4e7', fontWeight: '500' }}>{fmtMoney(b.total_cost)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )
+      )}
+    </div>
+  )
+}
+
 export default function BountiesTab() {
+  const [view,      setView]      = useState('list')
   const [bounties,  setBounties]  = useState([])
   const [wars,      setWars]      = useState([])
   const [loading,   setLoading]   = useState(true)
@@ -260,6 +456,31 @@ export default function BountiesTab() {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+        {[['list', 'All Bounties'], ['bulk', 'Bulk Pay']].map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              padding: '7px 16px',
+              borderRadius: '8px',
+              border: `1px solid ${view === v ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: view === v ? 'rgba(167,139,250,0.15)' : 'transparent',
+              color: view === v ? '#f4f4f5' : "var(--text-secondary)",
+              fontSize: '13px',
+              fontWeight: view === v ? '600' : '400',
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'bulk' && <BulkPayTab wars={wars} />}
+
+      {view === 'list' && (
+      <>
       {/* Filters */}
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px', alignItems: 'flex-end' }}>
         <div>
@@ -371,6 +592,8 @@ export default function BountiesTab() {
             </tbody>
           </table>
         </div>
+      )}
+      </>
       )}
     </div>
   )
