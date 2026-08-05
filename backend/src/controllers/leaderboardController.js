@@ -32,7 +32,9 @@ function statValue(rawStats, statKey) {
 // back to the member's own first-in-month snapshot only when they have no
 // prior data at all (new member), giving them 0 gain for that first day.
 async function computeLeaderboard(env, config) {
-  if (!config?.stat_key || !config?.year || !config?.month) {
+  // Deactivated boards track nothing — same as unconfigured — rather than
+  // continuing to show whatever month/stat was last set.
+  if (!config?.active || !config?.stat_key || !config?.year || !config?.month) {
     return { entries: [], stat: null };
   }
   const field = PERSONAL_STAT_FIELDS.find(f => f.key === config.stat_key);
@@ -94,7 +96,7 @@ export async function getLeaderboardConfigs(request, env) {
     const configs = {};
     const leaderboards = {};
     for (const type of LEADERBOARD_TYPES) {
-      const config = (results || []).find(r => r.type === type) ?? { type, stat_key: null, year: null, month: null };
+      const config = (results || []).find(r => r.type === type) ?? { type, stat_key: null, year: null, month: null, active: 1 };
       configs[type] = config;
       leaderboards[type] = await computeLeaderboard(env, config);
     }
@@ -108,6 +110,8 @@ export async function getLeaderboardConfigs(request, env) {
 }
 
 // PUT /api/leadership/leaderboards/:type — body: { stat_key, year, month }
+// Saving a stat/month always (re)activates the board — picking what to
+// track is how you turn it back on after disabling it.
 export async function updateLeaderboardConfig(request, env, user) {
   try {
     const type = request.url.match(/\/leaderboards\/(\w+)/)?.[1];
@@ -123,16 +127,40 @@ export async function updateLeaderboardConfig(request, env, user) {
     }
 
     await env.DB.prepare(`
-      INSERT INTO leaderboard_config (type, stat_key, year, month, updated_by, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO leaderboard_config (type, stat_key, year, month, active, updated_by, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(type) DO UPDATE SET
         stat_key = excluded.stat_key, year = excluded.year, month = excluded.month,
-        updated_by = excluded.updated_by, updated_at = excluded.updated_at
+        active = 1, updated_by = excluded.updated_by, updated_at = excluded.updated_at
     `).bind(type, stat_key, year, month, user.userId).run();
 
     return jsonResponse({ success: true });
   } catch (e) {
     return errorResponse('Failed to update leaderboard config: ' + e.message, 500);
+  }
+}
+
+// POST /api/leadership/leaderboards/:type/active — body: { active: boolean }
+// Toggles tracking on/off without touching the stored stat/month, so
+// re-enabling later doesn't require re-picking them.
+export async function setLeaderboardActive(request, env, user) {
+  try {
+    const type = request.url.match(/\/leaderboards\/(\w+)\/active/)?.[1];
+    if (!LEADERBOARD_TYPES.includes(type)) return errorResponse('Invalid leaderboard type', 400);
+
+    const body = await request.json().catch(() => ({}));
+    const active = body.active ? 1 : 0;
+
+    await env.DB.prepare(`
+      INSERT INTO leaderboard_config (type, active, updated_by, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(type) DO UPDATE SET
+        active = excluded.active, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+    `).bind(type, active, user.userId).run();
+
+    return jsonResponse({ success: true, active: !!active });
+  } catch (e) {
+    return errorResponse('Failed to update leaderboard active state: ' + e.message, 500);
   }
 }
 
@@ -153,7 +181,7 @@ export async function getPublicLeaderboards(request, env) {
 
     const out = {};
     for (const type of types) {
-      const config = (results || []).find(r => r.type === type) ?? { type, stat_key: null, year: null, month: null };
+      const config = (results || []).find(r => r.type === type) ?? { type, stat_key: null, year: null, month: null, active: 1 };
       const { entries, stat } = await computeLeaderboard(env, config);
       out[type] = {
         stat, year: config.year, month: config.month,

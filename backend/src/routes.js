@@ -565,6 +565,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/leaderboards\/\w+$/) && method === 'PUT') {
       return leaderboardController.updateLeaderboardConfig(request, env, user);
     }
+    if (pathname.match(/^\/api\/leadership\/leaderboards\/\w+\/active$/) && method === 'POST') {
+      return leaderboardController.setLeaderboardActive(request, env, user);
+    }
 
     // Custom / miscellaneous hits
     if (pathname === '/api/leadership/custom-hits' && method === 'GET') {
