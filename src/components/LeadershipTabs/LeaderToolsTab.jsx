@@ -3,6 +3,7 @@ import Respect from '../../pages/Respect'
 import EnergyActivityPanel from './ActivityPanel'
 import PersonalStatsPanel from './PersonalStatsPanel'
 import CipherReviewTab from './CipherReviewTab'
+import ProgressionTrendTool from './ProgressionTrendTool'
 
 // ─── Sub-tab bar ──────────────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ function RecruitmentPanel() {
 const TOOLS = [
   { value: 'activity',       label: 'Gym Energy' },
   { value: 'personal_stats', label: 'Personal Stats' },
+  { value: 'progression',    label: 'Progression Trend' },
   { value: 'respect',        label: 'Respect Tracker' },
   { value: 'recruitment',    label: 'Recruitment' },
   { value: 'cipher',         label: 'Cipher Review' },
@@ -130,6 +132,7 @@ export default function LeaderToolsTab() {
       {/* Panel */}
       {activeTool === 'activity'        && <EnergyActivityPanel />}
       {activeTool === 'personal_stats'  && <PersonalStatsPanel />}
+      {activeTool === 'progression'     && <ProgressionTrendTool />}
       {activeTool === 'respect'         && <RespectPanel />}
       {activeTool === 'recruitment'     && <RecruitmentPanel />}
       {activeTool === 'cipher'          && <CipherReviewTab />}

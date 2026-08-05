@@ -32,6 +32,7 @@ import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
 import * as leaderboardController from './controllers/leaderboardController.js';
 import * as memberProfileController from './controllers/memberProfileController.js';
+import * as progressionController from './controllers/progressionController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -567,6 +568,9 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/leaderboards\/\w+\/active$/) && method === 'POST') {
       return leaderboardController.setLeaderboardActive(request, env, user);
+    }
+    if (pathname === '/api/leadership/progression' && method === 'GET') {
+      return progressionController.getProgressionTrend(request, env);
     }
 
     // Custom / miscellaneous hits
