@@ -635,7 +635,7 @@ export async function handleRequest(request, env, ctx) {
       return companyProfitController.getCompanyProfits(request, env, user);
     }
     if (pathname === '/api/leadership/accounting/companies' && method === 'POST') {
-      return companyProfitController.addCompany(request, env, user);
+      return companyProfitController.addCompany(request, env, user, ctx);
     }
     if (pathname.match(/^\/api\/leadership\/accounting\/companies\/\d+\/principal-paid$/) && method === 'POST') {
       return companyProfitController.setPrincipalPaid(request, env, user);

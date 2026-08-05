@@ -322,7 +322,6 @@ export async function refreshCache(request, env, user) {
     }
 
     const factionIds = [33097, 9171, 9728];
-    const companyIds = [112941, 120244, 121745, 122254, 120502, 124650];
     const trigger = 'manual';
 
     let factionResult = null;
@@ -332,7 +331,14 @@ export async function refreshCache(request, env, user) {
       factionResult = await fetchAndCacheFactions(env, factionIds, apiKeyObj, trigger);
     }
     if (scope === 'all' || scope === 'companies') {
-      companyResult = await fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger);
+      // Read the canonical company list from company_config rather than a
+      // hardcoded array, so newly-added companies (Accounting > Companies)
+      // are picked up by a manual refresh too, not just the daily cron.
+      const { results: configRows } = await env.DB.prepare(`SELECT company_id FROM company_config`).all();
+      const companyIds = (configRows || []).map(r => r.company_id);
+      companyResult = companyIds.length
+        ? await fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger)
+        : { fetched: 0, errors: 0 };
     }
 
     await logInfo(env, {

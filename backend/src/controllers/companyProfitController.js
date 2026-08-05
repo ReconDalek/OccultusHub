@@ -183,7 +183,7 @@ export async function setPrincipalPaid(request, env, user) {
   }
 }
 
-export async function addCompany(request, env, user) {
+export async function addCompany(request, env, user, ctx) {
   try {
     const { company_id } = await request.json();
     if (!company_id) return errorResponse('company_id required', 400);
@@ -201,13 +201,19 @@ export async function addCompany(request, env, user) {
        VALUES (?, ?, 0, NULL, NULL, ?, 0, 1)`
     ).bind(id, `Company ${id}`, PRINCIPAL_PER_COMPANY).run();
 
-    // Trigger a company_cache fetch so the 12h cron picks up name/director
+    // Trigger a company_cache fetch so the 12h cron picks up name/director.
+    // Must be kept alive with ctx.waitUntil — without it, the Worker tears
+    // down this fire-and-forget promise the moment the response below is
+    // sent, and the fetch never gets far enough to write anything (not even
+    // an error row) to company_cache.
     const { fetchAndCacheCompanies, getRandomUserApiKey } = await import('../services/tornApiService.js');
     const apiKeyObj = await getRandomUserApiKey(env);
     if (apiKeyObj?.key) {
-      fetchAndCacheCompanies(env, [id], apiKeyObj, 'manual').catch(e =>
+      const fetchPromise = fetchAndCacheCompanies(env, [id], apiKeyObj, 'manual').catch(e =>
         console.error('[add-company] cache fetch failed:', e)
       );
+      if (ctx?.waitUntil) ctx.waitUntil(fetchPromise);
+      else await fetchPromise;
     }
 
     return jsonResponse({ success: true, company_id: id });
