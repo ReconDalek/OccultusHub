@@ -421,6 +421,7 @@ export async function getCompanyProfits(request, env, user) {
       env.DB.prepare(
         `SELECT
            c.*,
+           cfg.added_at                     AS added_at,
            COALESCE(s.mtd_profit, 0)        AS mtd_profit,
            COALESCE(s.ytd_profit, 0)        AS ytd_profit,
            COALESCE(s.prev_month_profit, 0) AS prev_month_profit,
@@ -429,6 +430,7 @@ export async function getCompanyProfits(request, env, user) {
            COALESCE(s.avg_daily_profit, 0)  AS avg_daily_profit,
            COALESCE(s.avg_daily_cut, 0)     AS avg_daily_cut
          FROM company_profit_cache c
+         LEFT JOIN company_config cfg ON cfg.company_id = c.company_id
          LEFT JOIN (
            SELECT
              company_id,

@@ -2,11 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { API_BASE_URL } from '../../../config/api'
 
 const PRINCIPAL   = 4_000_000_000
+// Floor for how far back the coverage panel's month list reaches — well
+// before any company's own added_at, so it never hides a company's start.
 const TRACK_START = '2026-06-01'
-// Tracking began mid-June, so that month can never be fully covered — exclude
-// it from the "missing data detected" flag (it still shows in the coverage
-// list itself, just doesn't trigger the warning).
-const [TRACK_START_YEAR, TRACK_START_MONTH] = TRACK_START.split('-').map(Number)
 
 function fmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -63,23 +61,37 @@ function getMonthRange() {
   return months
 }
 
-// Build coverage: per month, per company — which expected days are missing
+// Build coverage: per month, per company — which expected days are missing.
+// Each company can only be expected to have data from its own added_at
+// onward (a company can't have snapshots from before it existed in our
+// tracking) — a day before that is simply not applicable to it, not "missing".
 function buildCoverage(companies, monthRange) {
   const withKey = companies.filter(c => c.has_api_key)
   if (!withKey.length) return []
+
+  const companiesWithStart = withKey.map(c => ({
+    ...c,
+    startDate: (c.added_at ? c.added_at.slice(0, 10) : TRACK_START),
+  }))
 
   return monthRange.map(({ year, month }) => {
     const expected = daysInRange(year, month)
     if (!expected.length) return null
 
-    const perCompany = withKey.map(c => {
-      const tracked = new Set(c.snapshot_dates ?? [])
-      const missing = expected.filter(d => !tracked.has(d))
-      return { company_id: c.company_id, name: c.name, missing, tracked: expected.length - missing.length }
+    const perCompany = companiesWithStart.map(c => {
+      const tracked    = new Set(c.snapshot_dates ?? [])
+      const applicable = expected.filter(d => d >= c.startDate)
+      const missing    = applicable.filter(d => !tracked.has(d))
+      return {
+        company_id: c.company_id, name: c.name, startDate: c.startDate,
+        missing, tracked: applicable.length - missing.length, applicable: applicable.length,
+      }
     })
 
-    // Days where ALL companies have data
-    const fullDays = expected.filter(d => perCompany.every(c => !c.missing.includes(d)))
+    // Days where every company applicable that day has data
+    const fullDays = expected.filter(d =>
+      perCompany.every(c => d < c.startDate || !c.missing.includes(d))
+    )
     const anyMissing = perCompany.some(c => c.missing.length > 0)
 
     return { year, month, expected: expected.length, fullDays: fullDays.length, perCompany, anyMissing }
@@ -622,7 +634,7 @@ export default function CompanySubTab({ factionId }) {
           >
             <span style={{ fontSize: '10px' }}>{coverageOpen ? '▼' : '▶'}</span>
             Data Coverage
-            {!coverageOpen && coverage.some(m => m.anyMissing && !(m.year === TRACK_START_YEAR && m.month === TRACK_START_MONTH)) && (
+            {!coverageOpen && coverage.some(m => m.anyMissing) && (
               <span style={{ marginLeft: '6px', color: '#f97316', fontSize: '11px', fontWeight: '500', textTransform: 'none', letterSpacing: 0 }}>
                 — missing data detected
               </span>
@@ -666,7 +678,7 @@ export default function CompanySubTab({ factionId }) {
                               <div key={c.company_id} style={{ fontSize: '12px' }}>
                                 <span style={{ color: "var(--text-secondary)", marginRight: '8px' }}>{c.name}</span>
                                 <span style={{ color: '#f97316' }}>
-                                  {c.tracked} / {expected} days —
+                                  {c.tracked} / {c.applicable} days —
                                 </span>
                                 <span style={{ color: "var(--text-muted)" }}> missing: </span>
                                 <span style={{ color: '#f87171' }}>{c.missing.map(fmtDay).join(', ')}</span>
