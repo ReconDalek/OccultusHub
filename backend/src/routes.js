@@ -492,6 +492,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/warnings\/\d+\/comment$/) && method === 'PUT') {
       return warningsController.updateWarningComment(request, env);
     }
+    if (pathname === '/api/leadership/warnings/generate/energy' && method === 'GET') {
+      return activityController.generateEnergyWarningReport(request, env);
+    }
 
     // Monthly xanax distribution tracking
     if (pathname === '/api/leadership/xanax' && method === 'GET') {

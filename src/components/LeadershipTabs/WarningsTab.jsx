@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from '../../hooks/useSession'
 import { API_BASE_URL } from '../../config/api'
+import GenerateWarningsPanel from './GenerateWarningsPanel'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
 const WARNING_TYPES = ['Energy', 'Chain', 'Other']
@@ -580,6 +581,7 @@ export default function WarningsTab() {
   // first loaded.
   const WINDOW = getSixMonthWindow()
   const { user } = useSession()
+  const [view,             setView]              = useState('overview')
   const [warnings,         setWarnings]         = useState([])
   const [members,          setMembers]           = useState([])
   const [loading,          setLoading]           = useState(true)
@@ -661,6 +663,29 @@ export default function WarningsTab() {
 
   return (
     <div>
+      {/* View switcher */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+        {[['overview', 'Overview'], ['generate', 'Generate']].map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              padding: '7px 16px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
+              fontWeight: view === v ? '600' : '400',
+              border: `1px solid ${view === v ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: view === v ? 'rgba(167,139,250,0.15)' : 'transparent',
+              color: view === v ? '#f4f4f5' : 'var(--text-secondary)',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'generate' && <GenerateWarningsPanel onWarningSaved={fetchWarnings} />}
+
+      {view === 'overview' && (
+      <>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
@@ -750,6 +775,8 @@ export default function WarningsTab() {
           onClose={() => setShowAddModal(false)}
           onRefresh={fetchWarnings}
         />
+      )}
+      </>
       )}
     </div>
   )

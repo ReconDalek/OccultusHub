@@ -651,6 +651,188 @@ export async function getEnergyActivity(request, env) {
   }
 }
 
+// GET /api/leadership/warnings/generate/energy?year=&month=1-12&factions=33097,9728,9171&includeAttacks=1&includeNewMembers=0
+// Source data for Warnings > Generate: one row per member with their gym+attack
+// energy total for the selected calendar month and the resulting daily average,
+// so leadership can compare it against a per-faction target (entered client-side,
+// not stored server-side) and one-click "report" a warning for anyone falling
+// short. Mirrors getEnergyActivity's per-faction-delta baseline logic (a member
+// switching factions mid-month gets credit summed across both) but scoped to a
+// calendar month and restricted to the selected factions only, and — unlike
+// getEnergyActivity — does NOT drop zero-energy members, since low/no energy is
+// exactly what this report exists to surface.
+export async function generateEnergyWarningReport(request, env) {
+  try {
+    const url  = new URL(request.url);
+    const year  = parseInt(url.searchParams.get('year'), 10);
+    const month = parseInt(url.searchParams.get('month'), 10);
+    if (!year || !month || month < 1 || month > 12) {
+      return errorResponse('year and month (1-12) are required', 400);
+    }
+
+    const factionsParam = url.searchParams.get('factions');
+    const factions = (factionsParam ? factionsParam.split(',') : FACTION_IDS.map(String))
+      .map(s => parseInt(s, 10))
+      .filter(f => FACTION_IDS.includes(f));
+    if (!factions.length) return errorResponse('At least one valid faction is required', 400);
+
+    const includeAttacks    = url.searchParams.get('includeAttacks') !== '0';
+    const includeNewMembers = url.searchParams.get('includeNewMembers') === '1';
+
+    const monthStart  = `${year}-${String(month).padStart(2, '0')}-01`;
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const nowDate = new Date();
+    const isCurrentMonth = year === nowDate.getUTCFullYear() && month === (nowDate.getUTCMonth() + 1);
+    // Current month caps data collection at yesterday (today's snapshot doesn't exist
+    // yet), but the average is still divided by the full calendar days in the month
+    // per the requested "total for the month / days in the month" formula — this
+    // report is meant to be run on completed months, so an in-progress month
+    // understating its own average is an accepted edge case, not a bug to guard.
+    const monthEnd = isCurrentMonth
+      ? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      : `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const ph = factions.map(() => '?').join(',');
+
+    const rows = await env.DB.prepare(`
+      WITH baseline AS (
+        SELECT torn_user_id, faction_id, energy_total AS baseline_value
+        FROM (
+          SELECT torn_user_id, faction_id, energy_total,
+                 ROW_NUMBER() OVER (PARTITION BY torn_user_id, faction_id ORDER BY snapshot_date DESC) AS rn
+          FROM energy_snapshots
+          WHERE snapshot_date < ? AND energy_total > 0 AND faction_id IN (${ph})
+        )
+        WHERE rn = 1
+      ),
+      in_period AS (
+        SELECT
+          torn_user_id, faction_id,
+          MAX(username)      AS username,
+          MIN(snapshot_date)  AS start_date,
+          MAX(snapshot_date)  AS end_date,
+          MIN(energy_total)   AS first_value,
+          MAX(energy_total)   AS latest_value
+        FROM energy_snapshots
+        WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0 AND faction_id IN (${ph})
+        GROUP BY torn_user_id, faction_id
+      ),
+      per_faction AS (
+        SELECT
+          ip.torn_user_id, ip.faction_id, ip.username, ip.start_date, ip.end_date,
+          MAX(0, ip.latest_value - COALESCE(b.baseline_value, ip.first_value)) AS faction_delta,
+          CASE WHEN b.baseline_value IS NULL THEN 1 ELSE 0 END AS is_new_in_faction
+        FROM in_period ip
+        LEFT JOIN baseline b ON b.torn_user_id = ip.torn_user_id AND b.faction_id = ip.faction_id
+      )
+      SELECT
+        agg.torn_user_id,
+        agg.username,
+        agg.start_date,
+        agg.end_date,
+        agg.gym_energy,
+        agg.all_factions_new,
+        fm.level,
+        fm.faction_id AS current_faction_id,
+        fm.is_active
+      FROM (
+        SELECT
+          torn_user_id,
+          MAX(username)          AS username,
+          MIN(start_date)        AS start_date,
+          MAX(end_date)          AS end_date,
+          SUM(faction_delta)     AS gym_energy,
+          MIN(is_new_in_faction) AS all_factions_new
+        FROM per_faction
+        GROUP BY torn_user_id
+      ) agg
+      LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
+    `).bind(monthStart, ...factions, monthStart, monthEnd, ...factions).all();
+
+    // ── Attacks: saved wars + chains in period, restricted to the selected factions ──
+    const attacks = {};
+    if (includeAttacks) {
+      const periodFromTs = Math.floor(new Date(monthStart + 'T00:00:00Z').getTime() / 1000);
+      const periodToTs   = Math.floor(new Date(monthEnd   + 'T23:59:59Z').getTime() / 1000);
+
+      const [warHitRows, chainHitRows] = await Promise.all([
+        env.DB.prepare(`
+          SELECT wh.torn_user_id, SUM(wh.war_hits + wh.outside_hits + wh.assists) AS total
+          FROM war_hits wh
+          JOIN ranked_wars rw ON wh.ranked_war_id = rw.id
+          WHERE wh.faction_id IN (${ph})
+            AND COALESCE(rw.started_at, rw.scheduled_start) >= ?
+            AND COALESCE(rw.started_at, rw.scheduled_start) <= ?
+          GROUP BY wh.torn_user_id
+        `).bind(...factions, periodFromTs, periodToTs).all(),
+        env.DB.prepare(`
+          SELECT ch.torn_user_id, SUM(ch.total_attacks) AS total
+          FROM chain_hits ch
+          JOIN chain_cache cc ON ch.torn_chain_id = cc.torn_chain_id
+          WHERE ch.faction_id IN (${ph}) AND cc.start_at >= ? AND cc.start_at <= ?
+          GROUP BY ch.torn_user_id
+        `).bind(...factions, periodFromTs, periodToTs).all(),
+      ]);
+      for (const r of (warHitRows.results || []))   attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
+      for (const r of (chainHitRows.results || [])) attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
+    }
+
+    const members = [];
+    for (const r of (rows.results || [])) {
+      // "New member" = no snapshot at all before this month, in any of the
+      // selected factions, AND their first snapshot fell after the 1st —
+      // tracking genuinely started mid-month rather than the month just
+      // happening to be their first with data from day one.
+      const joinedMidMonth = Boolean(r.all_factions_new) && r.start_date > monthStart;
+      if (joinedMidMonth && !includeNewMembers) continue;
+
+      const gymEnergy    = r.gym_energy || 0;
+      const attackHits   = attacks[r.torn_user_id] || 0;
+      const attackEnergy = attackHits * 25;
+      const totalEnergy  = gymEnergy + attackEnergy;
+
+      let trackedDays = daysInMonth;
+      if (joinedMidMonth && r.start_date) {
+        const startTs = Date.parse(r.start_date + 'T00:00:00Z');
+        const endTs   = Date.parse(monthEnd + 'T00:00:00Z');
+        trackedDays = Math.max(1, Math.round((endTs - startTs) / 86400000) + 1);
+      }
+
+      members.push({
+        torn_user_id:     r.torn_user_id,
+        username:         r.username,
+        faction_id:       r.current_faction_id ?? null,
+        level:            r.level ?? null,
+        is_active:        r.is_active ?? null,
+        gym_energy:       gymEnergy,
+        attack_hits:      attackHits,
+        attack_energy:    attackEnergy,
+        total_energy:     totalEnergy,
+        start_date:       r.start_date,
+        end_date:         r.end_date,
+        joined_mid_month: joinedMidMonth,
+        tracked_days:     trackedDays,
+        avg_per_day:      Math.round(totalEnergy / trackedDays),
+      });
+    }
+
+    members.sort((a, b) => a.avg_per_day - b.avg_per_day);
+
+    return jsonResponse({
+      year, month,
+      month_start: monthStart, month_end: monthEnd,
+      days_in_month: daysInMonth,
+      factions,
+      include_attacks: includeAttacks,
+      include_new_members: includeNewMembers,
+      members,
+    });
+  } catch (err) {
+    console.error('generateEnergyWarningReport error:', err);
+    return errorResponse('Failed to generate energy warning report', 500);
+  }
+}
+
 // Fetch and store a single member's personalstats snapshot for the given date.
 // Returns true on success, throws on failure (caller decides retry strategy).
 async function fetchAndStoreMemberStats(env, member, apiKey, date, now) {
