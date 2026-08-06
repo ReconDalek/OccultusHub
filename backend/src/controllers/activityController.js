@@ -655,12 +655,14 @@ export async function getEnergyActivity(request, env) {
 // Source data for Warnings > Generate: one row per member with their gym+attack
 // energy total for the selected calendar month and the resulting daily average,
 // so leadership can compare it against a per-faction target (entered client-side,
-// not stored server-side) and one-click "report" a warning for anyone falling
-// short. Mirrors getEnergyActivity's per-faction-delta baseline logic (a member
-// switching factions mid-month gets credit summed across both) but scoped to a
-// calendar month and restricted to the selected factions only, and — unlike
+// not stored server-side) and one-click "warn" anyone falling short. Mirrors
+// getEnergyActivity's per-faction-delta baseline logic (a member switching
+// factions mid-month gets credit summed across both) but scoped to a calendar
+// month and restricted to the selected factions only, and — unlike
 // getEnergyActivity — does NOT drop zero-energy members, since low/no energy is
-// exactly what this report exists to surface.
+// exactly what this report exists to surface. Departed members are always
+// excluded (never candidates for a new warning). Also returns each member's
+// overdose delta for the month and any mid-month faction transfer.
 export async function generateEnergyWarningReport(request, env) {
   try {
     const url  = new URL(request.url);
@@ -749,6 +751,61 @@ export async function generateEnergyWarningReport(request, env) {
       LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
     `).bind(monthStart, ...factions, monthStart, monthEnd, ...factions).all();
 
+    // ── Faction movements: members with snapshots under >1 selected faction this
+    // month (e.g. transferred from 33097 to 9171 mid-month). Reuses the same
+    // predicates as the in_period CTE above but keeps factions un-collapsed so a
+    // move can actually be detected — the main query already sums across factions.
+    const movementRows = await env.DB.prepare(`
+      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date
+      FROM energy_snapshots
+      WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0 AND faction_id IN (${ph})
+      GROUP BY torn_user_id, faction_id
+      ORDER BY torn_user_id, start_date ASC
+    `).bind(monthStart, monthEnd, ...factions).all();
+
+    const movementsByUser = {};
+    for (const r of (movementRows.results || [])) {
+      (movementsByUser[r.torn_user_id] ??= []).push({
+        faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
+      });
+    }
+    for (const id of Object.keys(movementsByUser)) {
+      if (movementsByUser[id].length < 2) delete movementsByUser[id];
+    }
+
+    // ── Overdoses: personal_stats_snapshots delta over the same period. This is
+    // an account-level lifetime counter (unlike gym energy, which Torn tracks
+    // per-faction via the contributors endpoint) so no per-faction split is
+    // needed — same reasoning as the revives delta in getEnergyActivity.
+    const [odStartRows, odEndRows] = await Promise.all([
+      env.DB.prepare(`
+        SELECT p.torn_user_id,
+               CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+        FROM personal_stats_snapshots p
+        INNER JOIN (
+          SELECT torn_user_id, MIN(snapshot_date) AS min_date
+          FROM personal_stats_snapshots
+          WHERE snapshot_date >= ? AND snapshot_date <= ?
+          GROUP BY torn_user_id
+        ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+      `).bind(monthStart, monthEnd).all(),
+      env.DB.prepare(`
+        SELECT p.torn_user_id,
+               CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+        FROM personal_stats_snapshots p
+        INNER JOIN (
+          SELECT torn_user_id, MAX(snapshot_date) AS max_date
+          FROM personal_stats_snapshots
+          WHERE snapshot_date >= ? AND snapshot_date <= ?
+          GROUP BY torn_user_id
+        ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+      `).bind(monthStart, monthEnd).all(),
+    ]);
+    const odStart = {};
+    for (const r of (odStartRows.results || [])) odStart[r.torn_user_id] = r.val ?? 0;
+    const overdoses = {};
+    for (const r of (odEndRows.results || [])) overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
+
     // ── Attacks: saved wars + chains in period, restricted to the selected factions ──
     const attacks = {};
     if (includeAttacks) {
@@ -779,6 +836,10 @@ export async function generateEnergyWarningReport(request, env) {
 
     const members = [];
     for (const r of (rows.results || [])) {
+      // Departed members (or no faction_members row at all — can't confirm
+      // active status either way) are never candidates for a new warning.
+      if (r.is_active !== 1) continue;
+
       // "New member" = no snapshot at all before this month, in any of the
       // selected factions, AND their first snapshot fell after the 1st —
       // tracking genuinely started mid-month rather than the month just
@@ -813,6 +874,8 @@ export async function generateEnergyWarningReport(request, env) {
         joined_mid_month: joinedMidMonth,
         tracked_days:     trackedDays,
         avg_per_day:      Math.round(totalEnergy / trackedDays),
+        overdoses:        overdoses[r.torn_user_id] ?? 0,
+        movements:        movementsByUser[r.torn_user_id] ?? null,
       });
     }
 

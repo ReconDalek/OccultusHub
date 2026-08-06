@@ -175,16 +175,16 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
   const showAttacks = data.include_attacks
 
   const colTemplate = showAttacks
-    ? '30px 1fr 90px 90px 90px 80px 90px 100px 130px'
-    : '30px 1fr 90px 90px 80px 90px 100px 130px'
+    ? '30px 1fr 90px 90px 90px 70px 50px 90px 100px 130px'
+    : '30px 1fr 90px 90px 70px 50px 90px 100px 130px'
 
   const headers = showAttacks
-    ? ['#', 'Member', 'Gym', 'Attacks', 'Total', 'Days', 'Avg/Day', 'vs Target', '']
-    : ['#', 'Member', 'Gym', 'Total', 'Days', 'Avg/Day', 'vs Target', '']
+    ? ['#', 'Member', 'Gym', 'Attacks', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
+    : ['#', 'Member', 'Gym', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: showAttacks ? '820px' : '740px' }}>
+      <div style={{ minWidth: showAttacks ? '880px' : '800px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
           {headers.map((h, i) => (
             <span key={h + i} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
@@ -209,28 +209,39 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
                 <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
                   {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
-                  {!m.is_active && <span style={{ color: '#f87171' }}> · departed</span>}
                   {m.joined_mid_month && (
                     <span title={`First tracked ${m.start_date} — joined mid-month`} style={{ color: '#f59e0b', marginLeft: '4px' }}>⚠ new</span>
                   )}
                 </span>
+                {m.movements && (
+                  <div style={{ color: '#a78bfa', fontSize: '10px', marginTop: '1px' }}>
+                    {m.movements.map((mv, idx) => (
+                      <span key={mv.faction_id}>
+                        {idx > 0 && ' → '}
+                        {FACTION_LABEL[mv.faction_id]}
+                        {idx > 0 && ` (${mv.start_date})`}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               {showAttacks && <span style={{ color: '#f87171', fontSize: '12px' }}>{m.attack_hits > 0 ? `+${fmt(m.attack_energy)}` : '—'}</span>}
               {!showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.total_energy)}</span>
               <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{m.tracked_days}d</span>
+              <span style={{ color: m.overdoses > 0 ? '#f87171' : 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.overdoses)}</span>
               <span style={{ color: '#ff2f6d', fontSize: '13px', fontWeight: '600' }}>{fmt(m.avg_per_day)}</span>
               <span style={{ fontSize: '12px', color: !hasTarget ? 'var(--text-faint)' : (delta < 0 ? '#f87171' : '#4ade80') }}>
                 {!hasTarget ? '—' : `${delta >= 0 ? '+' : ''}${fmt(delta)}`}
               </span>
               <div>
                 {reported ? (
-                  <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Reported</span>
+                  <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
                 ) : (
                   <button onClick={() => onReport(m)}
                     style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                    Report
+                    Warn
                   </button>
                 )}
               </div>
@@ -292,6 +303,16 @@ function EnergyGenerator({ onWarningSaved }) {
   }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers])
 
   const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
+
+  // Members who already meet or exceed their faction's target aren't warning
+  // candidates — hide them once a target is set for their faction. Recomputed
+  // from live `targets` state (not baked in at generate time) so tweaking a
+  // target updates the list immediately without re-generating.
+  const visibleMembers = data ? data.members.filter(m => {
+    const target = targets[m.faction_id]
+    const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+    return !hasTarget || m.avg_per_day < Number(target)
+  }) : []
 
   return (
     <div>
@@ -407,13 +428,17 @@ function EnergyGenerator({ onWarningSaved }) {
           <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>No energy data for {periodLabel} with the selected factions.</p>
           </div>
+        ) : visibleMembers.length === 0 ? (
+          <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>Every member met their faction's target for {periodLabel}.</p>
+          </div>
         ) : (
           <>
             <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginBottom: '10px' }}>
-              {periodLabel} · {data.members.length} member{data.members.length !== 1 ? 's' : ''} · {data.days_in_month} days in month
+              {periodLabel} · {visibleMembers.length} member{visibleMembers.length !== 1 ? 's' : ''} · {data.days_in_month} days in month
             </p>
             <EnergyReportTable
-              data={data}
+              data={{ ...data, members: visibleMembers }}
               targets={targets}
               reportedIds={reportedIds}
               onReport={setReportingMember}
