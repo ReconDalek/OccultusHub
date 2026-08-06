@@ -751,10 +751,15 @@ export async function generateEnergyWarningReport(request, env) {
       LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
     `).bind(monthStart, ...factions, monthStart, monthEnd, ...factions).all();
 
-    // ── Faction movements: members with snapshots under >1 selected faction this
-    // month (e.g. transferred from 33097 to 9171 mid-month). Reuses the same
-    // predicates as the in_period CTE above but keeps factions un-collapsed so a
-    // move can actually be detected — the main query already sums across factions.
+    // ── Faction movements: which of the selected factions each member's energy
+    // was tracked under this month, in order. Reuses the same predicates as the
+    // in_period CTE above but keeps factions un-collapsed so a move can actually
+    // be detected — the main query already sums across factions. Also used below
+    // to decide each member's "faction badge" for this report — deliberately NOT
+    // faction_members.faction_id, which reflects the member's faction *right now*
+    // and can disagree with (or even fall entirely outside) this reporting period
+    // if they've moved again since, including into a faction excluded from this
+    // query.
     const movementRows = await env.DB.prepare(`
       SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date
       FROM energy_snapshots
@@ -763,14 +768,18 @@ export async function generateEnergyWarningReport(request, env) {
       ORDER BY torn_user_id, start_date ASC
     `).bind(monthStart, monthEnd, ...factions).all();
 
-    const movementsByUser = {};
+    const segmentsByUser = {};
     for (const r of (movementRows.results || [])) {
-      (movementsByUser[r.torn_user_id] ??= []).push({
+      (segmentsByUser[r.torn_user_id] ??= []).push({
         faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
       });
     }
-    for (const id of Object.keys(movementsByUser)) {
-      if (movementsByUser[id].length < 2) delete movementsByUser[id];
+    const periodFactionByUser = {};
+    const movementsByUser = {};
+    for (const [id, segments] of Object.entries(segmentsByUser)) {
+      segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
+      periodFactionByUser[id] = segments[segments.length - 1].faction_id;
+      if (segments.length > 1) movementsByUser[id] = segments;
     }
 
     // ── Overdoses: personal_stats_snapshots delta over the same period. This is
@@ -862,7 +871,7 @@ export async function generateEnergyWarningReport(request, env) {
       members.push({
         torn_user_id:     r.torn_user_id,
         username:         r.username,
-        faction_id:       r.current_faction_id ?? null,
+        faction_id:       periodFactionByUser[r.torn_user_id] ?? r.current_faction_id ?? null,
         level:            r.level ?? null,
         is_active:        r.is_active ?? null,
         gym_energy:       gymEnergy,
@@ -879,7 +888,7 @@ export async function generateEnergyWarningReport(request, env) {
       });
     }
 
-    members.sort((a, b) => a.avg_per_day - b.avg_per_day);
+    members.sort((a, b) => b.avg_per_day - a.avg_per_day);
 
     return jsonResponse({
       year, month,

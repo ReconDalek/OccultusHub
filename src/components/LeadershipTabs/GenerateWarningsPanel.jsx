@@ -23,6 +23,12 @@ function fmt(n) {
   return Number(n || 0).toLocaleString('en-GB')
 }
 
+function fmtShortDate(d) {
+  if (!d) return d
+  const [, m, day] = d.split('-')
+  return `${MONTHS_FULL[parseInt(m, 10) - 1].slice(0, 3)} ${parseInt(day, 10)}`
+}
+
 const inputStyle = {
   padding: '7px 12px', borderRadius: '8px',
   border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)',
@@ -214,12 +220,12 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
                   )}
                 </span>
                 {m.movements && (
-                  <div style={{ color: '#a78bfa', fontSize: '10px', marginTop: '1px' }}>
-                    {m.movements.map((mv, idx) => (
+                  <div style={{ color: '#c4b5fd', fontSize: '12px', fontWeight: '600', marginTop: '3px' }} title="Moved between factions this month">
+                    ↔ {m.movements.map((mv, idx) => (
                       <span key={mv.faction_id}>
                         {idx > 0 && ' → '}
                         {FACTION_LABEL[mv.faction_id]}
-                        {idx > 0 && ` (${mv.start_date})`}
+                        {idx > 0 && <span style={{ color: 'var(--text-faint)', fontWeight: '400' }}> ({fmtShortDate(mv.start_date)})</span>}
                       </span>
                     ))}
                   </div>
