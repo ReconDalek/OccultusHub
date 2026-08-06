@@ -661,8 +661,12 @@ export async function getEnergyActivity(request, env) {
 // month and restricted to the selected factions only, and — unlike
 // getEnergyActivity — does NOT drop zero-energy members, since low/no energy is
 // exactly what this report exists to surface. Departed members are always
-// excluded (never candidates for a new warning). Also returns each member's
-// overdose delta for the month and any mid-month faction transfer.
+// excluded (never candidates for a new warning); a member with zero energy
+// under any selected faction this month is excluded too (naturally, by the
+// per-selected-faction query below never producing a row for them). Also
+// returns each member's overdose delta for the month, their real current
+// faction (not just where the tracked month left off), and — if they moved
+// between factions during or after the month — a narrative of that movement.
 export async function generateEnergyWarningReport(request, env) {
   try {
     const url  = new URL(request.url);
@@ -751,35 +755,69 @@ export async function generateEnergyWarningReport(request, env) {
       LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
     `).bind(monthStart, ...factions, monthStart, monthEnd, ...factions).all();
 
-    // ── Faction movements: which of the selected factions each member's energy
-    // was tracked under this month, in order. Reuses the same predicates as the
-    // in_period CTE above but keeps factions un-collapsed so a move can actually
-    // be detected — the main query already sums across factions. Also used below
-    // to decide each member's "faction badge" for this report — deliberately NOT
-    // faction_members.faction_id, which reflects the member's faction *right now*
-    // and can disagree with (or even fall entirely outside) this reporting period
-    // if they've moved again since, including into a faction excluded from this
-    // query.
-    const movementRows = await env.DB.prepare(`
+    // ── Faction movements: the member's own faction badge stays their real
+    // current faction (faction_members.faction_id) — leadership wants to know
+    // where someone actually is, not where our selected-faction filter happened
+    // to catch them last. This section instead builds the supporting narrative:
+    // every faction a member's energy was tracked under THIS MONTH (across ALL
+    // 3 factions, not just the ones selected for this report — a member who
+    // split time between an excluded and an included faction still needs to
+    // show up, with a note on where they actually spent most of the month), plus
+    // — if their current real faction doesn't match where the month left off —
+    // the date they moved back, even though that date falls after monthEnd and
+    // outside this report's own data window.
+    const allSegmentRows = await env.DB.prepare(`
       SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date
       FROM energy_snapshots
-      WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0 AND faction_id IN (${ph})
+      WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
       GROUP BY torn_user_id, faction_id
       ORDER BY torn_user_id, start_date ASC
-    `).bind(monthStart, monthEnd, ...factions).all();
+    `).bind(monthStart, monthEnd).all();
 
     const segmentsByUser = {};
-    for (const r of (movementRows.results || [])) {
+    for (const r of (allSegmentRows.results || [])) {
       (segmentsByUser[r.torn_user_id] ??= []).push({
         faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
       });
     }
-    const periodFactionByUser = {};
-    const movementsByUser = {};
-    for (const [id, segments] of Object.entries(segmentsByUser)) {
-      segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
-      periodFactionByUser[id] = segments[segments.length - 1].faction_id;
-      if (segments.length > 1) movementsByUser[id] = segments;
+    for (const segments of Object.values(segmentsByUser)) segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+    // Earliest post-month snapshot per (member, faction) — used only to find
+    // *when* a member returned to their current real faction, if that faction
+    // doesn't match where their in-month history left off.
+    const returnRows = await env.DB.prepare(`
+      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS return_date
+      FROM energy_snapshots
+      WHERE snapshot_date > ? AND energy_total > 0
+      GROUP BY torn_user_id, faction_id
+    `).bind(monthEnd).all();
+    const returnDateByUserFaction = {};
+    for (const r of (returnRows.results || [])) returnDateByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.return_date;
+
+    function daysBetweenInclusive(a, b) {
+      return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000) + 1;
+    }
+
+    // Builds the movements array for one member — null if there's nothing
+    // noteworthy to show (single faction all month, still in it today).
+    function buildMovements(tornUserId, realFactionId) {
+      const segments = segmentsByUser[tornUserId];
+      if (!segments) return null;
+
+      let majorityIdx = 0;
+      for (let i = 1; i < segments.length; i++) {
+        if (daysBetweenInclusive(segments[i].start_date, segments[i].end_date) >
+            daysBetweenInclusive(segments[majorityIdx].start_date, segments[majorityIdx].end_date)) majorityIdx = i;
+      }
+      const movements = segments.map((seg, i) => ({ ...seg, is_majority: segments.length > 1 && i === majorityIdx }));
+
+      const last = segments[segments.length - 1];
+      if (realFactionId != null && last.faction_id !== realFactionId) {
+        const returnDate = returnDateByUserFaction[`${tornUserId}|${realFactionId}`];
+        if (returnDate) movements.push({ faction_id: realFactionId, start_date: returnDate, end_date: null, is_future: true });
+      }
+
+      return movements.length > 1 ? movements : null;
     }
 
     // ── Overdoses: personal_stats_snapshots delta over the same period. This is
@@ -871,7 +909,7 @@ export async function generateEnergyWarningReport(request, env) {
       members.push({
         torn_user_id:     r.torn_user_id,
         username:         r.username,
-        faction_id:       periodFactionByUser[r.torn_user_id] ?? r.current_faction_id ?? null,
+        faction_id:       r.current_faction_id ?? null,
         level:            r.level ?? null,
         is_active:        r.is_active ?? null,
         gym_energy:       gymEnergy,
@@ -884,7 +922,7 @@ export async function generateEnergyWarningReport(request, env) {
         tracked_days:     trackedDays,
         avg_per_day:      Math.round(totalEnergy / trackedDays),
         overdoses:        overdoses[r.torn_user_id] ?? 0,
-        movements:        movementsByUser[r.torn_user_id] ?? null,
+        movements:        buildMovements(r.torn_user_id, r.current_faction_id),
       });
     }
 

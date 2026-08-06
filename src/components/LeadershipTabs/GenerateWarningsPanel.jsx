@@ -220,12 +220,16 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
                   )}
                 </span>
                 {m.movements && (
-                  <div style={{ color: '#c4b5fd', fontSize: '12px', fontWeight: '600', marginTop: '3px' }} title="Moved between factions this month">
+                  <div style={{ color: '#c4b5fd', fontSize: '12px', fontWeight: '600', marginTop: '3px' }}>
                     ↔ {m.movements.map((mv, idx) => (
-                      <span key={mv.faction_id}>
+                      <span key={idx}
+                        style={mv.is_future ? { color: 'var(--text-faint)', fontWeight: '400', fontStyle: 'italic' } : undefined}
+                        title={mv.is_future ? 'Moved back after this reporting period' : undefined}
+                      >
                         {idx > 0 && ' → '}
                         {FACTION_LABEL[mv.faction_id]}
                         {idx > 0 && <span style={{ color: 'var(--text-faint)', fontWeight: '400' }}> ({fmtShortDate(mv.start_date)})</span>}
+                        {mv.is_majority && <span title="Spent the most days here this month"> ★</span>}
                       </span>
                     ))}
                   </div>
@@ -261,11 +265,19 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
 
 // ─── Energy generator ─────────────────────────────────────────────────────────
 
+// Warnings are reported in arrears — default to the last completed month,
+// not the in-progress current one (which usually has little/no data yet).
+function previousMonth(now) {
+  const year  = now.getUTCFullYear()
+  const month = now.getUTCMonth() - 1
+  return month < 0 ? { year: year - 1, month: 11 } : { year, month }
+}
+
 function EnergyGenerator({ onWarningSaved }) {
   const now = new Date()
   const months = buildMonthOptions()
 
-  const [selectedMonth, setSelectedMonth]     = useState({ year: now.getUTCFullYear(), month: now.getUTCMonth() })
+  const [selectedMonth, setSelectedMonth]     = useState(() => previousMonth(now))
   const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
   const [includeAttacks, setIncludeAttacks]   = useState(true)
   const [includeNewMembers, setIncludeNewMembers] = useState(false)
