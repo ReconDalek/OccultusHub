@@ -788,11 +788,50 @@ export async function generateEnergyWarningReport(request, env) {
       ORDER BY torn_user_id, start_date ASC
     `).bind(monthStart, monthEnd).all();
 
+    // A segment that DID grow can still carry a frozen tail alongside its real
+    // activity — e.g. a member who trained in Faction A for the first 5 days
+    // of the month then moved to Faction B: Faction A's row keeps a daily
+    // entry all the way to monthEnd, frozen at its departure value, even
+    // though real activity there stopped on day 5. Using the raw MAX presence
+    // date for "days spent" would credit Faction A with the whole month. Fix:
+    // cap end_date at the last day growth actually occurred (via LAG) instead
+    // of the last day *any* row exists — but only when that's earlier than the
+    // raw end (i.e. a tail was actually detected); otherwise leave start/end
+    // as the raw presence dates. Deliberately NOT applied symmetrically to
+    // start_date: the very first row in any window can never register as a
+    // "growth day" (nothing to compare against), so doing that would push
+    // every segment's start forward by one point regardless of real freezing,
+    // which for a thin/sparsely-sampled segment can distort day-count and even
+    // reorder segments relative to each other. A frozen *head* (dormant row
+    // that only starts growing again mid-window) isn't a scenario Torn's
+    // mechanics actually produce — you don't resume contributing to a faction
+    // you've left without rejoining it, which would make it your current one.
+    const lastGrowthRows = await env.DB.prepare(`
+      WITH ordered AS (
+        SELECT torn_user_id, faction_id, snapshot_date, energy_total,
+               LAG(energy_total) OVER (PARTITION BY torn_user_id, faction_id ORDER BY snapshot_date) AS prev_value
+        FROM energy_snapshots
+        WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
+      )
+      SELECT torn_user_id, faction_id, MAX(snapshot_date) AS last_growth_date
+      FROM ordered
+      WHERE prev_value IS NOT NULL AND energy_total > prev_value
+      GROUP BY torn_user_id, faction_id
+    `).bind(monthStart, monthEnd).all();
+    const lastGrowthByUserFaction = {};
+    for (const r of (lastGrowthRows.results || [])) {
+      lastGrowthByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.last_growth_date;
+    }
+
     const segmentsByUser = {};
     const monthFactionsByUser = {}; // every faction touched this month, frozen or real — used below
     for (const r of (allSegmentRows.results || [])) {
+      const lastGrowth = lastGrowthByUserFaction[`${r.torn_user_id}|${r.faction_id}`];
+      const endDate = (lastGrowth && lastGrowth < r.end_date) ? lastGrowth : r.end_date;
       (segmentsByUser[r.torn_user_id] ??= []).push({
-        faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
+        faction_id: r.faction_id,
+        start_date: r.start_date,
+        end_date: endDate,
         grew: r.latest_value > r.first_value,
       });
       (monthFactionsByUser[r.torn_user_id] ??= new Set()).add(r.faction_id);
