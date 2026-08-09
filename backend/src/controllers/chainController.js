@@ -534,6 +534,24 @@ export async function generateChainWarningReport(request, env) {
         // else happened that calendar month.
         const prepStart = new Date((chain.start_at - 3 * 86400) * 1000).toISOString().slice(0, 10);
         const chainEndDate = new Date(chain.end_at * 1000).toISOString().slice(0, 10);
+        const chainStartDate = new Date(chain.start_at * 1000).toISOString().slice(0, 10);
+
+        // Exemptions covering this chain: a Chain/All exemption exempts a
+        // member only if the CHAIN'S OWN START DATE falls inside the
+        // exemption's date range — not the chain's end, and not the report's
+        // month. A member exempt the 20th–25th is covered by a chain that
+        // started the 24th even though it ran until the 28th (the start is
+        // what crossed into the exemption window), but NOT by a chain that
+        // started the 28th (nothing about that chain touches the 20th–25th).
+        const exemptionRows = await env.DB.prepare(`
+          SELECT torn_user_id, exemption_type, date_start, date_end, reason
+          FROM member_exemptions
+          WHERE exemption_type IN ('Chain', 'All') AND date_start <= ? AND date_end >= ?
+        `).bind(chainStartDate, chainStartDate).all();
+        const exemptionByUser = {};
+        for (const r of (exemptionRows.results || [])) {
+          exemptionByUser[r.torn_user_id] ??= { type: r.exemption_type, date_start: r.date_start, date_end: r.date_end, reason: r.reason };
+        }
 
         const overdoses = {};
         if (activeHits.length) {
@@ -575,6 +593,7 @@ export async function generateChainWarningReport(request, env) {
             total_attacks: h.total_attacks || 0,
             bonus_hits:    h.bonus_hits || 0,
             overdoses:     overdoses[h.torn_user_id] ?? 0,
+            exemption:     exemptionByUser[h.torn_user_id] ?? null,
           }))
           .sort((a, b) => b.total_attacks - a.total_attacks);
 

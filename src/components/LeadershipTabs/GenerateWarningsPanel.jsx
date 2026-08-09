@@ -181,6 +181,44 @@ function ReportModal({ member, warningType, achieved, periodLabel, periodMonth, 
   )
 }
 
+// ─── Exemptions note — below-target members with a logged reason, not a
+// warning candidate. Plain styling on purpose (no red, no Warn button) —
+// it's a record, not a flag. ────────────────────────────────────────────────
+
+function ExemptionsNote({ members, targets, valueKey, valueLabel }) {
+  return (
+    <div style={{ marginTop: '16px' }}>
+      <p style={{ color: 'var(--text-faint)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+        Exemptions — below target, reason on record
+      </p>
+      {members.map(m => {
+        const target = targets[m.faction_id]
+        return (
+          <div key={m.torn_user_id} style={{
+            display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap',
+            padding: '10px 14px', borderRadius: '8px', marginBottom: '6px',
+            background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <div style={{ minWidth: '160px' }}>
+              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+              <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>{FACTION_LABEL[m.faction_id]}</span>
+            </div>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+              {valueLabel} <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmt(m[valueKey])}</span> / target {fmt(target)}
+            </span>
+            <span style={{ flex: 1, minWidth: '160px', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+              "{m.exemption.reason}"
+            </span>
+            <span style={{ color: 'var(--text-faint)', fontSize: '11px', whiteSpace: 'nowrap' }}>
+              {m.exemption.type} · {fmtShortDate(m.exemption.date_start)}–{fmtShortDate(m.exemption.date_end)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Energy report table ──────────────────────────────────────────────────────
 
 function EnergyReportTable({ data, targets, reportedIds, onReport }) {
@@ -351,12 +389,24 @@ function EnergyGenerator({ onWarningSaved }) {
   // target updates the list immediately without re-generating. "Only new
   // members" is a curiosity/sanity-check filter (how are brand-new recruits
   // tracking so far) layered on top, not a replacement for the target check.
-  const visibleMembers = data ? data.members.filter(m => {
-    if (onlyNewMembers && !m.joined_mid_month) return false
+  // A member who's below target but has a matching exemption logged isn't a
+  // warning candidate either — they're split into their own "Exemptions"
+  // note section instead (no red flag, no Warn button, just the reason on
+  // record). Meeting target already means there's nothing to exempt from, so
+  // exemption only matters once belowTarget is true.
+  const eligibleMembers = data ? data.members.filter(m => !onlyNewMembers || m.joined_mid_month) : []
+  const visibleMembers = eligibleMembers.filter(m => {
     const target = targets[m.faction_id]
     const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
-    return !hasTarget || m.avg_per_day < Number(target)
-  }) : []
+    const belowTarget = hasTarget && m.avg_per_day < Number(target)
+    if (!hasTarget) return true
+    return belowTarget && !m.exemption
+  })
+  const exemptedMembers = eligibleMembers.filter(m => {
+    const target = targets[m.faction_id]
+    const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+    return hasTarget && m.avg_per_day < Number(target) && m.exemption
+  })
 
   return (
     <div>
@@ -483,7 +533,7 @@ function EnergyGenerator({ onWarningSaved }) {
           <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>No energy data for {periodLabel} with the selected factions.</p>
           </div>
-        ) : visibleMembers.length === 0 ? (
+        ) : visibleMembers.length === 0 && exemptedMembers.length === 0 ? (
           <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>
               {onlyNewMembers ? `No new members joined a selected faction in ${periodLabel}.` : `Every member met their faction's target for ${periodLabel}.`}
@@ -491,15 +541,22 @@ function EnergyGenerator({ onWarningSaved }) {
           </div>
         ) : (
           <>
-            <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginBottom: '10px' }}>
-              {periodLabel} · {visibleMembers.length} member{visibleMembers.length !== 1 ? 's' : ''} · {data.days_in_month} days in month
-            </p>
-            <EnergyReportTable
-              data={{ ...data, members: visibleMembers }}
-              targets={targets}
-              reportedIds={reportedIds}
-              onReport={setReportingMember}
-            />
+            {visibleMembers.length > 0 && (
+              <>
+                <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginBottom: '10px' }}>
+                  {periodLabel} · {visibleMembers.length} member{visibleMembers.length !== 1 ? 's' : ''} · {data.days_in_month} days in month
+                </p>
+                <EnergyReportTable
+                  data={{ ...data, members: visibleMembers }}
+                  targets={targets}
+                  reportedIds={reportedIds}
+                  onReport={setReportingMember}
+                />
+              </>
+            )}
+            {exemptedMembers.length > 0 && (
+              <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="avg_per_day" valueLabel="Avg/Day" />
+            )}
           </>
         )
       )}
@@ -535,7 +592,8 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
   const target = targets[chain.faction_id]
   const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
 
-  const visibleMembers = chain.members.filter(m => !hasTarget || m.total_attacks < Number(target))
+  const visibleMembers  = chain.members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption))
+  const exemptedMembers = chain.members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption)
   const colTemplate = '30px 1fr 90px 70px 60px 100px 130px'
 
   return (
@@ -547,8 +605,12 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
         </span>
       </div>
 
-      {visibleMembers.length === 0 ? (
+      {visibleMembers.length === 0 && exemptedMembers.length === 0 ? (
         <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '16px' }}>Every member met the target for this chain.</p>
+      ) : visibleMembers.length === 0 ? (
+        <div style={{ padding: '10px 16px 16px' }}>
+          <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
+        </div>
       ) : (
         <div style={{ padding: '10px' }}>
           <div style={{ minWidth: '700px' }}>
@@ -599,6 +661,9 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
               )
             })}
           </div>
+          {exemptedMembers.length > 0 && (
+            <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
+          )}
         </div>
       )}
     </div>

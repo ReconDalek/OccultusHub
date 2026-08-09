@@ -26,6 +26,7 @@ import * as companyProfitController from './controllers/companyProfitController.
 import * as webhookController from './controllers/webhookController.js';
 import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
+import * as exemptionsController from './controllers/exemptionsController.js';
 import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
@@ -497,6 +498,17 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/warnings/generate/chain' && method === 'GET') {
       return chainController.generateChainWarningReport(request, env);
+    }
+
+    // Member warning exemptions
+    if (pathname === '/api/leadership/exemptions' && method === 'GET') {
+      return exemptionsController.getExemptions(request, env);
+    }
+    if (pathname === '/api/leadership/exemptions' && method === 'POST') {
+      return exemptionsController.addExemption(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/exemptions\/\d+$/) && method === 'DELETE') {
+      return exemptionsController.deleteExemption(request, env);
     }
 
     // Monthly xanax distribution tracking

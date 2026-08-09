@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSession } from '../../hooks/useSession'
 import { API_BASE_URL } from '../../config/api'
 import GenerateWarningsPanel from './GenerateWarningsPanel'
+import ExemptionsTab from './ExemptionsTab'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
 const WARNING_TYPES = ['Energy', 'Chain', 'Other']
@@ -665,7 +666,7 @@ export default function WarningsTab() {
     <div>
       {/* View switcher */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-        {[['overview', 'Overview'], ['generate', 'Generate']].map(([v, label]) => (
+        {[['overview', 'Overview'], ['exemptions', 'Exemptions'], ['generate', 'Generate']].map(([v, label]) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -681,6 +682,8 @@ export default function WarningsTab() {
           </button>
         ))}
       </div>
+
+      {view === 'exemptions' && <ExemptionsTab />}
 
       {view === 'generate' && <GenerateWarningsPanel onWarningSaved={fetchWarnings} />}
 

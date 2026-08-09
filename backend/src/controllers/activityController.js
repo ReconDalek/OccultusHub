@@ -921,6 +921,20 @@ export async function generateEnergyWarningReport(request, env) {
     ).bind(monthStart).all();
     const hasPriorHistory = new Set((priorHistoryRows.results || []).map(r => r.torn_user_id));
 
+    // Exemptions covering this report: an Energy/All exemption whose date
+    // range overlaps the reported month at all exempts a member for it —
+    // energy warnings are judged over the whole month, not a specific date,
+    // so unlike Chain's exact-start-date check, any overlap counts here.
+    const exemptionRows = await env.DB.prepare(`
+      SELECT torn_user_id, exemption_type, date_start, date_end, reason
+      FROM member_exemptions
+      WHERE exemption_type IN ('Energy', 'All') AND date_start <= ? AND date_end >= ?
+    `).bind(monthEnd, monthStart).all();
+    const exemptionByUser = {};
+    for (const r of (exemptionRows.results || [])) {
+      exemptionByUser[r.torn_user_id] ??= { type: r.exemption_type, date_start: r.date_start, date_end: r.date_end, reason: r.reason };
+    }
+
     const members = [];
     for (const r of (rows.results || [])) {
       // Departed members (or no faction_members row at all — can't confirm
@@ -978,6 +992,7 @@ export async function generateEnergyWarningReport(request, env) {
         avg_per_day:      Math.round(totalEnergy / trackedDays),
         overdoses:        overdoses[r.torn_user_id] ?? 0,
         movements:        buildMovements(r.torn_user_id, r.current_faction_id),
+        exemption:        exemptionByUser[r.torn_user_id] ?? null,
       });
     }
 
