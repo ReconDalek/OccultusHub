@@ -194,10 +194,23 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
     ? ['#', 'Member', 'Gym', 'Attacks', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
     : ['#', 'Member', 'Gym', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
 
+  // No overflowX:auto wrapper here on purpose — CSS forces overflow-y to a
+  // non-'visible' computed value whenever overflow-x isn't 'visible' either
+  // (confirmed live: even overflow-y:'clip' still computed to 'hidden' in
+  // testing), and any non-'visible' overflow on an ancestor becomes the
+  // scroll boundary position:sticky binds to — silently limiting "stick to
+  // the page as it scrolls" to "stick to the top of this table" (a no-op,
+  // since this element has no internal scrollbar of its own). Letting the
+  // table's min-width overflow the page itself (page-level horizontal
+  // scroll on very narrow viewports) is the trade-off that keeps the header
+  // genuinely sticky against the real page scroll, which is what was asked for.
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div>
       <div style={{ minWidth: showAttacks ? '880px' : '800px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
+          position: 'sticky', top: 0, zIndex: 5, background: '#141414',
+        }}>
           {headers.map((h, i) => (
             <span key={h + i} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
           ))}
@@ -227,15 +240,15 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
                 </span>
                 {m.movements && (
                   <div style={{ color: '#c4b5fd', fontSize: '12px', fontWeight: '600', marginTop: '3px' }}>
-                    ↔ {m.movements.map((mv, idx) => (
+                    {m.movements.map((mv, idx) => (
                       <span key={idx}
                         style={mv.is_future ? { color: 'var(--text-faint)', fontWeight: '400', fontStyle: 'italic' } : undefined}
                         title={mv.is_future ? 'Moved back after this reporting period' : undefined}
                       >
                         {idx > 0 && ' → '}
+                        {mv.is_majority && <span title="Spent the most days here this month">★ </span>}
                         {FACTION_LABEL[mv.faction_id]}
                         {idx > 0 && <span style={{ color: 'var(--text-faint)', fontWeight: '400' }}> ({fmtShortDate(mv.start_date)})</span>}
-                        {mv.is_majority && <span title="Spent the most days here this month"> ★</span>}
                       </span>
                     ))}
                   </div>
@@ -287,6 +300,7 @@ function EnergyGenerator({ onWarningSaved }) {
   const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
   const [includeAttacks, setIncludeAttacks]   = useState(true)
   const [includeNewMembers, setIncludeNewMembers] = useState(false)
+  const [onlyNewMembers, setOnlyNewMembers]   = useState(false)
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
 
   const [data, setData]       = useState(null)
@@ -313,7 +327,10 @@ function EnergyGenerator({ onWarningSaved }) {
       month: String(selectedMonth.month + 1),
       factions: selectedFactions.join(','),
       includeAttacks: includeAttacks ? '1' : '0',
-      includeNewMembers: includeNewMembers ? '1' : '0',
+      // "Only new members" needs the new-member rows in the response even if
+      // the leadership-facing toggle for that is off — it filters them client
+      // side below, so the fetch itself always has to include them.
+      includeNewMembers: (includeNewMembers || onlyNewMembers) ? '1' : '0',
     })
     fetch(`${API_BASE_URL}/api/leadership/warnings/generate/energy?${params}`, { headers: { Authorization: token() } })
       .then(res => res.json().then(json => ({ res, json })))
@@ -324,15 +341,18 @@ function EnergyGenerator({ onWarningSaved }) {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers])
+  }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers])
 
   const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
 
   // Members who already meet or exceed their faction's target aren't warning
   // candidates — hide them once a target is set for their faction. Recomputed
   // from live `targets` state (not baked in at generate time) so tweaking a
-  // target updates the list immediately without re-generating.
+  // target updates the list immediately without re-generating. "Only new
+  // members" is a curiosity/sanity-check filter (how are brand-new recruits
+  // tracking so far) layered on top, not a replacement for the target check.
   const visibleMembers = data ? data.members.filter(m => {
+    if (onlyNewMembers && !m.joined_mid_month) return false
     const target = targets[m.faction_id]
     const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
     return !hasTarget || m.avg_per_day < Number(target)
@@ -404,6 +424,17 @@ function EnergyGenerator({ onWarningSaved }) {
             >
               Include New Members
             </button>
+            <button onClick={() => setOnlyNewMembers(v => !v)}
+              title="Sanity check: show only brand-new members, to see how they're tracking so far. Not for warnings."
+              style={{
+                padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                border: `1px solid ${onlyNewMembers ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                background: onlyNewMembers ? 'rgba(167,139,250,0.1)' : 'transparent',
+                color: onlyNewMembers ? '#a78bfa' : 'var(--text-secondary)',
+              }}
+            >
+              Only New Members
+            </button>
           </div>
         </div>
 
@@ -454,7 +485,9 @@ function EnergyGenerator({ onWarningSaved }) {
           </div>
         ) : visibleMembers.length === 0 ? (
           <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>Every member met their faction's target for {periodLabel}.</p>
+            <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>
+              {onlyNewMembers ? `No new members joined a selected faction in ${periodLabel}.` : `Every member met their faction's target for ${periodLabel}.`}
+            </p>
           </div>
         ) : (
           <>
@@ -517,9 +550,12 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
       {visibleMembers.length === 0 ? (
         <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '16px' }}>Every member met the target for this chain.</p>
       ) : (
-        <div style={{ overflowX: 'auto', padding: '10px' }}>
+        <div style={{ padding: '10px' }}>
           <div style={{ minWidth: '700px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
+            <div style={{
+              display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
+              position: 'sticky', top: 0, zIndex: 5, background: '#141414',
+            }}>
               {['#', 'Member', 'Attacks', 'Bonus', 'OD', 'vs Target', ''].map(h => (
                 <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
               ))}
