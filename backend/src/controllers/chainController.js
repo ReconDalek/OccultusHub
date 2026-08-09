@@ -470,6 +470,140 @@ export async function getChainCacheStatus(request, env) {
 // POST /api/admin/chains/refresh
 // Admin-triggered force refresh of chain cache.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/leadership/warnings/generate/chain?year=&month=1-12&factions=33097,9728,9171
+// Source data for Warnings > Generate's Chain report: every saved chain each
+// selected faction ran during the calendar month, with per-member attacks (for
+// comparing against a per-faction target entered client-side, same pattern as
+// the Energy generator) and an overdose count scoped to that SPECIFIC chain's
+// own window — chain start minus a 3-day prep period, through chain end — not
+// the whole month, since OD risk is tied to the chain itself, not the month at
+// large. A faction with zero saved chains this month is reported as such
+// (`no_chain: true`) rather than silently producing an empty/misleading member
+// list, or worse, looking like every member missed a target that was never set.
+export async function generateChainWarningReport(request, env) {
+  try {
+    const url   = new URL(request.url);
+    const year  = parseInt(url.searchParams.get('year'), 10);
+    const month = parseInt(url.searchParams.get('month'), 10);
+    if (!year || !month || month < 1 || month > 12) {
+      return errorResponse('year and month (1-12) are required', 400);
+    }
+
+    const factionsParam = url.searchParams.get('factions');
+    const factions = (factionsParam ? factionsParam.split(',') : FACTION_IDS.map(String))
+      .map(s => parseInt(s, 10))
+      .filter(f => FACTION_IDS.includes(f));
+    if (!factions.length) return errorResponse('At least one valid faction is required', 400);
+
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    const monthStartTs = Math.floor(new Date(monthStart + 'T00:00:00Z').getTime() / 1000);
+    const monthEndTs   = Math.floor(new Date(monthEnd   + 'T23:59:59Z').getTime() / 1000);
+
+    const ph = factions.map(() => '?').join(',');
+    const chainRows = await env.DB.prepare(`
+      SELECT torn_chain_id, faction_id, chain_length, respect, start_at, end_at
+      FROM chain_cache
+      WHERE faction_id IN (${ph}) AND start_at >= ? AND start_at <= ?
+      ORDER BY faction_id, start_at ASC
+    `).bind(...factions, monthStartTs, monthEndTs).all();
+
+    const chainsByFaction = {};
+    for (const c of (chainRows.results || [])) (chainsByFaction[c.faction_id] ??= []).push(c);
+
+    const noChainFactions = factions.filter(f => !chainsByFaction[f]);
+
+    const chains = [];
+    for (const factionId of factions) {
+      for (const chain of (chainsByFaction[factionId] || [])) {
+        const { results: hitRows } = await env.DB.prepare(`
+          SELECT ch.torn_user_id, ch.total_attacks, ch.bonus_hits, ch.total_respect,
+                 fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id
+          FROM chain_hits ch
+          LEFT JOIN faction_members fm ON fm.torn_user_id = ch.torn_user_id
+          WHERE ch.torn_chain_id = ?
+        `).bind(chain.torn_chain_id).all();
+
+        const activeHits = (hitRows || []).filter(h => h.is_active === 1);
+
+        // OD window: chain's own start-3days through chain end — NOT the report
+        // month — since overdose risk during a chain ties to the chain itself
+        // (pre-chain xanax/drug prep + the chain's active window), not whatever
+        // else happened that calendar month.
+        const prepStart = new Date((chain.start_at - 3 * 86400) * 1000).toISOString().slice(0, 10);
+        const chainEndDate = new Date(chain.end_at * 1000).toISOString().slice(0, 10);
+
+        const overdoses = {};
+        if (activeHits.length) {
+          const ids = activeHits.map(h => h.torn_user_id);
+          const idPh = ids.map(() => '?').join(',');
+          const [odStartRows, odEndRows] = await Promise.all([
+            env.DB.prepare(`
+              SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+              FROM personal_stats_snapshots p
+              INNER JOIN (
+                SELECT torn_user_id, MIN(snapshot_date) AS min_date
+                FROM personal_stats_snapshots
+                WHERE torn_user_id IN (${idPh}) AND snapshot_date >= ? AND snapshot_date <= ?
+                GROUP BY torn_user_id
+              ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+            `).bind(...ids, prepStart, chainEndDate).all(),
+            env.DB.prepare(`
+              SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+              FROM personal_stats_snapshots p
+              INNER JOIN (
+                SELECT torn_user_id, MAX(snapshot_date) AS max_date
+                FROM personal_stats_snapshots
+                WHERE torn_user_id IN (${idPh}) AND snapshot_date >= ? AND snapshot_date <= ?
+                GROUP BY torn_user_id
+              ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+            `).bind(...ids, prepStart, chainEndDate).all(),
+          ]);
+          const odStart = {};
+          for (const r of (odStartRows.results || [])) odStart[r.torn_user_id] = r.val ?? 0;
+          for (const r of (odEndRows.results || [])) overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
+        }
+
+        const members = activeHits
+          .map(h => ({
+            torn_user_id:  h.torn_user_id,
+            username:      h.username,
+            faction_id:    h.current_faction_id ?? null,
+            level:         h.level ?? null,
+            total_attacks: h.total_attacks || 0,
+            bonus_hits:    h.bonus_hits || 0,
+            overdoses:     overdoses[h.torn_user_id] ?? 0,
+          }))
+          .sort((a, b) => b.total_attacks - a.total_attacks);
+
+        chains.push({
+          faction_id: factionId,
+          torn_chain_id: chain.torn_chain_id,
+          chain_length: chain.chain_length,
+          respect: chain.respect,
+          start_at: chain.start_at,
+          end_at: chain.end_at,
+          prep_start_date: prepStart,
+          members,
+        });
+      }
+    }
+
+    return jsonResponse({
+      year, month,
+      month_start: monthStart, month_end: monthEnd,
+      factions,
+      no_chain_factions: noChainFactions,
+      chains,
+    });
+  } catch (err) {
+    console.error('generateChainWarningReport error:', err);
+    return errorResponse('Failed to generate chain warning report', 500);
+  }
+}
+
 export async function refreshChainsAdmin(request, env, user) {
   try {
     await logInfo(env, { category: 'admin', event: 'chain_cache_manual_start', message: `Manual chain cache refresh triggered by ${user?.username ?? 'unknown'}`, torn_user_id: user?.tornUserId, username: user?.username });

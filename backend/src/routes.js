@@ -495,6 +495,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/warnings/generate/energy' && method === 'GET') {
       return activityController.generateEnergyWarningReport(request, env);
     }
+    if (pathname === '/api/leadership/warnings/generate/chain' && method === 'GET') {
+      return chainController.generateChainWarningReport(request, env);
+    }
 
     // Monthly xanax distribution tracking
     if (pathname === '/api/leadership/xanax' && method === 'GET') {
