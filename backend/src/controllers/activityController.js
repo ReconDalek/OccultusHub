@@ -911,6 +911,16 @@ export async function generateEnergyWarningReport(request, env) {
       for (const r of (chainHitRows.results || [])) attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
     }
 
+    // Who has ANY energy history in ANY of our 3 factions before this month —
+    // used below to tell a genuinely brand-new recruit apart from an existing
+    // member who simply transferred between our own factions mid-month. Both
+    // look identical from a single selected faction's own baseline (neither
+    // has prior data in THAT faction), but only the former is actually new.
+    const priorHistoryRows = await env.DB.prepare(
+      `SELECT DISTINCT torn_user_id FROM energy_snapshots WHERE snapshot_date < ? AND energy_total > 0`
+    ).bind(monthStart).all();
+    const hasPriorHistory = new Set((priorHistoryRows.results || []).map(r => r.torn_user_id));
+
     const members = [];
     for (const r of (rows.results || [])) {
       // Departed members (or no faction_members row at all — can't confirm
@@ -924,20 +934,28 @@ export async function generateEnergyWarningReport(request, env) {
       const endOfMonthFaction = endOfMonthFactionByUser[r.torn_user_id] ?? r.current_faction_id;
       if (!factions.includes(endOfMonthFaction)) continue;
 
-      // "New member" = no snapshot at all before this month, in any of the
-      // selected factions, AND their first snapshot fell after the 1st —
-      // tracking genuinely started mid-month rather than the month just
-      // happening to be their first with data from day one.
-      const joinedMidMonth = Boolean(r.all_factions_new) && r.start_date > monthStart;
-      if (joinedMidMonth && !includeNewMembers) continue;
+      // Tracking started mid-month in the selected faction(s) — no snapshot
+      // there before monthStart, and their first in-period snapshot fell
+      // after the 1st. On its own this doesn't distinguish "brand new
+      // recruit" from "existing member who transferred in from one of our
+      // other factions" — both look the same from this faction's own
+      // baseline. Only the former should be excluded by default / flagged
+      // "new"; a transfer has a full history, just under a different
+      // faction_id, and should show up under their new one like anyone else.
+      const startedMidMonth  = Boolean(r.all_factions_new) && r.start_date > monthStart;
+      const isBrandNewMember = startedMidMonth && !hasPriorHistory.has(r.torn_user_id);
+      if (isBrandNewMember && !includeNewMembers) continue;
 
       const gymEnergy    = r.gym_energy || 0;
       const attackHits   = attacks[r.torn_user_id] || 0;
       const attackEnergy = attackHits * 25;
       const totalEnergy  = gymEnergy + attackEnergy;
 
+      // Tracked-days uses startedMidMonth (not isBrandNewMember) — a
+      // transfer's average should still be scoped to their actual days in
+      // THIS faction, not diluted across the full month they weren't here for.
       let trackedDays = daysInMonth;
-      if (joinedMidMonth && r.start_date) {
+      if (startedMidMonth && r.start_date) {
         const startTs = Date.parse(r.start_date + 'T00:00:00Z');
         const endTs   = Date.parse(monthEnd + 'T00:00:00Z');
         trackedDays = Math.max(1, Math.round((endTs - startTs) / 86400000) + 1);
@@ -955,7 +973,7 @@ export async function generateEnergyWarningReport(request, env) {
         total_energy:     totalEnergy,
         start_date:       r.start_date,
         end_date:         r.end_date,
-        joined_mid_month: joinedMidMonth,
+        joined_mid_month: isBrandNewMember,
         tracked_days:     trackedDays,
         avg_per_day:      Math.round(totalEnergy / trackedDays),
         overdoses:        overdoses[r.torn_user_id] ?? 0,
