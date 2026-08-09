@@ -759,113 +759,54 @@ export async function generateEnergyWarningReport(request, env) {
     // current faction (faction_members.faction_id) — leadership wants to know
     // where someone actually is, not where our selected-faction filter happened
     // to catch them last. This section instead builds the supporting narrative:
-    // every faction a member's energy was tracked under THIS MONTH (across ALL
-    // 3 factions, not just the ones selected for this report — a member who
+    // every faction a member was actually registered under THIS MONTH (across
+    // ALL 3 factions, not just the ones selected for this report — a member who
     // split time between an excluded and an included faction still needs to
     // show up, with a note on where they actually spent most of the month), plus
     // — if their current real faction doesn't match where the month left off —
     // the date they moved back, even though that date falls after monthEnd and
     // outside this report's own data window.
     //
-    // ⚠️ A (torn_user_id, faction_id) pair in energy_snapshots is NOT proof of
-    // real activity there: Torn's cat=all contributors endpoint keeps returning
-    // anyone who has EVER contributed to a faction's gym stat, forever, frozen
-    // at whatever value they left at — a member permanently carries a static
-    // daily row for every faction they've ever touched, alongside their live,
-    // growing row for wherever they actually are now. Left unfiltered, this
-    // makes every such member look like they "moved" to that stale faction the
-    // instant the real one's data ends (e.g. every frozen row's `energy_total`
-    // is already there on Aug 1, immediately after a July report's monthEnd).
-    // Fix: a segment only counts as a genuine period of activity if the energy
-    // total inside it actually grew — a flat total end-to-end is the frozen
-    // leftover-contributor artifact, not a faction change.
-    const allSegmentRows = await env.DB.prepare(`
-      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date,
-             MIN(energy_total) AS first_value, MAX(energy_total) AS latest_value
-      FROM energy_snapshots
-      WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
+    // Deliberately sourced from personal_stats_snapshots, NOT energy_snapshots.
+    // energy_snapshots.faction_id comes from Torn's per-faction cat=all
+    // contributors list, which keeps returning anyone who has EVER contributed
+    // there, forever, frozen at their departure value — indistinguishable from
+    // a real member who simply didn't train energy that day (both are "flat").
+    // No amount of energy-growth heuristics can reliably tell those apart (two
+    // rounds of attempting exactly that both produced false positives/negatives
+    // against real faction news). personal_stats_snapshots.faction_id instead
+    // comes from OUR OWN faction_members registry at the moment each day's cron
+    // ran (`takePersonalStatsSnapshot`, `WHERE is_active = 1`) — one row per
+    // member per day reflecting who we actually believed their faction was
+    // that day, with no duplicate/leftover-row concept at all.
+    const membershipRows = await env.DB.prepare(`
+      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date
+      FROM personal_stats_snapshots
+      WHERE snapshot_date >= ? AND snapshot_date <= ?
       GROUP BY torn_user_id, faction_id
       ORDER BY torn_user_id, start_date ASC
     `).bind(monthStart, monthEnd).all();
 
-    // A segment that DID grow can still carry a frozen tail alongside its real
-    // activity — e.g. a member who trained in Faction A for the first 5 days
-    // of the month then moved to Faction B: Faction A's row keeps a daily
-    // entry all the way to monthEnd, frozen at its departure value, even
-    // though real activity there stopped on day 5. Using the raw MAX presence
-    // date for "days spent" would credit Faction A with the whole month. Fix:
-    // cap end_date at the last day growth actually occurred (via LAG) instead
-    // of the last day *any* row exists — but only when that's earlier than the
-    // raw end (i.e. a tail was actually detected); otherwise leave start/end
-    // as the raw presence dates. Deliberately NOT applied symmetrically to
-    // start_date: the very first row in any window can never register as a
-    // "growth day" (nothing to compare against), so doing that would push
-    // every segment's start forward by one point regardless of real freezing,
-    // which for a thin/sparsely-sampled segment can distort day-count and even
-    // reorder segments relative to each other. A frozen *head* (dormant row
-    // that only starts growing again mid-window) isn't a scenario Torn's
-    // mechanics actually produce — you don't resume contributing to a faction
-    // you've left without rejoining it, which would make it your current one.
-    const lastGrowthRows = await env.DB.prepare(`
-      WITH ordered AS (
-        SELECT torn_user_id, faction_id, snapshot_date, energy_total,
-               LAG(energy_total) OVER (PARTITION BY torn_user_id, faction_id ORDER BY snapshot_date) AS prev_value
-        FROM energy_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
-      )
-      SELECT torn_user_id, faction_id, MAX(snapshot_date) AS last_growth_date
-      FROM ordered
-      WHERE prev_value IS NOT NULL AND energy_total > prev_value
-      GROUP BY torn_user_id, faction_id
-    `).bind(monthStart, monthEnd).all();
-    const lastGrowthByUserFaction = {};
-    for (const r of (lastGrowthRows.results || [])) {
-      lastGrowthByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.last_growth_date;
-    }
-
     const segmentsByUser = {};
-    const monthFactionsByUser = {}; // every faction touched this month, frozen or real — used below
-    for (const r of (allSegmentRows.results || [])) {
-      const lastGrowth = lastGrowthByUserFaction[`${r.torn_user_id}|${r.faction_id}`];
-      const endDate = (lastGrowth && lastGrowth < r.end_date) ? lastGrowth : r.end_date;
+    for (const r of (membershipRows.results || [])) {
       (segmentsByUser[r.torn_user_id] ??= []).push({
-        faction_id: r.faction_id,
-        start_date: r.start_date,
-        end_date: endDate,
-        grew: r.latest_value > r.first_value,
+        faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
       });
-      (monthFactionsByUser[r.torn_user_id] ??= new Set()).add(r.faction_id);
     }
-    for (const [id, segments] of Object.entries(segmentsByUser)) {
-      segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
-      // Only drop flat segments when there's a competing one to prefer — a lone
-      // flat segment is just a quiet month in one faction, not a stale artifact.
-      const grown = segments.filter(s => s.grew);
-      segmentsByUser[id] = grown.length ? grown : segments;
-    }
+    for (const segments of Object.values(segmentsByUser)) segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
 
-    // Confirmed post-month return date per (member, faction). A frozen leftover
-    // row is permanent and would already have shown up as a (flat) segment
-    // during the reported month itself — so if this faction had ANY presence
-    // this month, require the post-month data to actually grow too before
-    // trusting it as a real return (same frozen-row hazard as above, just one
-    // month later). But if this faction had NO presence at all this month, a
-    // frozen row would already be showing up here too — its total absence
-    // during the month is itself evidence a single post-month snapshot is a
-    // genuine fresh move, not a stale artifact, so no growth proof is required.
+    // Earliest post-month snapshot per (member, faction) — used only to find
+    // *when* a member returned to their current real faction, if that faction
+    // doesn't match where their in-month membership history left off. No
+    // frozen-row hazard here (see above), so simple presence is proof enough.
     const returnRows = await env.DB.prepare(`
-      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS return_date,
-             MIN(energy_total) AS first_value, MAX(energy_total) AS latest_value
-      FROM energy_snapshots
-      WHERE snapshot_date > ? AND energy_total > 0
+      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS return_date
+      FROM personal_stats_snapshots
+      WHERE snapshot_date > ?
       GROUP BY torn_user_id, faction_id
     `).bind(monthEnd).all();
     const returnDateByUserFaction = {};
-    for (const r of (returnRows.results || [])) {
-      const seenThisMonth = monthFactionsByUser[r.torn_user_id]?.has(r.faction_id);
-      if (seenThisMonth && !(r.latest_value > r.first_value)) continue;
-      returnDateByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.return_date;
-    }
+    for (const r of (returnRows.results || [])) returnDateByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.return_date;
 
     function daysBetweenInclusive(a, b) {
       return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000) + 1;
