@@ -663,8 +663,12 @@ export async function getEnergyActivity(request, env) {
 // exactly what this report exists to surface. Departed members are always
 // excluded (never candidates for a new warning); a member with zero energy
 // under any selected faction this month is excluded too (naturally, by the
-// per-selected-faction query below never producing a row for them). Also
-// returns each member's overdose delta for the month, their real current
+// per-selected-faction query below never producing a row for them); and a
+// member who earned real energy under a selected faction earlier in the month
+// but had moved to a different (possibly unselected) faction by month's end is
+// excluded too — liability for a faction's warnings tracks who was actually
+// there when the month closed, not who contributed at some point during it.
+// Also returns each member's overdose delta for the month, their real current
 // faction (not just where the tracked month left off), and — if they moved
 // between factions during or after the month — a narrative of that movement.
 export async function generateEnergyWarningReport(request, env) {
@@ -795,6 +799,18 @@ export async function generateEnergyWarningReport(request, env) {
     }
     for (const segments of Object.values(segmentsByUser)) segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
 
+    // Whoever a member's LAST membership segment this month belongs to (across
+    // all 3 factions, same data as above) is who's "liable" for this report —
+    // a member who earned real energy under a selected faction earlier in the
+    // month but had moved to a different (possibly unselected) faction by
+    // month's end isn't a candidate for that faction's warnings. Falls back to
+    // their current real faction only when there's no membership data at all
+    // for the month (can't otherwise confirm where they ended it).
+    const endOfMonthFactionByUser = {};
+    for (const [id, segments] of Object.entries(segmentsByUser)) {
+      endOfMonthFactionByUser[id] = segments[segments.length - 1].faction_id;
+    }
+
     // Earliest post-month snapshot per (member, faction) — used only to find
     // *when* a member returned to their current real faction, if that faction
     // doesn't match where their in-month membership history left off. No
@@ -900,6 +916,13 @@ export async function generateEnergyWarningReport(request, env) {
       // Departed members (or no faction_members row at all — can't confirm
       // active status either way) are never candidates for a new warning.
       if (r.is_active !== 1) continue;
+
+      // Only liable for a selected faction's warnings if they were actually
+      // IN one of the selected factions at month's end — real energy earned
+      // under a selected faction earlier in the month doesn't matter if
+      // they'd already moved on by the time the month closed.
+      const endOfMonthFaction = endOfMonthFactionByUser[r.torn_user_id] ?? r.current_faction_id;
+      if (!factions.includes(endOfMonthFaction)) continue;
 
       // "New member" = no snapshot at all before this month, in any of the
       // selected factions, AND their first snapshot fell after the 1st —
