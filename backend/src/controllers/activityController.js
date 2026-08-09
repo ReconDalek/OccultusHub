@@ -766,8 +766,22 @@ export async function generateEnergyWarningReport(request, env) {
     // — if their current real faction doesn't match where the month left off —
     // the date they moved back, even though that date falls after monthEnd and
     // outside this report's own data window.
+    //
+    // ⚠️ A (torn_user_id, faction_id) pair in energy_snapshots is NOT proof of
+    // real activity there: Torn's cat=all contributors endpoint keeps returning
+    // anyone who has EVER contributed to a faction's gym stat, forever, frozen
+    // at whatever value they left at — a member permanently carries a static
+    // daily row for every faction they've ever touched, alongside their live,
+    // growing row for wherever they actually are now. Left unfiltered, this
+    // makes every such member look like they "moved" to that stale faction the
+    // instant the real one's data ends (e.g. every frozen row's `energy_total`
+    // is already there on Aug 1, immediately after a July report's monthEnd).
+    // Fix: a segment only counts as a genuine period of activity if the energy
+    // total inside it actually grew — a flat total end-to-end is the frozen
+    // leftover-contributor artifact, not a faction change.
     const allSegmentRows = await env.DB.prepare(`
-      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date
+      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date,
+             MIN(energy_total) AS first_value, MAX(energy_total) AS latest_value
       FROM energy_snapshots
       WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0
       GROUP BY torn_user_id, faction_id
@@ -775,24 +789,44 @@ export async function generateEnergyWarningReport(request, env) {
     `).bind(monthStart, monthEnd).all();
 
     const segmentsByUser = {};
+    const monthFactionsByUser = {}; // every faction touched this month, frozen or real — used below
     for (const r of (allSegmentRows.results || [])) {
       (segmentsByUser[r.torn_user_id] ??= []).push({
         faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
+        grew: r.latest_value > r.first_value,
       });
+      (monthFactionsByUser[r.torn_user_id] ??= new Set()).add(r.faction_id);
     }
-    for (const segments of Object.values(segmentsByUser)) segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
+    for (const [id, segments] of Object.entries(segmentsByUser)) {
+      segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
+      // Only drop flat segments when there's a competing one to prefer — a lone
+      // flat segment is just a quiet month in one faction, not a stale artifact.
+      const grown = segments.filter(s => s.grew);
+      segmentsByUser[id] = grown.length ? grown : segments;
+    }
 
-    // Earliest post-month snapshot per (member, faction) — used only to find
-    // *when* a member returned to their current real faction, if that faction
-    // doesn't match where their in-month history left off.
+    // Confirmed post-month return date per (member, faction). A frozen leftover
+    // row is permanent and would already have shown up as a (flat) segment
+    // during the reported month itself — so if this faction had ANY presence
+    // this month, require the post-month data to actually grow too before
+    // trusting it as a real return (same frozen-row hazard as above, just one
+    // month later). But if this faction had NO presence at all this month, a
+    // frozen row would already be showing up here too — its total absence
+    // during the month is itself evidence a single post-month snapshot is a
+    // genuine fresh move, not a stale artifact, so no growth proof is required.
     const returnRows = await env.DB.prepare(`
-      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS return_date
+      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS return_date,
+             MIN(energy_total) AS first_value, MAX(energy_total) AS latest_value
       FROM energy_snapshots
       WHERE snapshot_date > ? AND energy_total > 0
       GROUP BY torn_user_id, faction_id
     `).bind(monthEnd).all();
     const returnDateByUserFaction = {};
-    for (const r of (returnRows.results || [])) returnDateByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.return_date;
+    for (const r of (returnRows.results || [])) {
+      const seenThisMonth = monthFactionsByUser[r.torn_user_id]?.has(r.faction_id);
+      if (seenThisMonth && !(r.latest_value > r.first_value)) continue;
+      returnDateByUserFaction[`${r.torn_user_id}|${r.faction_id}`] = r.return_date;
+    }
 
     function daysBetweenInclusive(a, b) {
       return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000) + 1;
