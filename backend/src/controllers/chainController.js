@@ -557,17 +557,29 @@ export async function generateChainWarningReport(request, env) {
         // total_attacks >= 1 (see saveChainHits/saveChainImport), so a member
         // who was in the faction for the whole chain but never attacked has
         // NO row there at all — indistinguishable from "wasn't in the faction".
-        // We only add a 0-hit warning entry when personal_stats_snapshots
-        // 100% confirms the member was in THIS faction on a day the chain was
-        // running (chain start through end date) — otherwise we can't tell
-        // "sat out the chain" from "was in a different faction that day".
+        // personal_stats_snapshots is only ONE point-in-time reading per day
+        // (whatever faction they were in when the daily cron ran), so a member
+        // who joined the faction the same day the chain ran can get a snapshot
+        // for that date despite having joined during/after the chain — a bare
+        // "snapshot exists somewhere in the chain's date range" check produced
+        // false positives for brand-new joiners. To 100% confirm membership
+        // THROUGHOUT the chain, require an unbroken snapshot streak in this
+        // faction for every single day from the day BEFORE the chain started
+        // through the chain's end date — any gap (never joined yet, or a
+        // day they weren't active) fails the check.
         const hitUserIds = new Set((hitRows || []).map(h => h.torn_user_id));
+        const dayBeforeStart = new Date(new Date(chainStartDate + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+        const requiredDays = Math.round(
+          (new Date(chainEndDate + 'T00:00:00Z').getTime() - new Date(dayBeforeStart + 'T00:00:00Z').getTime()) / 86400000
+        ) + 1;
         const { results: confirmedRows } = await env.DB.prepare(`
-          SELECT DISTINCT p.torn_user_id, fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id
+          SELECT p.torn_user_id, fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id
           FROM personal_stats_snapshots p
           LEFT JOIN faction_members fm ON fm.torn_user_id = p.torn_user_id
           WHERE p.faction_id = ? AND p.snapshot_date >= ? AND p.snapshot_date <= ?
-        `).bind(factionId, chainStartDate, chainEndDate).all();
+          GROUP BY p.torn_user_id
+          HAVING COUNT(DISTINCT p.snapshot_date) = ?
+        `).bind(factionId, dayBeforeStart, chainEndDate, requiredDays).all();
 
         const zeroHitMembers = (confirmedRows || [])
           .filter(r => !hitUserIds.has(r.torn_user_id) && r.is_active === 1);
