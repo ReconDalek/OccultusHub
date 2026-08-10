@@ -637,6 +637,9 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
                   <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
                   <div style={{ minWidth: 0 }}>
                     <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+                    {m.no_hits_recorded && (
+                      <span title="No chain_hits record — confirmed in faction during this chain, but never attacked" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ no hits</span>
+                    )}
                     <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
                       {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
                     </span>

@@ -553,9 +553,29 @@ export async function generateChainWarningReport(request, env) {
           exemptionByUser[r.torn_user_id] ??= { type: r.exemption_type, date_start: r.date_start, date_end: r.date_end, reason: r.reason };
         }
 
+        // Zero-hit members: chain_hits only ever stores attackers with
+        // total_attacks >= 1 (see saveChainHits/saveChainImport), so a member
+        // who was in the faction for the whole chain but never attacked has
+        // NO row there at all — indistinguishable from "wasn't in the faction".
+        // We only add a 0-hit warning entry when personal_stats_snapshots
+        // 100% confirms the member was in THIS faction on a day the chain was
+        // running (chain start through end date) — otherwise we can't tell
+        // "sat out the chain" from "was in a different faction that day".
+        const hitUserIds = new Set((hitRows || []).map(h => h.torn_user_id));
+        const { results: confirmedRows } = await env.DB.prepare(`
+          SELECT DISTINCT p.torn_user_id, fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id
+          FROM personal_stats_snapshots p
+          LEFT JOIN faction_members fm ON fm.torn_user_id = p.torn_user_id
+          WHERE p.faction_id = ? AND p.snapshot_date >= ? AND p.snapshot_date <= ?
+        `).bind(factionId, chainStartDate, chainEndDate).all();
+
+        const zeroHitMembers = (confirmedRows || [])
+          .filter(r => !hitUserIds.has(r.torn_user_id) && r.is_active === 1);
+
         const overdoses = {};
-        if (activeHits.length) {
-          const ids = activeHits.map(h => h.torn_user_id);
+        const odUserIds = [...activeHits.map(h => h.torn_user_id), ...zeroHitMembers.map(r => r.torn_user_id)];
+        if (odUserIds.length) {
+          const ids = odUserIds;
           const idPh = ids.map(() => '?').join(',');
           const [odStartRows, odEndRows] = await Promise.all([
             env.DB.prepare(`
@@ -584,8 +604,8 @@ export async function generateChainWarningReport(request, env) {
           for (const r of (odEndRows.results || [])) overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
         }
 
-        const members = activeHits
-          .map(h => ({
+        const members = [
+          ...activeHits.map(h => ({
             torn_user_id:  h.torn_user_id,
             username:      h.username,
             faction_id:    h.current_faction_id ?? null,
@@ -594,8 +614,19 @@ export async function generateChainWarningReport(request, env) {
             bonus_hits:    h.bonus_hits || 0,
             overdoses:     overdoses[h.torn_user_id] ?? 0,
             exemption:     exemptionByUser[h.torn_user_id] ?? null,
-          }))
-          .sort((a, b) => b.total_attacks - a.total_attacks);
+          })),
+          ...zeroHitMembers.map(r => ({
+            torn_user_id:  r.torn_user_id,
+            username:      r.username,
+            faction_id:    r.current_faction_id ?? null,
+            level:         r.level ?? null,
+            total_attacks: 0,
+            bonus_hits:    0,
+            overdoses:     overdoses[r.torn_user_id] ?? 0,
+            exemption:     exemptionByUser[r.torn_user_id] ?? null,
+            no_hits_recorded: true,
+          })),
+        ].sort((a, b) => b.total_attacks - a.total_attacks);
 
         chains.push({
           faction_id: factionId,
