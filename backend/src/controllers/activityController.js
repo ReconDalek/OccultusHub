@@ -753,6 +753,17 @@ export async function generateEnergyWarningReport(request, env) {
       : `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
     const ph = factions.map(() => '?').join(',');
+    // Totals/baseline queries deliberately scan ALL 3 factions (allPh), not just
+    // the ones selected for this report (ph) — a member's gym energy and attack
+    // hits earned under an unselected faction earlier in the month still count
+    // toward their monthly total; only WHICH members get shown (below, via
+    // endOfMonthFactionByUser) is scoped to the selected factions. Reported
+    // liability already tracks end-of-month faction, not per-faction credit —
+    // scoping the totals themselves to the selected factions too silently
+    // dropped everything earned before a member's last transfer, making anyone
+    // who moved into a selected faction late in the month look far short of
+    // their real monthly contribution.
+    const allPh = FACTION_IDS.map(() => '?').join(',');
 
     const rows = await env.DB.prepare(`
       WITH baseline AS (
@@ -761,7 +772,7 @@ export async function generateEnergyWarningReport(request, env) {
           SELECT torn_user_id, faction_id, energy_total,
                  ROW_NUMBER() OVER (PARTITION BY torn_user_id, faction_id ORDER BY snapshot_date DESC) AS rn
           FROM energy_snapshots
-          WHERE snapshot_date < ? AND energy_total > 0 AND faction_id IN (${ph})
+          WHERE snapshot_date < ? AND energy_total > 0 AND faction_id IN (${allPh})
         )
         WHERE rn = 1
       ),
@@ -774,7 +785,7 @@ export async function generateEnergyWarningReport(request, env) {
           MIN(energy_total)   AS first_value,
           MAX(energy_total)   AS latest_value
         FROM energy_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0 AND faction_id IN (${ph})
+        WHERE snapshot_date >= ? AND snapshot_date <= ? AND energy_total > 0 AND faction_id IN (${allPh})
         GROUP BY torn_user_id, faction_id
       ),
       per_faction AS (
@@ -807,7 +818,7 @@ export async function generateEnergyWarningReport(request, env) {
         GROUP BY torn_user_id
       ) agg
       LEFT JOIN faction_members fm ON fm.torn_user_id = agg.torn_user_id
-    `).bind(monthStart, ...factions, monthStart, monthEnd, ...factions).all();
+    `).bind(monthStart, ...FACTION_IDS, monthStart, monthEnd, ...FACTION_IDS).all();
 
     // ── Faction movements: the member's own faction badge stays their real
     // current faction (faction_members.faction_id) — leadership wants to know
@@ -933,7 +944,9 @@ export async function generateEnergyWarningReport(request, env) {
     const overdoses = {};
     for (const r of (odEndRows.results || [])) overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
 
-    // ── Attacks: saved wars + chains in period, restricted to the selected factions ──
+    // ── Attacks: saved wars + chains in period, across ALL 3 factions (same
+    // reasoning as the gym-energy totals above — a member's war/chain hits
+    // under an unselected faction earlier in the month still count) ──
     const attacks = {};
     if (includeAttacks) {
       const periodFromTs = Math.floor(new Date(monthStart + 'T00:00:00Z').getTime() / 1000);
@@ -944,18 +957,18 @@ export async function generateEnergyWarningReport(request, env) {
           SELECT wh.torn_user_id, SUM(wh.war_hits + wh.outside_hits + wh.assists) AS total
           FROM war_hits wh
           JOIN ranked_wars rw ON wh.ranked_war_id = rw.id
-          WHERE wh.faction_id IN (${ph})
+          WHERE wh.faction_id IN (${allPh})
             AND COALESCE(rw.started_at, rw.scheduled_start) >= ?
             AND COALESCE(rw.started_at, rw.scheduled_start) <= ?
           GROUP BY wh.torn_user_id
-        `).bind(...factions, periodFromTs, periodToTs).all(),
+        `).bind(...FACTION_IDS, periodFromTs, periodToTs).all(),
         env.DB.prepare(`
           SELECT ch.torn_user_id, SUM(ch.total_attacks) AS total
           FROM chain_hits ch
           JOIN chain_cache cc ON ch.torn_chain_id = cc.torn_chain_id
-          WHERE ch.faction_id IN (${ph}) AND cc.start_at >= ? AND cc.start_at <= ?
+          WHERE ch.faction_id IN (${allPh}) AND cc.start_at >= ? AND cc.start_at <= ?
           GROUP BY ch.torn_user_id
-        `).bind(...factions, periodFromTs, periodToTs).all(),
+        `).bind(...FACTION_IDS, periodFromTs, periodToTs).all(),
       ]);
       for (const r of (warHitRows.results || []))   attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
       for (const r of (chainHitRows.results || [])) attacks[r.torn_user_id] = (attacks[r.torn_user_id] ?? 0) + (r.total ?? 0);
@@ -1049,8 +1062,8 @@ export async function generateEnergyWarningReport(request, env) {
 
           if (overlapStart <= overlapEnd) {
             const excludedDays   = daysBetweenInclusive(overlapStart, overlapEnd);
-            const energyRemoved  = await energyGrowthInRange(env, r.torn_user_id, factions, overlapStart, overlapEnd);
-            const hitsRemoved    = includeAttacks ? await attackHitsInRange(env, r.torn_user_id, factions, overlapStart, overlapEnd) : 0;
+            const energyRemoved  = await energyGrowthInRange(env, r.torn_user_id, FACTION_IDS, overlapStart, overlapEnd);
+            const hitsRemoved    = includeAttacks ? await attackHitsInRange(env, r.torn_user_id, FACTION_IDS, overlapStart, overlapEnd) : 0;
 
             effectiveGymEnergy   = Math.max(0, gymEnergy - energyRemoved);
             effectiveAttackHits  = Math.max(0, attackHits - hitsRemoved);
