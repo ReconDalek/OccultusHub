@@ -221,12 +221,12 @@ function ExemptionsNote({ members, targets, valueKey, valueLabel }) {
 
 // ─── Energy report table ──────────────────────────────────────────────────────
 
-function EnergyReportTable({ data, targets, reportedIds, onReport }) {
+function EnergyReportTable({ data, targets, reportedIds, skippedIds, onReport, onSkip }) {
   const showAttacks = data.include_attacks
 
   const colTemplate = showAttacks
-    ? '30px 1fr 90px 90px 90px 70px 50px 90px 100px 130px'
-    : '30px 1fr 90px 90px 70px 50px 90px 100px 130px'
+    ? '30px 1fr 90px 90px 90px 70px 50px 90px 100px 160px'
+    : '30px 1fr 90px 90px 70px 50px 90px 100px 160px'
 
   const headers = showAttacks
     ? ['#', 'Member', 'Gym', 'Attacks', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
@@ -259,6 +259,7 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
           const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
           const delta = hasTarget ? m.avg_per_day - Number(target) : null
           const reported = reportedIds.has(m.torn_user_id)
+          const skipped = skippedIds.has(m.torn_user_id)
 
           return (
             <div key={m.torn_user_id} style={{
@@ -308,14 +309,23 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
               <span style={{ fontSize: '12px', color: !hasTarget ? 'var(--text-faint)' : (delta < 0 ? '#f87171' : '#4ade80') }}>
                 {!hasTarget ? '—' : `${delta >= 0 ? '+' : ''}${fmt(delta)}`}
               </span>
-              <div>
+              <div style={{ display: 'flex', gap: '6px' }}>
                 {reported ? (
                   <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
+                ) : skipped ? (
+                  <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>Skipped</span>
                 ) : (
-                  <button onClick={() => onReport(m)}
-                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                    Warn
-                  </button>
+                  <>
+                    <button onClick={() => onReport(m)}
+                      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      Warn
+                    </button>
+                    <button onClick={() => onSkip(m.torn_user_id)}
+                      title="Exclude this member from being warned this time, without logging an exemption"
+                      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      Skip
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -345,12 +355,14 @@ function EnergyGenerator({ onWarningSaved }) {
   const [includeAttacks, setIncludeAttacks]   = useState(true)
   const [includeNewMembers, setIncludeNewMembers] = useState(false)
   const [onlyNewMembers, setOnlyNewMembers]   = useState(false)
+  const [excludeLowLevel, setExcludeLowLevel] = useState(true)
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
 
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
+  const [skippedIds, setSkippedIds]   = useState(new Set())
   const [reportingMember, setReportingMember] = useState(null)
 
   function toggleFaction(id) {
@@ -382,6 +394,7 @@ function EnergyGenerator({ onWarningSaved }) {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         setReportedIds(new Set())
+        setSkippedIds(new Set())
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -404,7 +417,10 @@ function EnergyGenerator({ onWarningSaved }) {
   // day count/energy removed is surfaced below (see the note in
   // EnergyReportTable). Meeting target already means there's nothing to
   // exempt from, so exemption only matters once belowTarget is true.
-  const eligibleMembers = data ? data.members.filter(m => !onlyNewMembers || m.joined_mid_month) : []
+  const eligibleMembers = data ? data.members.filter(m =>
+    (!onlyNewMembers || m.joined_mid_month) &&
+    (!excludeLowLevel || m.level == null || m.level > 15)
+  ) : []
   const visibleMembers = eligibleMembers.filter(m => {
     const target = targets[m.faction_id]
     const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
@@ -495,6 +511,17 @@ function EnergyGenerator({ onWarningSaved }) {
             >
               Only New Members
             </button>
+            <button onClick={() => setExcludeLowLevel(v => !v)}
+              title="Exclude members level 15 and below"
+              style={{
+                padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                border: `1px solid ${excludeLowLevel ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                background: excludeLowLevel ? 'rgba(251,191,36,0.1)' : 'transparent',
+                color: excludeLowLevel ? '#fbbf24' : 'var(--text-secondary)',
+              }}
+            >
+              Exclude Lv 15 &amp; Under
+            </button>
           </div>
         </div>
 
@@ -560,7 +587,9 @@ function EnergyGenerator({ onWarningSaved }) {
                   data={{ ...data, members: visibleMembers }}
                   targets={targets}
                   reportedIds={reportedIds}
+                  skippedIds={skippedIds}
                   onReport={setReportingMember}
+                  onSkip={id => setSkippedIds(prev => new Set(prev).add(id))}
                 />
               </>
             )}
@@ -598,13 +627,14 @@ function fmtChainDate(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().slice(0, 10)
 }
 
-function ChainCard({ chain, targets, reportedIds, onReport }) {
+function ChainCard({ chain, targets, reportedIds, skippedIds, onReport, onSkip, excludeLowLevel }) {
   const target = targets[chain.faction_id]
   const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
 
-  const visibleMembers  = chain.members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption))
-  const exemptedMembers = chain.members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption)
-  const colTemplate = '30px 1fr 90px 70px 60px 100px 130px'
+  const levelFiltered = chain.members.filter(m => !excludeLowLevel || m.level == null || m.level > 15)
+  const visibleMembers  = levelFiltered.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption))
+  const exemptedMembers = levelFiltered.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption)
+  const colTemplate = '30px 1fr 90px 70px 60px 100px 160px'
 
   return (
     <div style={{ marginBottom: '20px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', overflow: 'hidden' }}>
@@ -635,7 +665,9 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
 
             {visibleMembers.map((m, i) => {
               const delta = hasTarget ? m.total_attacks - Number(target) : null
-              const reported = reportedIds.has(`${chain.torn_chain_id}:${m.torn_user_id}`)
+              const idKey = `${chain.torn_chain_id}:${m.torn_user_id}`
+              const reported = reportedIds.has(idKey)
+              const skipped = skippedIds.has(idKey)
 
               return (
                 <div key={m.torn_user_id} style={{
@@ -660,14 +692,23 @@ function ChainCard({ chain, targets, reportedIds, onReport }) {
                   <span style={{ fontSize: '12px', color: !hasTarget ? 'var(--text-faint)' : (delta < 0 ? '#f87171' : '#4ade80') }}>
                     {!hasTarget ? '—' : `${delta >= 0 ? '+' : ''}${fmt(delta)}`}
                   </span>
-                  <div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
                     {reported ? (
                       <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
+                    ) : skipped ? (
+                      <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>Skipped</span>
                     ) : (
-                      <button onClick={() => onReport({ member: m, chain })}
-                        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                        Warn
-                      </button>
+                      <>
+                        <button onClick={() => onReport({ member: m, chain })}
+                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                          Warn
+                        </button>
+                        <button onClick={() => onSkip(idKey)}
+                          title="Exclude this member from being warned this time, without logging an exemption"
+                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                          Skip
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -691,12 +732,14 @@ function ChainGenerator({ onWarningSaved }) {
 
   const [selectedMonth, setSelectedMonth]       = useState(() => previousMonth(now))
   const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
+  const [excludeLowLevel, setExcludeLowLevel]   = useState(true)
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
 
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
+  const [skippedIds, setSkippedIds]   = useState(new Set())
   const [reportingItem, setReportingItem] = useState(null) // { member, chain }
 
   function toggleFaction(id) {
@@ -723,6 +766,7 @@ function ChainGenerator({ onWarningSaved }) {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         setReportedIds(new Set())
+        setSkippedIds(new Set())
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -770,6 +814,23 @@ function ChainGenerator({ onWarningSaved }) {
                 </button>
               )
             })}
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Options</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={() => setExcludeLowLevel(v => !v)}
+              title="Exclude members level 15 and below"
+              style={{
+                padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                border: `1px solid ${excludeLowLevel ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                background: excludeLowLevel ? 'rgba(251,191,36,0.1)' : 'transparent',
+                color: excludeLowLevel ? '#fbbf24' : 'var(--text-secondary)',
+              }}
+            >
+              Exclude Lv 15 &amp; Under
+            </button>
           </div>
         </div>
 
@@ -827,7 +888,10 @@ function ChainGenerator({ onWarningSaved }) {
               chain={chain}
               targets={targets}
               reportedIds={reportedIds}
+              skippedIds={skippedIds}
               onReport={setReportingItem}
+              onSkip={id => setSkippedIds(prev => new Set(prev).add(id))}
+              excludeLowLevel={excludeLowLevel}
             />
           ))}
         </>
