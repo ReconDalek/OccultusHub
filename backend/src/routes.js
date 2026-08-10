@@ -27,6 +27,7 @@ import * as webhookController from './controllers/webhookController.js';
 import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
 import * as exemptionsController from './controllers/exemptionsController.js';
+import * as warningExclusionsController from './controllers/warningExclusionsController.js';
 import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
 import * as xanaxController from './controllers/xanaxController.js';
@@ -509,6 +510,18 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/exemptions\/\d+$/) && method === 'DELETE') {
       return exemptionsController.deleteExemption(request, env);
+    }
+
+    // Per-month "excuse this member" toggle for Warnings > Generate (lighter-weight
+    // than a logged exemption — a one-off judgment call, not a standing rule)
+    if (pathname === '/api/leadership/warnings/exclusions' && method === 'GET') {
+      return warningExclusionsController.getWarningExclusions(request, env);
+    }
+    if (pathname === '/api/leadership/warnings/exclusions' && method === 'POST') {
+      return warningExclusionsController.addWarningExclusion(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/warnings\/exclusions\/\d+$/) && method === 'DELETE') {
+      return warningExclusionsController.deleteWarningExclusion(request, env);
     }
 
     // Monthly xanax distribution tracking

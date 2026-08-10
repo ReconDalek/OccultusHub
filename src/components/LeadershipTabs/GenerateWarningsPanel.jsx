@@ -9,6 +9,37 @@ const MONTHS_FULL = ['January','February','March','April','May','June','July','A
 
 const token = () => localStorage.getItem('occultusSession')
 
+// ─── Warning exclusions — a per-member, per-month "excuse this person" toggle
+// for Generate reports. Lighter-weight than a logged Exemption: no reason
+// required, just a leader's one-off call (e.g. right at the target, OD count
+// taken into consideration). Scoped to (torn_user_id, warning_type, year,
+// month) server-side, NOT to a specific chain/report run, so it persists if
+// the same month's report is regenerated later — including from a different
+// chain within Chain reports. ───────────────────────────────────────────────
+
+async function fetchWarningExclusions(warningType, year, month) {
+  const params = new URLSearchParams({ warning_type: warningType, year: String(year), month: String(month) })
+  const res = await fetch(`${API_BASE_URL}/api/leadership/warnings/exclusions?${params}`, { headers: { Authorization: token() } })
+  const json = await res.json().catch(() => ({}))
+  const map = new Map()
+  for (const e of (json.exclusions || [])) map.set(e.torn_user_id, e.id)
+  return map
+}
+
+async function addWarningExclusion(warningType, year, month, tornUserId, username) {
+  const res = await fetch(`${API_BASE_URL}/api/leadership/warnings/exclusions`, {
+    method: 'POST',
+    headers: { Authorization: token(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ torn_user_id: tornUserId, username, warning_type: warningType, year, month }),
+  })
+  const json = await res.json()
+  return json.id
+}
+
+async function removeWarningExclusion(id) {
+  await fetch(`${API_BASE_URL}/api/leadership/warnings/exclusions/${id}`, { method: 'DELETE', headers: { Authorization: token() } })
+}
+
 function buildMonthOptions() {
   const now = new Date()
   const options = []
@@ -221,7 +252,7 @@ function ExemptionsNote({ members, targets, valueKey, valueLabel }) {
 
 // ─── Energy report table ──────────────────────────────────────────────────────
 
-function EnergyReportTable({ data, targets, reportedIds, skippedIds, onReport, onSkip }) {
+function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, onToggleExclude }) {
   const showAttacks = data.include_attacks
 
   const colTemplate = showAttacks
@@ -259,14 +290,15 @@ function EnergyReportTable({ data, targets, reportedIds, skippedIds, onReport, o
           const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
           const delta = hasTarget ? m.avg_per_day - Number(target) : null
           const reported = reportedIds.has(m.torn_user_id)
-          const skipped = skippedIds.has(m.torn_user_id)
+          const excluded = excludedMap.has(m.torn_user_id)
+          const flagged = hasTarget && delta < 0 && !excluded
 
           return (
             <div key={m.torn_user_id} style={{
               display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
               gap: '8px', padding: '9px 12px', borderRadius: '8px',
-              background: hasTarget && delta < 0 ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
-              border: hasTarget && delta < 0 ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+              background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+              border: flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
             }}>
               <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
@@ -312,18 +344,22 @@ function EnergyReportTable({ data, targets, reportedIds, skippedIds, onReport, o
               <div style={{ display: 'flex', gap: '6px' }}>
                 {reported ? (
                   <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
-                ) : skipped ? (
-                  <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>Skipped</span>
+                ) : excluded ? (
+                  <button onClick={() => onToggleExclude(m)}
+                    title="Excused for this month — click to undo"
+                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    ✓ Excused
+                  </button>
                 ) : (
                   <>
                     <button onClick={() => onReport(m)}
                       style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
                       Warn
                     </button>
-                    <button onClick={() => onSkip(m.torn_user_id)}
-                      title="Exclude this member from being warned this time, without logging an exemption"
+                    <button onClick={() => onToggleExclude(m)}
+                      title="Excuse this member for this month, without logging a formal exemption"
                       style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                      Skip
+                      Excuse
                     </button>
                   </>
                 )}
@@ -362,7 +398,7 @@ function EnergyGenerator({ onWarningSaved }) {
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
-  const [skippedIds, setSkippedIds]   = useState(new Set())
+  const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
   const [reportingMember, setReportingMember] = useState(null)
 
   function toggleFaction(id) {
@@ -378,9 +414,11 @@ function EnergyGenerator({ onWarningSaved }) {
   const generate = useCallback(() => {
     setLoading(true)
     setError(null)
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
     const params = new URLSearchParams({
-      year: String(selectedMonth.year),
-      month: String(selectedMonth.month + 1),
+      year: String(year),
+      month: String(month),
       factions: selectedFactions.join(','),
       includeAttacks: includeAttacks ? '1' : '0',
       // "Only new members" needs the new-member rows in the response even if
@@ -388,17 +426,34 @@ function EnergyGenerator({ onWarningSaved }) {
       // side below, so the fetch itself always has to include them.
       includeNewMembers: (includeNewMembers || onlyNewMembers) ? '1' : '0',
     })
-    fetch(`${API_BASE_URL}/api/leadership/warnings/generate/energy?${params}`, { headers: { Authorization: token() } })
-      .then(res => res.json().then(json => ({ res, json })))
-      .then(({ res, json }) => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/api/leadership/warnings/generate/energy?${params}`, { headers: { Authorization: token() } })
+        .then(res => res.json().then(json => ({ res, json }))),
+      fetchWarningExclusions('Energy', year, month),
+    ])
+      .then(([{ res, json }, exclusionsMap]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         setReportedIds(new Set())
-        setSkippedIds(new Set())
+        setExcludedMap(exclusionsMap)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers])
+
+  function handleToggleExclude(m) {
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
+    const existingId = excludedMap.get(m.torn_user_id)
+    if (existingId) {
+      setExcludedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      removeWarningExclusion(existingId).catch(() => {})
+    } else {
+      addWarningExclusion('Energy', year, month, m.torn_user_id, m.username)
+        .then(id => setExcludedMap(prev => new Map(prev).set(m.torn_user_id, id)))
+        .catch(() => {})
+    }
+  }
 
   const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
 
@@ -587,9 +642,9 @@ function EnergyGenerator({ onWarningSaved }) {
                   data={{ ...data, members: visibleMembers }}
                   targets={targets}
                   reportedIds={reportedIds}
-                  skippedIds={skippedIds}
+                  excludedMap={excludedMap}
                   onReport={setReportingMember}
-                  onSkip={id => setSkippedIds(prev => new Set(prev).add(id))}
+                  onToggleExclude={handleToggleExclude}
                 />
               </>
             )}
@@ -627,7 +682,7 @@ function fmtChainDate(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().slice(0, 10)
 }
 
-function ChainCard({ chain, targets, reportedIds, skippedIds, onReport, onSkip }) {
+function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggleExclude }) {
   const target = targets[chain.faction_id]
   const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
 
@@ -666,14 +721,15 @@ function ChainCard({ chain, targets, reportedIds, skippedIds, onReport, onSkip }
               const delta = hasTarget ? m.total_attacks - Number(target) : null
               const idKey = `${chain.torn_chain_id}:${m.torn_user_id}`
               const reported = reportedIds.has(idKey)
-              const skipped = skippedIds.has(idKey)
+              const excluded = excludedMap.has(m.torn_user_id)
+              const flagged = hasTarget && delta < 0 && !excluded
 
               return (
                 <div key={m.torn_user_id} style={{
                   display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
                   gap: '8px', padding: '9px 12px', borderRadius: '8px',
-                  background: hasTarget && delta < 0 ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
-                  border: hasTarget && delta < 0 ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+                  background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+                  border: flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
                 }}>
                   <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
                   <div style={{ minWidth: 0 }}>
@@ -694,18 +750,22 @@ function ChainCard({ chain, targets, reportedIds, skippedIds, onReport, onSkip }
                   <div style={{ display: 'flex', gap: '6px' }}>
                     {reported ? (
                       <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
-                    ) : skipped ? (
-                      <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>Skipped</span>
+                    ) : excluded ? (
+                      <button onClick={() => onToggleExclude(m)}
+                        title="Excused for this month — click to undo"
+                        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        ✓ Excused
+                      </button>
                     ) : (
                       <>
                         <button onClick={() => onReport({ member: m, chain })}
                           style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
                           Warn
                         </button>
-                        <button onClick={() => onSkip(idKey)}
-                          title="Exclude this member from being warned this time, without logging an exemption"
+                        <button onClick={() => onToggleExclude(m)}
+                          title="Excuse this member for this month, without logging a formal exemption"
                           style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                          Skip
+                          Excuse
                         </button>
                       </>
                     )}
@@ -737,7 +797,7 @@ function ChainGenerator({ onWarningSaved }) {
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
-  const [skippedIds, setSkippedIds]   = useState(new Set())
+  const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
   const [reportingItem, setReportingItem] = useState(null) // { member, chain }
 
   function toggleFaction(id) {
@@ -753,22 +813,41 @@ function ChainGenerator({ onWarningSaved }) {
   const generate = useCallback(() => {
     setLoading(true)
     setError(null)
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
     const params = new URLSearchParams({
-      year: String(selectedMonth.year),
-      month: String(selectedMonth.month + 1),
+      year: String(year),
+      month: String(month),
       factions: selectedFactions.join(','),
     })
-    fetch(`${API_BASE_URL}/api/leadership/warnings/generate/chain?${params}`, { headers: { Authorization: token() } })
-      .then(res => res.json().then(json => ({ res, json })))
-      .then(({ res, json }) => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/api/leadership/warnings/generate/chain?${params}`, { headers: { Authorization: token() } })
+        .then(res => res.json().then(json => ({ res, json }))),
+      fetchWarningExclusions('Chain', year, month),
+    ])
+      .then(([{ res, json }, exclusionsMap]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         setReportedIds(new Set())
-        setSkippedIds(new Set())
+        setExcludedMap(exclusionsMap)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [selectedMonth, selectedFactions])
+
+  function handleToggleExclude(m) {
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
+    const existingId = excludedMap.get(m.torn_user_id)
+    if (existingId) {
+      setExcludedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      removeWarningExclusion(existingId).catch(() => {})
+    } else {
+      addWarningExclusion('Chain', year, month, m.torn_user_id, m.username)
+        .then(id => setExcludedMap(prev => new Map(prev).set(m.torn_user_id, id)))
+        .catch(() => {})
+    }
+  }
 
   const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
 
@@ -869,9 +948,9 @@ function ChainGenerator({ onWarningSaved }) {
               chain={chain}
               targets={targets}
               reportedIds={reportedIds}
-              skippedIds={skippedIds}
+              excludedMap={excludedMap}
               onReport={setReportingItem}
-              onSkip={id => setSkippedIds(prev => new Set(prev).add(id))}
+              onToggleExclude={handleToggleExclude}
             />
           ))}
         </>
