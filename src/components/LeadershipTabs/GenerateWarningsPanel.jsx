@@ -627,13 +627,12 @@ function fmtChainDate(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().slice(0, 10)
 }
 
-function ChainCard({ chain, targets, reportedIds, skippedIds, onReport, onSkip, excludeLowLevel }) {
+function ChainCard({ chain, targets, reportedIds, skippedIds, onReport, onSkip }) {
   const target = targets[chain.faction_id]
   const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
 
-  const levelFiltered = chain.members.filter(m => !excludeLowLevel || m.level == null || m.level > 15)
-  const visibleMembers  = levelFiltered.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption))
-  const exemptedMembers = levelFiltered.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption)
+  const visibleMembers  = chain.members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption))
+  const exemptedMembers = chain.members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption)
   const colTemplate = '30px 1fr 90px 70px 60px 100px 160px'
 
   return (
@@ -732,7 +731,6 @@ function ChainGenerator({ onWarningSaved }) {
 
   const [selectedMonth, setSelectedMonth]       = useState(() => previousMonth(now))
   const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
-  const [excludeLowLevel, setExcludeLowLevel]   = useState(true)
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
 
   const [data, setData]       = useState(null)
@@ -817,23 +815,6 @@ function ChainGenerator({ onWarningSaved }) {
           </div>
         </div>
 
-        <div>
-          <label style={labelStyle}>Options</label>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => setExcludeLowLevel(v => !v)}
-              title="Exclude members level 15 and below"
-              style={{
-                padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
-                border: `1px solid ${excludeLowLevel ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                background: excludeLowLevel ? 'rgba(251,191,36,0.1)' : 'transparent',
-                color: excludeLowLevel ? '#fbbf24' : 'var(--text-secondary)',
-              }}
-            >
-              Exclude Lv 15 &amp; Under
-            </button>
-          </div>
-        </div>
-
         <div style={{ alignSelf: 'flex-end' }}>
           <button onClick={generate} disabled={loading}
             style={{
@@ -891,7 +872,6 @@ function ChainGenerator({ onWarningSaved }) {
               skippedIds={skippedIds}
               onReport={setReportingItem}
               onSkip={id => setSkippedIds(prev => new Set(prev).add(id))}
-              excludeLowLevel={excludeLowLevel}
             />
           ))}
         </>
