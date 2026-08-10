@@ -291,6 +291,12 @@ function EnergyReportTable({ data, targets, reportedIds, onReport }) {
                     ))}
                   </div>
                 )}
+                {m.exemption?.partial && (
+                  <div title={m.exemption.reason} style={{ color: '#f59e0b', fontSize: '11px', marginTop: '3px' }}>
+                    ⚠ Exempt {fmtShortDate(m.exemption.overlap_start)}–{fmtShortDate(m.exemption.overlap_end)} ({m.exemption.excluded_days}d) —
+                    {' '}−{fmt(m.exemption.energy_removed)} energy{m.exemption.attack_hits_removed > 0 && `, −${fmt(m.exemption.attack_hits_removed)} hits`} excluded from average
+                  </div>
+                )}
               </div>
               {showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               {showAttacks && <span style={{ color: '#f87171', fontSize: '12px' }}>{m.attack_hits > 0 ? `+${fmt(m.attack_energy)}` : '—'}</span>}
@@ -389,23 +395,27 @@ function EnergyGenerator({ onWarningSaved }) {
   // target updates the list immediately without re-generating. "Only new
   // members" is a curiosity/sanity-check filter (how are brand-new recruits
   // tracking so far) layered on top, not a replacement for the target check.
-  // A member who's below target but has a matching exemption logged isn't a
-  // warning candidate either — they're split into their own "Exemptions"
-  // note section instead (no red flag, no Warn button, just the reason on
-  // record). Meeting target already means there's nothing to exempt from, so
-  // exemption only matters once belowTarget is true.
+  // A member who's below target but has a matching FULL-MONTH exemption
+  // logged isn't a warning candidate at all — they're split into their own
+  // "Exemptions" note section instead (no red flag, no Warn button, just the
+  // reason on record). A PARTIAL exemption is different: the backend has
+  // already removed just those days from their total/average, so they stay
+  // a normal candidate judged on their remaining non-exempt days — only the
+  // day count/energy removed is surfaced below (see the note in
+  // EnergyReportTable). Meeting target already means there's nothing to
+  // exempt from, so exemption only matters once belowTarget is true.
   const eligibleMembers = data ? data.members.filter(m => !onlyNewMembers || m.joined_mid_month) : []
   const visibleMembers = eligibleMembers.filter(m => {
     const target = targets[m.faction_id]
     const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
     const belowTarget = hasTarget && m.avg_per_day < Number(target)
     if (!hasTarget) return true
-    return belowTarget && !m.exemption
+    return belowTarget && (!m.exemption || m.exemption.partial)
   })
   const exemptedMembers = eligibleMembers.filter(m => {
     const target = targets[m.faction_id]
     const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
-    return hasTarget && m.avg_per_day < Number(target) && m.exemption
+    return hasTarget && m.avg_per_day < Number(target) && m.exemption && !m.exemption.partial
   })
 
   return (

@@ -651,6 +651,56 @@ export async function getEnergyActivity(request, env) {
   }
 }
 
+// Growth in a member's per-faction contributed-energy total during a specific
+// date sub-range — same "latest value on/before a boundary date, per faction"
+// baseline pattern the report already uses for the whole month, just scoped
+// tighter. Used to subtract a partial-month exemption's own days out of the
+// member's monthly total (see generateEnergyWarningReport).
+async function energyGrowthInRange(env, tornUserId, factionIds, rangeStart, rangeEnd) {
+  const ph = factionIds.map(() => '?').join(',');
+  const dayBeforeStart = new Date(new Date(rangeStart + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+  const latestOnOrBefore = (date) => env.DB.prepare(`
+    SELECT faction_id, energy_total FROM (
+      SELECT faction_id, energy_total, ROW_NUMBER() OVER (PARTITION BY faction_id ORDER BY snapshot_date DESC) AS rn
+      FROM energy_snapshots
+      WHERE torn_user_id = ? AND faction_id IN (${ph}) AND snapshot_date <= ? AND energy_total > 0
+    ) WHERE rn = 1
+  `).bind(tornUserId, ...factionIds, date).all();
+
+  const [startRows, endRows] = await Promise.all([latestOnOrBefore(dayBeforeStart), latestOnOrBefore(rangeEnd)]);
+  const startVal = {};
+  for (const r of (startRows.results || [])) startVal[r.faction_id] = r.energy_total;
+  let total = 0;
+  for (const r of (endRows.results || [])) total += Math.max(0, r.energy_total - (startVal[r.faction_id] ?? 0));
+  return total;
+}
+
+// War + chain attack hits landing inside a specific date sub-range, for one
+// member — mirrors the report's own bulk attacks query (see below), scoped to
+// a single user and a tighter window, for the same partial-exemption subtraction.
+async function attackHitsInRange(env, tornUserId, factionIds, rangeStart, rangeEnd) {
+  const ph     = factionIds.map(() => '?').join(',');
+  const fromTs = Math.floor(new Date(rangeStart + 'T00:00:00Z').getTime() / 1000);
+  const toTs   = Math.floor(new Date(rangeEnd   + 'T23:59:59Z').getTime() / 1000);
+
+  const [warRow, chainRow] = await Promise.all([
+    env.DB.prepare(`
+      SELECT SUM(wh.war_hits + wh.outside_hits + wh.assists) AS total
+      FROM war_hits wh
+      JOIN ranked_wars rw ON wh.ranked_war_id = rw.id
+      WHERE wh.torn_user_id = ? AND wh.faction_id IN (${ph})
+        AND COALESCE(rw.started_at, rw.scheduled_start) >= ? AND COALESCE(rw.started_at, rw.scheduled_start) <= ?
+    `).bind(tornUserId, ...factionIds, fromTs, toTs).first(),
+    env.DB.prepare(`
+      SELECT SUM(ch.total_attacks) AS total
+      FROM chain_hits ch
+      JOIN chain_cache cc ON ch.torn_chain_id = cc.torn_chain_id
+      WHERE ch.torn_user_id = ? AND ch.faction_id IN (${ph}) AND cc.start_at >= ? AND cc.start_at <= ?
+    `).bind(tornUserId, ...factionIds, fromTs, toTs).first(),
+  ]);
+  return (warRow?.total ?? 0) + (chainRow?.total ?? 0);
+}
+
 // GET /api/leadership/warnings/generate/energy?year=&month=1-12&factions=33097,9728,9171&includeAttacks=1&includeNewMembers=0
 // Source data for Warnings > Generate: one row per member with their gym+attack
 // energy total for the selected calendar month and the resulting daily average,
@@ -962,8 +1012,6 @@ export async function generateEnergyWarningReport(request, env) {
 
       const gymEnergy    = r.gym_energy || 0;
       const attackHits   = attacks[r.torn_user_id] || 0;
-      const attackEnergy = attackHits * 25;
-      const totalEnergy  = gymEnergy + attackEnergy;
 
       // Tracked-days uses startedMidMonth (not isBrandNewMember) — a
       // transfer's average should still be scoped to their actual days in
@@ -975,24 +1023,73 @@ export async function generateEnergyWarningReport(request, env) {
         trackedDays = Math.max(1, Math.round((endTs - startTs) / 86400000) + 1);
       }
 
+      // Exemptions: an "entire month" exemption (Exemptions tab's Entire
+      // Month mode sets date_start/date_end to exactly the calendar month's
+      // bounds — a Date Range exemption spanning the whole month qualifies
+      // the same way) just excludes the member from being a warn candidate,
+      // no math needed. A PARTIAL exemption instead removes only its own
+      // days from both the total and the average — the member is still a
+      // normal candidate, just judged on their non-exempt days.
+      const exemption = exemptionByUser[r.torn_user_id] ?? null;
+      let effectiveGymEnergy  = gymEnergy;
+      let effectiveAttackHits = attackHits;
+      let effectiveTrackedDays = trackedDays;
+      let exemptionForMember = exemption;
+
+      if (exemption) {
+        const isFullMonth = exemption.date_start <= monthStart && exemption.date_end >= monthEnd;
+        if (!isFullMonth) {
+          // Clip the exemption to this member's own tracked window before
+          // computing the overlap — a mid-month joiner's exemption from
+          // earlier in the month (before they even joined) has no days to
+          // actually remove.
+          const trackedStart = (startedMidMonth && r.start_date) ? r.start_date : monthStart;
+          const overlapStart = exemption.date_start > trackedStart ? exemption.date_start : trackedStart;
+          const overlapEnd   = exemption.date_end < monthEnd ? exemption.date_end : monthEnd;
+
+          if (overlapStart <= overlapEnd) {
+            const excludedDays   = daysBetweenInclusive(overlapStart, overlapEnd);
+            const energyRemoved  = await energyGrowthInRange(env, r.torn_user_id, factions, overlapStart, overlapEnd);
+            const hitsRemoved    = includeAttacks ? await attackHitsInRange(env, r.torn_user_id, factions, overlapStart, overlapEnd) : 0;
+
+            effectiveGymEnergy   = Math.max(0, gymEnergy - energyRemoved);
+            effectiveAttackHits  = Math.max(0, attackHits - hitsRemoved);
+            effectiveTrackedDays = Math.max(1, trackedDays - excludedDays);
+
+            exemptionForMember = {
+              ...exemption,
+              partial:             true,
+              excluded_days:       excludedDays,
+              overlap_start:       overlapStart,
+              overlap_end:         overlapEnd,
+              energy_removed:      energyRemoved,
+              attack_hits_removed: hitsRemoved,
+            };
+          }
+        }
+      }
+
+      const effectiveAttackEnergy = effectiveAttackHits * 25;
+      const effectiveTotalEnergy  = effectiveGymEnergy + effectiveAttackEnergy;
+
       members.push({
         torn_user_id:     r.torn_user_id,
         username:         r.username,
         faction_id:       r.current_faction_id ?? null,
         level:            r.level ?? null,
         is_active:        r.is_active ?? null,
-        gym_energy:       gymEnergy,
-        attack_hits:      attackHits,
-        attack_energy:    attackEnergy,
-        total_energy:     totalEnergy,
+        gym_energy:       effectiveGymEnergy,
+        attack_hits:      effectiveAttackHits,
+        attack_energy:    effectiveAttackEnergy,
+        total_energy:     effectiveTotalEnergy,
         start_date:       r.start_date,
         end_date:         r.end_date,
         joined_mid_month: isBrandNewMember,
-        tracked_days:     trackedDays,
-        avg_per_day:      Math.round(totalEnergy / trackedDays),
+        tracked_days:     effectiveTrackedDays,
+        avg_per_day:      Math.round(effectiveTotalEnergy / effectiveTrackedDays),
         overdoses:        overdoses[r.torn_user_id] ?? 0,
         movements:        buildMovements(r.torn_user_id, r.current_faction_id),
-        exemption:        exemptionByUser[r.torn_user_id] ?? null,
+        exemption:        exemptionForMember,
       });
     }
 
