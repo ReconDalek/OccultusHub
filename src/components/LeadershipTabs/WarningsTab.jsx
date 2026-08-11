@@ -679,6 +679,14 @@ function WarningRow({ w, expired, onDelete }) {
               Issue
             </button>
           )}
+          {!w.date_issued && (
+            <a href={`https://www.torn.com/messages.php#/p=compose&XID=${w.torn_user_id}`}
+              target="_blank" rel="noopener noreferrer"
+              title="Compose a Torn mail to this member"
+              style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(96,165,250,0.3)', background: 'rgba(96,165,250,0.1)', color: '#60a5fa', cursor: 'pointer', fontSize: '11px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+              Mail
+            </a>
+          )}
           <button onClick={() => setEditingAll(true)}
             title="Edit all details of this warning"
             style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px' }}>
