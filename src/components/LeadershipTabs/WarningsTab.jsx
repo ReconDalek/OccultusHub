@@ -385,16 +385,209 @@ function AddWarningModal({ members, onClose, onRefresh }) {
   )
 }
 
+// ─── Edit Warning Modal — full edit of an existing warning's own details
+// (type, period, both dates, target/achieved, comment). Distinct from the
+// inline "Issue" quick-action below, which only ever touches date_issued +
+// comment. Member identity (torn_user_id/username) is never editable here —
+// a warning attributed to the wrong member should be deleted and re-added. ──
+
+function EditWarningModal({ warning: w, onClose, onSaved }) {
+  const knownType = WARNING_TYPES.includes(w.warning_type) ? w.warning_type : 'Other'
+  const [form, setForm] = useState({
+    warning_type:   knownType,
+    custom_type:    knownType === 'Other' ? w.warning_type : '',
+    period_month:   w.period_month || defaultPeriod().period_month,
+    period_year:    w.period_year || defaultPeriod().period_year,
+    date_reported:  w.date_reported ? w.date_reported.slice(0, 10) : '',
+    date_issued:    w.date_issued ? w.date_issued.slice(0, 10) : '',
+    target_value:   w.target_value ?? '',
+    achieved_value: w.achieved_value ?? '',
+    comment:        w.comment || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState(null)
+
+  const currentYear = new Date().getFullYear()
+  const yearOptions  = [currentYear - 1, currentYear, currentYear + 1]
+  const resolvedType = form.warning_type === 'Other' ? form.custom_type : form.warning_type
+  const typeInfo      = TYPE_LABELS[form.warning_type] || TYPE_LABELS.Other
+  const periodLabel   = `${MONTHS_FULL[form.period_month - 1]} ${form.period_year}`
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!resolvedType)        { setError('Enter a warning type'); return }
+    if (!form.date_reported)  { setError('Date reported is required'); return }
+
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/warnings/${w.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: token() },
+        body: JSON.stringify({
+          date_reported:  form.date_reported,
+          date_issued:    form.date_issued || null,
+          period:         periodLabel,
+          period_month:   form.period_month,
+          period_year:    form.period_year,
+          warning_type:   resolvedType,
+          target_value:   form.target_value !== '' ? parseFloat(form.target_value) : null,
+          achieved_value: form.achieved_value !== '' ? parseFloat(form.achieved_value) : null,
+          comment:        form.comment || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error); return }
+      onSaved({
+        date_reported:  form.date_reported,
+        date_issued:    form.date_issued || null,
+        period:         periodLabel,
+        period_month:   form.period_month,
+        period_year:    form.period_year,
+        warning_type:   resolvedType,
+        target_value:   form.target_value !== '' ? parseFloat(form.target_value) : null,
+        achieved_value: form.achieved_value !== '' ? parseFloat(form.achieved_value) : null,
+        comment:        form.comment || null,
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '8px 12px', borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)',
+    color: '#f4f4f5', fontSize: '13px', boxSizing: 'border-box',
+  }
+  const labelStyle = { color: 'var(--text-secondary)', fontSize: '12px', display: 'block', marginBottom: '4px' }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.7)', padding: '16px',
+    }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background: '#12121a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px',
+        padding: '28px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '16px', letterSpacing: '1px', margin: 0 }}>
+            Edit Warning
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+        </div>
+
+        <p style={{ color: '#f4f4f5', fontSize: '14px', margin: '0 0 18px' }}>{w.username}</p>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={labelStyle}>Warning Type *</label>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {WARNING_TYPES.map(t => {
+                const c = typeColor(t)
+                const active = form.warning_type === t
+                return (
+                  <button key={t} type="button"
+                    onClick={() => setForm(f => ({ ...f, warning_type: t }))}
+                    style={{
+                      padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+                      border: `1px solid ${active ? c.color : 'rgba(255,255,255,0.1)'}`,
+                      background: active ? c.bg : 'transparent',
+                      color: active ? c.color : 'var(--text-secondary)',
+                    }}
+                  >{t}</button>
+                )
+              })}
+            </div>
+            {form.warning_type === 'Other' && (
+              <input style={{ ...inputStyle, marginTop: '8px' }} placeholder="Specify type…"
+                value={form.custom_type}
+                onChange={e => setForm(f => ({ ...f, custom_type: e.target.value }))} />
+            )}
+          </div>
+
+          <div>
+            <label style={labelStyle}>Period *</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <select style={inputStyle} value={form.period_month}
+                onChange={e => setForm(f => ({ ...f, period_month: parseInt(e.target.value, 10) }))}>
+                {MONTHS_FULL.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <select style={inputStyle} value={form.period_year}
+                onChange={e => setForm(f => ({ ...f, period_year: parseInt(e.target.value, 10) }))}>
+                {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={labelStyle}>Date Reported *</label>
+              <input type="date" style={inputStyle} value={form.date_reported}
+                onChange={e => setForm(f => ({ ...f, date_reported: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>Date Issued (optional)</label>
+              <input type="date" style={inputStyle} value={form.date_issued}
+                onChange={e => setForm(f => ({ ...f, date_issued: e.target.value }))} />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={labelStyle}>{typeInfo.target}</label>
+              <input type="number" style={inputStyle} placeholder="e.g. 500"
+                value={form.target_value}
+                onChange={e => setForm(f => ({ ...f, target_value: e.target.value }))} />
+            </div>
+            <div>
+              <label style={labelStyle}>{typeInfo.achieved}</label>
+              <input type="number" style={inputStyle}
+                value={form.achieved_value}
+                onChange={e => setForm(f => ({ ...f, achieved_value: e.target.value }))} />
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Comment / Note (optional)</label>
+            <textarea rows={2} style={{ ...inputStyle, resize: 'vertical' }}
+              value={form.comment}
+              onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} />
+          </div>
+
+          {error && <p style={{ color: '#f87171', fontSize: '13px', margin: 0 }}>{error}</p>}
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+            <button type="button" onClick={onClose}
+              style={{ padding: '9px 20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '13px' }}>
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              style={{ padding: '9px 24px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.8)', color: '#fff', cursor: saving ? 'default' : 'pointer', fontSize: '13px', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ─── Warning row ──────────────────────────────────────────────────────────────
 
 function WarningRow({ w, expired, onDelete }) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing]   = useState(false)
+  const [editingAll, setEditingAll] = useState(false)
   const [comment, setComment] = useState(w.comment || '')
   const [dateIssued, setDateIssued] = useState(w.date_issued || '')
   const [saving, setSaving] = useState(false)
   const tc = typeColor(w.warning_type)
 
-  async function saveEdit() {
+  // The "Issue" quick-action — only sets date_issued + comment, distinct
+  // from the full Edit modal below which can change any field.
+  async function saveIssue() {
     setSaving(true)
     await fetch(`${API_BASE_URL}/api/leadership/warnings/${w.id}/comment`, {
       method: 'PUT',
@@ -464,7 +657,7 @@ function WarningRow({ w, expired, onDelete }) {
                 style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)', color: '#f4f4f5', fontSize: '12px', resize: 'vertical' }}
               />
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={saveEdit} disabled={saving}
+                <button onClick={saveIssue} disabled={saving}
                   style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', background: 'rgba(74,222,128,0.2)', color: '#4ade80', cursor: 'pointer', fontSize: '12px' }}>
                   {saving ? 'Saving…' : 'Save'}
                 </button>
@@ -479,18 +672,35 @@ function WarningRow({ w, expired, onDelete }) {
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-          {!editing && (
+          {!editing && !w.date_issued && (
             <button onClick={() => setEditing(true)}
-              style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px' }}>
-              Edit
+              title="Set the date this warning was actually delivered to the member, plus a comment"
+              style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.1)', color: '#4ade80', cursor: 'pointer', fontSize: '11px' }}>
+              Issue
             </button>
           )}
+          <button onClick={() => setEditingAll(true)}
+            title="Edit all details of this warning"
+            style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px' }}>
+            Edit
+          </button>
           <button onClick={() => onDelete(w.id)}
             style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: 'pointer', fontSize: '11px' }}>
             Delete
           </button>
         </div>
       </div>
+
+      {editingAll && (
+        <EditWarningModal
+          warning={w}
+          onClose={() => setEditingAll(false)}
+          onSaved={(updated) => {
+            Object.assign(w, updated)
+            setEditingAll(false)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -590,6 +800,7 @@ export default function WarningsTab() {
   const [showAllWarnings,  setShowAllWarnings]   = useState(false)
   const [search,           setSearch]            = useState('')
   const [showAddModal,     setShowAddModal]      = useState(false)
+  const [periodFilter,     setPeriodFilter]      = useState('all')
 
   useEffect(() => {
     Promise.all([fetchWarnings(), fetchMembers()])
@@ -621,6 +832,25 @@ export default function WarningsTab() {
     setWarnings(w => w.filter(x => x.id !== id))
   }
 
+  // Every unique period actually logged on a warning (e.g. "July 2026"), most
+  // recent first — sourced from the real data, not a generic month list, so
+  // the dropdown only ever shows periods that exist. Sorted by period_year/
+  // period_month when available; falls back to the end so any legacy warning
+  // without those set doesn't scramble the ordering of periods that do.
+  const periodOptions = (() => {
+    const map = new Map()
+    for (const w of warnings) {
+      if (!map.has(w.period)) map.set(w.period, { year: w.period_year, month: w.period_month })
+    }
+    return Array.from(map.entries())
+      .map(([period, meta]) => ({ period, ...meta }))
+      .sort((a, b) => {
+        const aKey = (a.year != null && a.month != null) ? a.year * 12 + a.month : -Infinity
+        const bKey = (b.year != null && b.month != null) ? b.year * 12 + b.month : -Infinity
+        return bKey - aKey
+      })
+  })()
+
   // Group all warnings by member, split into window vs historical
   const grouped = {}
   for (const w of warnings) {
@@ -641,11 +871,37 @@ export default function WarningsTab() {
     }
   }
 
+  // A specific period selected in the dropdown bypasses the 6-month-window
+  // grouping entirely — just every warning matching that exact period,
+  // grouped by member, no window/historical split (there's nothing "older"
+  // to distinguish within a single period).
+  const periodGrouped = {}
+  if (periodFilter !== 'all') {
+    for (const w of warnings) {
+      if (w.period !== periodFilter) continue
+      if (!periodGrouped[w.torn_user_id]) {
+        periodGrouped[w.torn_user_id] = {
+          username:           w.username,
+          is_active:          w.is_active,
+          level:              w.level,
+          current_faction_id: w.current_faction_id,
+          windowWarnings:     [],
+          historicalWarnings: [],
+        }
+      }
+      periodGrouped[w.torn_user_id].windowWarnings.push(w)
+    }
+  }
+
+  const activeGrouped = periodFilter === 'all' ? grouped : periodGrouped
+
   // Filter members
-  const displayed = Object.entries(grouped).filter(([, m]) => {
+  const displayed = Object.entries(activeGrouped).filter(([, m]) => {
     if (activeOnly && !m.is_active) return false
-    // In default mode, only show members who have at least one warning in the window
-    if (!showAllWarnings && m.windowWarnings.length === 0) return false
+    // In default mode, only show members who have at least one warning in the window.
+    // A specific period filter already scopes to matching warnings only, so this
+    // additional window check doesn't apply there.
+    if (periodFilter === 'all' && !showAllWarnings && m.windowWarnings.length === 0) return false
     if (search && !m.username.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
@@ -696,9 +952,9 @@ export default function WarningsTab() {
             Member Warnings
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: 0 }}>
-            {showAllWarnings ? 'All time' : windowLabel(WINDOW)}
+            {periodFilter !== 'all' ? periodFilter : showAllWarnings ? 'All time' : windowLabel(WINDOW)}
             {' · '}
-            {displayed.length} member{displayed.length !== 1 ? 's' : ''} · {totalWindow} warning{totalWindow !== 1 ? 's' : ''} in window
+            {displayed.length} member{displayed.length !== 1 ? 's' : ''} · {totalWindow} warning{totalWindow !== 1 ? 's' : ''}{periodFilter === 'all' && ' in window'}
             {atRisk > 0 && (
               <span style={{ marginLeft: '8px', color: '#f87171', fontWeight: '600' }}>
                 · {atRisk} at kick threshold
@@ -726,6 +982,21 @@ export default function WarningsTab() {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        <select
+          value={periodFilter}
+          onChange={e => setPeriodFilter(e.target.value)}
+          style={{
+            padding: '8px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+            border: `1px solid ${periodFilter !== 'all' ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
+            background: periodFilter !== 'all' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.05)',
+            color: periodFilter !== 'all' ? '#a78bfa' : 'var(--text-secondary)',
+          }}
+        >
+          <option value="all">All periods</option>
+          {periodOptions.map(p => (
+            <option key={p.period} value={p.period}>{p.period}</option>
+          ))}
+        </select>
         <button
           onClick={() => setActiveOnly(a => !a)}
           style={{
@@ -737,17 +1008,19 @@ export default function WarningsTab() {
         >
           {activeOnly ? 'Active members only' : 'All members'}
         </button>
-        <button
-          onClick={() => setShowAllWarnings(a => !a)}
-          style={{
-            padding: '8px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
-            border: `1px solid ${showAllWarnings ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
-            background: showAllWarnings ? 'rgba(251,191,36,0.1)' : 'transparent',
-            color: showAllWarnings ? '#fbbf24' : 'var(--text-secondary)',
-          }}
-        >
-          {showAllWarnings ? 'All warnings' : 'Last 6 months'}
-        </button>
+        {periodFilter === 'all' && (
+          <button
+            onClick={() => setShowAllWarnings(a => !a)}
+            style={{
+              padding: '8px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
+              border: `1px solid ${showAllWarnings ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
+              background: showAllWarnings ? 'rgba(251,191,36,0.1)' : 'transparent',
+              color: showAllWarnings ? '#fbbf24' : 'var(--text-secondary)',
+            }}
+          >
+            {showAllWarnings ? 'All warnings' : 'Last 6 months'}
+          </button>
+        )}
       </div>
 
       {/* List */}

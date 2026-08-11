@@ -151,7 +151,12 @@ export async function deleteWarning(request, env) {
 }
 
 // PUT /api/leadership/warnings/:id/comment
-// Body: { comment }  — update comment/response on an existing warning
+// Body: { comment, date_issued? } — the quick "Issue" action: sets the date a
+// warning was actually delivered to the member plus a comment, without
+// touching anything else about the warning. Kept narrow/separate from the
+// full edit below on purpose — issuing is a routine, low-risk action any
+// leader does often; editing a warning's type/period/values is rarer and
+// more consequential, so it gets its own explicit endpoint.
 export async function updateWarningComment(request, env) {
   try {
     const id      = parseInt(new URL(request.url).pathname.split('/').slice(-2, -1)[0], 10);
@@ -165,6 +170,51 @@ export async function updateWarningComment(request, env) {
     return jsonResponse({ message: 'Warning updated' });
   } catch (err) {
     console.error('updateWarningComment error:', err);
+    return errorResponse('Failed to update warning', 500);
+  }
+}
+
+// PUT /api/leadership/warnings/:id
+// Body: { date_reported, date_issued?, period, period_month?, period_year?,
+//         warning_type, target_value?, achieved_value?, comment? }
+// Full edit of an existing warning's own details — everything EXCEPT which
+// member it belongs to (torn_user_id/username are never touched here; a
+// warning attributed to the wrong member should be deleted and re-added,
+// not silently reassigned).
+export async function updateWarning(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').pop(), 10);
+    if (!id) return errorResponse('Invalid warning ID', 400);
+
+    const body = await request.json();
+    const {
+      date_reported, date_issued, period, period_month, period_year,
+      warning_type, target_value, achieved_value, comment,
+    } = body;
+
+    if (!date_reported || !period || !warning_type) {
+      return errorResponse('Missing required fields: date_reported, period, warning_type', 400);
+    }
+    if (period_month != null && (period_month < 1 || period_month > 12)) {
+      return errorResponse('period_month must be between 1 and 12', 400);
+    }
+    if (period_year != null && String(period_year).length !== 4) {
+      return errorResponse('period_year must be a 4-digit year', 400);
+    }
+
+    await env.DB.prepare(`
+      UPDATE member_warnings SET
+        date_reported = ?, date_issued = ?, period = ?, period_month = ?, period_year = ?,
+        warning_type = ?, target_value = ?, achieved_value = ?, comment = ?
+      WHERE id = ?
+    `).bind(
+      date_reported, date_issued || null, period, period_month ?? null, period_year ?? null,
+      warning_type, target_value ?? null, achieved_value ?? null, comment || null, id
+    ).run();
+
+    return jsonResponse({ message: 'Warning updated' });
+  } catch (err) {
+    console.error('updateWarning error:', err);
     return errorResponse('Failed to update warning', 500);
   }
 }
