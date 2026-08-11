@@ -218,13 +218,20 @@ function ReportModal({ member, warningType, achieved, periodLabel, periodMonth, 
 // candidates). Meant to be copy-pasted straight to the leader issuing the
 // warnings, not browsed on this page. ─────────────────────────────────────────
 
-function SummaryModal({ title, achievedLabel, rows, onClose }) {
+function tornProfileUrl(tornUserId) {
+  return `https://www.torn.com/profiles.php?XID=${tornUserId}`
+}
+
+function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
-    const lines = [title, '']
+    const lines = [title]
+    if (subtitle) lines.push(subtitle)
+    lines.push('')
     for (const r of rows) {
-      lines.push(`${r.username} — Target: ${r.target ?? '—'} · ${achievedLabel}: ${fmt(r.achieved)} · Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}`)
+      const name = r.tornUserId ? `[${r.username}](${tornProfileUrl(r.tornUserId)})` : r.username
+      lines.push(`${name} — Target: ${r.target ?? '—'} · ${achievedLabel}: ${fmt(r.achieved)} · Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}`)
     }
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
       setCopied(true)
@@ -241,10 +248,15 @@ function SummaryModal({ title, achievedLabel, rows, onClose }) {
         background: '#12121a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px',
         padding: '28px', width: '100%', maxWidth: '520px', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-          <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '16px', letterSpacing: '1px', margin: 0 }}>
-            {title}
-          </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px' }}>
+          <div>
+            <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '16px', letterSpacing: '1px', margin: 0 }}>
+              {title}
+            </h3>
+            {subtitle && (
+              <p style={{ color: 'var(--text-faint)', fontSize: '12px', margin: '4px 0 0' }}>{subtitle}</p>
+            )}
+          </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px' }}>✕</button>
         </div>
 
@@ -578,12 +590,14 @@ function EnergyGenerator({ onWarningSaved }) {
       const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
       return {
         id: m.torn_user_id,
+        tornUserId: m.torn_user_id,
         username: m.username,
         target: hasTarget ? Number(target) : null,
         achieved: m.avg_per_day,
         variance: hasTarget ? m.avg_per_day - Number(target) : null,
       }
     })
+  const summarySubtitle = selectedFactions.map(id => FACTION_LABEL[id]).join(', ')
 
   return (
     <div>
@@ -783,6 +797,7 @@ function EnergyGenerator({ onWarningSaved }) {
       {summaryOpen && (
         <SummaryModal
           title={`Energy Warnings — ${periodLabel}`}
+          subtitle={summarySubtitle}
           achievedLabel="Avg/Day"
           rows={summaryRows}
           onClose={() => setSummaryOpen(false)}
@@ -988,6 +1003,7 @@ function ChainGenerator({ onWarningSaved }) {
           .filter(m => !excludedMap.has(m.torn_user_id))
           .map(m => ({
             id: `${chain.torn_chain_id}:${m.torn_user_id}`,
+            tornUserId: m.torn_user_id,
             username: m.username,
             target: hasTarget ? Number(target) : null,
             achieved: m.total_attacks,
@@ -995,6 +1011,7 @@ function ChainGenerator({ onWarningSaved }) {
           }))
       })
     : []
+  const summarySubtitle = selectedFactions.map(id => FACTION_LABEL[id]).join(', ')
 
   return (
     <div>
@@ -1133,6 +1150,7 @@ function ChainGenerator({ onWarningSaved }) {
       {summaryOpen && (
         <SummaryModal
           title={`Chain Warnings — ${periodLabel}`}
+          subtitle={summarySubtitle}
           achievedLabel="Attacks"
           rows={summaryRows}
           onClose={() => setSummaryOpen(false)}
