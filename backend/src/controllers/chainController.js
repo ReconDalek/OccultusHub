@@ -515,6 +515,17 @@ export async function generateChainWarningReport(request, env) {
 
     const noChainFactions = factions.filter(f => !chainsByFaction[f]);
 
+    // Already-warned members for this month's Chain warnings — scoped by
+    // month like warning_exclusions, NOT per specific chain, so a member
+    // shows as already-warned on every chain card in this report once
+    // they've been warned for ANY chain this month (same "Warn" flow posts
+    // one member_warnings row per member per report run, not per chain).
+    const warnedRows = await env.DB.prepare(`
+      SELECT DISTINCT torn_user_id FROM member_warnings
+      WHERE warning_type = 'Chain' AND period_year = ? AND period_month = ?
+    `).bind(year, month).all();
+    const warnedSet = new Set((warnedRows.results || []).map(r => r.torn_user_id));
+
     const chains = [];
     for (const factionId of factions) {
       for (const chain of (chainsByFaction[factionId] || [])) {
@@ -626,6 +637,7 @@ export async function generateChainWarningReport(request, env) {
             bonus_hits:    h.bonus_hits || 0,
             overdoses:     overdoses[h.torn_user_id] ?? 0,
             exemption:     exemptionByUser[h.torn_user_id] ?? null,
+            already_warned: warnedSet.has(h.torn_user_id),
           })),
           ...zeroHitMembers.map(r => ({
             torn_user_id:  r.torn_user_id,
@@ -637,6 +649,7 @@ export async function generateChainWarningReport(request, env) {
             overdoses:     overdoses[r.torn_user_id] ?? 0,
             exemption:     exemptionByUser[r.torn_user_id] ?? null,
             no_hits_recorded: true,
+            already_warned: warnedSet.has(r.torn_user_id),
           })),
         ].sort((a, b) => b.total_attacks - a.total_attacks);
 

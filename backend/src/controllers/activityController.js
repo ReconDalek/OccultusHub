@@ -998,6 +998,17 @@ export async function generateEnergyWarningReport(request, env) {
       exemptionByUser[r.torn_user_id] ??= { type: r.exemption_type, date_start: r.date_start, date_end: r.date_end, reason: r.reason };
     }
 
+    // Already-warned members for this exact type + period — so the "Warn"
+    // button shows as already-done immediately after regenerating the same
+    // month's report, not just for the rest of the current browser session
+    // (same persistence idea as warning_exclusions, but sourced from real
+    // logged warnings instead of a separate toggle).
+    const warnedRows = await env.DB.prepare(`
+      SELECT DISTINCT torn_user_id FROM member_warnings
+      WHERE warning_type = 'Energy' AND period_year = ? AND period_month = ?
+    `).bind(year, month).all();
+    const warnedSet = new Set((warnedRows.results || []).map(r => r.torn_user_id));
+
     const members = [];
     for (const r of (rows.results || [])) {
       // Departed members (or no faction_members row at all — can't confirm
@@ -1103,6 +1114,7 @@ export async function generateEnergyWarningReport(request, env) {
         overdoses:        overdoses[r.torn_user_id] ?? 0,
         movements:        buildMovements(r.torn_user_id, r.current_faction_id),
         exemption:        exemptionForMember,
+        already_warned:   warnedSet.has(r.torn_user_id),
       });
     }
 

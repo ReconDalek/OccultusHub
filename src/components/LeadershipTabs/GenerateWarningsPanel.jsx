@@ -526,7 +526,10 @@ function EnergyGenerator({ onWarningSaved }) {
       .then(([{ res, json }, exclusionsMap]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
-        setReportedIds(new Set())
+        // Already-warned members (sourced from real member_warnings rows for
+        // this exact type+period, not just this browser session) show as
+        // "✓ Warned" immediately, same persistence idea as excludedMap.
+        setReportedIds(new Set(json.members.filter(m => m.already_warned).map(m => m.torn_user_id)))
         setExcludedMap(exclusionsMap)
       })
       .catch(e => setError(e.message))
@@ -860,8 +863,10 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
 
             {visibleMembers.map((m, i) => {
               const delta = hasTarget ? m.total_attacks - Number(target) : null
-              const idKey = `${chain.torn_chain_id}:${m.torn_user_id}`
-              const reported = reportedIds.has(idKey)
+              // Reported/warned status is scoped to the MONTH, not this
+              // specific chain — matches already_warned's backend scoping
+              // and excludedMap's existing convention.
+              const reported = reportedIds.has(m.torn_user_id)
               const excluded = excludedMap.has(m.torn_user_id)
               const flagged = hasTarget && delta < 0 && !excluded
 
@@ -970,7 +975,11 @@ function ChainGenerator({ onWarningSaved }) {
       .then(([{ res, json }, exclusionsMap]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
-        setReportedIds(new Set())
+        // Already-warned members (real member_warnings rows for this month's
+        // Chain type, scoped by month not by specific chain) show as
+        // "✓ Warned" immediately, same persistence idea as excludedMap.
+        const warnedIds = json.chains.flatMap(c => c.members).filter(m => m.already_warned).map(m => m.torn_user_id)
+        setReportedIds(new Set(warnedIds))
         setExcludedMap(exclusionsMap)
       })
       .catch(e => setError(e.message))
@@ -1140,7 +1149,7 @@ function ChainGenerator({ onWarningSaved }) {
           target={targets[reportingItem.member.faction_id]}
           onClose={() => setReportingItem(null)}
           onSaved={() => {
-            setReportedIds(prev => new Set(prev).add(`${reportingItem.chain.torn_chain_id}:${reportingItem.member.torn_user_id}`))
+            setReportedIds(prev => new Set(prev).add(reportingItem.member.torn_user_id))
             setReportingItem(null)
             onWarningSaved?.()
           }}

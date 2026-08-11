@@ -581,7 +581,9 @@ function WarningRow({ w, expired, onDelete }) {
   const [editing, setEditing]   = useState(false)
   const [editingAll, setEditingAll] = useState(false)
   const [comment, setComment] = useState(w.comment || '')
-  const [dateIssued, setDateIssued] = useState(w.date_issued || '')
+  // Presets to today (UTC) when issuing for the first time — still freely
+  // editable, just saves the common case of "issuing right now" a click.
+  const [dateIssued, setDateIssued] = useState(w.date_issued || new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
   const tc = typeColor(w.warning_type)
 
