@@ -212,6 +212,85 @@ function ReportModal({ member, warningType, achieved, periodLabel, periodMonth, 
   )
 }
 
+// ─── Summary modal — a stripped-down, shareable view of whatever's currently
+// on screen: just member / target / achieved / variance, no levels, no
+// transfer history, no excused-or-exempt rows (they're not actual warning
+// candidates). Meant to be copy-pasted straight to the leader issuing the
+// warnings, not browsed on this page. ─────────────────────────────────────────
+
+function SummaryModal({ title, achievedLabel, rows, onClose }) {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    const lines = [title, '']
+    for (const r of rows) {
+      lines.push(`${r.username} — Target: ${r.target ?? '—'} · ${achievedLabel}: ${fmt(r.achieved)} · Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}`)
+    }
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.7)', padding: '16px',
+    }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background: '#12121a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px',
+        padding: '28px', width: '100%', maxWidth: '520px', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '16px', letterSpacing: '1px', margin: 0 }}>
+            {title}
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+        </div>
+
+        {rows.length === 0 ? (
+          <p style={{ color: 'var(--text-faint)', fontSize: '13px', margin: 0 }}>Nothing to summarize — no warning candidates currently displayed.</p>
+        ) : (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px', gap: '8px', padding: '4px 10px 8px',
+              borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '4px',
+            }}>
+              {['Member', 'Target', achievedLabel, 'Variance'].map(h => (
+                <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+              ))}
+            </div>
+            {rows.map((r, i) => (
+              <div key={r.id ?? i} style={{
+                display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px', gap: '8px', padding: '7px 10px',
+                borderRadius: '6px', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+              }}>
+                <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{r.username}</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{r.target ?? '—'}</span>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{fmt(r.achieved)}</span>
+                <span style={{ fontSize: '13px', color: r.variance == null ? 'var(--text-faint)' : (r.variance < 0 ? '#f87171' : '#4ade80') }}>
+                  {r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '18px' }}>
+          <button type="button" onClick={onClose}
+            style={{ padding: '9px 20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '13px' }}>
+            Close
+          </button>
+          <button type="button" onClick={handleCopy} disabled={rows.length === 0}
+            style={{ padding: '9px 24px', borderRadius: '8px', border: 'none', background: 'rgba(179,18,63,0.8)', color: '#fff', cursor: rows.length === 0 ? 'default' : 'pointer', fontSize: '13px', opacity: rows.length === 0 ? 0.5 : 1 }}>
+            {copied ? 'Copied!' : 'Copy to Clipboard'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Exemptions note — below-target members with a logged reason, not a
 // warning candidate. Plain styling on purpose (no red, no Warn button) —
 // it's a record, not a flag. ────────────────────────────────────────────────
@@ -400,6 +479,7 @@ function EnergyGenerator({ onWarningSaved }) {
   const [reportedIds, setReportedIds] = useState(new Set())
   const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
   const [reportingMember, setReportingMember] = useState(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
 
   function toggleFaction(id) {
     setSelectedFactions(prev => {
@@ -488,6 +568,22 @@ function EnergyGenerator({ onWarningSaved }) {
     const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
     return hasTarget && m.avg_per_day < Number(target) && m.exemption && !m.exemption.partial
   })
+
+  // Simplified, shareable view of the table above — excused members dropped
+  // entirely (exempted ones are already out of visibleMembers).
+  const summaryRows = visibleMembers
+    .filter(m => !excludedMap.has(m.torn_user_id))
+    .map(m => {
+      const target = targets[m.faction_id]
+      const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+      return {
+        id: m.torn_user_id,
+        username: m.username,
+        target: hasTarget ? Number(target) : null,
+        achieved: m.avg_per_day,
+        variance: hasTarget ? m.avg_per_day - Number(target) : null,
+      }
+    })
 
   return (
     <div>
@@ -580,7 +676,7 @@ function EnergyGenerator({ onWarningSaved }) {
           </div>
         </div>
 
-        <div style={{ alignSelf: 'flex-end' }}>
+        <div style={{ alignSelf: 'flex-end', display: 'flex', gap: '8px' }}>
           <button onClick={generate} disabled={loading}
             style={{
               padding: '8px 22px', borderRadius: '8px', border: 'none',
@@ -591,6 +687,17 @@ function EnergyGenerator({ onWarningSaved }) {
           >
             {loading ? 'Generating…' : 'Generate Report'}
           </button>
+          {data && (
+            <button onClick={() => setSummaryOpen(true)}
+              title="A simplified, shareable list of the warnings currently displayed"
+              style={{
+                padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
+                border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-secondary)',
+              }}
+            >
+              Summary
+            </button>
+          )}
         </div>
       </div>
 
@@ -672,6 +779,15 @@ function EnergyGenerator({ onWarningSaved }) {
           }}
         />
       )}
+
+      {summaryOpen && (
+        <SummaryModal
+          title={`Energy Warnings — ${periodLabel}`}
+          achievedLabel="Avg/Day"
+          rows={summaryRows}
+          onClose={() => setSummaryOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -682,12 +798,22 @@ function fmtChainDate(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().slice(0, 10)
 }
 
-function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggleExclude }) {
+// Shared between ChainCard's own render and ChainGenerator's Summary modal —
+// keeps "who's currently a warning candidate for this chain" defined in one
+// place instead of two copies drifting apart.
+function filterChainMembers(chain, targets) {
   const target = targets[chain.faction_id]
   const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+  return {
+    hasTarget,
+    target,
+    visibleMembers:  chain.members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption)),
+    exemptedMembers: chain.members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption),
+  }
+}
 
-  const visibleMembers  = chain.members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption))
-  const exemptedMembers = chain.members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption)
+function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggleExclude }) {
+  const { hasTarget, target, visibleMembers, exemptedMembers } = filterChainMembers(chain, targets)
   const colTemplate = '30px 1fr 90px 70px 60px 100px 160px'
 
   return (
@@ -799,6 +925,7 @@ function ChainGenerator({ onWarningSaved }) {
   const [reportedIds, setReportedIds] = useState(new Set())
   const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
   const [reportingItem, setReportingItem] = useState(null) // { member, chain }
+  const [summaryOpen, setSummaryOpen] = useState(false)
 
   function toggleFaction(id) {
     setSelectedFactions(prev => {
@@ -851,6 +978,24 @@ function ChainGenerator({ onWarningSaved }) {
 
   const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
 
+  // Simplified, shareable view flattened across every chain currently on
+  // screen — excused members dropped entirely (exempted ones are already
+  // out of each chain's own visibleMembers).
+  const summaryRows = data
+    ? data.chains.flatMap(chain => {
+        const { hasTarget, target, visibleMembers } = filterChainMembers(chain, targets)
+        return visibleMembers
+          .filter(m => !excludedMap.has(m.torn_user_id))
+          .map(m => ({
+            id: `${chain.torn_chain_id}:${m.torn_user_id}`,
+            username: m.username,
+            target: hasTarget ? Number(target) : null,
+            achieved: m.total_attacks,
+            variance: hasTarget ? m.total_attacks - Number(target) : null,
+          }))
+      })
+    : []
+
   return (
     <div>
       {/* Controls */}
@@ -894,7 +1039,7 @@ function ChainGenerator({ onWarningSaved }) {
           </div>
         </div>
 
-        <div style={{ alignSelf: 'flex-end' }}>
+        <div style={{ alignSelf: 'flex-end', display: 'flex', gap: '8px' }}>
           <button onClick={generate} disabled={loading}
             style={{
               padding: '8px 22px', borderRadius: '8px', border: 'none',
@@ -905,6 +1050,17 @@ function ChainGenerator({ onWarningSaved }) {
           >
             {loading ? 'Generating…' : 'Generate Report'}
           </button>
+          {data && (
+            <button onClick={() => setSummaryOpen(true)}
+              title="A simplified, shareable list of the warnings currently displayed"
+              style={{
+                padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer',
+                border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-secondary)',
+              }}
+            >
+              Summary
+            </button>
+          )}
         </div>
       </div>
 
@@ -971,6 +1127,15 @@ function ChainGenerator({ onWarningSaved }) {
             setReportingItem(null)
             onWarningSaved?.()
           }}
+        />
+      )}
+
+      {summaryOpen && (
+        <SummaryModal
+          title={`Chain Warnings — ${periodLabel}`}
+          achievedLabel="Attacks"
+          rows={summaryRows}
+          onClose={() => setSummaryOpen(false)}
         />
       )}
     </div>
