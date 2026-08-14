@@ -7,6 +7,7 @@ const BOARD_TYPES = [
   { id: 'faction', label: 'Faction' },
   { id: 'social',   label: 'Social' },
   { id: 'event',    label: 'Event' },
+  { id: 'mug',      label: 'Mug' },
 ]
 
 function authHeaders() {

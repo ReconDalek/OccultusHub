@@ -1,7 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { PERSONAL_STAT_FIELDS, extractStats } from './activityController.js';
 
-const LEADERBOARD_TYPES = ['faction', 'social', 'event'];
+const LEADERBOARD_TYPES = ['faction', 'social', 'event', 'mug'];
 
 // Current month caps at yesterday — today's snapshot can't exist until
 // tomorrow's cron runs (personal_stats_snapshots is already stamped with the
@@ -35,10 +35,10 @@ async function computeLeaderboard(env, config) {
   // Deactivated boards track nothing — same as unconfigured — rather than
   // continuing to show whatever month/stat was last set.
   if (!config?.active || !config?.stat_key || !config?.year || !config?.month) {
-    return { entries: [], stat: null };
+    return { entries: [], stat: null, last_updated: null };
   }
   const field = PERSONAL_STAT_FIELDS.find(f => f.key === config.stat_key);
-  if (!field) return { entries: [], stat: null };
+  if (!field) return { entries: [], stat: null, last_updated: null };
 
   const { monthStart, monthEnd } = monthBounds(config.year, config.month);
 
@@ -60,8 +60,8 @@ async function computeLeaderboard(env, config) {
       ) WHERE rn = 1
     `).bind(monthStart, monthEnd).all(),
     env.DB.prepare(`
-      SELECT torn_user_id, username, faction_id, stats FROM (
-        SELECT torn_user_id, username, faction_id, stats,
+      SELECT torn_user_id, username, faction_id, stats, created_at FROM (
+        SELECT torn_user_id, username, faction_id, stats, created_at,
                ROW_NUMBER() OVER (PARTITION BY torn_user_id ORDER BY snapshot_date DESC) AS rn
         FROM personal_stats_snapshots
         WHERE snapshot_date >= ? AND snapshot_date <= ?
@@ -75,7 +75,9 @@ async function computeLeaderboard(env, config) {
   for (const r of firstRows.results || []) firstMap[r.torn_user_id] = statValue(r.stats, field.key);
 
   const entries = [];
+  let lastUpdated = null; // most recent snapshot backing this board, i.e. when the standings were last refreshed
   for (const r of currentRows.results || []) {
+    if (r.created_at && (!lastUpdated || r.created_at > lastUpdated)) lastUpdated = r.created_at;
     const current = statValue(r.stats, field.key);
     const baseline = baselineMap[r.torn_user_id] ?? firstMap[r.torn_user_id] ?? current;
     const gained = current - baseline;
@@ -85,7 +87,11 @@ async function computeLeaderboard(env, config) {
   }
   entries.sort((a, b) => b.gained - a.gained);
 
-  return { entries, stat: { key: field.key, label: field.label, category: field.category } };
+  return {
+    entries,
+    stat: { key: field.key, label: field.label, category: field.category },
+    last_updated: lastUpdated ? lastUpdated * 1000 : null, // created_at is stored as unix seconds
+  };
 }
 
 // GET /api/leadership/leaderboards — config + computed standings + stat picker metadata
@@ -182,9 +188,9 @@ export async function getPublicLeaderboards(request, env) {
     const out = {};
     for (const type of types) {
       const config = (results || []).find(r => r.type === type) ?? { type, stat_key: null, year: null, month: null, active: 1 };
-      const { entries, stat } = await computeLeaderboard(env, config);
+      const { entries, stat, last_updated } = await computeLeaderboard(env, config);
       out[type] = {
-        stat, year: config.year, month: config.month,
+        stat, year: config.year, month: config.month, last_updated,
         entries: entries.map((e, i) => ({ rank: i + 1, username: e.username, faction_id: e.faction_id, gained: e.gained })),
       };
     }
