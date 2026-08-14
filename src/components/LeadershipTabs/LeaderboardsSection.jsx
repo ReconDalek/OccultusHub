@@ -46,6 +46,7 @@ export default function LeaderboardsSection() {
   const [monthKey, setMonthKey] = useState('')
   const [saving,  setSaving]  = useState(false)
   const [saveError, setSaveError] = useState(null)
+  const [togglingActive, setTogglingActive] = useState(false)
 
   const monthOptions = useMemo(buildMonthOptions, [])
 
@@ -93,6 +94,24 @@ export default function LeaderboardsSection() {
     }
   }
 
+  const toggleActive = async () => {
+    const nextActive = !(config?.active ?? true)
+    setTogglingActive(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/leaderboards/${activeType}/active`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: nextActive }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Toggle failed')
+      load()
+    } catch (e) {
+      setSaveError(e.message)
+    } finally {
+      setTogglingActive(false)
+    }
+  }
+
   // Group available stats by category for the <optgroup> picker.
   const statsByCategory = useMemo(() => {
     const groups = {}
@@ -105,6 +124,7 @@ export default function LeaderboardsSection() {
 
   const board = data?.leaderboards?.[activeType]
   const config = data?.configs?.[activeType]
+  const isActive = !!(config?.active ?? true)
   const isConfigured = !!(config?.stat_key && config?.year && config?.month)
 
   return (
@@ -135,9 +155,35 @@ export default function LeaderboardsSection() {
         <>
           {/* Config panel */}
           <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
-            <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
-              What this leaderboard tracks
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+                What this leaderboard tracks
+              </p>
+              <button
+                onClick={toggleActive}
+                disabled={togglingActive}
+                title={isActive ? 'Disable this leaderboard' : 'Enable this leaderboard'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 10px 4px 4px', borderRadius: '999px',
+                  border: `1px solid ${isActive ? 'rgba(74,222,128,0.35)' : 'rgba(255,255,255,0.12)'}`,
+                  background: isActive ? 'rgba(74,222,128,0.08)' : 'rgba(255,255,255,0.04)',
+                  cursor: togglingActive ? 'not-allowed' : 'pointer', opacity: togglingActive ? 0.6 : 1,
+                }}
+              >
+                <span style={{
+                  width: '30px', height: '16px', borderRadius: '999px', position: 'relative', flexShrink: 0,
+                  background: isActive ? '#4ade80' : 'rgba(255,255,255,0.15)', transition: 'background 0.15s',
+                }}>
+                  <span style={{
+                    position: 'absolute', top: '2px', left: isActive ? '16px' : '2px',
+                    width: '12px', height: '12px', borderRadius: '50%', background: '#0a0a0b', transition: 'left 0.15s',
+                  }} />
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: '600', color: isActive ? '#4ade80' : "var(--text-secondary)" }}>
+                  {isActive ? 'Active' : 'Disabled'}
+                </span>
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <label style={{ color: "var(--text-muted)", fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Stat</label>
@@ -198,6 +244,10 @@ export default function LeaderboardsSection() {
           {!isConfigured ? (
             <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: 0 }}>This leaderboard isn't configured yet — pick a stat and month above.</p>
+            </div>
+          ) : !isActive ? (
+            <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: 0 }}>This leaderboard is disabled — flip the toggle above to run it again.</p>
             </div>
           ) : (
             <>
