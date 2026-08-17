@@ -546,7 +546,17 @@ export default function BountiesTab() {
             <tbody>
               {bounties.map(b => (
                 <tr key={b.id}>
-                  <td style={td('left')}>{formatDateTime(b.placed_at)}</td>
+                  <td style={td('left')}>
+                    {formatDateTime(b.placed_at)}
+                    {!!b.placed_at_estimated && (
+                      <span
+                        title="This message was missing its timestamp, so this date/time was estimated from a neighboring log line or the message's post time. Edit if it's wrong."
+                        style={{ marginLeft: '6px', fontSize: '10px', padding: '1px 5px', borderRadius: '5px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b' }}
+                      >
+                        est.
+                      </span>
+                    )}
+                  </td>
                   <td style={td('left')}>
                     {b.placer_username || '—'}
                     {b.placer_torn_id && !b.paid && (

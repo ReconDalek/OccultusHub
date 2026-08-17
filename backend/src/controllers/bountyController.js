@@ -1,9 +1,19 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 // "23:39:02 - 24/07/26 You placed 1x $300,001 bounties on Sahil007 for a cost of $450,002"
-// One Discord message can contain many of these lines (one per bounty placed),
-// each independently timestamped — every line becomes its own bounty row.
-const LINE_RE = /(\d{2}):(\d{2}):(\d{2}) - (\d{2})\/(\d{2})\/(\d{2}) You placed (\d+)x \$([\d,]+) bounties on (.+?) for a cost of \$([\d,]+)/g;
+// One Discord message can contain many of these lines (one per bounty placed).
+// The timestamp prefix is optional in the regex itself -- Torn's notification
+// copy/paste sometimes drops it, or splits it onto its own line, or wraps the
+// rest of the line mid-sentence. normalizeBountyText() below repairs the
+// line-splitting before this ever runs; the missing-prefix case is handled
+// after matching, by fillMissingTimestamps().
+const LINE_RE = /(?:(\d{2}):(\d{2}):(\d{2})\s*-\s*(\d{2})\/(\d{2})\/(\d{2})\s+)?You placed\s+(\d+)x\s*\$([\d,]+)\s*bounties\s+on\s+(.+?)\s+for\s+a\s+cost\s+of\s+\$([\d,]+)/gi;
+
+// A line holding only a timestamp, with the "You placed..." text pushed onto
+// the next line -- alternates with RECORD_START_RE lines in some copy/pastes.
+const TIMESTAMP_ONLY_RE = /^\d{2}:\d{2}:\d{2}\s*-\s*\d{2}\/\d{2}\/\d{2}\s*$/;
+// A line that starts a new bounty record (optionally prefixed by its timestamp).
+const RECORD_START_RE = /^(?:\d{2}:\d{2}:\d{2}\s*-\s*\d{2}\/\d{2}\/\d{2}\s+)?You placed\b/i;
 
 // Discord nickname convention: "TornUsername [TornId]" — gives the placer
 // exactly, no fuzzy matching needed.
@@ -13,22 +23,77 @@ function parseNum(s) {
   return parseInt(String(s).replace(/,/g, ''), 10);
 }
 
-// Returns an array of { placed_at, bounty_count, bounty_value, target_username, total_cost }
-export function parseBountyLines(text) {
+// Repairs two copy/paste line-splitting patterns before regex matching:
+//  1. A record wrapped mid-sentence onto a second line (e.g. the "$451,000"
+//     / "bounties on ..." split) -- the continuation line doesn't start a new
+//     record, so it gets appended onto the previous one.
+//  2. A timestamp alone on its own line, with the record text on the next
+//     line -- the orphaned timestamp is held and prepended to that next line.
+function normalizeBountyText(text) {
+  const rawLines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const merged = [];
+  let pendingTimestamp = null;
+
+  for (const line of rawLines) {
+    if (TIMESTAMP_ONLY_RE.test(line)) {
+      pendingTimestamp = line;
+      continue;
+    }
+    if (merged.length === 0 || RECORD_START_RE.test(line)) {
+      merged.push(pendingTimestamp ? `${pendingTimestamp} ${line}` : line);
+    } else {
+      merged[merged.length - 1] += ` ${line}`;
+    }
+    pendingTimestamp = null;
+  }
+
+  return merged.join('\n');
+}
+
+// Rows with no timestamp of their own borrow the nearest neighboring row's
+// timestamp (bounty dumps are one continuous logging session, so adjacent
+// entries are usually minutes apart at most) -- preferring the following row,
+// since an untimed row is most often a leading entry that lost its prefix.
+// Falls back to the Discord message's own post time if no row in the batch
+// has a real timestamp at all.
+function fillMissingTimestamps(rows, fallbackTimestamp) {
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].placed_at != null) continue;
+    let source = null;
+    for (let j = i + 1; j < rows.length; j++) {
+      if (rows[j].placed_at != null) { source = rows[j].placed_at; break; }
+    }
+    if (source == null) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (rows[j].placed_at != null) { source = rows[j].placed_at; break; }
+      }
+    }
+    rows[i].placed_at = source ?? fallbackTimestamp ?? Math.floor(Date.now() / 1000);
+    rows[i].estimated = true;
+  }
+}
+
+// Returns an array of { placed_at, estimated, bounty_count, bounty_value, target_username, total_cost }
+export function parseBountyLines(text, fallbackTimestamp = null) {
+  const normalized = normalizeBountyText(text);
   const rows = [];
   let m;
   LINE_RE.lastIndex = 0;
-  while ((m = LINE_RE.exec(text)) !== null) {
+  while ((m = LINE_RE.exec(normalized)) !== null) {
     const [, hh, mm, ss, day, month, yr, count, value, target, cost] = m;
-    const placed_at = Math.floor(Date.UTC(2000 + parseInt(yr, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(hh, 10), parseInt(mm, 10), parseInt(ss, 10)) / 1000);
+    const placed_at = hh != null
+      ? Math.floor(Date.UTC(2000 + parseInt(yr, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(hh, 10), parseInt(mm, 10), parseInt(ss, 10)) / 1000)
+      : null;
     rows.push({
       placed_at,
+      estimated: false,
       bounty_count: parseInt(count, 10),
       bounty_value: parseNum(value),
       target_username: target.trim(),
       total_cost: parseNum(cost),
     });
   }
+  fillMissingTimestamps(rows, fallbackTimestamp);
   return rows;
 }
 
@@ -64,35 +129,40 @@ export async function handleBountyWebhook(request, env) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { discord_nickname, discord_message_id, message_content } = body;
+    const { discord_nickname, discord_message_id, message_content, message_created_at } = body;
     if (!message_content) return errorResponse('message_content is required', 400);
 
     const nickM = discord_nickname ? NICKNAME_RE.exec(discord_nickname.trim()) : null;
     const placer_username = nickM ? nickM[1].trim() : (discord_nickname || null);
     const placer_torn_id  = nickM ? parseInt(nickM[2], 10) : null;
 
-    const lines = parseBountyLines(message_content);
-    if (!lines.length) return jsonResponse({ inserted: 0, skipped: 0, message: 'No bounty lines matched' });
+    const lines = parseBountyLines(message_content, message_created_at ?? null);
+    if (!lines.length) return jsonResponse({ inserted: 0, skipped: 0, estimated: 0, message: 'No bounty lines matched' });
 
-    let inserted = 0, skipped = 0;
+    let inserted = 0, skipped = 0, estimated = 0;
     for (const line of lines) {
       const { target_torn_id, faction_id } = await resolveTargetFaction(env, line.target_username);
       const ranked_war_id = await findMatchingWar(env, faction_id, line.placed_at);
 
       const { meta } = await env.DB.prepare(
         `INSERT OR IGNORE INTO bounties
-           (placed_at, placer_torn_id, placer_username, target_username, target_torn_id,
+           (placed_at, placed_at_estimated, placer_torn_id, placer_username, target_username, target_torn_id,
             faction_id, ranked_war_id, bounty_count, bounty_value, total_cost, source, discord_message_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discord', ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discord', ?)`
       ).bind(
-        line.placed_at, placer_torn_id, placer_username, line.target_username, target_torn_id,
+        line.placed_at, line.estimated ? 1 : 0, placer_torn_id, placer_username, line.target_username, target_torn_id,
         faction_id, ranked_war_id, line.bounty_count, line.bounty_value, line.total_cost, discord_message_id ?? null
       ).run();
 
-      if (meta?.changes > 0) inserted++; else skipped++;
+      if (meta?.changes > 0) {
+        inserted++;
+        if (line.estimated) estimated++;
+      } else {
+        skipped++;
+      }
     }
 
-    return jsonResponse({ inserted, skipped });
+    return jsonResponse({ inserted, skipped, estimated });
   } catch (err) {
     console.error('handleBountyWebhook error:', err);
     return errorResponse('Failed to process bounty webhook', 500);
@@ -215,6 +285,10 @@ export async function updateBounty(request, env, user) {
     const binds = [];
     for (const f of fields) {
       if (Object.prototype.hasOwnProperty.call(body, f)) { sets.push(`${f}=?`); binds.push(body[f]); }
+    }
+    // A manual correction to placed_at is by definition no longer an estimate.
+    if (Object.prototype.hasOwnProperty.call(body, 'placed_at')) {
+      sets.push('placed_at_estimated=0');
     }
     if (Object.prototype.hasOwnProperty.call(body, 'paid')) {
       const paid = body.paid ? 1 : 0;
