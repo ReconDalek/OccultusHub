@@ -271,6 +271,79 @@ export async function createBounty(request, env, user) {
   }
 }
 
+// ── POST /api/leadership/bounties/parse-log — paste a log dump (same format
+// the Discord bot detects) and either preview what it would add (dry_run) or
+// commit it. Lets leadership bulk-add bounties without re-typing each one
+// into the form -- e.g. logs that came in outside the bot's tracked channel. ─
+
+export async function parseBountyLog(request, env, user) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { message_content, placer_username, placer_torn_id, dry_run } = body;
+    if (!message_content) return errorResponse('message_content is required', 400);
+
+    const lines = parseBountyLines(message_content, Math.floor(Date.now() / 1000));
+    if (!lines.length) return jsonResponse({ rows: [], inserted: 0, skipped: 0, estimated: 0 });
+
+    const resolvedPlacerTornId = Number.isFinite(placer_torn_id) ? placer_torn_id : (parseInt(placer_torn_id, 10) || null);
+
+    const rows = [];
+    let inserted = 0, skipped = 0, estimated = 0;
+
+    for (const line of lines) {
+      const { target_torn_id, faction_id } = await resolveTargetFaction(env, line.target_username);
+      const ranked_war_id = await findMatchingWar(env, faction_id, line.placed_at);
+
+      // Manual entries have no discord_message_id, so the table's own
+      // UNIQUE(discord_message_id, placed_at, target_username) constraint
+      // can't catch duplicates here (NULL != NULL in SQL) -- also catches
+      // the same bounty already having come in through the Discord bot.
+      const existing = await env.DB.prepare(
+        `SELECT id FROM bounties WHERE placed_at=? AND target_username=? COLLATE NOCASE AND total_cost=?`
+      ).bind(line.placed_at, line.target_username, line.total_cost).first();
+
+      const row = {
+        placed_at: line.placed_at,
+        estimated: line.estimated,
+        bounty_count: line.bounty_count,
+        bounty_value: line.bounty_value,
+        target_username: line.target_username,
+        total_cost: line.total_cost,
+        faction_id,
+        ranked_war_id,
+        duplicate: !!existing,
+      };
+      rows.push(row);
+
+      if (line.estimated) estimated++;
+
+      if (dry_run) continue;
+
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      await env.DB.prepare(
+        `INSERT INTO bounties
+           (placed_at, placed_at_estimated, placer_torn_id, placer_username, target_username, target_torn_id,
+            faction_id, ranked_war_id, bounty_count, bounty_value, total_cost, source, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?)`
+      ).bind(
+        line.placed_at, line.estimated ? 1 : 0, resolvedPlacerTornId, placer_username ?? null,
+        line.target_username, target_torn_id, faction_id, ranked_war_id,
+        line.bounty_count, line.bounty_value, line.total_cost, user.userId
+      ).run();
+      inserted++;
+    }
+
+    return jsonResponse({ rows, inserted, skipped, estimated });
+  } catch (err) {
+    console.error('parseBountyLog error:', err);
+    return errorResponse('Failed to parse bounty log', 500);
+  }
+}
+
 // ── PUT /api/leadership/bounties/:id — edit (e.g. assign/reassign a war),
 // or toggle `paid` (repaid-the-placer status) — sets paid_by/paid_at too. ────
 

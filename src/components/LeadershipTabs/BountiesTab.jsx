@@ -157,6 +157,123 @@ function BountyForm({ initial, wars, onSave, onCancel }) {
   )
 }
 
+// ─── Paste Log ───────────────────────────────────────────────────────────────
+// Same detection the Discord bot uses on the #bounty-log channel, exposed
+// here for logs that came in outside that channel (or need re-adding) --
+// paste the raw text, preview what would be added, then commit.
+
+function BountyLogPasteForm({ onDone, onCancel }) {
+  const [text,       setText]       = useState('')
+  const [placer,     setPlacer]     = useState('')
+  const [placerId,   setPlacerId]   = useState('')
+  const [rows,       setRows]       = useState(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error,      setError]      = useState(null)
+  const [result,     setResult]     = useState(null)
+
+  const runParse = async (dryRun) => {
+    if (!text.trim()) { setError('Paste a log to parse'); return }
+    setError(null)
+    dryRun ? setPreviewing(true) : setSubmitting(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/bounties/parse-log`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_content: text,
+          placer_username: placer.trim() || null,
+          placer_torn_id: placerId ? parseInt(placerId, 10) : null,
+          dry_run: dryRun,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Parse failed')
+      setRows(json.rows)
+      if (!dryRun) {
+        setResult({ inserted: json.inserted, skipped: json.skipped })
+        onDone()
+      }
+    } catch (e) {
+      setError(e.message || 'Failed to parse log')
+    } finally {
+      setPreviewing(false); setSubmitting(false)
+    }
+  }
+
+  const newCount = rows ? rows.filter(r => !r.duplicate).length : 0
+  const dupCount = rows ? rows.filter(r => r.duplicate).length : 0
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '16px', marginBottom: '14px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px,1fr))', gap: '10px', marginBottom: '10px' }}>
+        <div>
+          <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Placer Username</label>
+          <input type="text" value={placer} onChange={e => setPlacer(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
+        </div>
+        <div>
+          <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Placer Torn ID</label>
+          <input type="number" value={placerId} onChange={e => setPlacerId(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
+        </div>
+      </div>
+
+      <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+        Paste bounty log(s)
+      </label>
+      <textarea
+        value={text}
+        onChange={e => { setText(e.target.value); setRows(null); setResult(null) }}
+        placeholder={'10:58:55 - 15/08/26 You placed 1x $300,001 bounties on Sahil007 for a cost of $450,002\n...'}
+        rows={6}
+        style={{ ...inputStyle, width: '100%', fontFamily: 'monospace', fontSize: '12px', resize: 'vertical', marginBottom: '10px' }}
+      />
+
+      {rows && (
+        <div style={{ marginBottom: '10px', maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px' }}>
+          {rows.map((r, i) => (
+            <div key={i} style={{
+              display: 'flex', gap: '10px', alignItems: 'center', fontSize: '12px', padding: '6px 10px',
+              borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+              opacity: r.duplicate ? 0.45 : 1,
+            }}>
+              <span style={{ color: "var(--text-faint)", minWidth: '150px' }}>{formatDateTime(r.placed_at)}</span>
+              <span style={{ color: '#e4e4e7', flex: 1 }}>{r.target_username}</span>
+              <span style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmtMoney(r.total_cost)}</span>
+              {r.estimated && <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '5px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b' }}>est.</span>}
+              {r.duplicate && <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: "var(--text-faint)" }}>already added</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <button onClick={() => runParse(true)} disabled={previewing || submitting} style={{
+          padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+          background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: '#e4e4e7',
+        }}>
+          {previewing ? 'Parsing…' : 'Preview'}
+        </button>
+        <button
+          onClick={() => runParse(false)}
+          disabled={!rows || previewing || submitting || newCount === 0}
+          style={{
+            padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+            cursor: (!rows || newCount === 0) ? 'not-allowed' : 'pointer',
+            background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.4)', color: '#4ade80',
+            opacity: (!rows || newCount === 0) ? 0.5 : 1,
+          }}
+        >
+          {submitting ? 'Adding…' : rows ? `Add ${newCount} Bount${newCount === 1 ? 'y' : 'ies'}${dupCount ? ` (${dupCount} already added, skipped)` : ''}` : 'Add Bounties'}
+        </button>
+        <button onClick={onCancel} style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: "var(--text-secondary)" }}>
+          Cancel
+        </button>
+        {error && <span style={{ color: '#f87171', fontSize: '12px' }}>{error}</span>}
+        {result && <span style={{ color: '#4ade80', fontSize: '12px' }}>Added {result.inserted}{result.skipped ? `, skipped ${result.skipped} duplicate(s)` : ''}.</span>}
+      </div>
+    </div>
+  )
+}
+
 // ─── Bulk Pay ────────────────────────────────────────────────────────────────
 // Tallies all currently-unpaid bounties across one or more selected wars into
 // one lump-sum total per placer, so leadership pays each person once instead
@@ -361,6 +478,7 @@ export default function BountiesTab() {
   const [sortKey,   setSortKey]   = useState('placed_at')
   const [sortDir,   setSortDir]   = useState('desc')
   const [showAdd,   setShowAdd]   = useState(false)
+  const [showPaste, setShowPaste] = useState(false)
   const [editing,   setEditing]   = useState(null)
 
   // Filters
@@ -514,15 +632,22 @@ export default function BountiesTab() {
           <label style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>User</label>
           <input type="text" placeholder="Target or placer" value={userFilter} onChange={e => setUserFilter(e.target.value)} style={inputStyle} />
         </div>
-        <button onClick={() => setShowAdd(v => !v)} style={{
+        <button onClick={() => { setShowAdd(v => !v); setShowPaste(false) }} style={{
           padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
           background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', color: '#4ade80',
         }}>
           {showAdd ? 'Cancel' : '+ Add Bounty'}
         </button>
+        <button onClick={() => { setShowPaste(v => !v); setShowAdd(false) }} style={{
+          padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+          background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc',
+        }}>
+          {showPaste ? 'Cancel' : '📋 Paste Log'}
+        </button>
       </div>
 
       {showAdd && <BountyForm wars={wars} onSave={saveNew} onCancel={() => setShowAdd(false)} />}
+      {showPaste && <BountyLogPasteForm onDone={load} onCancel={() => setShowPaste(false)} />}
       {editing && <BountyForm initial={editing} wars={wars} onSave={saveEdit} onCancel={() => setEditing(null)} />}
 
       {error && <p style={{ color: '#f87171', fontSize: '13px' }}>{error}</p>}
