@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
+import { getRandomUserApiKey, getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD, suppressSameDayOverdoseXanax } from './warController.js';
 
@@ -230,13 +230,18 @@ async function fetchChainEnergyData(env, chain, apiKey) {
 // can always retry later), just get logged.
 async function triggerChainEnergyFetch(env, chainId) {
   try {
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) return { fetched: false, reason: 'no API key available' };
-
     const chainRow = await env.DB.prepare(
       `SELECT torn_chain_id, faction_id, start_at, end_at FROM chain_cache WHERE torn_chain_id=?`
     ).bind(chainId).first();
     if (!chainRow) return { fetched: false, reason: 'chain not cached' };
+
+    // Must be a key belonging to THIS chain's faction — faction/news always
+    // returns the calling key's own faction, so a key from a different
+    // faction would silently scope the whole fetch to the wrong faction and
+    // never match this chain's members (previously used getRandomUserApiKey,
+    // which picks across all factions with no such guarantee).
+    const apiKeyObj = await getStaffApiKeyForFaction(env, chainRow.faction_id);
+    if (!apiKeyObj?.key) return { fetched: false, reason: 'no API key available for this faction' };
 
     const result = await fetchChainEnergyData(env, chainRow, apiKeyObj.key);
     return { fetched: true, updated: result.updated };
@@ -882,8 +887,8 @@ export async function refetchChainEnergy(request, env, user) {
     ).bind(chainId).first();
     if (!chain) return errorResponse('Chain not found', 404);
 
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
+    const apiKeyObj = await getStaffApiKeyForFaction(env, chain.faction_id);
+    if (!apiKeyObj?.key) return errorResponse('No API key available for this faction — please ensure a staff member has a valid key stored', 503);
 
     const result = await fetchChainEnergyData(env, chain, apiKeyObj.key);
 
@@ -910,9 +915,6 @@ export async function refetchChainEnergy(request, env, user) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function backfillChainEnergy(request, env, user) {
   try {
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
-
     const { results: chains } = await env.DB.prepare(
       `SELECT cc.torn_chain_id, cc.faction_id, cc.start_at, cc.end_at
        FROM chain_cache cc
@@ -924,10 +926,28 @@ export async function backfillChainEnergy(request, env, user) {
     let processed = 0;
     let updatedMembers = 0;
     const errors = [];
+    // Cached per faction_id within this run — chains group by faction, no
+    // need to re-query the same faction's staff key for every chain.
+    const keyByFaction = {};
 
     for (const chain of (chains || [])) {
       try {
-        const result = await fetchChainEnergyData(env, chain, apiKeyObj.key);
+        // Must be a key belonging to THIS chain's faction — faction/news
+        // always returns the calling key's own faction (previously used one
+        // getRandomUserApiKey for the whole run, which could silently scope
+        // every fetch to the wrong faction for chains belonging to the other
+        // two factions).
+        if (!(chain.faction_id in keyByFaction)) {
+          const apiKeyObj = await getStaffApiKeyForFaction(env, chain.faction_id);
+          keyByFaction[chain.faction_id] = apiKeyObj?.key ?? null;
+        }
+        const apiKey = keyByFaction[chain.faction_id];
+        if (!apiKey) {
+          errors.push(`Chain #${chain.torn_chain_id}: no API key available for faction ${chain.faction_id}`);
+          continue;
+        }
+
+        const result = await fetchChainEnergyData(env, chain, apiKey);
         processed++;
         updatedMembers += result.updated;
       } catch (e) {
