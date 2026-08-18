@@ -5,6 +5,7 @@ import GenerateWarningsPanel from './GenerateWarningsPanel'
 import ExemptionsTab from './ExemptionsTab'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
+const FACTION_IDS_ALL = [33097, 9728, 9171]
 const WARNING_TYPES = ['Energy', 'Chain', 'Other']
 
 const TYPE_LABELS = {
@@ -811,6 +812,8 @@ export default function WarningsTab() {
   const [search,           setSearch]            = useState('')
   const [showAddModal,     setShowAddModal]      = useState(false)
   const [periodFilter,     setPeriodFilter]      = useState('all')
+  const [factionFilter,    setFactionFilter]     = useState(FACTION_IDS_ALL)
+  const [issuedFilter,     setIssuedFilter]      = useState('all') // 'all' | 'issued' | 'reported'
 
   useEffect(() => {
     Promise.all([fetchWarnings(), fetchMembers()])
@@ -840,6 +843,16 @@ export default function WarningsTab() {
       method: 'DELETE', headers: { Authorization: token() },
     })
     setWarnings(w => w.filter(x => x.id !== id))
+  }
+
+  function toggleFactionFilter(id) {
+    setFactionFilter(prev => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev // keep at least one selected
+        return prev.filter(f => f !== id)
+      }
+      return [...prev, id]
+    })
   }
 
   // Every unique period actually logged on a warning (e.g. "July 2026"), most
@@ -905,16 +918,38 @@ export default function WarningsTab() {
 
   const activeGrouped = periodFilter === 'all' ? grouped : periodGrouped
 
-  // Filter members
-  const displayed = Object.entries(activeGrouped).filter(([, m]) => {
-    if (activeOnly && !m.is_active) return false
-    // In default mode, only show members who have at least one warning in the window.
-    // A specific period filter already scopes to matching warnings only, so this
-    // additional window check doesn't apply there.
-    if (periodFilter === 'all' && !showAllWarnings && m.windowWarnings.length === 0) return false
-    if (search && !m.username.toLowerCase().includes(search.toLowerCase())) return false
+  function matchesIssued(w) {
+    if (issuedFilter === 'issued')   return !!w.date_issued
+    if (issuedFilter === 'reported') return !w.date_issued
     return true
-  })
+  }
+
+  // Filter members — issued/reported filtering happens on the individual
+  // warning lists first (a member can have a mix of issued and not-yet-issued
+  // warnings), then member-level filters apply on top of the filtered lists.
+  const displayed = Object.entries(activeGrouped)
+    .map(([id, m]) => (issuedFilter === 'all' ? [id, m] : [id, {
+      ...m,
+      windowWarnings:     m.windowWarnings.filter(matchesIssued),
+      historicalWarnings: m.historicalWarnings.filter(matchesIssued),
+    }]))
+    .filter(([, m]) => {
+      if (activeOnly && !m.is_active) return false
+      // Only excludes members with a KNOWN faction that isn't selected — a
+      // member with no faction_members match at all (very old warning
+      // against a purged record) always passes through rather than
+      // vanishing under the default "all factions" filter.
+      if (m.current_faction_id != null && !factionFilter.includes(m.current_faction_id)) return false
+      // In default mode, only show members who have at least one warning in the window.
+      // A specific period filter already scopes to matching warnings only, so this
+      // additional window check doesn't apply there.
+      if (periodFilter === 'all' && !showAllWarnings && m.windowWarnings.length === 0) return false
+      // Issued/reported filtering can empty out a member entirely (e.g. every
+      // warning they have is already issued, but "Not yet issued" is selected).
+      if (issuedFilter !== 'all' && m.windowWarnings.length === 0 && m.historicalWarnings.length === 0) return false
+      if (search && !m.username.toLowerCase().includes(search.toLowerCase())) return false
+      return true
+    })
 
   // Sort: kick-at-risk first (window count desc), then by most recent window warning
   displayed.sort((a, b) => {
@@ -1006,6 +1041,37 @@ export default function WarningsTab() {
           {periodOptions.map(p => (
             <option key={p.period} value={p.period}>{p.period}</option>
           ))}
+        </select>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {FACTION_IDS_ALL.map(id => {
+            const active = factionFilter.includes(id)
+            return (
+              <button key={id} onClick={() => toggleFactionFilter(id)}
+                style={{
+                  padding: '8px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                  border: `1px solid ${active ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  background: active ? 'rgba(167,139,250,0.12)' : 'transparent',
+                  color: active ? '#a78bfa' : 'var(--text-secondary)',
+                }}
+              >
+                {FACTION_LABEL[id]}
+              </button>
+            )
+          })}
+        </div>
+        <select
+          value={issuedFilter}
+          onChange={e => setIssuedFilter(e.target.value)}
+          style={{
+            padding: '8px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+            border: `1px solid ${issuedFilter !== 'all' ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.08)'}`,
+            background: issuedFilter !== 'all' ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.05)',
+            color: issuedFilter !== 'all' ? '#4ade80' : 'var(--text-secondary)',
+          }}
+        >
+          <option value="all">Issued + Reported</option>
+          <option value="issued">Issued only</option>
+          <option value="reported">Reported only (not yet issued)</option>
         </select>
         <button
           onClick={() => setActiveOnly(a => !a)}
