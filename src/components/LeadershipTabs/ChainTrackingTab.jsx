@@ -126,38 +126,37 @@ function Section({ title, children }) {
   )
 }
 
-// ─── Energy usage table (armory/OD data attached after chain_hits is saved) ──
-// Energy Out is derived from total_attacks (25 per hit); Energy In/Repaid from
-// stored xanax_used/xanax_deposited (250 energy per Xanax) — same formula
-// war tracking uses for its Energy columns.
+// ─── Combined member contributions + energy table (for already-saved chains) ──
+// One row per member: attack stats (Hits/Respect/Bonuses, always present once
+// saved) plus armory/OD columns (only populated once the one-time energy
+// check has run — render as "—" until then). Energy Out is derived from
+// total_attacks (25 per hit); Energy In/Repaid from stored
+// xanax_used/xanax_deposited (250 energy per Xanax) — same formula war
+// tracking uses for its Energy columns.
 
-function EnergyTable({ hits, usernames }) {
-  const rows = (hits || [])
-    .filter(h => (h.total_attacks || 0) > 0)
-    .map(h => {
-      const energyOut    = (h.total_attacks || 0) * 25
-      const energyIn     = (h.xanax_used || 0) * 250
-      const energyRepaid = (h.xanax_deposited || 0) * 250
-      const energyNet     = energyIn - energyOut - energyRepaid
-      return { ...h, energyOut, energyIn, energyRepaid, energyNet }
-    })
-    .sort((a, b) => b.energyNet - a.energyNet)
+function MemberContributionsTable({ hits, usernames }) {
+  if (!hits || hits.length === 0) {
+    return <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No saved member data.</p>
+  }
 
-  if (!rows.length) return null
-
-  const cols = '1fr 90px 90px 100px 90px 60px'
+  const cols = '1fr 60px 80px 60px 90px 90px 100px 90px 60px'
+  const headers = ['Member', 'Hits', 'Respect', 'Bonuses', 'Energy Out', 'Energy In', 'Energy Repaid', 'Energy Net', 'OD']
 
   return (
-    <Section title="Energy Usage">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: '760px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '4px 10px', gap: '8px' }}>
-          {['Member', 'Energy Out', 'Energy In', 'Energy Repaid', 'Energy Net', 'OD'].map((h) => (
+          {headers.map((h) => (
             <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
           ))}
         </div>
-        {rows.map((h, idx) => {
-          const name    = memberLabel(h.torn_user_id, usernames)
-          const isKnown = !!usernames[h.torn_user_id]
+        {hits.map((h, idx) => {
+          const name        = memberLabel(h.torn_user_id, usernames)
+          const isKnown     = !!usernames[h.torn_user_id]
+          const energyOut    = (h.total_attacks || 0) * 25
+          const energyIn     = (h.xanax_used || 0) * 250
+          const energyRepaid = (h.xanax_deposited || 0) * 250
+          const energyNet     = energyIn - energyOut - energyRepaid
           return (
             <div
               key={h.torn_user_id}
@@ -171,24 +170,38 @@ function EnergyTable({ hits, usernames }) {
                   ? <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
                   : <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{h.torn_user_id}]</span>}
               </div>
-              <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{fmt(h.energyOut)}</span>
-              <span style={{ color: h.energyIn > 0 ? '#38bdf8' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.energyIn)}</span>
-              <span style={{ color: h.energyRepaid > 0 ? '#4ade80' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.energyRepaid)}</span>
-              <span style={{ color: energyNetColor(h.energyNet), fontWeight: h.energyNet >= 250 ? '600' : '400', fontSize: '13px' }}>
-                {h.energyNet > 0 ? '+' : ''}{fmt(h.energyNet)}
+              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '700' }}>{fmt(h.total_attacks)}</span>
+              <span style={{ color: '#9f67ff', fontSize: '13px' }}>{fmt(h.total_respect, 2)}</span>
+              {h.bonus_hits > 0 ? (
+                <span
+                  style={{
+                    display: 'inline-block', background: 'rgba(109,40,217,0.2)', border: '1px solid rgba(109,40,217,0.4)',
+                    borderRadius: '5px', padding: '1px 6px', color: '#9f67ff', fontSize: '11px', fontWeight: '700', textAlign: 'center',
+                  }}
+                >
+                  ×{h.bonus_hits}
+                </span>
+              ) : (
+                <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
+              )}
+              <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{fmt(energyOut)}</span>
+              <span style={{ color: energyIn > 0 ? '#38bdf8' : "var(--text-muted)", fontSize: '13px' }}>{fmt(energyIn)}</span>
+              <span style={{ color: energyRepaid > 0 ? '#4ade80' : "var(--text-muted)", fontSize: '13px' }}>{fmt(energyRepaid)}</span>
+              <span style={{ color: energyNetColor(energyNet), fontWeight: energyNet >= 250 ? '600' : '400', fontSize: '13px' }}>
+                {energyNet > 0 ? '+' : ''}{fmt(energyNet)}
               </span>
               <span style={{ color: (h.overdoses || 0) > 0 ? '#ef4444' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.overdoses || 0)}</span>
             </div>
           )
         })}
       </div>
-    </Section>
+    </div>
   )
 }
 
 // ─── Expanded report content ──────────────────────────────────────────────────
 
-function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel = 'Save Member Hits' }) {
+function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel = 'Save Member Hits', energyHits, energyUsernames }) {
   const cr        = report.chainreport
   const usernames = report.usernames || {}
   const details   = cr.details  || {}
@@ -276,9 +289,11 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
         </Section>
       )}
 
-      {/* ── Member Contributions ── */}
+      {/* ── Member Contributions (merged with energy data once the chain is saved) ── */}
       <Section title="Member Contributions">
-        {attackers.length === 0 && nonAttackers.length === 0 ? (
+        {energyHits ? (
+          <MemberContributionsTable hits={energyHits} usernames={energyUsernames || usernames} />
+        ) : attackers.length === 0 && nonAttackers.length === 0 ? (
           <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No attacker data available.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -739,6 +754,8 @@ function ChainCard({ chain }) {
               onSave={handleSave}
               saveStatus={saveStatus}
               savedInDB={savedInDB}
+              energyHits={energyData?.hits}
+              energyUsernames={energyData?.usernames}
             />
           )}
 
@@ -746,28 +763,23 @@ function ChainCard({ chain }) {
             <p style={{ color: "var(--text-secondary)", fontSize: '12px', padding: '10px 0 0' }}>Loading energy data…</p>
           )}
 
-          {savedInDB && energyData && (
-            <>
-              <EnergyTable hits={energyData.hits} usernames={energyData.usernames} />
-              {!energyData.chain?.energy_fetched_at && (energyData.hits || []).some(h => h.total_attacks > 0) && (
-                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <button
-                    onClick={refetchEnergy}
-                    disabled={energyRefetching}
-                    style={{
-                      padding: '6px 14px', borderRadius: '7px', fontSize: '12px', cursor: energyRefetching ? 'not-allowed' : 'pointer',
-                      background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8',
-                      opacity: energyRefetching ? 0.6 : 1,
-                    }}
-                  >
-                    {energyRefetching ? 'Fetching…' : 'Fetch Energy Data'}
-                  </button>
-                  <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>
-                    Armory usage for this chain hasn't been checked yet.
-                  </span>
-                </div>
-              )}
-            </>
+          {savedInDB && energyData && !energyData.chain?.energy_fetched_at && (energyData.hits || []).some(h => h.total_attacks > 0) && (
+            <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                onClick={refetchEnergy}
+                disabled={energyRefetching}
+                style={{
+                  padding: '6px 14px', borderRadius: '7px', fontSize: '12px', cursor: energyRefetching ? 'not-allowed' : 'pointer',
+                  background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8',
+                  opacity: energyRefetching ? 0.6 : 1,
+                }}
+              >
+                {energyRefetching ? 'Fetching…' : 'Fetch Energy Data'}
+              </button>
+              <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>
+                Armory usage for this chain hasn't been checked yet.
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -1209,53 +1221,8 @@ function SavedChainCard({ data, onRefetchEnergy, energyRefetching }) {
       </Section>
 
       <Section title="Member Contributions">
-        {(!hits || hits.length === 0) ? (
-          <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No saved member data.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 80px 60px', padding: '4px 10px', gap: '8px' }}>
-              {['Member', 'Hits', 'Respect', 'Bonuses'].map((h) => (
-                <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
-              ))}
-            </div>
-            {hits.map((h, idx) => {
-              const name    = memberLabel(h.torn_user_id, usernames)
-              const isKnown = !!usernames[h.torn_user_id]
-              return (
-                <div
-                  key={h.torn_user_id}
-                  style={{
-                    display: 'grid', gridTemplateColumns: '1fr 70px 80px 60px', alignItems: 'center', gap: '8px',
-                    padding: '8px 10px', borderRadius: '8px', background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    {isKnown
-                      ? <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
-                      : <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{h.torn_user_id}]</span>}
-                  </div>
-                  <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '700' }}>{fmt(h.total_attacks)}</span>
-                  <span style={{ color: '#9f67ff', fontSize: '13px' }}>{fmt(h.total_respect, 2)}</span>
-                  {h.bonus_hits > 0 ? (
-                    <span
-                      style={{
-                        display: 'inline-block', background: 'rgba(109,40,217,0.2)', border: '1px solid rgba(109,40,217,0.4)',
-                        borderRadius: '5px', padding: '1px 6px', color: '#9f67ff', fontSize: '11px', fontWeight: '700', textAlign: 'center',
-                      }}
-                    >
-                      ×{h.bonus_hits}
-                    </span>
-                  ) : (
-                    <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+        <MemberContributionsTable hits={hits} usernames={usernames} />
       </Section>
-
-      <EnergyTable hits={hits} usernames={usernames} />
 
       {!chain.energy_fetched_at && (hits || []).some(h => h.total_attacks > 0) && (
         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
