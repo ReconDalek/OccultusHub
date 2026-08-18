@@ -701,7 +701,7 @@ export async function generateChainWarningReport(request, env) {
       for (const chain of (chainsByFaction[factionId] || [])) {
         const { results: hitRows } = await env.DB.prepare(`
           SELECT ch.torn_user_id, ch.total_attacks, ch.bonus_hits, ch.total_respect,
-                 fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id
+                 fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id, fm.days_in_faction
           FROM chain_hits ch
           LEFT JOIN faction_members fm ON fm.torn_user_id = ch.torn_user_id
           WHERE ch.torn_chain_id = ?
@@ -754,7 +754,7 @@ export async function generateChainWarningReport(request, env) {
           (new Date(chainEndDate + 'T00:00:00Z').getTime() - new Date(dayBeforeStart + 'T00:00:00Z').getTime()) / 86400000
         ) + 1;
         const { results: confirmedRows } = await env.DB.prepare(`
-          SELECT p.torn_user_id, fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id
+          SELECT p.torn_user_id, fm.username, fm.level, fm.is_active, fm.faction_id AS current_faction_id, fm.days_in_faction
           FROM personal_stats_snapshots p
           LEFT JOIN faction_members fm ON fm.torn_user_id = p.torn_user_id
           WHERE p.faction_id = ? AND p.snapshot_date >= ? AND p.snapshot_date <= ?
@@ -797,6 +797,29 @@ export async function generateChainWarningReport(request, env) {
           for (const r of (odEndRows.results || [])) overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
         }
 
+        // Recruit-at-chain-time exclusion: we don't store faction_position or
+        // days_in_faction historically (both are single current values on
+        // faction_members, overwritten every sync) — so instead of a direct
+        // "were they Recruit that day" check, back-derive an ESTIMATE of their
+        // tenure at chain start from today's live days_in_faction, walked
+        // backward by however many days have passed since the chain (same
+        // "estimate a past date from a live running counter" approach already
+        // used for join-date estimation in progressionController.js). Assumes
+        // continuous membership since the chain — a member who left and
+        // rejoined since then would look more tenured than they actually were
+        // at the time, which only makes this UNDER-exclude, never falsely
+        // flag someone as too-new. Under 3 estimated days: excluded outright
+        // (recruit-equivalent, too new to be a fair warning candidate). Under
+        // 10: kept as a normal candidate, but flagged `just_joined` so it's
+        // visibly a recent joiner rather than a silent explanation-free flag.
+        const daysSinceChainStart = Math.round(
+          (Date.now() - new Date(chainStartDate + 'T00:00:00Z').getTime()) / 86400000
+        );
+        function estimatedDaysInFactionAtChainStart(daysInFactionNow) {
+          if (daysInFactionNow == null) return null;
+          return daysInFactionNow - daysSinceChainStart;
+        }
+
         const members = [
           ...activeHits.map(h => ({
             torn_user_id:  h.torn_user_id,
@@ -808,6 +831,7 @@ export async function generateChainWarningReport(request, env) {
             overdoses:     overdoses[h.torn_user_id] ?? 0,
             exemption:     exemptionByUser[h.torn_user_id] ?? null,
             already_warned: warnedSet.has(h.torn_user_id),
+            _estDays:      estimatedDaysInFactionAtChainStart(h.days_in_faction),
           })),
           ...zeroHitMembers.map(r => ({
             torn_user_id:  r.torn_user_id,
@@ -820,8 +844,12 @@ export async function generateChainWarningReport(request, env) {
             exemption:     exemptionByUser[r.torn_user_id] ?? null,
             no_hits_recorded: true,
             already_warned: warnedSet.has(r.torn_user_id),
+            _estDays:      estimatedDaysInFactionAtChainStart(r.days_in_faction),
           })),
-        ].sort((a, b) => b.total_attacks - a.total_attacks);
+        ]
+          .filter(m => m._estDays == null || m._estDays >= 3)
+          .map(({ _estDays, ...m }) => ({ ...m, just_joined: _estDays != null && _estDays < 10 }))
+          .sort((a, b) => b.total_attacks - a.total_attacks);
 
         chains.push({
           faction_id: factionId,

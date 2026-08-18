@@ -883,6 +883,9 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
                     {m.no_hits_recorded && (
                       <span title="No chain_hits record — confirmed in faction during this chain, but never attacked" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ no hits</span>
                     )}
+                    {m.just_joined && (
+                      <span title="Estimated under 10 days in the faction at chain start — not excluded (recruits under 3 days already are), just worth knowing" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ just joined</span>
+                    )}
                     <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
                       {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
                     </span>
