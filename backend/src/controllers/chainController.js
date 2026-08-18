@@ -123,21 +123,24 @@ async function fetchChainEnergyData(env, chain, apiKey) {
   // ── Energy In: Xanax used, from armoryAction news — paginated ASCENDING
   // (oldest-of-the-window first) starting at `from=stackFrom`, so the actual
   // target window is covered by the first page(s) regardless of how much
-  // armoryAction activity has happened since. Sorting DESC here would walk
-  // backward from "now" instead, and for a chain checked days/weeks after it
-  // ran, the 500-item cap would be exhausted by newer, unrelated news long
-  // before pagination ever reached the chain's own window — silently
-  // producing zero Xanax-used for every older chain. Breaks as soon as a page
-  // crosses usageTo (ascending order guarantees nothing after that matters).
+  // armoryAction activity has happened since. Follows the Torn v2 API's own
+  // cursor (`_metadata.links.next`) for subsequent pages — the endpoint does
+  // NOT support an `offset` query param despite accepting it silently; every
+  // "page" fetched with a different offset returns the identical first 100
+  // items, so an offset-based loop never advances past page 0 at all. Breaks
+  // as soon as a page crosses usageTo (ascending order guarantees nothing
+  // after that matters) or the cursor runs out.
   const xanaxUsed      = {};
   const xanaxUsedByDay = {}; // { [torn_user_id]: { [date]: count } } — feeds OD suppression below
-  const MAX_PAGES = 5; // 500 news entries — plenty for a ~week-long window
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const offset = page * 100;
-    const data = await fetchWithRetry(
-      `${TORN_API_BASE}/faction/news?striptags=false&limit=100&offset=${offset}&sort=ASC&from=${stackFrom}&cat=armoryAction&comment=OccHub`,
-      { Authorization: `ApiKey ${apiKey}` }
-    );
+  // A faction's full armoryAction volume (blood bags, FAKs, boosters — not just
+  // Xanax, since Torn's news API can't be filtered any narrower than the whole
+  // category) over a 3-day stacking period + chain can run into the thousands
+  // for an active ~90-member faction, so this cap is generous. `reachedEnd`
+  // below still lets a lighter/shorter window finish in just 1-2 pages.
+  const MAX_PAGES = 50; // 5000 news entries
+  let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${stackFrom}&cat=armoryAction&comment=OccHub`;
+  for (let page = 0; page < MAX_PAGES && nextUrl; page++) {
+    const data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
     const items = data.news || [];
     if (!items.length) break;
     let reachedEnd = false;
@@ -150,7 +153,8 @@ async function fetchChainEnergyData(env, chain, apiKey) {
       const day = new Date(item.timestamp * 1000).toISOString().slice(0, 10);
       (xanaxUsedByDay[parsed.torn_user_id] ??= {})[day] = (xanaxUsedByDay[parsed.torn_user_id]?.[day] || 0) + 1;
     }
-    if (reachedEnd || items.length < 100) break;
+    if (reachedEnd) break;
+    nextUrl = data._metadata?.links?.next || null;
   }
 
   // ── Energy Repaid: Xanax deposited back, from the already-cached armory_deposits table ──
