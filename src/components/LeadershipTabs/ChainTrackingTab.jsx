@@ -47,6 +47,15 @@ function memberLabel(id, usernames) {
   return usernames?.[id] ? `${usernames[id]}` : `[${id}]`
 }
 
+// Energy Net (Energy In − Energy Out − Energy Repaid): 500+ is a clear
+// "consumed xanax without attacking" flag (red), 250-499 is worth a glance
+// (orange) — same thresholds as war tracking's Energy Net column.
+function energyNetColor(net) {
+  if (net >= 500) return '#ef4444'
+  if (net >= 250) return '#f59e0b'
+  return "var(--text-muted)"
+}
+
 function getCachedReport(chainId) {
   try {
     const raw = localStorage.getItem(`occultus_cr_${chainId}`)
@@ -114,6 +123,66 @@ function Section({ title, children }) {
       </p>
       {children}
     </div>
+  )
+}
+
+// ─── Energy usage table (armory/OD data attached after chain_hits is saved) ──
+// Energy Out is derived from total_attacks (25 per hit); Energy In/Repaid from
+// stored xanax_used/xanax_deposited (250 energy per Xanax) — same formula
+// war tracking uses for its Energy columns.
+
+function EnergyTable({ hits, usernames }) {
+  const rows = (hits || [])
+    .filter(h => (h.total_attacks || 0) > 0)
+    .map(h => {
+      const energyOut    = (h.total_attacks || 0) * 25
+      const energyIn     = (h.xanax_used || 0) * 250
+      const energyRepaid = (h.xanax_deposited || 0) * 250
+      const energyNet     = energyIn - energyOut - energyRepaid
+      return { ...h, energyOut, energyIn, energyRepaid, energyNet }
+    })
+    .sort((a, b) => b.energyNet - a.energyNet)
+
+  if (!rows.length) return null
+
+  const cols = '1fr 90px 90px 100px 90px 60px'
+
+  return (
+    <Section title="Energy Usage">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '4px 10px', gap: '8px' }}>
+          {['Member', 'Energy Out', 'Energy In', 'Energy Repaid', 'Energy Net', 'OD'].map((h) => (
+            <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+          ))}
+        </div>
+        {rows.map((h, idx) => {
+          const name    = memberLabel(h.torn_user_id, usernames)
+          const isKnown = !!usernames[h.torn_user_id]
+          return (
+            <div
+              key={h.torn_user_id}
+              style={{
+                display: 'grid', gridTemplateColumns: cols, alignItems: 'center', gap: '8px',
+                padding: '8px 10px', borderRadius: '8px', background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                {isKnown
+                  ? <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
+                  : <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{h.torn_user_id}]</span>}
+              </div>
+              <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{fmt(h.energyOut)}</span>
+              <span style={{ color: h.energyIn > 0 ? '#38bdf8' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.energyIn)}</span>
+              <span style={{ color: h.energyRepaid > 0 ? '#4ade80' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.energyRepaid)}</span>
+              <span style={{ color: energyNetColor(h.energyNet), fontWeight: h.energyNet >= 250 ? '600' : '400', fontSize: '13px' }}>
+                {h.energyNet > 0 ? '+' : ''}{fmt(h.energyNet)}
+              </span>
+              <span style={{ color: (h.overdoses || 0) > 0 ? '#ef4444' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.overdoses || 0)}</span>
+            </div>
+          )
+        })}
+      </div>
+    </Section>
   )
 }
 
@@ -404,6 +473,9 @@ function ChainCard({ chain }) {
   const [reportError,  setReportError]  = useState(null)
   const [saveStatus,   setSaveStatus]   = useState(null) // null | 'saving' | 'saved' | 'error'
   const [savedInDB,    setSavedInDB]    = useState(chain.hits_saved === 1)
+  const [energyData,      setEnergyData]      = useState(null)
+  const [energyLoading,   setEnergyLoading]   = useState(false)
+  const [energyRefetching, setEnergyRefetching] = useState(false)
 
   // Fetch report when first opened (or if no cached data)
   useEffect(() => {
@@ -411,6 +483,44 @@ function ChainCard({ chain }) {
       doFetch()
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once hits are saved, pull the stored chain_hits — that's where the
+  // one-time armory/energy check writes its results (the live chain-report
+  // fetched above never has this data, only Torn's own attack/respect stats).
+  useEffect(() => {
+    if (open && savedInDB && !energyData && !energyLoading) {
+      loadEnergyData()
+    }
+  }, [open, savedInDB]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadEnergyData = async () => {
+    setEnergyLoading(true)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      const res   = await fetch(`${API_BASE_URL}/api/leadership/chains/${chain.torn_chain_id}/hits`, { headers: { Authorization: token } })
+      const data  = await res.json()
+      if (res.ok) setEnergyData(data)
+    } catch (e) {
+      console.error('chain energy data fetch failed', e)
+    } finally {
+      setEnergyLoading(false)
+    }
+  }
+
+  const refetchEnergy = async () => {
+    setEnergyRefetching(true)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      await fetch(`${API_BASE_URL}/api/leadership/chains/${chain.torn_chain_id}/energy`, {
+        method: 'POST', headers: { Authorization: token },
+      })
+      await loadEnergyData()
+    } catch (e) {
+      console.error('chain energy refetch failed', e)
+    } finally {
+      setEnergyRefetching(false)
+    }
+  }
 
   const doFetch = async (force = false) => {
     if (!force) {
@@ -478,6 +588,7 @@ function ChainCard({ chain }) {
       if (res.ok) {
         setSaveStatus('saved')
         setSavedInDB(true)
+        loadEnergyData() // the save request already ran the one-time energy check server-side
       } else {
         console.error('saveChainHits error:', data)
         setSaveStatus('error')
@@ -629,6 +740,34 @@ function ChainCard({ chain }) {
               saveStatus={saveStatus}
               savedInDB={savedInDB}
             />
+          )}
+
+          {savedInDB && energyLoading && !energyData && (
+            <p style={{ color: "var(--text-secondary)", fontSize: '12px', padding: '10px 0 0' }}>Loading energy data…</p>
+          )}
+
+          {savedInDB && energyData && (
+            <>
+              <EnergyTable hits={energyData.hits} usernames={energyData.usernames} />
+              {!energyData.chain?.energy_fetched_at && (energyData.hits || []).some(h => h.total_attacks > 0) && (
+                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    onClick={refetchEnergy}
+                    disabled={energyRefetching}
+                    style={{
+                      padding: '6px 14px', borderRadius: '7px', fontSize: '12px', cursor: energyRefetching ? 'not-allowed' : 'pointer',
+                      background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8',
+                      opacity: energyRefetching ? 0.6 : 1,
+                    }}
+                  >
+                    {energyRefetching ? 'Fetching…' : 'Fetch Energy Data'}
+                  </button>
+                  <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>
+                    Armory usage for this chain hasn't been checked yet.
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1031,7 +1170,7 @@ function FactionChains({ factionId }) {
 // have member-hit data saved (chain_hits) — no live Torn API call, just what
 // was frozen when the chain was saved/imported.
 
-function SavedChainCard({ data }) {
+function SavedChainCard({ data, onRefetchEnergy, energyRefetching }) {
   const { chain, hits, usernames } = data
   const totalBonus = (hits || []).reduce((s, h) => s + (h.bonus_hits || 0), 0)
   const respect     = chain.respect?.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) ?? '—'
@@ -1115,6 +1254,27 @@ function SavedChainCard({ data }) {
           </div>
         )}
       </Section>
+
+      <EnergyTable hits={hits} usernames={usernames} />
+
+      {!chain.energy_fetched_at && (hits || []).some(h => h.total_attacks > 0) && (
+        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => onRefetchEnergy?.(chain.torn_chain_id)}
+            disabled={energyRefetching}
+            style={{
+              padding: '6px 14px', borderRadius: '7px', fontSize: '12px', cursor: energyRefetching ? 'not-allowed' : 'pointer',
+              background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8',
+              opacity: energyRefetching ? 0.6 : 1,
+            }}
+          >
+            {energyRefetching ? 'Fetching…' : 'Fetch Energy Data'}
+          </button>
+          <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>
+            Armory usage for this chain hasn't been checked yet.
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -1125,6 +1285,7 @@ function ChainArchive({ factionId, excludeIds }) {
   const [selectedId, setSelectedId] = useState('')
   const [selected, setSelected] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [energyRefetching, setEnergyRefetching] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -1158,6 +1319,21 @@ function ChainArchive({ factionId, excludeIds }) {
       .finally(() => setDetailLoading(false))
   }
 
+  const refetchEnergy = async (id) => {
+    setEnergyRefetching(true)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      await fetch(`${API_BASE_URL}/api/leadership/chains/${id}/energy`, {
+        method: 'POST', headers: { Authorization: token },
+      })
+      selectChain(id)
+    } catch (e) {
+      console.error('chain energy refetch failed', e)
+    } finally {
+      setEnergyRefetching(false)
+    }
+  }
+
   const selectStyle = {
     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '8px', color: '#f4f4f5', padding: '8px 12px', fontSize: '13px', width: '100%',
@@ -1186,11 +1362,72 @@ function ChainArchive({ factionId, excludeIds }) {
       </select>
 
       {detailLoading && <p style={{ color: "var(--text-secondary)", fontSize: '13px', padding: '14px 0 0' }}>Loading chain…</p>}
-      {selected && <SavedChainCard data={selected} />}
+      {selected && (
+        <SavedChainCard
+          data={selected}
+          onRefetchEnergy={refetchEnergy}
+          energyRefetching={energyRefetching}
+        />
+      )}
     </div>
   )
 }
 
+
+// ─── Energy backfill button ────────────────────────────────────────────────────
+// One-time action: runs the armory/energy check for every already-saved chain
+// (across all factions) that hasn't had it run yet — chains saved before this
+// feature existed. Safe to click more than once; already-processed chains are
+// skipped server-side.
+
+function EnergyBackfillButton() {
+  const [status, setStatus] = useState(null) // null | 'running' | 'done' | 'error'
+  const [result, setResult] = useState(null)
+
+  const run = async () => {
+    setStatus('running')
+    setResult(null)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      const res   = await fetch(`${API_BASE_URL}/api/leadership/chains/energy-backfill`, {
+        method: 'POST', headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setStatus('done')
+        setResult(data)
+      } else {
+        setStatus('error')
+        setResult(data)
+      }
+    } catch (err) {
+      setStatus('error')
+      setResult({ message: err.message })
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+      <button
+        onClick={run}
+        disabled={status === 'running'}
+        style={{
+          padding: '7px 16px', borderRadius: '8px', fontSize: '12px', cursor: status === 'running' ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+          background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8',
+          opacity: status === 'running' ? 0.6 : 1,
+        }}
+      >
+        {status === 'running' ? 'Backfilling…' : 'Backfill Energy Data'}
+      </button>
+      {status === 'done' && result && (
+        <span style={{ color: '#4ade80', fontSize: '12px' }}>{result.message}</span>
+      )}
+      {status === 'error' && result && (
+        <span style={{ color: '#ff6b6b', fontSize: '12px' }}>{result.message || result.error || 'Backfill failed'}</span>
+      )}
+    </div>
+  )
+}
 
 // ─── Sub-tab bar ──────────────────────────────────────────────────────────────
 
@@ -1295,7 +1532,10 @@ export default function ChainTrackingTab() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
             <SubTabs options={factionTabs} active={factionId} onChange={setFactionId} />
-            <ChainImporter />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <EnergyBackfillButton />
+              <ChainImporter />
+            </div>
           </div>
           <FactionChains key={factionId} factionId={factionId} />
         </div>

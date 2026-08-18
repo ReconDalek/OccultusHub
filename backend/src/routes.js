@@ -458,6 +458,15 @@ export async function handleRequest(request, env, ctx) {
       return chainController.getSavedChainHits(request, env);
     }
 
+    // One-time button: backfill armory/energy data for chains saved before this feature existed
+    if (pathname === '/api/leadership/chains/energy-backfill' && method === 'POST') {
+      return chainController.backfillChainEnergy(request, env, user);
+    }
+    // Manual retry of the armory/energy check for a single chain
+    if (pathname.match(/^\/api\/leadership\/chains\/\d+\/energy$/) && method === 'POST') {
+      return chainController.refetchChainEnergy(request, env, user);
+    }
+
     // Chain report — live proxy to Torn API (cached by frontend)
     if (pathname === '/api/leadership/chain-report' && method === 'GET') {
       return chainController.getChainReport(request, env);

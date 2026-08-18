@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
+import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD } from './warController.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -90,6 +91,137 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// One-time armory/energy check for a saved chain — same faction/news
+// armoryAction endpoint war tracking uses for Energy In, plus the already-
+// cached armory_deposits table for Energy Repaid, plus personal_stats_snapshots
+// for OD. Only touches members who already have a chain_hits row (the chain's
+// known attacker list) — armory usage isn't meaningful for a non-attacker.
+//
+// Windows:
+// - Energy In (Xanax used): 3-day stacking period before chain start through
+//   chain end — same "stacking period" shape as war tracking's pre-war window.
+// - Energy Repaid (Xanax deposited): same start, but extends a week PAST chain
+//   end, since members often return unused stock after the chain winds down
+//   rather than during it.
+// - OD: over the Energy In window (stacking period through chain end) — OD
+//   risk ties to the chain's own active period, not the extended repay window.
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchChainEnergyData(env, chain, apiKey) {
+  const { torn_chain_id: chainId, faction_id: factionId, start_at: startAt, end_at: endAt } = chain;
+  const now = Math.floor(Date.now() / 1000);
+
+  const stackFrom = startAt - 3 * 86400;
+  const usageTo    = Math.min(endAt, now);
+  const repaidTo    = Math.min(endAt + 7 * 86400, now);
+
+  const { results: hitRows } = await env.DB.prepare(
+    `SELECT torn_user_id FROM chain_hits WHERE torn_chain_id=?`
+  ).bind(chainId).all();
+  const memberIds = new Set((hitRows || []).map(r => r.torn_user_id));
+  if (!memberIds.size) return { updated: 0 };
+
+  // ── Energy In: Xanax used, from armoryAction news — paginated like the
+  // armory-deposits cron since a stacking+chain window can exceed 100 entries ──
+  const xanaxUsed = {};
+  const MAX_PAGES = 5; // 500 news entries — plenty for a ~week-long window
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * 100;
+    const data = await fetchWithRetry(
+      `${TORN_API_BASE}/faction/news?striptags=false&limit=100&offset=${offset}&sort=DESC&from=${stackFrom}&cat=armoryAction&comment=OccHub`,
+      { Authorization: `ApiKey ${apiKey}` }
+    );
+    const items = data.news || [];
+    if (!items.length) break;
+    for (const item of items) {
+      if (item.timestamp > usageTo) continue;
+      const parsed = parseArmoryEntry(item.text);
+      if (!parsed || parsed.item_name !== 'Xanax') continue;
+      if (!memberIds.has(parsed.torn_user_id)) continue;
+      xanaxUsed[parsed.torn_user_id] = (xanaxUsed[parsed.torn_user_id] || 0) + 1;
+    }
+    if (items.length < 100) break;
+  }
+
+  // ── Energy Repaid: Xanax deposited back, from the already-cached armory_deposits table ──
+  const { results: repaidRows } = await env.DB.prepare(
+    `SELECT torn_user_id, SUM(quantity) AS total
+     FROM armory_deposits
+     WHERE faction_id=? AND item_name='Xanax' AND quantity < ?
+       AND deposited_at >= ? AND deposited_at <= ?
+     GROUP BY torn_user_id`
+  ).bind(factionId, BULK_DEPOSIT_THRESHOLD, stackFrom, repaidTo).all();
+  const xanaxDeposited = {};
+  for (const r of repaidRows || []) if (memberIds.has(r.torn_user_id)) xanaxDeposited[r.torn_user_id] = r.total;
+
+  // ── OD delta over the stacking+chain window ─────────────────────────────
+  const fromDate = new Date(stackFrom * 1000).toISOString().slice(0, 10);
+  const toDate   = new Date(usageTo * 1000).toISOString().slice(0, 10);
+  const [odStartRows, odEndRows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+      FROM personal_stats_snapshots p
+      INNER JOIN (
+        SELECT torn_user_id, MIN(snapshot_date) AS min_date
+        FROM personal_stats_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ? GROUP BY torn_user_id
+      ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+    `).bind(fromDate, toDate).all(),
+    env.DB.prepare(`
+      SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
+      FROM personal_stats_snapshots p
+      INNER JOIN (
+        SELECT torn_user_id, MAX(snapshot_date) AS max_date
+        FROM personal_stats_snapshots WHERE snapshot_date >= ? AND snapshot_date <= ? GROUP BY torn_user_id
+      ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+    `).bind(fromDate, toDate).all(),
+  ]);
+  const odStart = {};
+  for (const r of odStartRows.results || []) odStart[r.torn_user_id] = r.val ?? 0;
+  const overdoses = {};
+  for (const r of odEndRows.results || []) {
+    if (!memberIds.has(r.torn_user_id)) continue;
+    overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
+  }
+
+  // ── Write back ────────────────────────────────────────────────────────────
+  const stmts = [];
+  for (const userId of memberIds) {
+    stmts.push(env.DB.prepare(
+      `UPDATE chain_hits SET xanax_used=?, xanax_deposited=?, overdoses=? WHERE torn_chain_id=? AND torn_user_id=?`
+    ).bind(xanaxUsed[userId] || 0, xanaxDeposited[userId] || 0, overdoses[userId] || 0, chainId, userId));
+  }
+  stmts.push(env.DB.prepare(`UPDATE chain_cache SET energy_fetched_at=CURRENT_TIMESTAMP WHERE torn_chain_id=?`).bind(chainId));
+
+  const CHUNK = 20;
+  for (let i = 0; i < stmts.length; i += CHUNK) {
+    await env.DB.batch(stmts.slice(i, i + CHUNK));
+  }
+
+  return { updated: memberIds.size };
+}
+
+// Best-effort trigger for the one-time energy check right after hits are
+// saved — failures here shouldn't fail the save itself (the backfill button
+// can always retry later), just get logged.
+async function triggerChainEnergyFetch(env, chainId) {
+  try {
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) return { fetched: false, reason: 'no API key available' };
+
+    const chainRow = await env.DB.prepare(
+      `SELECT torn_chain_id, faction_id, start_at, end_at FROM chain_cache WHERE torn_chain_id=?`
+    ).bind(chainId).first();
+    if (!chainRow) return { fetched: false, reason: 'chain not cached' };
+
+    const result = await fetchChainEnergyData(env, chainRow, apiKeyObj.key);
+    return { fetched: true, updated: result.updated };
+  } catch (e) {
+    console.error(`triggerChainEnergyFetch: chain ${chainId} failed:`, e.message);
+    await logError(env, { category: 'api_error', event: 'chain_energy_fetch_failed', message: `Chain ${chainId} energy fetch failed: ${e.message}`, meta: { chainId } }).catch(() => {});
+    return { fetched: false, reason: e.message };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/leadership/chains?faction_id=XXXXX
 // Returns the last 5 chains stored for the given faction.
 // Also flags whether member hit data has been saved for each chain.
@@ -112,6 +244,7 @@ export async function getChains(request, env) {
          cc.start_at,
          cc.end_at,
          cc.fetched_at,
+         cc.energy_fetched_at,
          EXISTS(
            SELECT 1 FROM chain_hits ch WHERE ch.torn_chain_id = cc.torn_chain_id
          ) AS hits_saved
@@ -147,7 +280,7 @@ export async function getChainsArchive(request, env) {
     }
 
     const { results } = await env.DB.prepare(
-      `SELECT cc.torn_chain_id, cc.faction_id, cc.chain_length, cc.respect, cc.start_at, cc.end_at
+      `SELECT cc.torn_chain_id, cc.faction_id, cc.chain_length, cc.respect, cc.start_at, cc.end_at, cc.energy_fetched_at
        FROM chain_cache cc
        WHERE cc.faction_id = ?
          AND EXISTS(SELECT 1 FROM chain_hits ch WHERE ch.torn_chain_id = cc.torn_chain_id)
@@ -174,12 +307,12 @@ export async function getSavedChainHits(request, env) {
     if (!chainId) return errorResponse('Invalid chain ID', 400);
 
     const chain = await env.DB.prepare(
-      `SELECT torn_chain_id, faction_id, chain_length, respect, start_at, end_at FROM chain_cache WHERE torn_chain_id=?`
+      `SELECT torn_chain_id, faction_id, chain_length, respect, start_at, end_at, energy_fetched_at FROM chain_cache WHERE torn_chain_id=?`
     ).bind(chainId).first();
     if (!chain) return errorResponse('Chain not found', 404);
 
     const { results: hits } = await env.DB.prepare(
-      `SELECT torn_user_id, total_attacks, total_respect, bonus_hits
+      `SELECT torn_user_id, total_attacks, total_respect, bonus_hits, xanax_used, xanax_deposited, overdoses
        FROM chain_hits WHERE torn_chain_id=? ORDER BY total_attacks DESC`
     ).bind(chainId).all();
 
@@ -367,10 +500,13 @@ export async function saveChainImport(request, env, user) {
     ];
     if (membersAdded > 0) parts.push(`${membersAdded} new member${membersAdded !== 1 ? 's' : ''} added to member database`);
 
+    const energyFetch = hitsSaved > 0 ? await triggerChainEnergyFetch(env, torn_chain_id) : { fetched: false, reason: 'no hits saved' };
+
     return jsonResponse({
       chainAdded,
       hitsSaved,
       membersAdded,
+      energyFetch,
       message: parts.join(' — '),
     });
   } catch (err) {
@@ -424,8 +560,11 @@ export async function saveChainHits(request, env, user) {
       saved++;
     }
 
+    const energyFetch = saved > 0 ? await triggerChainEnergyFetch(env, torn_chain_id) : { fetched: false, reason: 'no hits saved' };
+
     return jsonResponse({
       saved,
+      energyFetch,
       message: `${saved} member hit record${saved !== 1 ? 's' : ''} saved`,
     });
   } catch (err) {
@@ -697,5 +836,96 @@ export async function refreshChainsAdmin(request, env, user) {
   } catch (err) {
     console.error('refreshChainsAdmin error:', err);
     return errorResponse('Failed to refresh chain cache', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/leadership/chains/:id/energy
+// Re-runs the armory/energy check for a single chain — used for a manual
+// retry if the automatic on-save fetch failed (e.g. no API key available at
+// that moment). Force-runs regardless of energy_fetched_at.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function refetchChainEnergy(request, env, user) {
+  try {
+    const match   = request.url.match(/\/chains\/(\d+)\/energy/);
+    const chainId = match ? parseInt(match[1], 10) : null;
+    if (!chainId) return errorResponse('Invalid chain ID', 400);
+
+    const chain = await env.DB.prepare(
+      `SELECT torn_chain_id, faction_id, start_at, end_at FROM chain_cache WHERE torn_chain_id=?`
+    ).bind(chainId).first();
+    if (!chain) return errorResponse('Chain not found', 404);
+
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
+
+    const result = await fetchChainEnergyData(env, chain, apiKeyObj.key);
+
+    await logInfo(env, {
+      category: 'admin', event: 'chain_energy_refetch',
+      message: `Chain ${chainId} energy re-fetched by ${user?.username ?? 'unknown'}: ${result.updated} member rows updated`,
+      torn_user_id: user?.tornUserId, username: user?.username,
+      meta: { chainId, updated: result.updated },
+    });
+
+    return jsonResponse({ updated: result.updated, message: `${result.updated} member row${result.updated !== 1 ? 's' : ''} updated` });
+  } catch (err) {
+    console.error('refetchChainEnergy error:', err);
+    return errorResponse('Failed to fetch chain energy data', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/leadership/chains/energy-backfill
+// One-time button: runs the armory/energy check (see fetchChainEnergyData)
+// for every already-saved chain (chain_hits exists) that hasn't had it run
+// yet — i.e. chains saved before this feature existed. Safe to re-run; only
+// touches chains where energy_fetched_at IS NULL.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function backfillChainEnergy(request, env, user) {
+  try {
+    const apiKeyObj = await getRandomUserApiKey(env);
+    if (!apiKeyObj?.key) return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
+
+    const { results: chains } = await env.DB.prepare(
+      `SELECT cc.torn_chain_id, cc.faction_id, cc.start_at, cc.end_at
+       FROM chain_cache cc
+       WHERE cc.energy_fetched_at IS NULL
+         AND EXISTS(SELECT 1 FROM chain_hits ch WHERE ch.torn_chain_id = cc.torn_chain_id)
+       ORDER BY cc.start_at DESC`
+    ).all();
+
+    let processed = 0;
+    let updatedMembers = 0;
+    const errors = [];
+
+    for (const chain of (chains || [])) {
+      try {
+        const result = await fetchChainEnergyData(env, chain, apiKeyObj.key);
+        processed++;
+        updatedMembers += result.updated;
+      } catch (e) {
+        console.error(`backfillChainEnergy: chain ${chain.torn_chain_id} failed:`, e.message);
+        errors.push(`Chain #${chain.torn_chain_id}: ${e.message}`);
+      }
+    }
+
+    await logInfo(env, {
+      category: 'admin', event: 'chain_energy_backfill',
+      message: `Chain energy backfill by ${user?.username ?? 'unknown'}: ${processed}/${(chains || []).length} chains, ${updatedMembers} member rows updated`,
+      torn_user_id: user?.tornUserId, username: user?.username,
+      meta: { processed, total: (chains || []).length, updatedMembers, errors },
+    });
+
+    return jsonResponse({
+      processed,
+      total: (chains || []).length,
+      updatedMembers,
+      errors,
+      message: `${processed}/${(chains || []).length} chain${(chains || []).length !== 1 ? 's' : ''} processed — ${updatedMembers} member row${updatedMembers !== 1 ? 's' : ''} updated`,
+    });
+  } catch (err) {
+    console.error('backfillChainEnergy error:', err);
+    return errorResponse('Failed to backfill chain energy data', 500);
   }
 }

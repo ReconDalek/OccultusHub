@@ -67,9 +67,9 @@ export const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer|chloroform|firew
 // restock, not "gave back what wasn't used" — excluded everywhere deposits are
 // counted (Energy Repaid, the Armory tab, and War Economics). 50 separate
 // single-item deposits are fine; one deposit of 50+ is not.
-const BULK_DEPOSIT_THRESHOLD = 50;
+export const BULK_DEPOSIT_THRESHOLD = 50;
 
-function parseArmoryEntry(text) {
+export function parseArmoryEntry(text) {
   const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
   if (!userM) return null;
 
