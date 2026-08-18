@@ -134,29 +134,80 @@ function Section({ title, children }) {
 // xanax_used/xanax_deposited (250 energy per Xanax) — same formula war
 // tracking uses for its Energy columns.
 
+function SortArrow({ dir }) {
+  if (!dir) return null
+  return <span style={{ fontSize: '9px', marginLeft: '3px' }}>{dir === 'asc' ? '▲' : '▼'}</span>
+}
+
+const MEMBER_TABLE_COLUMNS = [
+  { key: 'name',          label: 'Member',        align: 'left' },
+  { key: 'total_attacks', label: 'Hits'         },
+  { key: 'total_respect', label: 'Respect'      },
+  { key: 'bonus_hits',    label: 'Bonuses'      },
+  { key: 'energyOut',     label: 'Energy Out'   },
+  { key: 'energyIn',      label: 'Energy In'    },
+  { key: 'energyRepaid',  label: 'Energy Repaid' },
+  { key: 'energyNet',     label: 'Energy Net'   },
+  { key: 'overdoses',     label: 'OD'           },
+]
+
 function MemberContributionsTable({ hits, usernames }) {
+  const [sortKey, setSortKey] = useState(null)
+  const [sortDir, setSortDir] = useState('desc')
+
   if (!hits || hits.length === 0) {
     return <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No saved member data.</p>
   }
 
   const cols = '1fr 60px 80px 60px 90px 90px 100px 90px 60px'
-  const headers = ['Member', 'Hits', 'Respect', 'Bonuses', 'Energy Out', 'Energy In', 'Energy Repaid', 'Energy Net', 'OD']
+
+  const rows = hits.map((h) => {
+    const energyOut    = (h.total_attacks || 0) * 25
+    const energyIn     = (h.xanax_used || 0) * 250
+    const energyRepaid = (h.xanax_deposited || 0) * 250
+    const energyNet     = energyIn - energyOut - energyRepaid
+    return {
+      ...h, energyOut, energyIn, energyRepaid, energyNet,
+      name: memberLabel(h.torn_user_id, usernames),
+    }
+  })
+
+  if (sortKey) {
+    const mul = sortDir === 'asc' ? 1 : -1
+    rows.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return mul * String(av ?? '').localeCompare(String(bv ?? ''))
+      }
+      return mul * ((av ?? 0) - (bv ?? 0))
+    })
+  }
+
+  const toggleSort = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); return }
+    setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+  }
 
   return (
     <div style={{ overflowX: 'auto' }}>
       <div style={{ minWidth: '760px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '4px 10px', gap: '8px' }}>
-          {headers.map((h) => (
-            <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+          {MEMBER_TABLE_COLUMNS.map((col) => (
+            <span
+              key={col.key}
+              onClick={() => toggleSort(col.key)}
+              title="Click to sort"
+              style={{
+                color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em',
+                cursor: 'pointer', userSelect: 'none', textAlign: col.align === 'left' ? 'left' : 'right',
+              }}
+            >
+              {col.label}<SortArrow dir={sortKey === col.key ? sortDir : null} />
+            </span>
           ))}
         </div>
-        {hits.map((h, idx) => {
-          const name        = memberLabel(h.torn_user_id, usernames)
-          const isKnown     = !!usernames[h.torn_user_id]
-          const energyOut    = (h.total_attacks || 0) * 25
-          const energyIn     = (h.xanax_used || 0) * 250
-          const energyRepaid = (h.xanax_deposited || 0) * 250
-          const energyNet     = energyIn - energyOut - energyRepaid
+        {rows.map((h, idx) => {
+          const isKnown = !!usernames[h.torn_user_id]
           return (
             <div
               key={h.torn_user_id}
@@ -167,7 +218,7 @@ function MemberContributionsTable({ hits, usernames }) {
             >
               <div style={{ minWidth: 0 }}>
                 {isKnown
-                  ? <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{name}</span>
+                  ? <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{h.name}</span>
                   : <span style={{ color: "var(--text-secondary)", fontSize: '12px', fontFamily: 'monospace' }}>[{h.torn_user_id}]</span>}
               </div>
               <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '700' }}>{fmt(h.total_attacks)}</span>
@@ -184,11 +235,11 @@ function MemberContributionsTable({ hits, usernames }) {
               ) : (
                 <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>—</span>
               )}
-              <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{fmt(energyOut)}</span>
-              <span style={{ color: energyIn > 0 ? '#38bdf8' : "var(--text-muted)", fontSize: '13px' }}>{fmt(energyIn)}</span>
-              <span style={{ color: energyRepaid > 0 ? '#4ade80' : "var(--text-muted)", fontSize: '13px' }}>{fmt(energyRepaid)}</span>
-              <span style={{ color: energyNetColor(energyNet), fontWeight: energyNet >= 250 ? '600' : '400', fontSize: '13px' }}>
-                {energyNet > 0 ? '+' : ''}{fmt(energyNet)}
+              <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{fmt(h.energyOut)}</span>
+              <span style={{ color: h.energyIn > 0 ? '#38bdf8' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.energyIn)}</span>
+              <span style={{ color: h.energyRepaid > 0 ? '#4ade80' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.energyRepaid)}</span>
+              <span style={{ color: energyNetColor(h.energyNet), fontWeight: h.energyNet >= 250 ? '600' : '400', fontSize: '13px' }}>
+                {h.energyNet > 0 ? '+' : ''}{fmt(h.energyNet)}
               </span>
               <span style={{ color: (h.overdoses || 0) > 0 ? '#ef4444' : "var(--text-muted)", fontSize: '13px' }}>{fmt(h.overdoses || 0)}</span>
             </div>
