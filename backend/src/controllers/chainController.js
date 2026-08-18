@@ -1,7 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
-import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD } from './warController.js';
+import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD, suppressSameDayOverdoseXanax } from './warController.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -120,26 +120,37 @@ async function fetchChainEnergyData(env, chain, apiKey) {
   const memberIds = new Set((hitRows || []).map(r => r.torn_user_id));
   if (!memberIds.size) return { updated: 0 };
 
-  // ── Energy In: Xanax used, from armoryAction news — paginated like the
-  // armory-deposits cron since a stacking+chain window can exceed 100 entries ──
-  const xanaxUsed = {};
+  // ── Energy In: Xanax used, from armoryAction news — paginated ASCENDING
+  // (oldest-of-the-window first) starting at `from=stackFrom`, so the actual
+  // target window is covered by the first page(s) regardless of how much
+  // armoryAction activity has happened since. Sorting DESC here would walk
+  // backward from "now" instead, and for a chain checked days/weeks after it
+  // ran, the 500-item cap would be exhausted by newer, unrelated news long
+  // before pagination ever reached the chain's own window — silently
+  // producing zero Xanax-used for every older chain. Breaks as soon as a page
+  // crosses usageTo (ascending order guarantees nothing after that matters).
+  const xanaxUsed      = {};
+  const xanaxUsedByDay = {}; // { [torn_user_id]: { [date]: count } } — feeds OD suppression below
   const MAX_PAGES = 5; // 500 news entries — plenty for a ~week-long window
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * 100;
     const data = await fetchWithRetry(
-      `${TORN_API_BASE}/faction/news?striptags=false&limit=100&offset=${offset}&sort=DESC&from=${stackFrom}&cat=armoryAction&comment=OccHub`,
+      `${TORN_API_BASE}/faction/news?striptags=false&limit=100&offset=${offset}&sort=ASC&from=${stackFrom}&cat=armoryAction&comment=OccHub`,
       { Authorization: `ApiKey ${apiKey}` }
     );
     const items = data.news || [];
     if (!items.length) break;
+    let reachedEnd = false;
     for (const item of items) {
-      if (item.timestamp > usageTo) continue;
+      if (item.timestamp > usageTo) { reachedEnd = true; break; }
       const parsed = parseArmoryEntry(item.text);
       if (!parsed || parsed.item_name !== 'Xanax') continue;
       if (!memberIds.has(parsed.torn_user_id)) continue;
       xanaxUsed[parsed.torn_user_id] = (xanaxUsed[parsed.torn_user_id] || 0) + 1;
+      const day = new Date(item.timestamp * 1000).toISOString().slice(0, 10);
+      (xanaxUsedByDay[parsed.torn_user_id] ??= {})[day] = (xanaxUsedByDay[parsed.torn_user_id]?.[day] || 0) + 1;
     }
-    if (items.length < 100) break;
+    if (reachedEnd || items.length < 100) break;
   }
 
   // ── Energy Repaid: Xanax deposited back, from the already-cached armory_deposits table ──
@@ -182,12 +193,23 @@ async function fetchChainEnergyData(env, chain, apiKey) {
     overdoses[r.torn_user_id] = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
   }
 
+  // Don't credit Energy In for a Xanax immediately followed by an OD the same
+  // day — same window as the Xanax-used fetch above (stacking period through
+  // chain end).
+  let xanaxAdjusted = {};
+  if (Object.keys(xanaxUsedByDay).length) {
+    xanaxAdjusted = await suppressSameDayOverdoseXanax(env, {
+      fromDate, toDate, xanaxByUserDay: xanaxUsedByDay,
+    });
+  }
+
   // ── Write back ────────────────────────────────────────────────────────────
   const stmts = [];
   for (const userId of memberIds) {
+    const adjustedUsed = xanaxAdjusted[userId] ?? xanaxUsed[userId] ?? 0;
     stmts.push(env.DB.prepare(
       `UPDATE chain_hits SET xanax_used=?, xanax_deposited=?, overdoses=? WHERE torn_chain_id=? AND torn_user_id=?`
-    ).bind(xanaxUsed[userId] || 0, xanaxDeposited[userId] || 0, overdoses[userId] || 0, chainId, userId));
+    ).bind(adjustedUsed, xanaxDeposited[userId] || 0, overdoses[userId] || 0, chainId, userId));
   }
   stmts.push(env.DB.prepare(`UPDATE chain_cache SET energy_fetched_at=CURRENT_TIMESTAMP WHERE torn_chain_id=?`).bind(chainId));
 

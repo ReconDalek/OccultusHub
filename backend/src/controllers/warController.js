@@ -92,6 +92,50 @@ export function parseArmoryEntry(text) {
   return { torn_user_id: parseInt(userM[1], 10), username: userM[2].trim(), item_name };
 }
 
+// ── Shared: don't credit Energy In for a Xanax the member immediately
+// overdosed on. If a member's OD count went up on the same day a Xanax-used
+// armory log landed for them, assume that specific Xanax caused the OD
+// rather than being spent on energy, and drop it from their Xanax-used count
+// before it gets multiplied into Energy In. Used by both war and chain
+// energy tracking (enrichEnergyAndOD / fetchChainEnergyData).
+//
+// xanaxByUserDay: { [torn_user_id]: { [snapshot_date]: count } }
+// Returns: { [torn_user_id]: adjustedCount }
+export async function suppressSameDayOverdoseXanax(env, { fromDate, toDate, xanaxByUserDay }) {
+  const userIds = Object.keys(xanaxByUserDay);
+  if (!userIds.length) return {};
+
+  const idPh = userIds.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(`
+    SELECT torn_user_id, snapshot_date, CAST(json_extract(stats, '$.drugs.overdoses') AS INTEGER) AS val
+    FROM personal_stats_snapshots
+    WHERE torn_user_id IN (${idPh}) AND snapshot_date >= ? AND snapshot_date <= ?
+    ORDER BY torn_user_id, snapshot_date ASC
+  `).bind(...userIds, fromDate, toDate).all();
+
+  const byUser = {};
+  for (const r of results || []) (byUser[r.torn_user_id] ??= []).push(r);
+
+  const adjusted = {};
+  for (const [uid, days] of Object.entries(xanaxByUserDay)) {
+    const rows = byUser[uid] || [];
+    // Day-over-day OD delta within the window — a rough same-day signal, not
+    // the authoritative OD total (that's still computed separately as a
+    // window-wide start/end delta wherever it's displayed).
+    const odByDay = {};
+    for (let i = 1; i < rows.length; i++) {
+      const delta = Math.max(0, (rows[i].val ?? 0) - (rows[i - 1].val ?? 0));
+      if (delta > 0) odByDay[rows[i].snapshot_date] = delta;
+    }
+    let total = 0;
+    for (const [date, cnt] of Object.entries(days)) {
+      total += Math.max(0, cnt - (odByDay[date] || 0));
+    }
+    adjusted[uid] = total;
+  }
+  return adjusted;
+}
+
 function categoriseAttack(attack, ourFactionId, opponentFactionId) {
   const af  = attack.attacker?.faction?.id ?? null;
   const df  = attack.defender?.faction?.id ?? null;
@@ -218,6 +262,16 @@ async function enrichEnergyAndOD(env, warId, rows) {
   const xanaxMap = {};
   for (const x of xanaxRows || []) xanaxMap[x.torn_user_id] = x.xanax_count;
 
+  // Same data, bucketed by day — feeds suppressSameDayOverdoseXanax below.
+  const { results: xanaxDayRows } = await env.DB.prepare(
+    `SELECT torn_user_id, date(used_at, 'unixepoch') AS day, COUNT(*) AS cnt
+     FROM war_armory_usage
+     WHERE ranked_war_id=? AND item_name='Xanax' AND (action_type IS NULL OR action_type != 'loaned')
+     GROUP BY torn_user_id, day`
+  ).bind(warId).all();
+  const xanaxByUserDay = {};
+  for (const r of xanaxDayRows || []) (xanaxByUserDay[r.torn_user_id] ??= {})[r.day] = r.cnt;
+
   // ── OD: overdoses delta from personal stats snapshots over the war's tracked period ──
   const periodRow = await env.DB.prepare(
     `SELECT MIN(started_at) AS min_ts, MAX(started_at) AS max_ts FROM war_attacks WHERE ranked_war_id=?`
@@ -274,8 +328,20 @@ async function enrichEnergyAndOD(env, warId, rows) {
     }
   }
 
+  // Don't credit Energy In for a Xanax immediately followed by an OD the same
+  // day — covers the full window Xanax usage is tracked over (stacking period
+  // through the last attack), not just the narrower OD-total window above.
+  let xanaxAdjustedMap = {};
+  if (Object.keys(xanaxByUserDay).length && repaidFromTs) {
+    const suppressFromDate = new Date(repaidFromTs * 1000).toISOString().slice(0, 10);
+    const suppressToDate   = new Date((periodRow?.max_ts ?? Math.floor(Date.now() / 1000)) * 1000).toISOString().slice(0, 10);
+    xanaxAdjustedMap = await suppressSameDayOverdoseXanax(env, {
+      fromDate: suppressFromDate, toDate: suppressToDate, xanaxByUserDay,
+    });
+  }
+
   for (const row of rows) {
-    row.xanax_used      = xanaxMap[row.attacker_id] || 0;
+    row.xanax_used      = xanaxAdjustedMap[row.attacker_id] ?? xanaxMap[row.attacker_id] ?? 0;
     row.energy_in       = row.xanax_used * 250;
     row.xanax_deposited = repaidMap[row.attacker_id] || 0;
     row.energy_repaid   = row.xanax_deposited * 250;
