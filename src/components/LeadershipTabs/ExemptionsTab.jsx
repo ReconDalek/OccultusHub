@@ -304,6 +304,20 @@ export default function ExemptionsTab() {
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [typeFilter, setTypeFilter]   = useState(EXEMPTION_TYPES) // multi-select, default all
+  const [monthFilter, setMonthFilter] = useState('all')           // 'all' | 'YYYY-M'
+
+  const monthOptions = buildMonthOptions()
+
+  function toggleTypeFilter(t) {
+    setTypeFilter(prev => {
+      if (prev.includes(t)) {
+        if (prev.length === 1) return prev // keep at least one selected
+        return prev.filter(x => x !== t)
+      }
+      return [...prev, t]
+    })
+  }
 
   useEffect(() => {
     fetchExemptions()
@@ -336,9 +350,20 @@ export default function ExemptionsTab() {
     setExemptions(prev => prev.filter(e => e.id !== id))
   }
 
-  const displayed = exemptions.filter(e =>
-    !search || e.username.toLowerCase().includes(search.toLowerCase())
-  )
+  const displayed = exemptions.filter(e => {
+    if (search && !e.username.toLowerCase().includes(search.toLowerCase())) return false
+    if (!typeFilter.includes(e.exemption_type)) return false
+    if (monthFilter !== 'all') {
+      const [y, mo] = monthFilter.split('-').map(Number)
+      const monthStart = `${y}-${String(mo + 1).padStart(2, '0')}-01`
+      const monthEnd   = `${y}-${String(mo + 1).padStart(2, '0')}-${String(lastDayOfMonth(y, mo)).padStart(2, '0')}`
+      // Any overlap with the selected month counts — even a single day
+      // crossing into it — same convention as the Energy warning report's
+      // own month-overlap exemption check.
+      if (e.date_start > monthEnd || e.date_end < monthStart) return false
+    }
+    return true
+  })
 
   return (
     <div>
@@ -359,22 +384,57 @@ export default function ExemptionsTab() {
         </button>
       </div>
 
-      <input
-        style={{
-          width: '100%', maxWidth: '320px', padding: '8px 12px', borderRadius: '8px', marginBottom: '20px',
-          border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.05)',
-          color: '#f4f4f5', fontSize: '13px', boxSizing: 'border-box',
-        }}
-        placeholder="Search member…"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-      />
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          style={{
+            flex: 1, minWidth: '180px', maxWidth: '320px', padding: '8px 12px', borderRadius: '8px',
+            border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.05)',
+            color: '#f4f4f5', fontSize: '13px', boxSizing: 'border-box',
+          }}
+          placeholder="Search member…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {EXEMPTION_TYPES.map(t => {
+            const c = typeColor(t)
+            const active = typeFilter.includes(t)
+            return (
+              <button key={t} onClick={() => toggleTypeFilter(t)}
+                style={{
+                  padding: '7px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+                  border: `1px solid ${active ? c.color : 'rgba(255,255,255,0.08)'}`,
+                  background: active ? c.bg : 'transparent',
+                  color: active ? c.color : 'var(--text-secondary)',
+                }}
+              >
+                {t}
+              </button>
+            )
+          })}
+        </div>
+        <select
+          value={monthFilter}
+          onChange={e => setMonthFilter(e.target.value)}
+          style={{
+            padding: '8px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+            border: `1px solid ${monthFilter !== 'all' ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
+            background: monthFilter !== 'all' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.05)',
+            color: monthFilter !== 'all' ? '#a78bfa' : 'var(--text-secondary)',
+          }}
+        >
+          <option value="all">All months</option>
+          {monthOptions.map(({ year, month }) => (
+            <option key={`${year}-${month}`} value={`${year}-${month}`}>{MONTHS_FULL[month]} {year}</option>
+          ))}
+        </select>
+      </div>
 
       {loading ? (
         <p style={{ color: 'var(--text-secondary)' }}>Loading…</p>
       ) : displayed.length === 0 ? (
         <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-          {exemptions.length === 0 ? 'No exemptions recorded yet.' : 'No exemptions match the current search.'}
+          {exemptions.length === 0 ? 'No exemptions recorded yet.' : 'No exemptions match the current filters.'}
         </p>
       ) : (
         <div>
