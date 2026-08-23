@@ -569,6 +569,15 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/economics$/) && method === 'GET') {
       return warController.getWarEconomics(request, env);
     }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/other-expenses$/) && method === 'GET') {
+      return warController.getWarOtherExpenses(request, env);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/other-expenses$/) && method === 'POST') {
+      return warController.addWarOtherExpense(request, env, user);
+    }
+    if (pathname.match(/^\/api\/leadership\/war\/other-expenses\/\d+$/) && method === 'DELETE') {
+      return warController.deleteWarOtherExpense(request, env);
+    }
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/payout$/) && method === 'GET') {
       return warController.getWarPayout(request, env);
     }

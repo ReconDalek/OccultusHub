@@ -943,13 +943,19 @@ export async function getWarArmory(request, env) {
 
 // ── War Economics: faction's payout cut (profit) vs armory items consumed net
 // of items deposited back (expense, can go negative — more given back than
-// used nets as extra profit) vs a manual bounty-expense placeholder ─────────
+// used nets as extra profit) vs a manual bounty-expense placeholder vs
+// free-form "Other" expenses (comment + amount, war_other_expenses table) ──
 // Once hits_saved, this is frozen into economics_json and never recomputed —
 // item_prices_cache drifts every 6h, so a historic war's dollar figures must
 // not silently change after the fact. Called both by the GET route below and
 // by saveWarHits (which computes it live one last time, then freezes it).
+// EXCEPTION: "Other" expenses can still be added/removed after the freeze —
+// addWarOtherExpense/deleteWarOtherExpense patch the frozen economics_json's
+// other_expense/net_profit fields directly rather than triggering a full
+// recompute, so a later Other-expense edit can't accidentally pull in
+// drifted armory/item prices for an already-finalised war.
 
-async function computeWarEconomics(env, warId) {
+export async function computeWarEconomics(env, warId) {
   const war = await env.DB.prepare(
     `SELECT payout_json, hits_saved, economics_json, faction_id, scheduled_start, started_at, ended_at
      FROM ranked_wars WHERE id=?`
@@ -1020,7 +1026,14 @@ async function computeWarEconomics(env, warId) {
   }).sort((a, b) => b.value - a.value);
 
   const armoryExpense = Math.round(armoryBreakdown.reduce((s, r) => s + r.value, 0) * 100) / 100;
-  const netProfit = Math.round((factionProfit - armoryExpense - bountyExpense) * 100) / 100;
+
+  const { results: otherRows } = await env.DB.prepare(
+    `SELECT id, amount, comment, created_by_username, created_at FROM war_other_expenses WHERE ranked_war_id=? ORDER BY created_at DESC`
+  ).bind(warId).all();
+  const otherBreakdown = otherRows || [];
+  const otherExpense = Math.round(otherBreakdown.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
+
+  const netProfit = Math.round((factionProfit - armoryExpense - bountyExpense - otherExpense) * 100) / 100;
 
   return {
     faction_profit: factionProfit,
@@ -1028,9 +1041,108 @@ async function computeWarEconomics(env, warId) {
     armory_breakdown: armoryBreakdown,
     bounty_expense: bountyExpense,
     bounty_breakdown: bountyBreakdown,
+    other_expense: otherExpense,
+    other_breakdown: otherBreakdown,
     net_profit: netProfit,
     computed_at: Math.floor(Date.now() / 1000),
   };
+}
+
+// ── War other expenses (comment + amount, feeds War Economics' net_profit) ──
+
+// GET /api/leadership/war/:id/other-expenses
+export async function getWarOtherExpenses(request, env) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/other-expenses/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const { results } = await env.DB.prepare(
+      `SELECT id, amount, comment, created_by_username, created_at FROM war_other_expenses WHERE ranked_war_id=? ORDER BY created_at DESC`
+    ).bind(warId).all();
+    return jsonResponse({ expenses: results || [] });
+  } catch (err) {
+    console.error('getWarOtherExpenses error:', err);
+    return errorResponse('Failed to fetch war expenses', 500);
+  }
+}
+
+// If a war's economics were already frozen (hits_saved), patch just the
+// other_expense/other_breakdown/net_profit fields in the stored economics_json
+// rather than fully recomputing — a full recompute would also refresh
+// armory_expense against today's (drifted) item_prices_cache, which is
+// exactly what freezing on payout was meant to prevent.
+async function patchFrozenEconomicsForOtherExpenses(env, warId) {
+  const war = await env.DB.prepare(
+    `SELECT hits_saved, economics_json FROM ranked_wars WHERE id=?`
+  ).bind(warId).first();
+  if (!war?.hits_saved || !war.economics_json) return;
+
+  const economics = JSON.parse(war.economics_json);
+  const { results: otherRows } = await env.DB.prepare(
+    `SELECT id, amount, comment, created_by_username, created_at FROM war_other_expenses WHERE ranked_war_id=? ORDER BY created_at DESC`
+  ).bind(warId).all();
+  const otherBreakdown = otherRows || [];
+  const otherExpense = Math.round(otherBreakdown.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
+
+  economics.other_expense = otherExpense;
+  economics.other_breakdown = otherBreakdown;
+  economics.net_profit = Math.round(
+    (economics.faction_profit - economics.armory_expense - economics.bounty_expense - otherExpense) * 100
+  ) / 100;
+
+  await env.DB.prepare(`UPDATE ranked_wars SET economics_json=? WHERE id=?`)
+    .bind(JSON.stringify(economics), warId).run();
+}
+
+// POST /api/leadership/war/:id/other-expenses
+// Body: { amount, comment }
+export async function addWarOtherExpense(request, env, user) {
+  try {
+    const match = request.url.match(/\/war\/(\d+)\/other-expenses/);
+    const warId = match ? parseInt(match[1], 10) : null;
+    if (!warId) return errorResponse('Invalid war ID', 400);
+
+    const { amount, comment } = await request.json();
+    const parsedAmount = parseFloat(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount === 0) return errorResponse('amount must be a non-zero number', 400);
+    if (!comment || !comment.trim()) return errorResponse('comment is required', 400);
+
+    const war = await env.DB.prepare(`SELECT faction_id FROM ranked_wars WHERE id=?`).bind(warId).first();
+    if (!war) return errorResponse('War not found', 404);
+
+    const now = Math.floor(Date.now() / 1000);
+    const { meta } = await env.DB.prepare(`
+      INSERT INTO war_other_expenses (ranked_war_id, faction_id, amount, comment, created_by, created_by_username, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(warId, war.faction_id, parsedAmount, comment.trim(), user.tornUserId, user.username, now).run();
+
+    await patchFrozenEconomicsForOtherExpenses(env, warId);
+
+    return jsonResponse({ message: 'Expense added', id: meta.last_row_id });
+  } catch (err) {
+    console.error('addWarOtherExpense error:', err);
+    return errorResponse('Failed to add war expense', 500);
+  }
+}
+
+// DELETE /api/leadership/war/other-expenses/:id
+export async function deleteWarOtherExpense(request, env) {
+  try {
+    const id = parseInt(new URL(request.url).pathname.split('/').pop(), 10);
+    if (!id) return errorResponse('Invalid expense ID', 400);
+
+    const row = await env.DB.prepare(`SELECT ranked_war_id FROM war_other_expenses WHERE id=?`).bind(id).first();
+    if (!row) return errorResponse('Expense not found', 404);
+
+    await env.DB.prepare(`DELETE FROM war_other_expenses WHERE id=?`).bind(id).run();
+    await patchFrozenEconomicsForOtherExpenses(env, row.ranked_war_id);
+
+    return jsonResponse({ message: 'Expense deleted' });
+  } catch (err) {
+    console.error('deleteWarOtherExpense error:', err);
+    return errorResponse('Failed to delete war expense', 500);
+  }
 }
 
 // ── GET /api/leadership/war/:id/economics ────────────────────────────────────

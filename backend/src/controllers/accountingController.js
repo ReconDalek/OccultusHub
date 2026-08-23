@@ -2,6 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getFactionRankPerkExpense, getFactionODInsuranceExpense } from './xanaxController.js';
 import { getFactionArmoryExpense } from './armoryController.js';
 import { getFactionOCProfit } from './ocController.js';
+import { computeWarEconomics } from './warController.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 
@@ -345,7 +346,7 @@ export async function getSummary(request, env) {
     const now = new Date();
     const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
 
-    const [invRows, stockRows, companyRows, warRow] = await Promise.all([
+    const [invRows, stockRows, companyRows, warIdRows] = await Promise.all([
       env.DB.prepare(`SELECT amount, rate, duration_months, member_profit_pct FROM accounting_investments ${invWhere}`).bind(...invParams).all(),
       env.DB.prepare(`SELECT payout_frequency, tier, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
       env.DB.prepare(
@@ -356,22 +357,34 @@ export async function getSummary(request, env) {
          ${companyWhere}
          GROUP BY c.company_id`
       ).bind(...invParams).all(),
-      // War income (MTD actual): 10% (or whatever factionShare was set to) of each
-      // fully paid-out war's total payout this month. Wars are sporadic, not daily
-      // recurring like companies, so MTD-actual is more honest than a projection.
-      // Bucketed by payout_processed_at (when Save to Rankings locked it in) with a
-      // fallback to ended_at for wars paid before that column existed.
+      // War income (MTD actual): which fully paid-out wars this month qualify.
+      // Wars are sporadic, not daily recurring like companies, so MTD-actual is
+      // more honest than a projection. Bucketed by payout_processed_at (when
+      // Save to Rankings locked it in) with a fallback to ended_at for wars
+      // paid before that column existed. Only the war IDs are fetched here —
+      // the actual income figure is computed per-war below via
+      // computeWarEconomics, so it nets out that war's own armory/bounty/other
+      // expenses instead of counting the gross faction-share-of-payout.
       env.DB.prepare(
-        `SELECT
-           COUNT(*) AS war_count,
-           SUM(CAST(json_extract(payout_json,'$.settings.totalAmount') AS REAL)
-               * CAST(json_extract(payout_json,'$.settings.factionShare') AS REAL) / 100.0) AS war_income
-         FROM ranked_wars
+        `SELECT id FROM ranked_wars
          ${warWhere}
            AND payout_json IS NOT NULL
            AND date(COALESCE(payout_processed_at, datetime(ended_at, 'unixepoch'))) >= date('now','start of month')`
-      ).bind(...invParams).first(),
+      ).bind(...invParams).all(),
     ]);
+
+    // Net, not gross: each war's own armory usage, bounty spend, and any
+    // logged "Other" expenses come straight out of that war's income here —
+    // previously this used the raw faction-share-of-payout figure, overstating
+    // MTD war income by whatever was actually spent running the war.
+    const warIds = (warIdRows.results || []).map(r => r.id);
+    let warIncome = 0;
+    for (const id of warIds) {
+      const econ = await computeWarEconomics(env, id);
+      warIncome += econ?.net_profit ?? 0;
+    }
+    warIncome = Math.round(warIncome * 100) / 100;
+    const warCount = warIds.length;
 
     const invResults = invRows.results || [];
     let invTotalAmount = 0;
@@ -465,8 +478,8 @@ export async function getSummary(request, env) {
         monthly_income: companyMonthlyIncome,
       },
       wars: {
-        count: warRow?.war_count ?? 0,
-        monthly_income: warRow?.war_income ?? 0,
+        count: warCount,
+        monthly_income: warIncome,
       },
       oc: ocProfit,
       expenses: {
