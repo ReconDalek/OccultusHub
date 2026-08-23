@@ -69,6 +69,14 @@ export const ARMORY_IGNORE = /^beer$|bottle of beer|can of beer|chloroform|firew
 // single-item deposits are fine; one deposit of 50+ is not.
 export const BULK_DEPOSIT_THRESHOLD = 50;
 
+// Deposits given back to the armory keep counting toward a war for this long
+// AFTER it officially ends — members often don't hand back unused stack items
+// until a little after the war actually closes. Applies only to deposits
+// (Energy Repaid, the Armory tab's deposit list, and War Economics); Xanax
+// *usage* attribution and the armoryAction news fetch cutoff are unaffected —
+// those still stop exactly at ended_at.
+export const POST_WAR_DEPOSIT_GRACE_SECONDS = 3 * 86400;
+
 export function parseArmoryEntry(text) {
   const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
   if (!userM) return null;
@@ -285,9 +293,11 @@ async function enrichEnergyAndOD(env, warId, rows) {
   // timestamp) when the war has no ended_at yet — a deposit can easily land
   // after the most recent attack but before the war actually ends, and using
   // periodRow.max_ts here previously excluded it until another attack happened.
+  // Once the war HAS ended, deposits keep counting for POST_WAR_DEPOSIT_GRACE_SECONDS
+  // past ended_at — members often hand back unused stack items a little late.
   const repaidMap = {};
   const repaidFromTs = warRow?.scheduled_start ? warRow.scheduled_start - 3 * 86400 : (warRow?.started_at ?? periodRow?.min_ts);
-  const repaidToTs   = warRow?.ended_at ?? Math.floor(Date.now() / 1000);
+  const repaidToTs   = warRow?.ended_at ? warRow.ended_at + POST_WAR_DEPOSIT_GRACE_SECONDS : Math.floor(Date.now() / 1000);
   if (factionId && repaidFromTs) {
     const { results: repaidRows } = await env.DB.prepare(
       `SELECT torn_user_id, SUM(quantity) AS total_deposited
@@ -900,8 +910,9 @@ export async function getWarArmory(request, env) {
     // Deposits (items given back) — armory_deposits is faction-wide, not
     // war-scoped, so we attribute rows to this war using the same window
     // trackActiveWars uses to fetch armoryAction news for it (scheduled_start
-    // - 3 days through ended_at/now). Bulk restocks are excluded (see
-    // BULK_DEPOSIT_THRESHOLD) for any item, not just Xanax.
+    // - 3 days through ended_at + POST_WAR_DEPOSIT_GRACE_SECONDS, or now if
+    // still active). Bulk restocks are excluded (see BULK_DEPOSIT_THRESHOLD)
+    // for any item, not just Xanax.
     const war = await env.DB.prepare(
       `SELECT faction_id, scheduled_start, started_at, ended_at FROM ranked_wars WHERE id=?`
     ).bind(warId).first();
@@ -909,7 +920,7 @@ export async function getWarArmory(request, env) {
     let depositResults = [];
     if (war?.faction_id) {
       const fromTs = war.scheduled_start ? war.scheduled_start - 3 * 86400 : war.started_at;
-      const toTs   = war.ended_at ?? Math.floor(Date.now() / 1000);
+      const toTs   = war.ended_at ? war.ended_at + POST_WAR_DEPOSIT_GRACE_SECONDS : Math.floor(Date.now() / 1000);
       if (fromTs) {
         const { results: deposits } = await env.DB.prepare(
           `SELECT torn_user_id, username, item_name, SUM(quantity) AS count, MIN(deposited_at) AS first_used, MAX(deposited_at) AS last_used
@@ -975,7 +986,7 @@ async function computeWarEconomics(env, warId) {
   // Same war-attribution window as getWarArmory — armory_deposits is faction-
   // wide, not war-scoped, so we bound it ourselves.
   const fromTs = war.scheduled_start ? war.scheduled_start - 3 * 86400 : war.started_at;
-  const toTs   = war.ended_at ?? Math.floor(Date.now() / 1000);
+  const toTs   = war.ended_at ? war.ended_at + POST_WAR_DEPOSIT_GRACE_SECONDS : Math.floor(Date.now() / 1000);
   let depositedRows = [];
   if (war.faction_id && fromTs) {
     const { results } = await env.DB.prepare(
