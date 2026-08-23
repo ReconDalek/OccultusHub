@@ -319,7 +319,8 @@ function OverviewSubTab({ factionId, onNavigate }) {
             const totalRankPerks   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.rank_perks?.monthly_cost   ?? 0), 0)
             const totalOdInsurance = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.od_insurance?.monthly_cost ?? 0), 0)
             const totalArmoryExpense = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.armory?.monthly_cost     ?? 0), 0)
-            const totalExpenses    = totalArmoryExpense + totalOdInsurance + totalRankPerks
+            const totalBountyExpense = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.bounties?.monthly_cost   ?? 0), 0)
+            const totalExpenses    = totalArmoryExpense + totalOdInsurance + totalRankPerks + totalBountyExpense
             const investmentPrincipal = invPrincipal + stockInvested + companyPrincipal
             const combinedNetworth = factionSubtotal + investmentPrincipal
             const combinedProfit   = totalRackets + invMonthly + stockMonthly + companyMonthly + warMonthly + ocMonthly
@@ -354,7 +355,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
                   <div>
                     <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Expenses</div>
                     <div style={{ color: totalExpenses > 0 ? '#f87171' : "var(--text-muted)", fontSize: '22px', fontWeight: '700' }}>{fmt(totalExpenses)}<span style={{ color: "var(--text-faint)", fontSize: '12px', fontWeight: '400' }}>/mo</span></div>
-                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>armory + OD insurance + rank perks</div>
+                    <div style={{ color: "var(--text-faint)", fontSize: '11px', marginTop: '2px' }}>armory + OD insurance + rank perks + bounties</div>
                   </div>
                   <div>
                     <div style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net</div>
@@ -418,6 +419,10 @@ function OverviewSubTab({ factionId, onNavigate }) {
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>Rank Perks: </span>
                       <span style={{ color: '#f87171', fontWeight: '600' }}>{fmt(totalRankPerks)}/mo</span>
+                    </div>
+                    <div style={{ fontSize: '12px' }}>
+                      <span style={{ color: "var(--text-muted)" }}>Bounties: </span>
+                      <span style={{ color: '#f87171', fontWeight: '600' }}>{fmt(totalBountyExpense)}/mo</span>
                     </div>
                   </div>
                 </div>
@@ -589,9 +594,12 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const perksMembers    = summary?.expenses?.rank_perks?.eligible_members ?? 0
   const perksXanax      = summary?.expenses?.rank_perks?.total_xanax ?? 0
   const perksUnitPrice  = summary?.expenses?.rank_perks?.unit_price ?? 0
+  const bountyExpense    = summary?.expenses?.bounties?.monthly_cost ?? 0
+  const bountyConfigured = summary?.expenses?.bounties?.configured ?? false
+  const bountyCount      = summary?.expenses?.bounties?.bounty_count ?? 0
 
   const totalProfit   = racketValue + warMonthly + ocMonthly
-  const totalExpenses = armoryExpense + odExpense + perksExpense
+  const totalExpenses = armoryExpense + odExpense + perksExpense + bountyExpense
   const netMonthly     = totalProfit - totalExpenses
 
   const itemRackets = rackets.filter(r => r.reward?.type === 'Item')
@@ -679,6 +687,14 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
         : 'Not yet tracked',
       value: perksExpense,
       configured: perksConfigured,
+    },
+    {
+      label: 'Bounties',
+      sub: bountyConfigured
+        ? `${bountyCount} ${bountyCount === 1 ? 'bounty' : 'bounties'} this month not tied to a war`
+        : 'Not yet tracked',
+      value: bountyExpense,
+      configured: bountyConfigured,
     },
   ]
 

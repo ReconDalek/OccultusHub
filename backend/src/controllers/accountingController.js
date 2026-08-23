@@ -3,6 +3,7 @@ import { getFactionRankPerkExpense, getFactionODInsuranceExpense } from './xanax
 import { getFactionArmoryExpense } from './armoryController.js';
 import { getFactionOCProfit } from './ocController.js';
 import { computeWarEconomics } from './warController.js';
+import { getFactionBountyExpense } from './bountyController.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 
@@ -424,11 +425,12 @@ export async function getSummary(request, env) {
     // Xanax market value (item_prices_cache), both Adept+ eligibility only.
     // Armory expense: this month's deposited items × current item price.
     const perkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
-    const [rankPerkResults, odInsuranceResults, armoryExpenseResults, ocProfitResults] = await Promise.all([
+    const [rankPerkResults, odInsuranceResults, armoryExpenseResults, ocProfitResults, bountyExpenseResults] = await Promise.all([
       Promise.all(perkFactionIds.map(id => getFactionRankPerkExpense(env, id))),
       Promise.all(perkFactionIds.map(id => getFactionODInsuranceExpense(env, id))),
       Promise.all(perkFactionIds.map(id => getFactionArmoryExpense(env, id))),
       Promise.all(perkFactionIds.map(id => getFactionOCProfit(env, id))),
+      Promise.all(perkFactionIds.map(id => getFactionBountyExpense(env, id))),
     ]);
     const rankPerks = rankPerkResults.reduce((acc, r) => ({
       eligible_members: acc.eligible_members + r.eligible_members,
@@ -458,6 +460,15 @@ export async function getSummary(request, env) {
       monthly_income: acc.monthly_income + r.monthly_income,
       configured:     true,
     }), { paid_crimes: 0, gross_income: 0, item_expense: 0, monthly_income: 0, configured: false });
+    // Bounties already attributed to a war are deliberately excluded from this
+    // (getFactionBountyExpense filters ranked_war_id IS NULL) — those already
+    // reduce that specific war's own net_profit via computeWarEconomics, and
+    // counting them again here would double-subtract the same expense.
+    const bountyExpense = bountyExpenseResults.reduce((acc, r) => ({
+      bounty_count:  acc.bounty_count + r.bounty_count,
+      monthly_cost:  acc.monthly_cost + r.monthly_cost,
+      configured:    true,
+    }), { bounty_count: 0, monthly_cost: 0, configured: false });
 
     return jsonResponse({
       investments: {
@@ -486,6 +497,7 @@ export async function getSummary(request, env) {
         armory:       armoryExpense,
         od_insurance: odInsurance,
         rank_perks:   rankPerks,
+        bounties:     bountyExpense,
       },
     });
   } catch (e) {

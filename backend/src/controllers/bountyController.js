@@ -415,3 +415,25 @@ export async function deleteBounty(request, env) {
     return errorResponse('Failed to delete bounty', 500);
   }
 }
+
+// ── Accounting: this month's bounty spend NOT already attributed to a war ────
+// War-attributed bounties (ranked_war_id set) are excluded here on purpose —
+// those already reduce that specific war's own net_profit inside
+// computeWarEconomics, and Accounting's war income already nets through that
+// figure. Counting them again here would double-subtract the same expense.
+export async function getFactionBountyExpense(env, factionId) {
+  const now = new Date();
+  const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS bounty_count, COALESCE(SUM(total_cost), 0) AS monthly_cost
+     FROM bounties
+     WHERE faction_id = ? AND ranked_war_id IS NULL AND placed_at >= ?`
+  ).bind(factionId, monthStartTs).first();
+
+  return {
+    bounty_count: row?.bounty_count ?? 0,
+    monthly_cost: Math.round(row?.monthly_cost ?? 0),
+    configured: true,
+  };
+}
