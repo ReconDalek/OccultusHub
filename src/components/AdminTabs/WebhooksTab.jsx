@@ -199,6 +199,8 @@ function WebhookCard({ config, onSaved }) {
   const token    = localStorage.getItem('occultusSession')
 
   const [webhookUrl,          setWebhookUrl]          = useState(config.webhook_url           || '')
+  const [targetMode,          setTargetMode]          = useState(config.target_mode           || 'channel')
+  const [channelId,           setChannelId]           = useState(config.channel_id            || '')
   const [threadId,            setThreadId]            = useState(config.thread_id             || '')
   const [mentionUserId,       setMentionUserId]       = useState(config.mention_user_id       || '')
   const [messageTemplate,     setMessageTemplate]     = useState(config.message_template      || '')
@@ -228,7 +230,9 @@ function WebhookCard({ config, onSaved }) {
         body:    JSON.stringify({
           event_type:            config.event_type,
           webhook_url:           webhookUrl,
-          thread_id:             threadId || null,
+          target_mode:           targetMode,
+          channel_id:            channelId || null,
+          thread_id:             targetMode === 'thread' ? (threadId || null) : null,
           mention_user_id:       mentionUserId || null,
           message_template:      messageTemplate || null,
           late_message_template: lateMessageTemplate || null,
@@ -303,6 +307,8 @@ function WebhookCard({ config, onSaved }) {
   }
 
   const dirty = webhookUrl          !== (config.webhook_url           || '') ||
+                targetMode          !== (config.target_mode           || 'channel') ||
+                channelId           !== (config.channel_id            || '') ||
                 threadId            !== (config.thread_id             || '') ||
                 mentionUserId       !== (config.mention_user_id       || '') ||
                 messageTemplate     !== (config.message_template      || '') ||
@@ -383,22 +389,77 @@ function WebhookCard({ config, onSaved }) {
           </div>
         </div>
 
-        {/* Forum thread / post ID */}
+        {/* Post target: channel vs thread/forum */}
         <div>
           <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
-            Discord Thread / Forum Post ID <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(optional — posts into this specific thread/post instead of the channel's main feed)</span>
+            Post Into <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(this webhook may get reused for other channels — specify where THIS event should post)</span>
           </label>
-          <input
-            type="text"
-            value={threadId}
-            onChange={e => setThreadId(e.target.value)}
-            placeholder="e.g. 1234567890123456789"
-            style={{
-              width: '260px', padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
-              border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
-              color: '#f4f4f5',
-            }}
-          />
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+            {[['channel', 'Channel'], ['thread', 'Thread / Forum Post']].map(([m, l]) => (
+              <button key={m} type="button" onClick={() => setTargetMode(m)}
+                style={{
+                  padding: '6px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                  border: `1px solid ${targetMode === m ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  background: targetMode === m ? 'rgba(167,139,250,0.15)' : 'transparent',
+                  color: targetMode === m ? '#f4f4f5' : "var(--text-secondary)",
+                }}
+              >{l}</button>
+            ))}
+          </div>
+
+          {targetMode === 'channel' ? (
+            <div>
+              <label style={{ color: "var(--text-faint)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                Channel ID <span style={{ fontWeight: '400' }}>(optional — leave blank to post wherever this webhook is currently pointed in Discord)</span>
+              </label>
+              <input
+                type="text"
+                value={channelId}
+                onChange={e => setChannelId(e.target.value)}
+                placeholder="e.g. 1234567890123456789"
+                style={{
+                  width: '260px', padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+                  border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
+                  color: '#f4f4f5',
+                }}
+              />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <label style={{ color: "var(--text-faint)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                  Parent Channel ID <span style={{ fontWeight: '400' }}>(the forum/channel that owns the thread)</span>
+                </label>
+                <input
+                  type="text"
+                  value={channelId}
+                  onChange={e => setChannelId(e.target.value)}
+                  placeholder="e.g. 1234567890123456789"
+                  style={{
+                    width: '260px', padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+                    border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
+                    color: '#f4f4f5',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ color: "var(--text-faint)", fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                  Thread / Forum Post ID
+                </label>
+                <input
+                  type="text"
+                  value={threadId}
+                  onChange={e => setThreadId(e.target.value)}
+                  placeholder="e.g. 1234567890123456789"
+                  style={{
+                    width: '260px', padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+                    border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
+                    color: '#f4f4f5',
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Mention user ID */}
@@ -654,13 +715,13 @@ export default function WebhooksTab() {
     <div>
       <div style={{ marginBottom: '24px' }}>
         <p style={{ color: "var(--text-secondary)", fontSize: '13px', lineHeight: '1.6' }}>
-          Configure Discord webhook notifications for faction events. Each webhook URL is tied to a specific Discord channel — create a webhook in your Discord server under <em>Channel Settings → Integrations → Webhooks</em>.
+          Configure Discord webhook notifications for faction events. Create a webhook in your Discord server under <em>Channel Settings → Integrations → Webhooks</em> — the same webhook can be reused across multiple event types below, each pointed at its own destination.
         </p>
         <p style={{ color: "var(--text-faint)", fontSize: '12px', marginTop: '6px' }}>
           The <strong style={{ color: "var(--text-muted)" }}>Discord User ID to Mention</strong> is the 18-digit user ID (enable Developer Mode in Discord → right-click a user → Copy User ID). Leave blank to send without a mention. Individual investment alerts also mention the member directly if their Discord ID is set on their investment record.
         </p>
         <p style={{ color: "var(--text-faint)", fontSize: '12px', marginTop: '6px' }}>
-          To post into a specific thread or forum post instead of a channel's main feed, set the <strong style={{ color: "var(--text-muted)" }}>Discord Thread / Forum Post ID</strong> — right-click the thread/post in Discord → Copy Thread/Post ID (Developer Mode required). The webhook must still belong to that thread's parent channel.
+          <strong style={{ color: "var(--text-muted)" }}>Post Into</strong>: choose <em>Channel</em> to retarget the webhook to a specific channel (or leave the Channel ID blank to just use wherever it's currently pointed), or <em>Thread / Forum Post</em> to post into a specific existing thread — set the Parent Channel ID (the forum/channel that owns it) plus the Thread/Post ID. Right-click a channel or thread in Discord → Copy ID (Developer Mode required). Since the webhook physically gets retargeted before each send, moving it for one event type doesn't break the others — each keeps its own destination saved here.
         </p>
       </div>
 

@@ -83,12 +83,42 @@ async function getTciPrice(env) {
   }
 }
 
-// threadId (optional): posts into an existing Discord thread/forum post
-// instead of the channel's main feed — Discord's webhook execute API takes
-// this as a ?thread_id= query param on the same webhook URL, no separate
-// webhook needed per thread.
-async function sendDiscordMessage(webhookUrl, content, threadId) {
-  const url = threadId ? `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}thread_id=${threadId}` : webhookUrl;
+// The same Discord webhook gets reused across different destinations over
+// time (channels get swapped by hand in Discord), so we can't assume it's
+// still pointed wherever it last was — retarget it via Discord's "Modify
+// Webhook with Token" PATCH (channel_id) immediately before executing.
+// Cheap and safe to call even when nothing actually changed.
+async function retargetWebhookChannel(webhookUrl, channelId) {
+  const res = await fetch(webhookUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel_id: channelId }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord webhook retarget failed ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
+// target = { targetMode: 'channel'|'thread', channelId, threadId }
+//   'channel': posts into channelId (the webhook's own channel) — if
+//              channelId is blank, posts wherever the webhook is CURRENTLY
+//              pointed, unchanged from the original single-channel behaviour.
+//   'thread':  channelId is the thread's PARENT channel — the webhook must
+//              be retargeted there first, since Discord's ?thread_id=
+//              execute param only accepts threads under the webhook's own
+//              current channel. threadId is the actual forum post/thread.
+async function sendDiscordMessage(webhookUrl, content, target = {}) {
+  const { targetMode = 'channel', channelId, threadId } = target;
+
+  if (channelId) {
+    await retargetWebhookChannel(webhookUrl, channelId);
+  }
+
+  const url = (targetMode === 'thread' && threadId)
+    ? `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}thread_id=${threadId}`
+    : webhookUrl;
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -98,6 +128,10 @@ async function sendDiscordMessage(webhookUrl, content, threadId) {
     const text = await res.text().catch(() => '');
     throw new Error(`Discord returned ${res.status}: ${text.slice(0, 200)}`);
   }
+}
+
+function targetFromConfig(cfg) {
+  return { targetMode: cfg.target_mode || 'channel', channelId: cfg.channel_id, threadId: cfg.thread_id };
 }
 
 async function getConfig(env, eventType) {
@@ -186,7 +220,7 @@ export async function sendInvestmentTciAlerts(env, { testMode = false } = {}) {
     const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
     try {
-      await sendDiscordMessage(cfg.webhook_url, content, cfg.thread_id);
+      await sendDiscordMessage(cfg.webhook_url, content, targetFromConfig(cfg));
       if (!testMode) await markSent(env, 'investment_tci', eventKey);
       sent++;
       if (testMode) break; // only send first match in test mode
@@ -282,7 +316,7 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
   const finalContent = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${content}` : content;
 
   try {
-    await sendDiscordMessage(cfg.webhook_url, finalContent, cfg.thread_id);
+    await sendDiscordMessage(cfg.webhook_url, finalContent, targetFromConfig(cfg));
     if (!testMode) {
       await markSent(env, 'stock_monthly', eventKey);
       const status = `Sent for ${monthKey} — ${members.length} members, ${fmtMoney(grandTotal)} total`;
@@ -386,7 +420,7 @@ export async function sendArmoryLowStockAlerts(env, { testMode = false } = {}) {
   const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
   try {
-    await sendDiscordMessage(cfg.webhook_url, content, cfg.thread_id);
+    await sendDiscordMessage(cfg.webhook_url, content, targetFromConfig(cfg));
     if (!testMode) {
       await markSent(env, 'armory_low', eventKey);
       const status = `Sent — ${factionSections.length} faction section${factionSections.length !== 1 ? 's' : ''}`;
@@ -416,12 +450,13 @@ export async function getWebhookConfigs(request, env, user) {
 
 export async function upsertWebhookConfig(request, env, user) {
   try {
-    const { event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, thread_id } = await request.json();
+    const { event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, target_mode, channel_id, thread_id } = await request.json();
     if (!event_type) return errorResponse('event_type required', 400);
+    if (target_mode && !['channel', 'thread'].includes(target_mode)) return errorResponse('target_mode must be "channel" or "thread"', 400);
 
     await env.DB.prepare(`
-      INSERT INTO webhook_configs (event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, thread_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO webhook_configs (event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, target_mode, channel_id, thread_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(event_type) DO UPDATE SET
         webhook_url           = excluded.webhook_url,
         mention_user_id       = excluded.mention_user_id,
@@ -429,6 +464,8 @@ export async function upsertWebhookConfig(request, env, user) {
         late_message_template = excluded.late_message_template,
         payout_row_template   = excluded.payout_row_template,
         enabled               = excluded.enabled,
+        target_mode           = excluded.target_mode,
+        channel_id            = excluded.channel_id,
         thread_id             = excluded.thread_id,
         updated_at            = CURRENT_TIMESTAMP
     `).bind(
@@ -439,6 +476,8 @@ export async function upsertWebhookConfig(request, env, user) {
       late_message_template || null,
       payout_row_template   || null,
       enabled ? 1 : 0,
+      target_mode           || 'channel',
+      channel_id            || null,
       thread_id             || null,
     ).run();
 
@@ -627,7 +666,7 @@ export async function sendTestMessage(request, env, user) {
           // No qualifying investments — send a fallback notice
           await sendDiscordMessage(cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active investments found within the 1–10 day window, but the webhook is connected.`,
-            cfg.thread_id
+            targetFromConfig(cfg)
           );
           result = { sent: 1, note: 'no qualifying investments; sent connection notice' };
         }
@@ -637,7 +676,7 @@ export async function sendTestMessage(request, env, user) {
         if (!result.sent && !result.error) {
           await sendDiscordMessage(cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active stock investments tracked, but the webhook is connected.`,
-            cfg.thread_id
+            targetFromConfig(cfg)
           );
           result = { sent: true, note: 'no stocks; sent connection notice' };
         }
@@ -647,7 +686,7 @@ export async function sendTestMessage(request, env, user) {
         if (result.sent === 0 && !result.error) {
           await sendDiscordMessage(cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo low-stock items found (or no minimums configured), but the webhook is connected.`,
-            cfg.thread_id
+            targetFromConfig(cfg)
           );
           result = { sent: 1, note: 'no low stock; sent connection notice' };
         }
