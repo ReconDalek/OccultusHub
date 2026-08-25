@@ -37,6 +37,56 @@ import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding'] // active gameplay routes — suppress easter egg overlays
 
+const PAGE_META = {
+  '/': {
+    title: 'Occultus Hub — Occultus Faction, Torn City',
+    description: 'Occultus Hub — the official hub for the Occultus faction family in Torn City. Faction stats, war tracking, leadership tools, and community for Occultus, Occul2us, and Occul3us.',
+  },
+  '/about': {
+    title: 'About Occultus — Occultus Hub',
+    description: 'The story of Occultus, a Torn City faction born into blood, fire, and revenge — and the rise of the Occultus faction family.',
+  },
+  '/games': {
+    title: 'Games — Occultus Hub',
+    description: 'Community games and events run by Occultus, the Torn City faction.',
+  },
+  '/respect': {
+    title: 'Respect — Occultus Hub',
+    description: 'Respect and recognition within the Occultus faction family on Torn City.',
+  },
+  '/tos': {
+    title: 'Terms of Service — Occultus Hub',
+    description: 'Terms of Service for Occultus Hub.',
+  },
+  '/privacy': {
+    title: 'Privacy Policy — Occultus Hub',
+    description: 'Privacy Policy for Occultus Hub.',
+  },
+}
+
+function usePageMeta(pathname, siteTitle) {
+  useEffect(() => {
+    const meta = PAGE_META[pathname]
+    document.title = meta ? meta.title : (siteTitle || 'Occultus Hub')
+
+    let tag = document.querySelector('meta[name="description"]')
+    if (!tag) {
+      tag = document.createElement('meta')
+      tag.setAttribute('name', 'description')
+      document.head.appendChild(tag)
+    }
+    if (meta) tag.setAttribute('content', meta.description)
+
+    let canonical = document.querySelector('link[rel="canonical"]')
+    if (!canonical) {
+      canonical = document.createElement('link')
+      canonical.setAttribute('rel', 'canonical')
+      document.head.appendChild(canonical)
+    }
+    canonical.setAttribute('href', `https://occultushub.com${pathname}`)
+  }, [pathname, siteTitle])
+}
+
 function ScrollToTop() {
   const { pathname } = useLocation()
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
@@ -109,10 +159,9 @@ function RespectLayout() {
 
 function AppRoutes() {
   const { pages, siteTitle, loaded } = useSite()
+  const { pathname } = useLocation()
 
-  useEffect(() => {
-    if (siteTitle) document.title = siteTitle
-  }, [siteTitle])
+  usePageMeta(pathname, siteTitle)
 
   if (!loaded) {
     return (
