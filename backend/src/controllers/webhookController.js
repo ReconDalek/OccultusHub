@@ -83,8 +83,13 @@ async function getTciPrice(env) {
   }
 }
 
-async function sendDiscordMessage(webhookUrl, content) {
-  const res = await fetch(webhookUrl, {
+// threadId (optional): posts into an existing Discord thread/forum post
+// instead of the channel's main feed — Discord's webhook execute API takes
+// this as a ?thread_id= query param on the same webhook URL, no separate
+// webhook needed per thread.
+async function sendDiscordMessage(webhookUrl, content, threadId) {
+  const url = threadId ? `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}thread_id=${threadId}` : webhookUrl;
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content, username: 'OccultusHub' }),
@@ -181,7 +186,7 @@ export async function sendInvestmentTciAlerts(env, { testMode = false } = {}) {
     const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
     try {
-      await sendDiscordMessage(cfg.webhook_url, content);
+      await sendDiscordMessage(cfg.webhook_url, content, cfg.thread_id);
       if (!testMode) await markSent(env, 'investment_tci', eventKey);
       sent++;
       if (testMode) break; // only send first match in test mode
@@ -277,7 +282,7 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
   const finalContent = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${content}` : content;
 
   try {
-    await sendDiscordMessage(cfg.webhook_url, finalContent);
+    await sendDiscordMessage(cfg.webhook_url, finalContent, cfg.thread_id);
     if (!testMode) {
       await markSent(env, 'stock_monthly', eventKey);
       const status = `Sent for ${monthKey} — ${members.length} members, ${fmtMoney(grandTotal)} total`;
@@ -381,7 +386,7 @@ export async function sendArmoryLowStockAlerts(env, { testMode = false } = {}) {
   const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
   try {
-    await sendDiscordMessage(cfg.webhook_url, content);
+    await sendDiscordMessage(cfg.webhook_url, content, cfg.thread_id);
     if (!testMode) {
       await markSent(env, 'armory_low', eventKey);
       const status = `Sent — ${factionSections.length} faction section${factionSections.length !== 1 ? 's' : ''}`;
@@ -411,12 +416,12 @@ export async function getWebhookConfigs(request, env, user) {
 
 export async function upsertWebhookConfig(request, env, user) {
   try {
-    const { event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled } = await request.json();
+    const { event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, thread_id } = await request.json();
     if (!event_type) return errorResponse('event_type required', 400);
 
     await env.DB.prepare(`
-      INSERT INTO webhook_configs (event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO webhook_configs (event_type, webhook_url, mention_user_id, message_template, late_message_template, payout_row_template, enabled, thread_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(event_type) DO UPDATE SET
         webhook_url           = excluded.webhook_url,
         mention_user_id       = excluded.mention_user_id,
@@ -424,6 +429,7 @@ export async function upsertWebhookConfig(request, env, user) {
         late_message_template = excluded.late_message_template,
         payout_row_template   = excluded.payout_row_template,
         enabled               = excluded.enabled,
+        thread_id             = excluded.thread_id,
         updated_at            = CURRENT_TIMESTAMP
     `).bind(
       event_type,
@@ -433,6 +439,7 @@ export async function upsertWebhookConfig(request, env, user) {
       late_message_template || null,
       payout_row_template   || null,
       enabled ? 1 : 0,
+      thread_id             || null,
     ).run();
 
     const updated = await getConfig(env, event_type);
@@ -619,7 +626,8 @@ export async function sendTestMessage(request, env, user) {
         if (result.sent === 0 && !result.error) {
           // No qualifying investments — send a fallback notice
           await sendDiscordMessage(cfg.webhook_url,
-            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active investments found within the 1–10 day window, but the webhook is connected.`
+            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active investments found within the 1–10 day window, but the webhook is connected.`,
+            cfg.thread_id
           );
           result = { sent: 1, note: 'no qualifying investments; sent connection notice' };
         }
@@ -628,7 +636,8 @@ export async function sendTestMessage(request, env, user) {
         result = await sendStockMonthlyPayouts(env, { testMode: true });
         if (!result.sent && !result.error) {
           await sendDiscordMessage(cfg.webhook_url,
-            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active stock investments tracked, but the webhook is connected.`
+            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active stock investments tracked, but the webhook is connected.`,
+            cfg.thread_id
           );
           result = { sent: true, note: 'no stocks; sent connection notice' };
         }
@@ -637,7 +646,8 @@ export async function sendTestMessage(request, env, user) {
         result = await sendArmoryLowStockAlerts(env, { testMode: true });
         if (result.sent === 0 && !result.error) {
           await sendDiscordMessage(cfg.webhook_url,
-            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo low-stock items found (or no minimums configured), but the webhook is connected.`
+            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo low-stock items found (or no minimums configured), but the webhook is connected.`,
+            cfg.thread_id
           );
           result = { sent: 1, note: 'no low stock; sent connection notice' };
         }

@@ -199,6 +199,7 @@ function WebhookCard({ config, onSaved }) {
   const token    = localStorage.getItem('occultusSession')
 
   const [webhookUrl,          setWebhookUrl]          = useState(config.webhook_url           || '')
+  const [threadId,            setThreadId]            = useState(config.thread_id             || '')
   const [mentionUserId,       setMentionUserId]       = useState(config.mention_user_id       || '')
   const [messageTemplate,     setMessageTemplate]     = useState(config.message_template      || '')
   const [lateMessageTemplate, setLateMessageTemplate] = useState(config.late_message_template || '')
@@ -227,6 +228,7 @@ function WebhookCard({ config, onSaved }) {
         body:    JSON.stringify({
           event_type:            config.event_type,
           webhook_url:           webhookUrl,
+          thread_id:             threadId || null,
           mention_user_id:       mentionUserId || null,
           message_template:      messageTemplate || null,
           late_message_template: lateMessageTemplate || null,
@@ -301,6 +303,7 @@ function WebhookCard({ config, onSaved }) {
   }
 
   const dirty = webhookUrl          !== (config.webhook_url           || '') ||
+                threadId            !== (config.thread_id             || '') ||
                 mentionUserId       !== (config.mention_user_id       || '') ||
                 messageTemplate     !== (config.message_template      || '') ||
                 lateMessageTemplate !== (config.late_message_template || '') ||
@@ -378,6 +381,24 @@ function WebhookCard({ config, onSaved }) {
               {showUrl ? 'Hide' : 'Show'}
             </button>
           </div>
+        </div>
+
+        {/* Forum thread / post ID */}
+        <div>
+          <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+            Discord Thread / Forum Post ID <span style={{ color: "var(--text-faint)", fontWeight: '400', textTransform: 'none' }}>(optional — posts into this specific thread/post instead of the channel's main feed)</span>
+          </label>
+          <input
+            type="text"
+            value={threadId}
+            onChange={e => setThreadId(e.target.value)}
+            placeholder="e.g. 1234567890123456789"
+            style={{
+              width: '260px', padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+              border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
+              color: '#f4f4f5',
+            }}
+          />
         </div>
 
         {/* Mention user ID */}
@@ -637,6 +658,9 @@ export default function WebhooksTab() {
         </p>
         <p style={{ color: "var(--text-faint)", fontSize: '12px', marginTop: '6px' }}>
           The <strong style={{ color: "var(--text-muted)" }}>Discord User ID to Mention</strong> is the 18-digit user ID (enable Developer Mode in Discord → right-click a user → Copy User ID). Leave blank to send without a mention. Individual investment alerts also mention the member directly if their Discord ID is set on their investment record.
+        </p>
+        <p style={{ color: "var(--text-faint)", fontSize: '12px', marginTop: '6px' }}>
+          To post into a specific thread or forum post instead of a channel's main feed, set the <strong style={{ color: "var(--text-muted)" }}>Discord Thread / Forum Post ID</strong> — right-click the thread/post in Discord → Copy Thread/Post ID (Developer Mode required). The webhook must still belong to that thread's parent channel.
         </p>
       </div>
 
