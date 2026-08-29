@@ -27,9 +27,26 @@ export async function fetchAndCacheArmory(env) {
       console.log(`[armory] faction ${factionId}: using key from user ${apiKeyObj.tornUserId} (${apiKeyObj.username})`);
 
       // Reassemble into the same category-keyed shape (data.weapons = [...],
-      // data.drugs = [...], etc.) every existing consumer (getArmory, the
-      // low-stock webhook) already expects, with items normalized back to
-      // the old {ID, quantity} field names (new API uses lowercase id/amount).
+      // data.drugs = [...], etc.) every existing consumer (getArmory,
+      // ArmoryTab's loan-detail expander, the low-stock webhook) already
+      // expects, with items normalized back to the old field names (new API
+      // uses lowercase id/amount, one row per loan instead of one row per item).
+      //
+      // IMPORTANT: the new endpoint returns a SEPARATE inventory row per loan
+      // in addition to the main unloaned stack — e.g. a Blood Bag with 44 in
+      // the armory and 3 individually loaned out to members comes back as
+      // FOUR rows, all sharing the same item id: {amount:44, loaned:null},
+      // {amount:1, loaned:{id,name}} × 3. The old API exposed one row per
+      // item with quantity/available/loaned/loaned_to already computed, which
+      // ArmoryTab.jsx's loan-detail expander still relies on — so rows
+      // sharing an id are merged back into that shape: `quantity` is the
+      // real total (all rows summed — confirmed against a live mismatch:
+      // Blood Bag: Irradiated and Ipecac Syrup, both partly loaned, were
+      // caching as 1 instead of their true 47/117 totals when rows weren't
+      // merged), `available` is the loaned:null portion, `loaned` is the
+      // count on loan, `loaned_to` is a comma-joined list of borrower torn
+      // IDs (repeated per unit) matching the old delimited-list format
+      // LoanExpandedRow already parses with `.split(',')`.
       const data = {};
       const categoryErrors = [];
       for (const cat of ARMORY_CATEGORIES) {
@@ -40,13 +57,32 @@ export async function fetchAndCacheArmory(env) {
             categoryErrors.push(`${cat}: ${catData.error.code} ${catData.error.error}`);
             continue;
           }
-          data[cat] = (catData.inventory || []).map(item => ({
-            ID:       item.id,
-            name:     item.name,
-            type:     item.type,
-            quantity: item.amount,
-            uids:     item.uids,
-            loaned:   item.loaned,
+          const merged = new Map(); // item id -> aggregated row
+          for (const item of (catData.inventory || [])) {
+            let row = merged.get(item.id);
+            if (!row) {
+              row = { ID: item.id, name: item.name, type: item.type, quantity: 0, available: 0, loaned: 0, loanedTo: [], uids: [] };
+              merged.set(item.id, row);
+            }
+            const amt = item.amount ?? 0;
+            row.quantity += amt;
+            if (item.loaned) {
+              row.loaned += amt;
+              for (let i = 0; i < amt; i++) row.loanedTo.push(item.loaned.id);
+            } else {
+              row.available += amt;
+            }
+            if (Array.isArray(item.uids)) row.uids.push(...item.uids);
+          }
+          data[cat] = Array.from(merged.values()).map(r => ({
+            ID:        r.ID,
+            name:      r.name,
+            type:      r.type,
+            quantity:  r.quantity,
+            available: r.available,
+            loaned:    r.loaned,
+            loaned_to: r.loanedTo.join(','),
+            uids:      r.uids,
           }));
         } catch (catErr) {
           categoryErrors.push(`${cat}: ${catErr.message}`);
