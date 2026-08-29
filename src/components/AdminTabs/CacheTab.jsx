@@ -5,6 +5,48 @@ import { timeAgo, formatUTC } from '../../lib/dates'
 const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
 const FACTION_IDS = [33097, 9728, 9171]
 
+// Shared card/row/action styling so every section on this page — whether it
+// has real per-faction stats or is just a description + auto-run schedule —
+// presents at the same visual weight instead of some being a detailed panel
+// and others a bare line of text.
+function StatCard({ title, children }) {
+  return (
+    <div className="p-5 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="mb-3">
+        <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{title}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function StatRow({ label, value, valueColor = '#f4f4f5', title }) {
+  return (
+    <div className="flex justify-between" style={{ marginBottom: '4px' }}>
+      <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>{label}</span>
+      <span style={{ color: valueColor, fontSize: '13px' }} title={title}>{value}</span>
+    </div>
+  )
+}
+
+function StatDescription({ children }) {
+  return (
+    <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 8px 0', lineHeight: '1.5' }}>{children}</p>
+  )
+}
+
+function ActionRow({ button, caption, subCaption }) {
+  return (
+    <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+      {button}
+      <div>
+        <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>{caption}</p>
+        {subCaption && <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>{subCaption}</p>}
+      </div>
+    </div>
+  )
+}
+
 export default function CacheTab() {
   const [cacheStatus,         setCacheStatus]         = useState(null)
   const [chainStatus,         setChainStatus]         = useState(null)
@@ -402,38 +444,26 @@ export default function CacheTab() {
           {(() => {
             const info = cacheStatus?.['factions']
             return (
-              <div
-                className="p-5 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>Faction Cache</span>
-                </div>
-                <div className="flex justify-between mb-1">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Cached entries</span>
-                  <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.count ?? '—'}</span>
-                </div>
-                <div className="flex justify-between mb-4">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last updated</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.lastUpdated ?? ''}>
-                    {timeAgo(info?.lastUpdated)}
-                  </span>
-                </div>
-                <button
-                  onClick={() => refreshCache('factions')}
-                  disabled={!!refreshing}
-                  className="w-full py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
-                  style={{ background: 'rgba(179,18,63,0.2)', color: '#ff2f6d', opacity: refreshing ? 0.5 : 1 }}
-                >
-                  {refreshing === 'factions' ? 'Refreshing...' : 'Refresh Factions'}
-                </button>
-              </div>
+              <StatCard title="Faction Cache">
+                <StatRow label="Cached entries" value={info?.count ?? '—'} />
+                <StatRow label="Last updated" value={timeAgo(info?.lastUpdated)} title={info?.lastUpdated ?? ''} valueColor="var(--text-secondary)" />
+              </StatCard>
             )
           })()}
         </div>
-        <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginTop: '10px' }}>
-          Auto-refreshes every 12 hours (00:00 and 12:00 UTC/TCT). Company cache is updated by the daily director-key fetch.
-        </p>
+        <ActionRow
+          button={
+            <button
+              onClick={() => refreshCache('factions')}
+              disabled={!!refreshing}
+              className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+              style={{ background: 'rgba(179,18,63,0.2)', color: '#ff2f6d', opacity: refreshing ? 0.5 : 1 }}
+            >
+              {refreshing === 'factions' ? 'Refreshing...' : 'Refresh Factions'}
+            </button>
+          }
+          caption="Auto-refreshes every 12 hours (00:00 and 12:00 UTC/TCT). Company cache is updated by the daily director-key fetch."
+        />
       </div>
 
       {/* Chain cache status */}
@@ -443,26 +473,10 @@ export default function CacheTab() {
           {FACTION_IDS.map((fid) => {
             const info = chainStatus?.[fid]
             return (
-              <div
-                key={fid}
-                className="p-5 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <span style={{ fontSize: '18px' }}></span>
-                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
-                </div>
-                <div className="flex justify-between mb-1">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Stored chains</span>
-                  <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.totalChains ?? '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last updated</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.lastFetched ?? ''}>
-                    {info?.lastFetched ? timeAgo(info.lastFetched) : '—'}
-                  </span>
-                </div>
-              </div>
+              <StatCard key={fid} title={FACTION_NAMES[fid]}>
+                <StatRow label="Stored chains" value={info?.totalChains ?? '—'} />
+                <StatRow label="Last updated" value={info?.lastFetched ? timeAgo(info.lastFetched) : '—'} title={info?.lastFetched ?? ''} valueColor="var(--text-secondary)" />
+              </StatCard>
             )
           })}
         </div>
@@ -489,28 +503,26 @@ export default function CacheTab() {
       {/* War match check */}
       <div>
         <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Ranked Wars</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <button
-            onClick={checkWarMatches}
-            disabled={!!refreshing}
-            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
-            style={{
-              background: 'rgba(179,18,63,0.2)',
-              color: '#ff2f6d',
-              opacity: refreshing ? 0.5 : 1,
-            }}
-          >
-            {refreshing === 'war-check' ? 'Checking…' : 'Check War Matches'}
-          </button>
-          <div>
-            <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
-              Auto-runs every Tuesday 14:00 UTC (matchups announced at 14:00 UTC / midnight NZT).
-            </p>
-            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
-              Run manually if a matchup may have been missed by the weekly cron.
-            </p>
-          </div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          <StatCard title="Check War Matches">
+            <StatDescription>Scans faction news for newly announced ranked war matchups and records them for tracking.</StatDescription>
+            <StatRow label="Auto-runs" value="Every 10 minutes" valueColor="var(--text-secondary)" />
+          </StatCard>
         </div>
+        <ActionRow
+          button={
+            <button
+              onClick={checkWarMatches}
+              disabled={!!refreshing}
+              className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+              style={{ background: 'rgba(179,18,63,0.2)', color: '#ff2f6d', opacity: refreshing ? 0.5 : 1 }}
+            >
+              {refreshing === 'war-check' ? 'Checking…' : 'Check War Matches'}
+            </button>
+          }
+          caption="Matchups are announced at 14:00 UTC / midnight NZT on Tuesdays — the 10-minute cron already catches this almost immediately."
+          subCaption="Run manually to force an immediate check rather than waiting for the next cron cycle."
+        />
       </div>
 
       {/* Member database status */}
@@ -583,7 +595,13 @@ export default function CacheTab() {
       {/* User key sync */}
       <div>
         <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>User Keys</h3>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          <StatCard title="Sync User Keys">
+            <StatDescription>Checks all stored API keys against Torn and updates username, faction, position, and avatar if changed.</StatDescription>
+            <StatRow label="Auto-runs" value="Daily at 01:00 UTC" valueColor="var(--text-secondary)" />
+          </StatCard>
+        </div>
+        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
           <button
             onClick={syncUserKeys}
             disabled={!!refreshing}
@@ -599,10 +617,7 @@ export default function CacheTab() {
           </button>
           <div>
             <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
-              Checks all stored API keys against Torn and updates username, faction, position, and avatar if changed.
-            </p>
-            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
-              Auto-runs daily at 01:00 UTC. Run manually if a member recently switched factions and hasn't logged in yet.
+              Run manually if a member recently switched factions and hasn't logged in yet.
             </p>
           </div>
         </div>
@@ -637,7 +652,13 @@ export default function CacheTab() {
       {/* Energy snapshots */}
       <div>
         <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Gym Energy Snapshots</h3>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          <StatCard title="Run Energy Snapshot">
+            <StatDescription>Fetches current gym energy totals for all 3 factions and upserts today's snapshot row.</StatDescription>
+            <StatRow label="Auto-runs" value="Daily at 01:00 UTC" valueColor="var(--text-secondary)" />
+          </StatCard>
+        </div>
+        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
           <button
             onClick={runEnergySnapshot}
             disabled={!!refreshing}
@@ -648,10 +669,7 @@ export default function CacheTab() {
           </button>
           <div>
             <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
-              Fetches current gym energy totals for all 3 factions and upserts today's snapshot row.
-            </p>
-            <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: '2px 0 0 0' }}>
-              Auto-runs daily at 01:00 UTC. Safe to run manually — same-day rows are overwritten, not duplicated.
+              Safe to run manually — same-day rows are overwritten, not duplicated.
             </p>
           </div>
         </div>
@@ -742,22 +760,9 @@ export default function CacheTab() {
           {FACTION_IDS.map((fid) => {
             const info = armoryStatus?.[fid]
             return (
-              <div
-                key={fid}
-                className="p-5 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <span style={{ fontSize: '18px' }}>🛡️</span>
-                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last updated</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.fetched_at ?? ''}>
-                    {info?.fetched_at ? timeAgo(info.fetched_at) : '—'}
-                  </span>
-                </div>
-              </div>
+              <StatCard key={fid} title={FACTION_NAMES[fid]}>
+                <StatRow label="Last updated" value={info?.fetched_at ? timeAgo(info.fetched_at) : '—'} title={info?.fetched_at ?? ''} valueColor="var(--text-secondary)" />
+              </StatCard>
             )
           })}
         </div>
@@ -788,26 +793,10 @@ export default function CacheTab() {
           {FACTION_IDS.map((fid) => {
             const info = armoryDepositsStatus?.status?.[fid]
             return (
-              <div
-                key={fid}
-                className="p-5 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <span style={{ fontSize: '18px' }}>📦</span>
-                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
-                </div>
-                <div className="flex justify-between mb-1">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Logged deposits</span>
-                  <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.count ?? 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last fetched</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.fetched_at ?? ''}>
-                    {info?.fetched_at ? timeAgo(info.fetched_at) : '—'}
-                  </span>
-                </div>
-              </div>
+              <StatCard key={fid} title={FACTION_NAMES[fid]}>
+                <StatRow label="Logged deposits" value={info?.count ?? 0} />
+                <StatRow label="Last fetched" value={info?.fetched_at ? timeAgo(info.fetched_at) : '—'} title={info?.fetched_at ?? ''} valueColor="var(--text-secondary)" />
+              </StatCard>
             )
           })}
         </div>
@@ -843,26 +832,10 @@ export default function CacheTab() {
           {FACTION_IDS.map((fid) => {
             const info = ocStatus?.[fid]
             return (
-              <div
-                key={fid}
-                className="p-5 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <span style={{ fontSize: '18px' }}>🎭</span>
-                  <span style={{ color: '#f4f4f5', fontWeight: 'bold' }}>{FACTION_NAMES[fid]}</span>
-                </div>
-                <div className="flex justify-between mb-1">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Crimes tracked</span>
-                  <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{info?.count ?? 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }}>Last fetched</span>
-                  <span style={{ color: "var(--text-secondary)", fontSize: '13px' }} title={info?.fetched_at ?? ''}>
-                    {info?.fetched_at ? timeAgo(info.fetched_at) : '—'}
-                  </span>
-                </div>
-              </div>
+              <StatCard key={fid} title={FACTION_NAMES[fid]}>
+                <StatRow label="Crimes tracked" value={info?.count ?? 0} />
+                <StatRow label="Last fetched" value={info?.fetched_at ? timeAgo(info.fetched_at) : '—'} title={info?.fetched_at ?? ''} valueColor="var(--text-secondary)" />
+              </StatCard>
             )
           })}
         </div>
@@ -1015,7 +988,7 @@ export default function CacheTab() {
             <div style={{ marginTop: '6px' }}>
               {lastResult.errors.map((e, i) => (
                 <p key={i} style={{ color: '#f87171', fontSize: '12px', margin: '2px 0' }}>
-                  ✗ Faction {e.factionId}: {e.error}
+                  Faction {e.factionId}: {e.error}
                 </p>
               ))}
             </div>
