@@ -7,7 +7,10 @@ const FACTION_COLS = [
   { id: 9171,  key: 'min_9171',  label: 'Occul3us' },
 ]
 
-const CATEGORY_ORDER = ['weapons', 'armor', 'temporary', 'medical', 'drugs', 'boosters', 'caches', 'cesium']
+// 'caches'/'cesium' no longer exist as categories on Torn's replacement
+// /v2/faction/inventory endpoint; 'consumables'/'utilities'/'loot' are new
+// (unlisted categories still fall through to the end via the filter below).
+const CATEGORY_ORDER = ['weapons', 'armor', 'temporary', 'medical', 'drugs', 'boosters', 'consumables', 'utilities', 'loot']
 
 function catLabel(id) { return id.charAt(0).toUpperCase() + id.slice(1) }
 

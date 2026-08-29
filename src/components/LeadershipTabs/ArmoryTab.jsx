@@ -8,18 +8,22 @@ const FACTIONS = [
   { id: 9171,  label: 'Occul3us' },
 ]
 
+// Torn replaced the old combined faction selections endpoint with
+// /v2/faction/inventory (one category per call) — 'caches'/'cesium' no
+// longer exist as categories there; 'consumables'/'utilities'/'loot' are new.
 const CATEGORIES = [
-  { id: 'weapons',   label: 'Weapons' },
-  { id: 'armor',     label: 'Armor' },
-  { id: 'temporary', label: 'Temporary' },
-  { id: 'medical',   label: 'Medical' },
-  { id: 'drugs',     label: 'Drugs' },
-  { id: 'boosters',  label: 'Boosters' },
-  { id: 'caches',    label: 'Caches' },
-  { id: 'cesium',    label: 'Cesium' },
+  { id: 'weapons',     label: 'Weapons' },
+  { id: 'armor',       label: 'Armor' },
+  { id: 'temporary',   label: 'Temporary' },
+  { id: 'medical',     label: 'Medical' },
+  { id: 'drugs',       label: 'Drugs' },
+  { id: 'boosters',    label: 'Boosters' },
+  { id: 'consumables', label: 'Consumables' },
+  { id: 'utilities',   label: 'Utilities' },
+  { id: 'loot',        label: 'Loot' },
 ]
 
-const SIMPLE_CATEGORIES = new Set(['medical', 'drugs', 'boosters', 'caches', 'cesium'])
+const SIMPLE_CATEGORIES = new Set(['medical', 'drugs', 'boosters', 'consumables', 'utilities', 'loot'])
 const WEAPON_TYPE_ORDER  = ['Primary', 'Secondary', 'Melee']
 
 function useIsMobile() {

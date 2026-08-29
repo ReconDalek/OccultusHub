@@ -3,7 +3,13 @@ import { getStaffApiKeyForFaction, fetchWithRetry, getRandomUserApiKey } from '.
 import { ARMORY_IGNORE } from './warController.js';
 
 const FACTION_IDS = [33097, 9171, 9728];
-const ARMORY_SELECTIONS = 'armor,boosters,caches,cesium,drugs,medical,temporary,weapons';
+
+// Torn removed the old combined `/v2/faction?selections=armor,boosters,...`
+// endpoint — `/v2/faction/inventory` replaces it but only returns ONE
+// category per call (cat= query param), so a full refresh now needs one
+// call per category per faction. `caches`/`cesium` (old selections) no
+// longer exist as categories; `consumables`/`utilities`/`loot` are new.
+const ARMORY_CATEGORIES = ['weapons', 'armor', 'temporary', 'medical', 'consumables', 'drugs', 'boosters', 'utilities', 'loot'];
 
 export async function fetchAndCacheArmory(env) {
   const results = { fetched: 0, errors: [] };
@@ -20,11 +26,38 @@ export async function fetchAndCacheArmory(env) {
       }
       console.log(`[armory] faction ${factionId}: using key from user ${apiKeyObj.tornUserId} (${apiKeyObj.username})`);
 
-      const url = `https://api.torn.com/v2/faction?selections=${ARMORY_SELECTIONS}`;
-      const data = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` });
+      // Reassemble into the same category-keyed shape (data.weapons = [...],
+      // data.drugs = [...], etc.) every existing consumer (getArmory, the
+      // low-stock webhook) already expects, with items normalized back to
+      // the old {ID, quantity} field names (new API uses lowercase id/amount).
+      const data = {};
+      const categoryErrors = [];
+      for (const cat of ARMORY_CATEGORIES) {
+        try {
+          const url = `https://api.torn.com/v2/faction/inventory?cat=${cat}`;
+          const catData = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` });
+          if (catData?.error) {
+            categoryErrors.push(`${cat}: ${catData.error.code} ${catData.error.error}`);
+            continue;
+          }
+          data[cat] = (catData.inventory || []).map(item => ({
+            ID:       item.id,
+            name:     item.name,
+            type:     item.type,
+            quantity: item.amount,
+            uids:     item.uids,
+            loaned:   item.loaned,
+          }));
+        } catch (catErr) {
+          categoryErrors.push(`${cat}: ${catErr.message}`);
+        }
+      }
 
-      if (data?.error) {
-        const err = `Torn API error ${data.error.code}: ${data.error.error}`;
+      if (categoryErrors.length) {
+        console.warn(`[armory] faction ${factionId}: category errors — ${categoryErrors.join('; ')}`);
+      }
+      if (!Object.keys(data).length) {
+        const err = `All categories failed: ${categoryErrors.join('; ')}`;
         console.error(`[armory] faction ${factionId}: ${err}`);
         results.errors.push({ factionId, error: err });
         continue;
@@ -42,6 +75,7 @@ export async function fetchAndCacheArmory(env) {
 
       console.log(`[armory] faction ${factionId}: cached successfully`);
       results.fetched++;
+      if (categoryErrors.length) results.errors.push({ factionId, error: `Partial (some categories failed): ${categoryErrors.join('; ')}` });
     } catch (e) {
       console.error(`[armory] faction ${factionId} failed:`, e.message, e.stack ?? '');
       results.errors.push({ factionId, error: e.message });
