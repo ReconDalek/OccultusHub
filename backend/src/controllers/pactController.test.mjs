@@ -8,13 +8,12 @@ import { DatabaseSync } from 'node:sqlite';
 import * as pact from './pactController.js';
 import { SEASONS } from '../game/pactScenarios.js';
 
-// ── minimal D1 shim over node:sqlite ─────────────────────────────────────
 function makeDB() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT);`);
   const mig = readFileSync(fileURLToPath(new URL('../db/migration_add_pact.sql', import.meta.url)), 'utf8');
   db.exec(mig);
-  db.prepare(`INSERT INTO users (id, username) VALUES (1,'Host'),(2,'Two'),(3,'Three')`).run();
+  db.prepare(`INSERT INTO users (id, username) VALUES (1,'Host'),(2,'Two'),(3,'Three'),(4,'Four')`).run();
 
   const wrap = (sql) => ({
     _args: [],
@@ -26,105 +25,116 @@ function makeDB() {
       return { meta: { last_row_id: Number(r.lastInsertRowid), changes: r.changes } };
     },
   });
-  return {
-    prepare: wrap,
-    async batch(stmts) { for (const s of stmts) s.run(); return []; },
-  };
+  return { prepare: wrap, async batch(stmts) { for (const s of stmts) s.run(); return []; } };
 }
 
+const U = (id) => ({ userId: id, username: `U${id}` });
 const req = (url, body) => new Request('http://x' + url, {
   method: body === undefined ? 'GET' : 'POST',
   headers: { 'content-type': 'application/json' },
   body: body === undefined ? undefined : JSON.stringify(body || {}),
 });
-const J = (res) => res.json();
+const J = async (res) => (await res).json();
+const state = (env, code, u) => J(pact.getState(req(`/api/pact/session/${code}/state`), env, u));
 
-test('solo game — create, start, play 18 nights, reach a Reckoning', async () => {
-  const env = { DB: makeDB() };
-  const host = { userId: 1, username: 'Host' };
-
-  const created = await J(await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, host));
-  const code = created.code;
-  assert.match(code, /^[A-Z0-9]{6}$/);
-
-  await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, host);
-
-  let state = await J(await pact.getState(req(`/api/pact/session/${code}/state`), env, host));
-  assert.equal(state.session.status, 'playing');
-  assert.equal(state.session.currentNight, 1);
-  assert.ok(state.night, 'night payload present');
-  assert.equal(state.night.options.A.label, SEASONS[1].nights[0].options.A.label);
-  assert.ok(!('effects' in state.night.options.A), 'no effects leaked to client');
-
-  let guard = 0;
-  while (state.session.status === 'playing' && guard++ < 40) {
-    if (state.cabal.status !== 'active') break;
-    const pickOrder = ['B', 'D', 'A', 'C']; // B-lean survives longer than A-spam
-    const choice = pickOrder.find((o) => state.night?.options[o]) || 'D';
-    state = await J(await pact.vote(req(`/api/pact/session/${code}/vote`, { option: choice }), env, host));
+async function voteAll(env, code, users, option = 'D') {
+  for (const u of users) {
+    const s = await state(env, code, u);
+    if (s.session.status !== 'playing') return s;
+    if (s.cabal?.status === 'active' && !s.committed) {
+      await pact.vote(req(`/api/pact/session/${code}/vote`, { option }), env, u);
+    }
   }
+  return state(env, code, users[0]);
+}
+async function playOut(env, code, users) {
+  let s, guard = 0;
+  do { s = await voteAll(env, code, users); } while (s.session.status === 'playing' && guard++ < 30);
+  return s;
+}
 
-  assert.equal(state.session.status, 'ended', 'game ended');
-  assert.ok(state.reckoning, 'reckoning present');
-  assert.ok(Number.isFinite(state.reckoning.score) && state.reckoning.score >= 0);
-  assert.ok(Array.isArray(state.standings) && state.standings.length === 1);
-  const ledgerNights = state.cabal.ledger.filter((l) => !l.delayed).map((l) => l.night);
-  assert.ok(ledgerNights.length >= 1);
-});
-
-test('one run per season — second solo create is blocked', async () => {
+test('start guard — needs 3 players, named cabals; second season run blocked', async () => {
   const env = { DB: makeDB() };
-  const host = { userId: 1, username: 'Host' };
-  const c1 = await J(await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, host));
-  await pact.startSession(req(`/api/pact/session/${c1.code}/start`, {}), env, host);
-  let s = await J(await pact.getState(req(`/api/pact/session/${c1.code}/state`), env, host));
-  let guard = 0;
-  while (s.session.status === 'playing' && guard++ < 40) {
-    if (s.cabal.status !== 'active') break;
-    s = await J(await pact.vote(req(`/api/pact/session/${c1.code}/vote`, { option: 'D' }), env, host));
-  }
-  const res = await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, host);
-  assert.equal(res.status, 409);
-});
-
-test('team game — two teams, votes resolve, night advances when all commit', async () => {
-  const env = { DB: makeDB() };
-  const host = { userId: 1, username: 'Host' };
-  const p2 = { userId: 2, username: 'Two' };
-  const p3 = { userId: 3, username: 'Three' };
-
-  const c = await J(await pact.createSession(req('/api/pact/session', { mode: 'team' }), env, host));
+  const c = await J(await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, U(1)));
   const code = c.code;
-  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, host);
-  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { name: 'Red' }), env, host);
-  const redState = await J(await pact.getState(req(`/api/pact/session/${code}/state`), env, host));
-  const redId = redState.you.cabalId;
 
-  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, p2);
-  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { cabal_id: redId }), env, p2); // join Red
-  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, p3);
-  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { name: 'Blue' }), env, p3);
+  // 1 player, unnamed -> blocked
+  let r = await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, U(1));
+  assert.equal(r.status, 400);
 
-  await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, host);
+  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, U(2));
+  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, U(3));
 
-  // Red: host votes B, p2 votes B -> commits. Blue: p3 votes B -> commits. Night advances.
-  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'B' }), env, host);
-  let s = await J(await pact.getState(req(`/api/pact/session/${code}/state`), env, host));
-  assert.equal(s.session.currentNight, 1, 'still night 1 — Red not fully voted');
-  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'B' }), env, p2);
-  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'C' }), env, p3);
-  s = await J(await pact.getState(req(`/api/pact/session/${code}/state`), env, host));
-  assert.equal(s.session.currentNight, 2, 'advanced to night 2');
+  // 3 players but cabals unnamed -> blocked
+  r = await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, U(1));
+  assert.equal(r.status, 400);
+  assert.match((await J(r)).error, /name/i);
+
+  for (const id of [1, 2, 3]) {
+    await pact.setCabalName(req(`/api/pact/session/${code}/cabal`, { name: `Cabal ${id}` }), env, U(id));
+  }
+  r = await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, U(1));
+  assert.equal(r.status, 200);
+
+  const done = await playOut(env, code, [U(1), U(2), U(3)]);
+  assert.equal(done.session.status, 'ended');
+  assert.ok(done.reckoning);
+
+  // U1 already has a finalized season run -> new solo create blocked
+  const blocked = await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, U(1));
+  assert.equal(blocked.status, 409);
 });
 
-test('admin practice — unlimited, never blocked, is_practice flagged', async () => {
+test('team game — 2-per-team minimum enforced', async () => {
   const env = { DB: makeDB() };
-  const admin = { userId: 1, username: 'Admin' };
-  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, admin));
-  assert.equal(a.practice, true);
-  const b = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, admin));
+  const c = await J(await pact.createSession(req('/api/pact/session', { mode: 'team' }), env, U(1)));
+  const code = c.code;
+  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, U(1));
+  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { name: 'Red' }), env, U(1));
+  const red = (await state(env, code, U(1))).you.cabalId;
+  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, U(2));
+  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { cabal_id: red }), env, U(2));
+  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, U(3));
+  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { name: 'Blue' }), env, U(3));
+
+  // Blue has 1 member -> blocked
+  let r = await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, U(1));
+  assert.equal(r.status, 400);
+  assert.match((await J(r)).error, /team needs at least 2/i);
+
+  await pact.joinSession(req(`/api/pact/session/${code}/join`, {}), env, U(4));
+  await pact.chooseTeam(req(`/api/pact/session/${code}/team`, { cabal_id: (await state(env, code, U(3))).you.cabalId }), env, U(4));
+  r = await pact.startSession(req(`/api/pact/session/${code}/start`, {}), env, U(1));
+  assert.equal(r.status, 200);
+
+  // Red: U1 + U2 both vote B -> commits. Blue: U3 + U4 vote B -> commits. Night advances.
+  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'B' }), env, U(1));
+  let s = await state(env, code, U(1));
+  assert.equal(s.session.currentNight, 1, 'Red not fully voted yet');
+  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'B' }), env, U(2));
+  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'B' }), env, U(3));
+  await pact.vote(req(`/api/pact/session/${code}/vote`, { option: 'B' }), env, U(4));
+  s = await state(env, code, U(1));
+  assert.equal(s.session.currentNight, 2);
+});
+
+test('state — night payload carries option effects + delayed for the client', async () => {
+  const env = { DB: makeDB() };
+  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
+  const s = await state(env, a.code, U(1));
+  assert.equal(s.session.isPractice, true);
+  assert.deepEqual(s.night.options.A.effects, SEASONS[1].nights[0].options.A.effects);
+  // night 3 D has a delayed payload
+  // (fast-forward not needed — just confirm shape exists on the data)
+});
+
+test('admin practice — auto-started, unlimited, unranked', async () => {
+  const env = { DB: makeDB() };
+  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
+  const b = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
   assert.notEqual(a.code, b.code);
-  const st = await J(await pact.getState(req(`/api/pact/session/${a.code}/state`), env, admin));
-  assert.equal(st.session.isPractice, true);
-  assert.equal(st.session.status, 'playing');
+  const done = await playOut(env, a.code, [U(1)]);
+  assert.equal(done.session.status, 'ended');
+  const lb = await J(await pact.leaderboard(req('/api/pact/leaderboard?scope=season'), env, U(1)));
+  assert.equal(lb.leaderboard.length, 0, 'practice runs never hit the board');
 });

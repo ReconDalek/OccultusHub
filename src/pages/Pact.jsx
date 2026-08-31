@@ -90,8 +90,15 @@ export default function Pact() {
     setCode(c)
   })
   const chooseTeam = (payload) => act(() => api(`/session/${code}/team`, payload))
+  const nameCabal = (name) => act(() => api(`/session/${code}/cabal`, { name }))
   const start = () => act(() => api(`/session/${code}/start`, {}))
   const vote = (option) => act(() => api(`/session/${code}/vote`, { option }))
+  const practice = () => act(async () => {
+    const res = await fetch(`${API_BASE_URL}/api/admin/pact/practice`, { method: 'POST', headers: authHeaders(), body: '{}' })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(d.error || 'Could not start a practice run')
+    setCode(d.code)
+  })
 
   if (sessionLoading) return <Shell><p style={{ color: '#a49bbd' }}>…</p></Shell>
   if (!user) return <Shell><p style={{ color: '#a49bbd' }}>Sign in to enter the Order.</p></Shell>
@@ -114,7 +121,16 @@ export default function Pact() {
             {TIMERS.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
           </select>
           <button onClick={createGame} disabled={busy} style={btn(true)}>Open a lobby</button>
+          <p style={{ color: '#6f6689', fontSize: 11, margin: 0, textAlign: 'center' }}>
+            a game needs at least 3 players{mode === 'team' ? ' · 2 per team' : ''}
+          </p>
         </div>
+
+        {user.isAdmin && (
+          <button onClick={practice} disabled={busy} style={{ ...btn(false), width: '100%', marginTop: 12, borderColor: '#d8a53a55', color: '#d8a53a' }}>
+            ☩ Start a practice run (admin — unscored, solo)
+          </button>
+        )}
 
         <div style={{ ...card, marginTop: 16 }}>
           <label style={{ fontSize: 12, letterSpacing: 1, color: '#6f6689' }}>JOIN WITH A CODE</label>
@@ -143,23 +159,44 @@ export default function Pact() {
 
   // ── lobby ──
   if (s.status === 'lobby') {
+    const myCabal = state.cabals.find((c) => c.id === state.you?.cabalId)
+    const players = state.cabals.reduce((n, c) => n + (c.members || []).length, 0)
+    const unnamed = state.cabals.some((c) => !String(c.name || '').trim())
+    const smallTeams = s.mode === 'team' && state.cabals.some((c) => (c.members || []).length < 2)
+    let blockReason = null
+    if (state.cabals.length === 0) blockReason = 'no cabals yet'
+    else if (players < 3) blockReason = `need ${3 - players} more player${3 - players === 1 ? '' : 's'} (min 3)`
+    else if (unnamed) blockReason = 'every cabal must be named'
+    else if (smallTeams) blockReason = 'every team needs at least 2 members'
+
     return (
       <Shell>
         <CodeHeader code={s.code} onLeave={() => setCode(null)} />
         <p style={{ color: '#a49bbd', fontStyle: 'italic', marginTop: 4 }}>{s.setting}</p>
         <div style={{ ...card, marginTop: 16 }}>
           <div style={{ fontSize: 12, letterSpacing: 1, color: '#6f6689' }}>
-            {s.mode.toUpperCase()} · {s.timerSeconds ? `${s.timerSeconds}s/night` : 'no timer'}
+            {s.mode.toUpperCase()} · {s.timerSeconds ? `${s.timerSeconds}s/night` : 'no timer'} · {players} player{players === 1 ? '' : 's'}
           </div>
+
+          {myCabal && (
+            <CabalNameField current={myCabal.name} busy={busy} onSave={nameCabal}
+              placeholder={s.mode === 'team' ? 'Name your circle' : 'Name your cabal'} />
+          )}
+
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {state.cabals.map((c) => (
               <div key={c.id} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 background: '#0c0a11', border: '1px solid #302943', borderRadius: 8, padding: '8px 12px',
               }}>
-                <span style={{ color: '#ece7f4', fontFamily: 'Cinzel, serif', fontSize: 14 }}>{c.name}</span>
+                <span style={{
+                  color: String(c.name || '').trim() ? '#ece7f4' : '#6f6689',
+                  fontFamily: 'Cinzel, serif', fontSize: 14, fontStyle: String(c.name || '').trim() ? 'normal' : 'italic',
+                }}>
+                  {String(c.name || '').trim() || 'unnamed'}
+                </span>
                 <span style={{ color: '#6f6689', fontSize: 12 }}>
-                  {(c.members || []).length} member{(c.members || []).length === 1 ? '' : 's'}
+                  {(c.members || []).length}{s.mode === 'team' ? '/4' : ''} member{(c.members || []).length === 1 ? '' : 's'}
                   {s.mode === 'team' && c.id !== state.you?.cabalId && (c.members || []).length < 4 && (
                     <button onClick={() => chooseTeam({ cabal_id: c.id })} disabled={busy}
                       style={{ ...btn(false), padding: '3px 10px', marginLeft: 10, fontSize: 11 }}>join</button>
@@ -175,9 +212,13 @@ export default function Pact() {
             </button>
           )}
           {s.isHost && (
-            <button onClick={start} disabled={busy || state.cabals.length === 0} style={{ ...btn(true), marginTop: 12, width: '100%' }}>
-              Begin the eighteen nights
-            </button>
+            <>
+              <button onClick={start} disabled={busy || !!blockReason}
+                style={{ ...btn(!blockReason), marginTop: 12, width: '100%', opacity: blockReason ? 0.6 : 1 }}>
+                Begin the eighteen nights
+              </button>
+              {blockReason && <p style={{ color: '#6f6689', fontSize: 11, textAlign: 'center', marginTop: 6 }}>{blockReason}</p>}
+            </>
           )}
           {!s.isHost && <p style={{ color: '#6f6689', fontSize: 12, marginTop: 12 }}>waiting for the host to begin…</p>}
         </div>
@@ -270,9 +311,34 @@ function Intro() {
         THE PACT
       </h1>
       <p style={{ color: '#a49bbd', fontStyle: 'italic', maxWidth: 420, margin: '0 auto', lineHeight: 1.6 }}>
-        Eighteen nights. A sealed crypt, a hungry dark, and the favour it grants those who feed it.
-        Chase Dominion — but a following you neglect will cost you most of it.
+        Eighteen nights. A sealed crypt, and a hungry cabal.
       </p>
+    </div>
+  )
+}
+function CabalNameField({ current, onSave, busy, placeholder }) {
+  const [val, setVal] = useState(current || '')
+  useEffect(() => { setVal(current || '') }, [current])
+  const dirty = val.trim() && val.trim() !== (current || '').trim()
+  return (
+    <div style={{ marginTop: 12 }}>
+      <label style={{ fontSize: 11, letterSpacing: 1, color: '#6f6689' }}>
+        {current ? 'YOUR CABAL' : 'NAME YOUR CABAL (required)'}
+      </label>
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <input
+          value={val} onChange={(e) => setVal(e.target.value)} maxLength={40} placeholder={placeholder}
+          style={{
+            flex: 1, padding: '9px 12px', background: '#0c0a11',
+            border: `1px solid ${current ? '#302943' : '#d8a53a55'}`, borderRadius: 8,
+            color: '#ece7f4', fontFamily: 'Cinzel, serif', fontSize: 14,
+          }}
+        />
+        <button onClick={() => onSave(val.trim())} disabled={busy || !dirty}
+          style={{ ...btn(dirty), padding: '9px 16px', fontSize: 12, opacity: dirty ? 1 : 0.5 }}>
+          {current ? 'Rename' : 'Set'}
+        </button>
+      </div>
     </div>
   )
 }

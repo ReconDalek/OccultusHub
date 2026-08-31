@@ -1028,6 +1028,7 @@ export async function handleRequest(request, env, ctx) {
       if (pathname.endsWith('/state') && method === 'GET')  return pactController.getState(request, env, user);
       if (pathname.endsWith('/join')  && method === 'POST') return pactController.joinSession(request, env, user);
       if (pathname.endsWith('/team')  && method === 'POST') return pactController.chooseTeam(request, env, user);
+      if (pathname.endsWith('/cabal') && method === 'POST') return pactController.setCabalName(request, env, user);
       if (pathname.endsWith('/start') && method === 'POST') return pactController.startSession(request, env, user);
       if (pathname.endsWith('/vote')  && method === 'POST') return pactController.vote(request, env, user);
       if (pathname.endsWith('/rejoin') && method === 'POST') return pactController.rejoin(request, env, user);

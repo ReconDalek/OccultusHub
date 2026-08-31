@@ -29,7 +29,10 @@ function nightForClient(seasonId, night) {
   const n = getNight(seasonId, night);
   if (!n) return null;
   const options = {};
-  for (const k of OPTS) options[k] = { label: n.options[k].label };
+  for (const k of OPTS) {
+    const o = n.options[k];
+    options[k] = { label: o.label, effects: o.effects, delayed: o.delayed || null };
+  }
   return {
     night: n.night, title: n.title, body: n.body, options,
     rollsDice: nightRollsDice(n.night), holdOption: HOLD_OPTION[n.night],
@@ -83,13 +86,9 @@ export async function createSession(request, env, user) {
   const sessionId = res.meta.last_row_id;
 
   if (mode === 'solo') {
-    await createCabal(env, sessionId, user, cabalName(user));
+    await createCabal(env, sessionId, user, '');
   }
   return jsonResponse({ code, mode, timer_seconds: timer });
-}
-
-function cabalName(user) {
-  return (user.username || 'Cabal') + "'s Order";
 }
 
 async function createCabal(env, sessionId, user, name) {
@@ -116,7 +115,7 @@ export async function joinSession(request, env, user) {
     if (await hasSeasonRun(env, user.userId, ACTIVE_SEASON) && !session.is_practice) {
       return errorResponse('You have already played The Pact this season.', 409);
     }
-    await createCabal(env, session.id, user, cabalName(user));
+    await createCabal(env, session.id, user, '');
   }
   // team mode: user joins the session but picks/creates a team next
   return jsonResponse({ code: session.code, joined: true, needsTeam: session.mode === 'team' });
@@ -141,7 +140,7 @@ export async function chooseTeam(request, env, user) {
     if (count.n >= 4) return errorResponse('That team is full (4)', 409);
     await env.DB.prepare('INSERT INTO pact_cabal_members (cabal_id, user_id) VALUES (?, ?)').bind(cabalId, user.userId).run();
   } else {
-    const name = (body.name || `${user.username || 'The'} Circle`).slice(0, 40);
+    const name = String(body.name || '').trim().slice(0, 40);
     cabalId = await createCabal(env, session.id, user, name);
   }
   // clean up teams left empty
@@ -149,6 +148,19 @@ export async function chooseTeam(request, env, user) {
     `DELETE FROM pact_cabals WHERE session_id = ? AND id NOT IN (SELECT cabal_id FROM pact_cabal_members)`
   ).bind(session.id).run();
   return jsonResponse({ cabal_id: cabalId });
+}
+
+export async function setCabalName(request, env, user) {
+  const code = codeFromUrl(request);
+  const session = await getSession(env, code);
+  if (!session) return errorResponse('No such session', 404);
+  if (session.status !== 'lobby') return errorResponse('Too late to rename the cabal', 409);
+  const mem = await getMyMembership(env, session.id, user.userId);
+  if (!mem) return errorResponse('You are not in this game', 403);
+  const name = String((await request.json().catch(() => ({}))).name || '').trim().slice(0, 40);
+  if (!name) return errorResponse('Give your cabal a name', 400);
+  await env.DB.prepare('UPDATE pact_cabals SET name = ? WHERE id = ?').bind(name, mem.cabal_id).run();
+  return jsonResponse({ name });
 }
 
 export async function startSession(request, env, user) {
@@ -160,6 +172,23 @@ export async function startSession(request, env, user) {
 
   const cabals = await getCabals(env, session.id);
   if (cabals.length === 0) return errorResponse('No cabals to start', 400);
+
+  if (!session.is_practice) {
+    const rows = (await env.DB.prepare(
+      `SELECT cabal_id, COUNT(*) n FROM pact_cabal_members
+        WHERE cabal_id IN (SELECT id FROM pact_cabals WHERE session_id = ?) GROUP BY cabal_id`
+    ).bind(session.id).all()).results || [];
+    const counts = Object.fromEntries(rows.map((r) => [r.cabal_id, r.n]));
+    const players = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    if (players < 3) return errorResponse('The Order needs at least 3 members in the lobby to begin.', 400);
+    if (cabals.some((c) => !String(c.name || '').trim())) {
+      return errorResponse('Every cabal must choose a name before the rite begins.', 400);
+    }
+    if (session.mode === 'team' && cabals.some((c) => (counts[c.id] || 0) < 2)) {
+      return errorResponse('Every team needs at least 2 members.', 400);
+    }
+  }
 
   const ends = session.timer_seconds > 0
     ? new Date(Date.now() + session.timer_seconds * 1000).toISOString().replace('T', ' ').replace('Z', '')

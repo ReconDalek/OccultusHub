@@ -3,6 +3,48 @@ import PactDie from './PactDie.jsx'
 
 const LETTERS = ['A', 'B', 'C', 'D']
 
+const STAT = {
+  gold: { glyph: '☩', color: '#d8a53a' },
+  offerings: { glyph: '⛧', color: '#8b5cf6' },
+  dominion: { glyph: '✦', color: '#c01d47' },
+  thralls: { glyph: '☾', color: '#c9b6f0' },
+}
+const sign = (n) => (n > 0 ? '+' : '') + n
+const fmt = (v) => (Array.isArray(v) ? `${sign(v[0])} … ${sign(v[2])}` : sign(v))
+
+function EffectTags({ effects, delayed }) {
+  const tags = []
+  for (const k of ['gold', 'offerings', 'dominion', 'thralls']) {
+    if (effects[k] != null) tags.push({ k, text: fmt(effects[k]) })
+  }
+  if (effects.dominionPerThrall != null) {
+    const d = effects.dominionPerThrall
+    tags.push({ k: 'dominion', text: `+${Array.isArray(d) ? `${d[0]}–${d[2]}` : d}×☾` })
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+      {tags.map((t, i) => (
+        <span key={i} style={{
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: 0.5,
+          color: STAT[t.k].color, background: '#0c0a11',
+          border: `1px solid ${STAT[t.k].color}33`, borderRadius: 6, padding: '1px 6px',
+        }}>
+          {STAT[t.k].glyph} {t.text}
+        </span>
+      ))}
+      {delayed && (
+        <span style={{
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
+          color: '#d8a53a', background: '#0c0a11', border: '1px solid #d8a53a33',
+          borderRadius: 6, padding: '1px 6px',
+        }}>
+          ⏳ pays out night {delayed.on}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function PactNight({
   night, committed, yourVote, votes, mode, progress, lastOutcome, busy, onVote,
 }) {
@@ -54,7 +96,13 @@ export default function PactNight({
       <h2 className="font-cinzel" style={{ letterSpacing: 2, color: '#ece7f4', fontSize: 22, margin: '0 0 10px' }}>
         {night.title}
       </h2>
-      <p style={{ color: '#ded7ea', lineHeight: 1.7, marginBottom: 18 }}>{night.body}</p>
+      <p style={{ color: '#ded7ea', lineHeight: 1.7, marginBottom: night.rollsDice ? 8 : 18 }}>{night.body}</p>
+      {night.rollsDice && (
+        <p style={{ color: '#6f6689', fontSize: 12, fontStyle: 'italic', marginBottom: 16 }}>
+          Ranges show the swing from <span style={{ color: '#d9484f' }}>Ill Fortune</span> to{' '}
+          <span style={{ color: '#3fb98a' }}>Favour</span> — the die decides where you land.
+        </p>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {LETTERS.map((k) => {
@@ -68,8 +116,8 @@ export default function PactNight({
               onClick={() => setSelected(k)}
               disabled={busy}
               style={{
-                display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
-                width: '100%', minHeight: 52, padding: '12px 14px',
+                display: 'flex', alignItems: 'flex-start', gap: 12, textAlign: 'left',
+                width: '100%', padding: '12px 14px',
                 background: isSel ? 'rgba(192,29,71,0.14)' : '#151220',
                 border: `1px solid ${isSel ? '#c01d47' : '#302943'}`,
                 borderRadius: 10, color: '#ece7f4', cursor: busy ? 'default' : 'pointer',
@@ -78,9 +126,12 @@ export default function PactNight({
             >
               <span style={{
                 fontFamily: 'Cinzel, serif', color: isSel ? '#c01d47' : '#6f6689',
-                fontSize: 15, width: 16, flexShrink: 0,
+                fontSize: 15, width: 16, flexShrink: 0, marginTop: 1,
               }}>{k}</span>
-              <span style={{ flex: 1 }}>{opt.label}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {opt.label}
+                {opt.effects && <EffectTags effects={opt.effects} delayed={opt.delayed} />}
+              </span>
               {mode === 'team' && n > 0 && (
                 <span style={{
                   fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#a49bbd',
