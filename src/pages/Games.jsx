@@ -65,6 +65,22 @@ const GAMES = [
       'A dark humour card game for the inner sanctum. A Harbinger draws a black card, the rest of the circle plays their worst white card, and the Harbinger judges who has the most cursed soul.',
     cta: 'Join the Table',
   },
+  {
+    to: '/pact',
+    title: 'The Pact',
+    symbol: '☩',
+    symbolColor: '#d8a53a',
+    accentColor: '#b3123f',
+    gradientFrom: 'rgba(179,18,63,0.10)',
+    gradientTo:   'rgba(216,165,58,0.05)',
+    border:       'rgba(179,18,63,0.28)',
+    tag: 'Strategy',
+    tagColor: '#d8a53a',
+    players: 'Solo or teams',
+    description:
+      'Eighteen nights bound to the thing beneath the chapel. Feed it and it grants Dominion; overreach and your coffers run dry. After the twelfth night Fate\'s Dice enters every rite. Chase favour — but a following you neglect will cost you most of it.',
+    cta: 'Enter the Order',
+  },
 ]
 
 export default function Games() {

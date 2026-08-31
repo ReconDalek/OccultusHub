@@ -32,10 +32,11 @@ import GameRoom       from './pages/GameRoom'
 import CardsGame      from './pages/CardsGame'
 import Sanctum        from './pages/Sanctum'
 import Binding        from './pages/Binding'
+import Pact           from './pages/Pact'
 import Stocks         from './pages/Stocks'
 import NotFound       from './pages/NotFound'
 
-const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding'] // active gameplay routes — suppress easter egg overlays
+const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding', '/pact'] // active gameplay routes — suppress easter egg overlays
 
 const PAGE_META = {
   '/': {
@@ -49,6 +50,10 @@ const PAGE_META = {
   '/games': {
     title: 'Games — Occultus Hub',
     description: 'Community games and events run by Occultus, the Torn City faction.',
+  },
+  '/pact': {
+    title: 'The Pact — Occultus Hub',
+    description: 'An occult 18-night ritual of favour, followers, and Fate — played solo or in teams.',
   },
   '/respect': {
     title: 'Respect — Occultus Hub',
@@ -260,6 +265,7 @@ function AppRoutes() {
       <Route path="/cards" element={<Layout><CardsGame /></Layout>} />
       <Route path="/sanctum" element={<Layout><Sanctum /></Layout>} />
       <Route path="/binding" element={<Layout><Binding /></Layout>} />
+      <Route path="/pact" element={<Layout><Pact /></Layout>} />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
       <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
