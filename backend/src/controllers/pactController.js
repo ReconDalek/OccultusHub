@@ -123,6 +123,14 @@ export async function createSession(request, env, user) {
   return jsonResponse({ code, mode, timer_seconds: timer });
 }
 
+async function nameTaken(env, sessionId, name, exceptCabalId = 0) {
+  const row = await env.DB.prepare(
+    `SELECT 1 FROM pact_cabals
+      WHERE session_id = ? AND id != ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`
+  ).bind(sessionId, exceptCabalId, name).first();
+  return !!row;
+}
+
 async function createCabal(env, sessionId, user, name) {
   const c = await env.DB.prepare(
     `INSERT INTO pact_cabals (session_id, name) VALUES (?, ?)`
@@ -173,6 +181,9 @@ export async function chooseTeam(request, env, user) {
     await env.DB.prepare('INSERT INTO pact_cabal_members (cabal_id, user_id) VALUES (?, ?)').bind(cabalId, user.userId).run();
   } else {
     const name = String(body.name || '').trim().slice(0, 40);
+    if (name && await nameTaken(env, session.id, name)) {
+      return errorResponse('Another circle in this game already has that name.', 409);
+    }
     cabalId = await createCabal(env, session.id, user, name);
   }
   // clean up teams left empty
@@ -186,14 +197,14 @@ export async function setCabalName(request, env, user) {
   const code = codeFromUrl(request);
   const session = await getSession(env, code);
   if (!session) return errorResponse('No such session', 404);
-  // practice runs auto-start, so allow renaming any time before they end
-  if (session.status === 'ended' || (session.status !== 'lobby' && !session.is_practice)) {
-    return errorResponse('Too late to rename the cabal', 409);
-  }
+  if (session.status !== 'lobby') return errorResponse('Too late to rename the cabal', 409);
   const mem = await getMyMembership(env, session.id, user.userId);
   if (!mem) return errorResponse('You are not in this game', 403);
   const name = String((await request.json().catch(() => ({}))).name || '').trim().slice(0, 40);
   if (!name) return errorResponse('Give your cabal a name', 400);
+  if (await nameTaken(env, session.id, name, mem.cabal_id)) {
+    return errorResponse('Another cabal in this game already has that name.', 409);
+  }
   await env.DB.prepare('UPDATE pact_cabals SET name = ? WHERE id = ?').bind(name, mem.cabal_id).run();
   return jsonResponse({ name });
 }
@@ -208,6 +219,10 @@ export async function startSession(request, env, user) {
   const cabals = await getCabals(env, session.id);
   if (cabals.length === 0) return errorResponse('No cabals to start', 400);
 
+  if (cabals.some((c) => !String(c.name || '').trim())) {
+    return errorResponse('Every cabal must choose a name before the rite begins.', 400);
+  }
+
   if (!session.is_practice) {
     const rows = (await env.DB.prepare(
       `SELECT cabal_id, COUNT(*) n FROM pact_cabal_members
@@ -217,9 +232,6 @@ export async function startSession(request, env, user) {
     const players = Object.values(counts).reduce((a, b) => a + b, 0);
 
     if (players < 3) return errorResponse('The Order needs at least 3 members in the lobby to begin.', 400);
-    if (cabals.some((c) => !String(c.name || '').trim())) {
-      return errorResponse('Every cabal must choose a name before the rite begins.', 400);
-    }
     if (session.mode === 'team' && cabals.some((c) => (counts[c.id] || 0) < 2)) {
       return errorResponse('Every team needs at least 2 members.', 400);
     }
@@ -550,12 +562,12 @@ export async function adminPractice(request, env, user) {
   const seasonId = body.season_id && SEASONS[body.season_id] ? body.season_id : ACTIVE_SEASON;
   let code, tries = 0;
   do { code = genCode(); tries++; } while (await getSession(env, code) && tries < 8);
-  const name = String(body.name || '').trim().slice(0, 40) || `Practice — ${user.username || 'Admin'}`;
+  // a practice run is an ordinary solo lobby (name your cabal, then start) with
+  // is_practice = 1 — no player minimum, never ranked.
   const res = await env.DB.prepare(
-    `INSERT INTO pact_sessions (code, season_id, host_user_id, mode, status, is_practice, current_night)
-     VALUES (?, ?, ?, 'solo', 'playing', 1, 1)`
+    `INSERT INTO pact_sessions (code, season_id, host_user_id, mode, is_practice) VALUES (?, ?, ?, 'solo', 1)`
   ).bind(code, seasonId, user.userId).run();
-  await createCabal(env, res.meta.last_row_id, user, name);
+  await createCabal(env, res.meta.last_row_id, user, '');
   return jsonResponse({ code, practice: true, season_id: seasonId });
 }
 

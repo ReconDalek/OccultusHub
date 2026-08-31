@@ -51,18 +51,23 @@ function OptionOutcomes({ opt, rollsDice }) {
       )}
 
       {opt.delayed && (
-        <div style={{ marginTop: 5, display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {opt.delayed.outcomes.map((row, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{
-                fontFamily: 'JetBrains Mono, monospace', fontSize: 10, flexShrink: 0, minWidth: 78,
-                color: row.band ? BAND_COLOR[row.band] : '#d8a53a',
-              }}>
-                ⏳ n{opt.delayed.on}{row.band ? ` · ${BAND_LABEL[row.band]}` : ''}
-              </span>
-              <OutcomeTags o={row} />
-            </div>
-          ))}
+        <div style={{ marginTop: 7 }}>
+          <div style={{ fontSize: 11, color: '#d8a53a', letterSpacing: 0.3, marginBottom: 3 }}>
+            ⏳ Pays out on night {opt.delayed.on}:
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 14 }}>
+            {opt.delayed.outcomes.map((row, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                {row.band && (
+                  <span style={{
+                    fontFamily: 'Cinzel, serif', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase',
+                    color: BAND_COLOR[row.band], minWidth: 78, flexShrink: 0,
+                  }}>{BAND_LABEL[row.band]}</span>
+                )}
+                <OutcomeTags o={row} />
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

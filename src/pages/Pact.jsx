@@ -112,18 +112,14 @@ export default function Pact() {
     revealAfterRef.current = state?.session?.currentNight ?? null
     return act(() => api(`/session/${code}/vote`, { option }))
   }
-  const practice = () => {
-    const name = window.prompt('Name your practice cabal', 'Practice Run')
-    if (name == null) return
-    act(async () => {
-      const res = await fetch(`${API_BASE_URL}/api/admin/pact/practice`, {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify({ name }),
-      })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error || 'Could not start a practice run')
-      setCode(d.code)
+  const practice = () => act(async () => {
+    const res = await fetch(`${API_BASE_URL}/api/admin/pact/practice`, {
+      method: 'POST', headers: authHeaders(), body: '{}',
     })
-  }
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(d.error || 'Could not start a practice run')
+    setCode(d.code)
+  })
 
   if (sessionLoading) return <Shell><p style={{ color: '#a49bbd' }}>…</p></Shell>
   if (!user) return <Shell><p style={{ color: '#a49bbd' }}>Sign in to enter the Order.</p></Shell>
@@ -153,7 +149,7 @@ export default function Pact() {
 
         {user.isAdmin && (
           <button onClick={practice} disabled={busy} style={{ ...btn(false), width: '100%', marginTop: 12, borderColor: '#d8a53a55', color: '#d8a53a' }}>
-            ☩ Start a practice run (admin — unscored, solo)
+            ☩ Open a practice lobby (admin — solo, unscored, no player minimum)
           </button>
         )}
 
@@ -190,9 +186,9 @@ export default function Pact() {
     const smallTeams = s.mode === 'team' && state.cabals.some((c) => (c.members || []).length < 2)
     let blockReason = null
     if (state.cabals.length === 0) blockReason = 'no cabals yet'
-    else if (players < 3) blockReason = `need ${3 - players} more player${3 - players === 1 ? '' : 's'} (min 3)`
     else if (unnamed) blockReason = 'every cabal must be named'
-    else if (smallTeams) blockReason = 'every team needs at least 2 members'
+    else if (!s.isPractice && players < 3) blockReason = `need ${3 - players} more player${3 - players === 1 ? '' : 's'} (min 3)`
+    else if (!s.isPractice && smallTeams) blockReason = 'every team needs at least 2 members'
 
     return (
       <Shell>
@@ -270,9 +266,9 @@ export default function Pact() {
                   {r.score.toLocaleString()}
                 </div>
                 <div style={{ color: '#6f6689', fontSize: 12, letterSpacing: 1, marginTop: 4 }}>FINAL SCORE</div>
-                <div style={{ color: '#a49bbd', fontSize: 13, marginTop: 12, fontFamily: 'JetBrains Mono, monospace' }}>
-                  {r.dominion} Dominion × {r.loyaltyMod?.toFixed(2)} loyalty × {r.cashMod?.toFixed(2)} coin × 10
-                </div>
+                <p style={{ color: '#a49bbd', fontSize: 13, marginTop: 12, fontStyle: 'italic', maxWidth: 380, marginInline: 'auto' }}>
+                  The pact weighs your Dominion against the following you kept and the coffers you held, and sets your name in the ledger accordingly.
+                </p>
               </>}
           </div>
         )}

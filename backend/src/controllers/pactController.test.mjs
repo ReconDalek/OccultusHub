@@ -52,6 +52,12 @@ async function playOut(env, code, users) {
   do { s = await voteAll(env, code, users); } while (s.session.status === 'playing' && guard++ < 30);
   return s;
 }
+async function startPractice(env, u, name = 'Practice Cabal') {
+  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, u));
+  await pact.setCabalName(req(`/api/pact/session/${a.code}/cabal`, { name }), env, u);
+  await pact.startSession(req(`/api/pact/session/${a.code}/start`, {}), env, u);
+  return a.code;
+}
 
 test('start guard — needs 3 players, named cabals; second season run blocked', async () => {
   const env = { DB: makeDB() };
@@ -118,11 +124,27 @@ test('team game — 2-per-team minimum enforced', async () => {
   assert.equal(s.session.currentNight, 2);
 });
 
+test('practice — starts as a solo lobby; no player minimum; name required', async () => {
+  const env = { DB: makeDB() };
+  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
+  let s = await state(env, a.code, U(1));
+  assert.equal(s.session.status, 'lobby');
+  assert.equal(s.session.isPractice, true);
+  // unnamed -> blocked even for practice
+  let r = await pact.startSession(req(`/api/pact/session/${a.code}/start`, {}), env, U(1));
+  assert.equal(r.status, 400);
+  await pact.setCabalName(req(`/api/pact/session/${a.code}/cabal`, { name: 'Probe' }), env, U(1));
+  r = await pact.startSession(req(`/api/pact/session/${a.code}/start`, {}), env, U(1)); // 1 player, fine
+  assert.equal(r.status, 200);
+  s = await state(env, a.code, U(1));
+  assert.equal(s.session.status, 'playing');
+  assert.equal(s.cabal.name, 'Probe');
+});
+
 test('state — night payload gives resolved outcomes, not raw effects', async () => {
   const env = { DB: makeDB() };
-  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', { name: 'Probe' }), env, U(1)));
-  const s = await state(env, a.code, U(1));
-  assert.equal(s.session.isPractice, true);
+  const code = await startPractice(env, U(1), 'Probe');
+  const s = await state(env, code, U(1));
   assert.equal(s.cabal.name, 'Probe');
   assert.ok(!('effects' in s.night.options.A), 'raw effects not leaked');
   // night 1 A = { dominion: 15, offerings: 2 } (fixed)
@@ -135,13 +157,13 @@ test('state — night payload gives resolved outcomes, not raw effects', async (
 
 test('dice night — option carries three named band outcomes', async () => {
   const env = { DB: makeDB() };
-  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
+  const code = await startPractice(env, U(1));
   // fast-forward to night 13 by committing the hold option each night
   let guard = 0;
-  let s = await state(env, a.code, U(1));
+  let s = await state(env, code, U(1));
   while (s.session.currentNight < 13 && s.session.status === 'playing' && guard++ < 20) {
-    await pact.vote(req(`/api/pact/session/${a.code}/vote`, { option: s.night.holdOption }), env, U(1));
-    s = await state(env, a.code, U(1));
+    await pact.vote(req(`/api/pact/session/${code}/vote`, { option: s.night.holdOption }), env, U(1));
+    s = await state(env, code, U(1));
   }
   if (s.session.status === 'playing') {
     assert.equal(s.night.rollsDice, true);
@@ -152,15 +174,26 @@ test('dice night — option carries three named band outcomes', async () => {
   }
 });
 
-test('admin practice — named, unlimited, unranked; leaderboard shows cabal + members', async () => {
+test('admin practice — unlimited and unranked', async () => {
   const env = { DB: makeDB() };
-  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', { name: 'Test Cabal' }), env, U(1)));
-  const b = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
-  assert.notEqual(a.code, b.code);
-  const done = await playOut(env, a.code, [U(1)]);
+  const c1 = await startPractice(env, U(1), 'First');
+  const c2 = await startPractice(env, U(1), 'Second');
+  assert.notEqual(c1, c2);
+  const done = await playOut(env, c1, [U(1)]);
   assert.equal(done.session.status, 'ended');
   const lb = await J(await pact.leaderboard(req('/api/pact/leaderboard?scope=season'), env, U(1)));
   assert.equal(lb.leaderboard.length, 0, 'practice runs never hit the board');
+});
+
+test('duplicate cabal names are rejected in the same game', async () => {
+  const env = { DB: makeDB() };
+  const c = await J(await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, U(1)));
+  await pact.joinSession(req(`/api/pact/session/${c.code}/join`, {}), env, U(2));
+  await pact.setCabalName(req(`/api/pact/session/${c.code}/cabal`, { name: 'The Veiled' }), env, U(1));
+  const dup = await pact.setCabalName(req(`/api/pact/session/${c.code}/cabal`, { name: '  the veiled  ' }), env, U(2));
+  assert.equal(dup.status, 409);
+  const ok = await pact.setCabalName(req(`/api/pact/session/${c.code}/cabal`, { name: 'The Hollow' }), env, U(2));
+  assert.equal(ok.status, 200);
 });
 
 test('leaderboard rows carry cabal name + member usernames', async () => {

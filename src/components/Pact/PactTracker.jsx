@@ -74,7 +74,7 @@ export default function PactTracker({ cabal, night }) {
                   fontSize: 12, borderLeft: `2px solid ${l.broke ? '#d9484f' : l.failed ? '#d8a53a' : '#302943'}`,
                   paddingLeft: 8, color: '#ded7ea',
                 }}>
-                  <span style={{ color: '#6f6689', fontFamily: 'JetBrains Mono, monospace' }}>N{l.night}</span>{' '}
+                  <span style={{ color: '#6f6689' }}>Night {l.night}</span>{' — '}
                   {l.delayed ? <em style={{ color: '#a49bbd' }}>a deferred bargain came due</em> : l.label}
                   {l.band && <span style={{ color: '#a49bbd' }}> · {l.band.replace('-', ' ')}</span>}
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', color: '#a49bbd', marginLeft: 6 }}>
