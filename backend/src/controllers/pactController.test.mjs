@@ -118,23 +118,64 @@ test('team game — 2-per-team minimum enforced', async () => {
   assert.equal(s.session.currentNight, 2);
 });
 
-test('state — night payload carries option effects + delayed for the client', async () => {
+test('state — night payload gives resolved outcomes, not raw effects', async () => {
   const env = { DB: makeDB() };
-  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
+  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', { name: 'Probe' }), env, U(1)));
   const s = await state(env, a.code, U(1));
   assert.equal(s.session.isPractice, true);
-  assert.deepEqual(s.night.options.A.effects, SEASONS[1].nights[0].options.A.effects);
-  // night 3 D has a delayed payload
-  // (fast-forward not needed — just confirm shape exists on the data)
+  assert.equal(s.cabal.name, 'Probe');
+  assert.ok(!('effects' in s.night.options.A), 'raw effects not leaked');
+  // night 1 A = { dominion: 15, offerings: 2 } (fixed)
+  assert.equal(s.night.options.A.outcome.dominion, 15);
+  assert.equal(s.night.options.A.outcome.offerings, 2);
+  assert.equal(s.night.options.A.outcome.gold, 0);
+  // night 1 D has a delayed payload -> option D carries { delayed: { on, outcomes } }
+  assert.equal(s.night.rollsDice, false);
 });
 
-test('admin practice — auto-started, unlimited, unranked', async () => {
+test('dice night — option carries three named band outcomes', async () => {
   const env = { DB: makeDB() };
   const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
+  // fast-forward to night 13 by committing the hold option each night
+  let guard = 0;
+  let s = await state(env, a.code, U(1));
+  while (s.session.currentNight < 13 && s.session.status === 'playing' && guard++ < 20) {
+    await pact.vote(req(`/api/pact/session/${a.code}/vote`, { option: s.night.holdOption }), env, U(1));
+    s = await state(env, a.code, U(1));
+  }
+  if (s.session.status === 'playing') {
+    assert.equal(s.night.rollsDice, true);
+    const A = s.night.options.A;
+    assert.equal(A.outcomes.length, 3);
+    assert.deepEqual(A.outcomes.map((o) => o.band), ['ill-fortune', 'the-turning', 'favour']);
+    assert.equal(A.outcomes[0].gold, SEASONS[1].nights[12].options.A.effects.gold[0]);
+  }
+});
+
+test('admin practice — named, unlimited, unranked; leaderboard shows cabal + members', async () => {
+  const env = { DB: makeDB() };
+  const a = await J(await pact.adminPractice(req('/api/admin/pact/practice', { name: 'Test Cabal' }), env, U(1)));
   const b = await J(await pact.adminPractice(req('/api/admin/pact/practice', {}), env, U(1)));
   assert.notEqual(a.code, b.code);
   const done = await playOut(env, a.code, [U(1)]);
   assert.equal(done.session.status, 'ended');
   const lb = await J(await pact.leaderboard(req('/api/pact/leaderboard?scope=season'), env, U(1)));
   assert.equal(lb.leaderboard.length, 0, 'practice runs never hit the board');
+});
+
+test('leaderboard rows carry cabal name + member usernames', async () => {
+  const env = { DB: makeDB() };
+  const c = await J(await pact.createSession(req('/api/pact/session', { mode: 'solo' }), env, U(1)));
+  await pact.joinSession(req(`/api/pact/session/${c.code}/join`, {}), env, U(2));
+  await pact.joinSession(req(`/api/pact/session/${c.code}/join`, {}), env, U(3));
+  for (const id of [1, 2, 3]) {
+    await pact.setCabalName(req(`/api/pact/session/${c.code}/cabal`, { name: `Order ${id}` }), env, U(id));
+  }
+  await pact.startSession(req(`/api/pact/session/${c.code}/start`, {}), env, U(1));
+  await playOut(env, c.code, [U(1), U(2), U(3)]);
+  const lb = await J(await pact.leaderboard(req('/api/pact/leaderboard?scope=season'), env, U(1)));
+  assert.ok(lb.leaderboard.length >= 1);
+  assert.match(lb.leaderboard[0].name, /^Order /);
+  assert.equal(lb.leaderboard[0].members.length, 1);
+  assert.ok(typeof lb.leaderboard[0].members[0] === 'string' && lb.leaderboard[0].members[0].length > 0);
 });

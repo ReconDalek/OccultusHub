@@ -25,17 +25,49 @@ const cabalResources = (row) => ({
   gold: row.gold, offerings: row.offerings, dominion: row.dominion, thralls: row.thralls,
 });
 
-function nightForClient(seasonId, night) {
+const BAND_KEYS = ['ill-fortune', 'the-turning', 'favour'];
+const pickBand = (v, b) => (Array.isArray(v) ? v[b] : (v ?? 0));
+
+// The face value of an option on a given band, resolved against the cabal's
+// current Thralls (for dominionPerThrall). Not state-clamped — this is "what the
+// pact offers", the arithmetic against your own books is still yours to do.
+function optionOffer(effects, band, thralls) {
+  let dominion = pickBand(effects.dominion, band);
+  if (effects.dominionPerThrall != null) dominion += pickBand(effects.dominionPerThrall, band) * thralls;
+  return {
+    gold: pickBand(effects.gold, band),
+    offerings: pickBand(effects.offerings, band),
+    dominion,
+    thralls: pickBand(effects.thralls, band),
+  };
+}
+
+function nightForClient(seasonId, night, thralls = 0) {
   const n = getNight(seasonId, night);
   if (!n) return null;
+  const dice = nightRollsDice(n.night);
   const options = {};
   for (const k of OPTS) {
     const o = n.options[k];
-    options[k] = { label: o.label, effects: o.effects, delayed: o.delayed || null };
+    const opt = { label: o.label };
+    if (dice) {
+      opt.outcomes = BAND_KEYS.map((key, b) => ({ band: key, ...optionOffer(o.effects, b, thralls) }));
+    } else {
+      opt.outcome = optionOffer(o.effects, 1, thralls);
+    }
+    if (o.delayed) {
+      opt.delayed = {
+        on: o.delayed.on,
+        outcomes: dice
+          ? BAND_KEYS.map((key, b) => ({ band: key, ...optionOffer(o.delayed.effects, b, thralls) }))
+          : [{ band: null, ...optionOffer(o.delayed.effects, 1, thralls) }],
+      };
+    }
+    options[k] = opt;
   }
   return {
     night: n.night, title: n.title, body: n.body, options,
-    rollsDice: nightRollsDice(n.night), holdOption: HOLD_OPTION[n.night],
+    rollsDice: dice, holdOption: HOLD_OPTION[n.night],
   };
 }
 
@@ -154,7 +186,10 @@ export async function setCabalName(request, env, user) {
   const code = codeFromUrl(request);
   const session = await getSession(env, code);
   if (!session) return errorResponse('No such session', 404);
-  if (session.status !== 'lobby') return errorResponse('Too late to rename the cabal', 409);
+  // practice runs auto-start, so allow renaming any time before they end
+  if (session.status === 'ended' || (session.status !== 'lobby' && !session.is_practice)) {
+    return errorResponse('Too late to rename the cabal', 409);
+  }
   const mem = await getMyMembership(env, session.id, user.userId);
   if (!mem) return errorResponse('You are not in this game', 403);
   const name = String((await request.json().catch(() => ({}))).name || '').trim().slice(0, 40);
@@ -443,7 +478,7 @@ export async function getState(request, env, user) {
     out.committed = done.has(myCabal.id);
 
     if (session.status === 'playing' && myCabal.status === 'active' && !out.committed) {
-      out.night = nightForClient(session.season_id, session.current_night);
+      out.night = nightForClient(session.season_id, session.current_night, myCabal.thralls);
       const v = await env.DB.prepare(
         `SELECT option FROM pact_votes WHERE cabal_id = ? AND night = ? AND user_id = ?`
       ).bind(myCabal.id, session.current_night, user.userId).first();
@@ -465,11 +500,23 @@ export async function getState(request, env, user) {
   }
 
   if (session.status === 'ended') {
-    out.standings = cabals
-      .map((c) => ({ name: c.name, score: c.final_score ?? 0, status: c.status, brokeOnNight: c.broke_on_night }))
-      .sort((a, b) => b.score - a.score);
+    out.standings = [];
+    for (const c of [...cabals].sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0))) {
+      out.standings.push({
+        name: c.name, score: c.final_score ?? 0, status: c.status,
+        brokeOnNight: c.broke_on_night, members: await cabalMembers(env, c.id),
+      });
+    }
   }
   return jsonResponse(out);
+}
+
+async function cabalMembers(env, cabalId) {
+  const rows = (await env.DB.prepare(
+    `SELECT u.username FROM pact_cabal_members m JOIN users u ON u.id = m.user_id
+      WHERE m.cabal_id = ? ORDER BY m.joined_at`
+  ).bind(cabalId).all()).results || [];
+  return rows.map((r) => r.username);
 }
 
 // ── leaderboards ─────────────────────────────────────────────────────────
@@ -477,25 +524,22 @@ export async function leaderboard(request, env, user) {
   const url = new URL(request.url);
   const scope = url.searchParams.get('scope') === 'alltime' ? 'alltime' : 'season';
 
-  const base = `
-    SELECT u.username, c.final_score AS score, s.season_id, c.status, c.broke_on_night
+  let sql = `
+    SELECT c.id, c.name, c.final_score AS score, s.season_id, c.status, c.broke_on_night
       FROM pact_cabals c
-      JOIN pact_sessions s        ON s.id = c.session_id
-      JOIN pact_cabal_members m   ON m.cabal_id = c.id
-      JOIN users u               ON u.id = m.user_id
+      JOIN pact_sessions s ON s.id = c.session_id
      WHERE s.is_practice = 0 AND c.final_score IS NOT NULL`;
+  const binds = [];
+  if (scope === 'season') { sql += ' AND s.season_id = ?'; binds.push(ACTIVE_SEASON); }
+  sql += ' ORDER BY score DESC LIMIT 50';
 
-  let rows;
-  if (scope === 'season') {
-    rows = (await env.DB.prepare(
-      `SELECT username, MAX(score) AS score, status, broke_on_night FROM (${base} AND s.season_id = ?)
-        GROUP BY username ORDER BY score DESC LIMIT 50`
-    ).bind(ACTIVE_SEASON).all()).results || [];
-  } else {
-    rows = (await env.DB.prepare(
-      `SELECT username, MAX(score) AS score, COUNT(*) AS seasons FROM (${base})
-        GROUP BY username ORDER BY score DESC LIMIT 50`
-    ).all()).results || [];
+  const cabals = (await env.DB.prepare(sql).bind(...binds).all()).results || [];
+  const rows = [];
+  for (const c of cabals) {
+    rows.push({
+      name: c.name, score: c.score, status: c.status, brokeOnNight: c.broke_on_night,
+      season: c.season_id, members: await cabalMembers(env, c.id),
+    });
   }
   return jsonResponse({ scope, season: ACTIVE_SEASON, leaderboard: rows });
 }
@@ -506,11 +550,12 @@ export async function adminPractice(request, env, user) {
   const seasonId = body.season_id && SEASONS[body.season_id] ? body.season_id : ACTIVE_SEASON;
   let code, tries = 0;
   do { code = genCode(); tries++; } while (await getSession(env, code) && tries < 8);
+  const name = String(body.name || '').trim().slice(0, 40) || `Practice — ${user.username || 'Admin'}`;
   const res = await env.DB.prepare(
     `INSERT INTO pact_sessions (code, season_id, host_user_id, mode, status, is_practice, current_night)
      VALUES (?, ?, ?, 'solo', 'playing', 1, 1)`
   ).bind(code, seasonId, user.userId).run();
-  await createCabal(env, res.meta.last_row_id, user, 'Practice — ' + (user.username || 'Admin'));
+  await createCabal(env, res.meta.last_row_id, user, name);
   return jsonResponse({ code, practice: true, season_id: seasonId });
 }
 

@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
 import { API_BASE_URL } from '../config/api'
 import PactTracker from '../components/Pact/PactTracker.jsx'
-import PactNight from '../components/Pact/PactNight.jsx'
+import PactNight, { OutcomeTags } from '../components/Pact/PactNight.jsx'
+import PactDie from '../components/Pact/PactDie.jsx'
 
 function authHeaders() {
   const token = localStorage.getItem('occultusSession')
@@ -47,7 +48,9 @@ export default function Pact() {
   const [mode, setMode] = useState('solo')
   const [timer, setTimer] = useState(0)
   const [board, setBoard] = useState(null)
+  const [reveal, setReveal] = useState(null)
   const pollRef = useRef(null)
+  const revealAfterRef = useRef(null)
 
   const setCode = (c) => setParams(c ? { code: c } : {}, { replace: true })
 
@@ -61,19 +64,32 @@ export default function Pact() {
 
   useEffect(() => { load() }, [load])
 
-  // poll while lobby / playing
+  // poll while lobby / playing (paused during a reveal)
   useEffect(() => {
     clearInterval(pollRef.current)
     const st = state?.session?.status
-    if (code && (st === 'lobby' || st === 'playing')) {
+    if (code && !reveal && (st === 'lobby' || st === 'playing')) {
       pollRef.current = setInterval(() => { if (!busy) load() }, 2500)
     }
     return () => clearInterval(pollRef.current)
-  }, [code, state?.session?.status, busy, load])
+  }, [code, state?.session?.status, busy, reveal, load])
 
   useEffect(() => {
     api('/leaderboard?scope=season').then(setBoard).catch(() => {})
   }, [state?.session?.status])
+
+  // after a vote resolves the cabal's night, hold on a reveal screen
+  useEffect(() => {
+    const n = revealAfterRef.current
+    if (n == null || !state?.cabal?.ledger) return
+    const own = state.cabal.ledger.filter((l) => l.night === n && !l.delayed).slice(-1)[0]
+    if (own) {
+      const deferred = state.cabal.ledger.filter((l) => l.night === n + 1 && l.delayed)
+      setReveal({ own, deferred })
+      revealAfterRef.current = null
+    }
+  }, [state])
+
 
   const act = async (fn) => {
     setBusy(true); setError(null)
@@ -92,13 +108,22 @@ export default function Pact() {
   const chooseTeam = (payload) => act(() => api(`/session/${code}/team`, payload))
   const nameCabal = (name) => act(() => api(`/session/${code}/cabal`, { name }))
   const start = () => act(() => api(`/session/${code}/start`, {}))
-  const vote = (option) => act(() => api(`/session/${code}/vote`, { option }))
-  const practice = () => act(async () => {
-    const res = await fetch(`${API_BASE_URL}/api/admin/pact/practice`, { method: 'POST', headers: authHeaders(), body: '{}' })
-    const d = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(d.error || 'Could not start a practice run')
-    setCode(d.code)
-  })
+  const vote = (option) => {
+    revealAfterRef.current = state?.session?.currentNight ?? null
+    return act(() => api(`/session/${code}/vote`, { option }))
+  }
+  const practice = () => {
+    const name = window.prompt('Name your practice cabal', 'Practice Run')
+    if (name == null) return
+    act(async () => {
+      const res = await fetch(`${API_BASE_URL}/api/admin/pact/practice`, {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ name }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not start a practice run')
+      setCode(d.code)
+    })
+  }
 
   if (sessionLoading) return <Shell><p style={{ color: '#a49bbd' }}>…</p></Shell>
   if (!user) return <Shell><p style={{ color: '#a49bbd' }}>Sign in to enter the Order.</p></Shell>
@@ -255,7 +280,7 @@ export default function Pact() {
           <div style={{ ...card, marginTop: 16 }}>
             <div style={{ fontSize: 12, letterSpacing: 1, color: '#6f6689', marginBottom: 8 }}>STANDINGS</div>
             {state.standings.map((c, i) => (
-              <Row key={i} rank={i + 1} name={c.name}
+              <Row key={i} rank={i + 1} name={c.name} members={c.members}
                 right={c.status === 'broken' ? `broken · N${c.brokeOnNight}` : c.score.toLocaleString()} />
             ))}
           </div>
@@ -265,8 +290,50 @@ export default function Pact() {
     )
   }
 
+  // ── reveal (held between committing and the next night) ──
+  if (reveal) {
+    return (
+      <Shell wide>
+        <CodeHeader code={s.code} onLeave={() => setCode(null)} small />
+        <PactTracker cabal={state.cabal} night={reveal.own.night} />
+        <div style={{ ...card, textAlign: 'center' }}>
+          {reveal.own.band && (
+            <div style={{ marginBottom: 18 }}>
+              <PactDie face={reveal.own.face} band={reveal.own.band} nonce={reveal.own.night} size={116} />
+            </div>
+          )}
+          <h3 className="font-cinzel" style={{ letterSpacing: 2, color: '#ece7f4', fontSize: 18, margin: 0 }}>
+            {reveal.own.broke ? 'The Pact is Broken'
+              : reveal.own.failed ? 'The ritual failed'
+              : reveal.own.label}
+          </h3>
+          {reveal.own.note && (
+            <p style={{ color: '#a49bbd', fontStyle: 'italic', maxWidth: 420, margin: '8px auto 0' }}>{reveal.own.note}</p>
+          )}
+          <div style={{ marginTop: 14 }}><OutcomeTags o={reveal.own.deltas} size={13} /></div>
+          {reveal.deferred?.map((d, i) => (
+            <div key={i} style={{ marginTop: 12, color: '#d8a53a' }}>
+              <div style={{ fontSize: 12, letterSpacing: 1 }}>⏳ A DEFERRED BARGAIN CAME DUE</div>
+              <div style={{ marginTop: 6 }}><OutcomeTags o={d.deltas} size={13} /></div>
+            </div>
+          ))}
+          {!reveal.own.broke && (
+            <button onClick={() => { setReveal(null); load() }}
+              style={{ ...btn(true), marginTop: 22, width: '100%' }}>
+              {reveal.own.night >= 18 ? 'To the Reckoning →' : 'The night turns →'}
+            </button>
+          )}
+          {reveal.own.broke && (
+            <button onClick={() => { setReveal(null); load() }} style={{ ...btn(false), marginTop: 22, width: '100%' }}>
+              See the Reckoning
+            </button>
+          )}
+        </div>
+      </Shell>
+    )
+  }
+
   // ── playing ──
-  const lastForNight = (state.cabal?.ledger || []).filter((l) => l.night === s.currentNight && !l.delayed).slice(-1)[0]
   return (
     <Shell wide>
       <CodeHeader code={s.code} onLeave={() => setCode(null)} small />
@@ -284,7 +351,6 @@ export default function Pact() {
             votes={state.votes}
             mode={s.mode}
             progress={state.progress}
-            lastOutcome={lastForNight}
             busy={busy}
             onVote={vote}
           />
@@ -355,13 +421,19 @@ function CodeHeader({ code, onLeave, small }) {
 function ErrLine({ msg }) {
   return <p style={{ color: '#d9484f', fontSize: 13, marginTop: 14, textAlign: 'center' }}>{msg}</p>
 }
-function Row({ rank, name, right }) {
+function Row({ rank, name, members, right }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1d1830', fontSize: 14 }}>
-      <span style={{ color: '#ded7ea' }}>
-        <span style={{ color: '#6f6689', fontFamily: 'JetBrains Mono, monospace', marginRight: 8 }}>{rank}</span>{name}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #1d1830', fontSize: 14 }}>
+      <span style={{ color: '#ded7ea', minWidth: 0 }}>
+        <span style={{ color: '#6f6689', fontFamily: 'JetBrains Mono, monospace', marginRight: 8 }}>{rank}</span>
+        <span style={{ fontFamily: 'Cinzel, serif' }}>{name || 'unnamed'}</span>
+        {members?.length ? (
+          <div style={{ fontSize: 11, color: '#6f6689', marginLeft: 22, marginTop: 1 }}>
+            {members.join(' · ')}
+          </div>
+        ) : null}
       </span>
-      <span style={{ fontFamily: 'JetBrains Mono, monospace', color: '#a49bbd' }}>{right}</span>
+      <span style={{ fontFamily: 'JetBrains Mono, monospace', color: '#a49bbd', whiteSpace: 'nowrap', paddingLeft: 10 }}>{right}</span>
     </div>
   )
 }
@@ -370,10 +442,11 @@ function Board({ board }) {
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <div style={{ fontSize: 12, letterSpacing: 1, color: '#6f6689', marginBottom: 8 }}>
-        SEASON {board.season} · TOP ORDERS
+        SEASON {board.season} · TOP CABALS
       </div>
       {board.leaderboard.slice(0, 10).map((r, i) => (
-        <Row key={i} rank={i + 1} name={r.username} right={(r.score ?? 0).toLocaleString()} />
+        <Row key={i} rank={i + 1} name={r.name} members={r.members}
+          right={r.status === 'broken' ? `broken · N${r.brokeOnNight}` : (r.score ?? 0).toLocaleString()} />
       ))}
     </div>
   )
