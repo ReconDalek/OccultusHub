@@ -266,6 +266,14 @@ export async function getArmoryDeposits(request, env, user) {
 // This month's Armory expense for one faction — sum of deposited quantity ×
 // current cached item price, for deposits logged since the start of the
 // current UTC month. Used by accountingController's Armory expense line.
+// Excludes bulk restocks (>99 units in one deposit) — same threshold
+// getArmoryDeposits already applies to the admin deposit log, for the same
+// reason: a bulk restock isn't a member "giving back what they didn't use",
+// it's someone stocking the armory, and shouldn't inflate this expense
+// figure. This function was previously missing that filter entirely — found
+// live: a handful of bulk restocks this month (14 deposits, ~15k items)
+// were massively overstating Occul3us's reported Armory Spend vs. what the
+// deposit log itself showed for the same period.
 export async function getFactionArmoryExpense(env, factionId) {
   const now = new Date();
   const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
@@ -274,7 +282,7 @@ export async function getFactionArmoryExpense(env, factionId) {
     `SELECT d.quantity, COALESCE(p.effective_price, 0) AS unit_price
      FROM armory_deposits d
      LEFT JOIN item_prices_cache p ON p.name = d.item_name
-     WHERE d.faction_id = ? AND d.deposited_at >= ?`
+     WHERE d.faction_id = ? AND d.deposited_at >= ? AND d.quantity <= 99`
   ).bind(factionId, monthStartTs).all();
 
   let depositCount = 0;
