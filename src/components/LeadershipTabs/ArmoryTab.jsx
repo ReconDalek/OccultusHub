@@ -318,47 +318,121 @@ function formatDepositTime(unix) {
   return `${time} - ${date}`
 }
 
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+// Last 18 months, most recent first — same convention used elsewhere
+// (GenerateWarningsPanel.jsx, ExemptionsTab.jsx) for month-picker options.
+function buildMonthOptions() {
+  const now = new Date()
+  const options = []
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+    options.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() })
+  }
+  return options
+}
+
 function ArmoryDepositsTab() {
   const [deposits, setDeposits] = useState([])
+  const [monthMode, setMonthMode] = useState(false)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState(null)
   const [factionFilter, setFactionFilter] = useState(null)
+  const [monthFilter, setMonthFilter] = useState('recent') // 'recent' | 'YYYY-M' (0-indexed month)
+  const monthOptions = buildMonthOptions()
 
   useEffect(() => {
     const token = localStorage.getItem('occultusSession')
-    const qs = factionFilter != null ? `?faction_id=${factionFilter}&limit=200` : '?limit=200'
+    const params = new URLSearchParams()
+    if (factionFilter != null) params.set('faction_id', factionFilter)
+    if (monthFilter === 'recent') {
+      params.set('limit', '200')
+    } else {
+      const [y, mo] = monthFilter.split('-').map(Number)
+      params.set('year', y)
+      params.set('month', mo + 1)
+    }
     setLoading(true)
-    fetch(`${API_BASE_URL}/api/leadership/armory/deposits${qs}`, { headers: { Authorization: token } })
+    fetch(`${API_BASE_URL}/api/leadership/armory/deposits?${params}`, { headers: { Authorization: token } })
       .then(r => r.json())
-      .then(d => { if (d.error) setError(d.error); else setDeposits(d.deposits || []) })
+      .then(d => {
+        if (d.error) setError(d.error)
+        else { setDeposits(d.deposits || []); setMonthMode(!!d.month_mode) }
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [factionFilter])
+  }, [factionFilter, monthFilter])
+
+  // Reconciliation summary — only meaningful in month mode, since that's the
+  // one view that (like Accounting's Armory Spend) counts every deposit
+  // with no row cap and no bulk-restock exclusion.
+  const summary = monthMode
+    ? deposits.reduce((acc, d) => ({
+        count: acc.count + 1,
+        items: acc.items + d.quantity,
+        value: acc.value + d.quantity * d.unit_price,
+      }), { count: 0, items: 0, value: 0 })
+    : null
 
   return (
     <div>
       <div style={{ marginBottom: '16px' }}>
         <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: '0 0 10px' }}>
-          Items deposited into each faction's armory, most recent first. Deposits over 99 units are excluded here as
-          bulk restocks. Xanax deposits of 99 or fewer also net against Energy Out as "Energy Repaid" on the War
-          Summary and Active War pages.
+          {monthMode
+            ? 'Every deposit logged for the selected month, bulk restocks included — matches what Accounting\'s Armory Spend counts, for reconciling the two.'
+            : 'Items deposited into each faction\'s armory, most recent first. Deposits over 99 units are excluded here as bulk restocks — pick a month below to see everything instead. Xanax deposits of 99 or fewer also net against Energy Out as "Energy Repaid" on the War Summary and Active War pages.'}
         </p>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {[{ id: null, label: 'All Factions' }, ...FACTIONS].map(f => {
-            const active = factionFilter === f.id
-            return (
-              <button key={String(f.id)} onClick={() => setFactionFilter(f.id)}
-                style={{
-                  padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
-                  border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
-                  background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
-                  color: active ? '#f4f4f5' : "var(--text-secondary)",
-                }}
-              >{f.label}</button>
-            )
-          })}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {[{ id: null, label: 'All Factions' }, ...FACTIONS].map(f => {
+              const active = factionFilter === f.id
+              return (
+                <button key={String(f.id)} onClick={() => setFactionFilter(f.id)}
+                  style={{
+                    padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+                    border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
+                    background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
+                    color: active ? '#f4f4f5' : "var(--text-secondary)",
+                  }}
+                >{f.label}</button>
+              )
+            })}
+          </div>
+          <select
+            value={monthFilter}
+            onChange={e => setMonthFilter(e.target.value)}
+            style={{
+              padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+              border: `1px solid ${monthFilter !== 'recent' ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.12)'}`,
+              background: monthFilter !== 'recent' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)',
+              color: monthFilter !== 'recent' ? '#a78bfa' : "var(--text-secondary)",
+            }}
+          >
+            <option value="recent">Recent (last 200)</option>
+            {monthOptions.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>{MONTHS_FULL[month]} {year}</option>
+            ))}
+          </select>
         </div>
       </div>
+
+      {monthMode && summary && (
+        <div style={{
+          display: 'flex', gap: '20px', flexWrap: 'wrap', padding: '10px 14px', borderRadius: '8px', marginBottom: '14px',
+          background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)',
+        }}>
+          {[
+            ['Deposits', summary.count.toLocaleString()],
+            ['Items', summary.items.toLocaleString()],
+            ['Total Value', formatValue(summary.value)],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <p style={{ color: "var(--text-faint)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px' }}>{label}</p>
+              <p style={{ color: '#f4f4f5', fontSize: '16px', fontWeight: '700', margin: 0 }}>{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading && <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>Loading deposit log…</p>}
       {!loading && error && <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>}
@@ -377,7 +451,12 @@ function ArmoryDepositsTab() {
               <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '150px 90px 1fr 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <span style={{ color: '#4ade80', fontSize: '12px', fontFamily: 'monospace' }}>{formatDepositTime(d.deposited_at)}</span>
                 <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{FACTIONS.find(f => f.id === d.faction_id)?.label ?? d.faction_id}</span>
-                <span style={{ color: '#4ade80', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.item_name}</span>
+                <span style={{ color: '#4ade80', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {d.item_name}
+                  {monthMode && d.quantity > 99 && (
+                    <span style={{ marginLeft: '6px', fontSize: '10px', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '4px', padding: '0 4px' }}>bulk</span>
+                  )}
+                </span>
                 <a href={`https://www.torn.com/profiles.php?XID=${d.torn_user_id}`} target="_blank" rel="noopener noreferrer"
                   style={{ color: '#4ade80', fontSize: '12px', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {d.username}

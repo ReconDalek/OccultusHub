@@ -239,11 +239,44 @@ export async function getArmoryDeposits(request, env, user) {
   try {
     const url = new URL(request.url);
     const factionId = url.searchParams.get('faction_id');
-    const limit = Math.min(parseInt(url.searchParams.get('limit'), 10) || 200, 500);
+    const year = url.searchParams.get('year');
+    const month = url.searchParams.get('month');
 
-    // Deposits over 99 units are bulk restocks, not the kind of individual
-    // "gave it back" activity this log is meant to surface — excluded here,
-    // same threshold used for Energy Repaid and the war Armory tab.
+    // Full-month mode: every deposit for that calendar month, bulk restocks
+    // included, no row cap beyond a generous safety ceiling — this is the
+    // "sanity check against Accounting" view, so it must match what
+    // getFactionArmoryExpense actually counts (which is everything).
+    if (year && month) {
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const monthStartTs = Math.floor(Date.UTC(y, m - 1, 1) / 1000);
+      const monthEndTs   = Math.floor(Date.UTC(y, m, 1) / 1000) - 1;
+
+      const where = factionId
+        ? 'WHERE d.faction_id = ? AND d.deposited_at >= ? AND d.deposited_at <= ?'
+        : 'WHERE d.deposited_at >= ? AND d.deposited_at <= ?';
+      const params = factionId
+        ? [parseInt(factionId, 10), monthStartTs, monthEndTs]
+        : [monthStartTs, monthEndTs];
+
+      const { results } = await env.DB.prepare(
+        `SELECT d.id, d.faction_id, d.torn_user_id, d.username, d.item_name, d.quantity, d.deposited_at,
+                COALESCE(p.effective_price, 0) AS unit_price
+         FROM armory_deposits d
+         LEFT JOIN item_prices_cache p ON p.name = d.item_name
+         ${where}
+         ORDER BY d.deposited_at DESC
+         LIMIT 5000`
+      ).bind(...params).all();
+
+      return jsonResponse({ deposits: results || [], month_mode: true });
+    }
+
+    // Default "recent activity" mode — capped row count, bulk restocks
+    // excluded as noise for a feed meant to surface individual "gave it
+    // back" activity, same threshold used for Energy Repaid and the war
+    // Armory tab. Unchanged from before the month-mode addition.
+    const limit = Math.min(parseInt(url.searchParams.get('limit'), 10) || 200, 500);
     const where = factionId ? 'WHERE d.faction_id = ? AND d.quantity <= 99' : 'WHERE d.quantity <= 99';
     const params = factionId ? [parseInt(factionId, 10)] : [];
 
@@ -257,7 +290,7 @@ export async function getArmoryDeposits(request, env, user) {
        LIMIT ?`
     ).bind(...params, limit).all();
 
-    return jsonResponse({ deposits: results || [] });
+    return jsonResponse({ deposits: results || [], month_mode: false });
   } catch (e) {
     return errorResponse('Failed to fetch armory deposits: ' + e.message, 500);
   }
