@@ -17,6 +17,7 @@ import * as gameController from './controllers/gameController.js';
 import * as cahController from './controllers/cahController.js';
 import * as forumsController from './controllers/forumsController.js';
 import * as sanctumController from './controllers/sanctumController.js';
+import * as pactController from './controllers/pactController.js';
 import * as activityController from './controllers/activityController.js';
 import * as logsController from './controllers/logsController.js';
 import * as accountingController from './controllers/accountingController.js';
@@ -207,6 +208,13 @@ export async function handleRequest(request, env, ctx) {
 
     if (pathname === '/api/admin/sanctum/reset' && method === 'POST') {
       return sanctumController.resetLeaderboard(request, env, user);
+    }
+
+    if (pathname === '/api/admin/pact/practice' && method === 'POST') {
+      return pactController.adminPractice(request, env, user);
+    }
+    if (pathname === '/api/admin/pact/reset' && method === 'POST') {
+      return pactController.adminReset(request, env, user);
     }
 
     // Chain cache endpoints
@@ -1002,6 +1010,28 @@ export async function handleRequest(request, env, ctx) {
   }
   if (pathname === '/api/sanctum/leaderboard' && method === 'GET') {
     return sanctumController.getLeaderboard(request, env);
+  }
+
+  // The Pact — occult 18-night ritual/business-sim (auth required)
+  {
+    const S = /^\/api\/pact\/session\/[A-Za-z0-9]{6}/;
+    if (pathname === '/api/pact/session' && method === 'POST') {
+      if (!user) return errorResponse('Authentication required', 401);
+      return pactController.createSession(request, env, user);
+    }
+    if (pathname === '/api/pact/leaderboard' && method === 'GET') {
+      if (!user) return errorResponse('Authentication required', 401);
+      return pactController.leaderboard(request, env, user);
+    }
+    if (S.test(pathname) && (method === 'GET' || method === 'POST')) {
+      if (!user) return errorResponse('Authentication required', 401);
+      if (pathname.endsWith('/state') && method === 'GET')  return pactController.getState(request, env, user);
+      if (pathname.endsWith('/join')  && method === 'POST') return pactController.joinSession(request, env, user);
+      if (pathname.endsWith('/team')  && method === 'POST') return pactController.chooseTeam(request, env, user);
+      if (pathname.endsWith('/start') && method === 'POST') return pactController.startSession(request, env, user);
+      if (pathname.endsWith('/vote')  && method === 'POST') return pactController.vote(request, env, user);
+      if (pathname.endsWith('/rejoin') && method === 'POST') return pactController.rejoin(request, env, user);
+    }
   }
 
   // 404 - Not found
