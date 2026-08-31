@@ -1,0 +1,481 @@
+<title>The Pact</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  :root{
+    --ground:#0c0a11;
+    --surface:#151220;
+    --surface-2:#1d1830;
+    --edge:#302943;
+    --ink:#ece7f4;
+    --muted:#a49bbd;
+    --faint:#6f6689;
+    --crimson:#c01d47;
+    --violet:#8b5cf6;
+    --gold:#d8a53a;
+    --good:#3fb98a;
+    --bad:#d9484f;
+    --measure:70ch;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"EB Garamond",Georgia,serif;
+    font-size:19px;
+    line-height:1.65;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139,92,246,0.10), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 50% 110%, rgba(192,29,71,0.08), transparent 60%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:820px;margin:0 auto;padding:72px 24px 120px}
+  h1,h2,h3{font-family:"Cinzel",serif;font-weight:600;text-wrap:balance;line-height:1.25}
+  h1{font-size:clamp(30px,6vw,46px);letter-spacing:3px;margin:0 0 10px;text-align:center}
+  .sub{text-align:center;color:var(--muted);font-style:italic;font-size:20px;margin:0 auto 8px;max-width:52ch}
+  .meta{text-align:center;color:var(--faint);font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-bottom:64px}
+
+  section{margin-top:64px}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--crimson);display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .eyebrow::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,var(--edge),transparent)}
+  h2{font-size:26px;letter-spacing:1.5px;margin:0 0 18px}
+  h3{font-size:19px;font-family:"Cinzel",serif;letter-spacing:1px;margin:28px 0 8px;color:var(--ink)}
+  p{max-width:var(--measure)}
+  p,li{color:#ded7ea}
+  strong{color:#fff;font-weight:600}
+  em{color:var(--muted)}
+  a{color:var(--violet)}
+  ul,ol{max-width:var(--measure);padding-left:1.2em}
+  li{margin:6px 0}
+  code{font-family:"JetBrains Mono",monospace;font-size:0.82em;background:var(--surface-2);border:1px solid var(--edge);border-radius:4px;padding:1px 5px;color:#e7c98a}
+
+  .card{background:var(--surface);border:1px solid var(--edge);border-radius:10px;padding:22px 24px;margin:18px 0}
+  .card.tight{padding:16px 20px}
+
+  .resources{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:20px 0}
+  .res{background:var(--surface);border:1px solid var(--edge);border-radius:10px;padding:16px 18px}
+  .res .glyph{font-size:22px;line-height:1}
+  .res .name{font-family:"Cinzel",serif;letter-spacing:1px;font-size:15px;margin:8px 0 2px}
+  .res .start{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--gold)}
+  .res .desc{font-size:15px;color:var(--muted);margin-top:6px;line-height:1.5}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:16px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--edge);vertical-align:top}
+  th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint);font-weight:500}
+  td{color:#ded7ea}
+  .num{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .scroll{overflow-x:auto}
+
+  .phase-band{display:flex;gap:2px;margin:18px 0;border-radius:8px;overflow:hidden;border:1px solid var(--edge)}
+  .phase-band > div{flex:1;padding:12px 14px;font-size:14px}
+  .phase-a{background:var(--surface)}
+  .phase-b{background:linear-gradient(180deg,rgba(192,29,71,0.16),rgba(139,92,246,0.10))}
+  .phase-band .lbl{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px}
+
+  pre{background:#0a0812;border:1px solid var(--edge);border-radius:10px;padding:18px 20px;overflow-x:auto;font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.6;color:#cfc6e6}
+  pre .k{color:#e7c98a}
+  pre .s{color:#8bd5b0}
+  pre .c{color:var(--faint);font-style:italic}
+
+  .formula{font-family:"JetBrains Mono",monospace;font-size:15px;background:var(--surface-2);border:1px solid var(--edge);border-left:3px solid var(--gold);border-radius:6px;padding:14px 18px;color:#f0dcae;overflow-x:auto}
+
+  .callout{border-left:3px solid var(--violet);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;margin:16px 0;font-size:16px}
+  .callout.warn{border-left-color:var(--bad)}
+  .callout .tag{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px}
+
+  .steps{counter-reset:s;list-style:none;padding:0}
+  .steps li{counter-increment:s;position:relative;padding-left:44px;margin:14px 0}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:0;width:28px;height:28px;border:1px solid var(--crimson);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--crimson)}
+
+  .q{background:var(--surface);border:1px solid var(--edge);border-radius:8px;padding:14px 18px;margin:12px 0}
+  .q .n{font-family:"Cinzel",serif;color:var(--gold);font-size:15px;letter-spacing:1px}
+  hr{border:0;border-top:1px solid var(--edge);margin:64px 0 0}
+  .foot{color:var(--faint);font-size:14px;font-style:italic;text-align:center;margin-top:24px}
+  table.nights td{font-size:13px;padding:8px 10px;vertical-align:top}
+  table.nights .nn{font-family:"Cinzel",serif;color:var(--gold);white-space:nowrap}
+  table.nights .eff{font-family:"JetBrains Mono",monospace;font-size:12px;color:#cfc6e6;display:block;margin-top:3px}
+  .legend{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);letter-spacing:1px}
+  .pos{color:var(--good)} .neg{color:var(--bad)} .eng{color:var(--violet)} .dly{color:var(--gold)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media (max-width:640px){
+    .wrap{padding:52px 17px 88px}
+    body{font-size:18px}
+    h1{letter-spacing:2px}
+    .phase-band{flex-direction:column}
+    section{margin-top:52px}
+  }
+</style>
+
+<div class="wrap">
+
+  <h1>The Pact</h1>
+  <p class="sub">An 18-night contract with the dark — a business simulation re-bound as occult ritual, for the Order.</p>
+  <p class="meta">Design plan &nbsp;·&nbsp; v0.6 &nbsp;·&nbsp; occultusHub / Games</p>
+
+  <section>
+    <div class="eyebrow">I</div>
+    <h2>The Premise</h2>
+    <p>A group convenes and each runs a fledgling <strong>cabal</strong> — <strong>solo</strong>, or as a <strong>team</strong> that votes on its moves. Over <strong>18 nights</strong> everyone is handed the same crossroads, and each cabal chooses its own answer. The night turns only once every cabal has committed. Feed the pact and it grants <strong>Dominion</strong>; overreach and your coffers run dry.</p>
+    <p>What differs is the reading: which risks you take, what you spend, what you let wither. After the <strong>twelfth night</strong> the veil thins and <strong>Fate's Dice</strong> enters every outcome — the same choice can bless or ruin you.</p>
+    <p>Run <strong>Gold</strong> below zero and <strong>the Pact is Broken</strong> — the run ends where it stands, however much Dominion you'd gathered. And Dominion means little without <strong>Thralls</strong> to hold it: a following you neglect costs you most of your favour at the Reckoning.</p>
+    <div class="callout">
+      <span class="tag">Vocabulary — "Dark Pact" set</span>
+      Customers &rarr; <strong>Thralls</strong> &nbsp;•&nbsp; Inventory &rarr; <strong>Offerings</strong> &nbsp;•&nbsp; Profit &rarr; <strong>Dominion</strong> &nbsp;•&nbsp; Cash &rarr; <strong>Gold</strong> &nbsp;•&nbsp; Bankruptcy &rarr; <strong>The Pact is Broken</strong> &nbsp;•&nbsp; post-night-12 randomiser &rarr; <strong>Fate's Dice</strong>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">II</div>
+    <h2>The Four Resources</h2>
+    <div class="resources">
+      <div class="res">
+        <div class="glyph" style="color:var(--gold)">☩</div>
+        <div class="name">Gold</div>
+        <div class="start">start 1,000 · no cap</div>
+        <div class="desc"><strong>Scarce and precious.</strong> Many choices cost Gold; income is rare and always paid for with something else. Drop below 0 on any night → the Pact is Broken, run over. Gold is a "spend or don't" pressure and a bankruptcy line — it barely touches the score (a small hoarding bonus, that's all).</div>
+      </div>
+      <div class="res">
+        <div class="glyph" style="color:var(--violet)">⛧</div>
+        <div class="name">Offerings</div>
+        <div class="start">start 0 · cap 90 · not scored</div>
+        <div class="desc">Ritual fuel — burnt to produce Dominion. <strong>Not part of the score.</strong> The vault holds 90; a choice that would push past it fills to 90, spoils the excess, and inflicts the <strong>overfill penalty: −80 Dominion, −3 Thralls</strong>. Empty when a ritual needs it → the ritual fails.</div>
+      </div>
+      <div class="res">
+        <div class="glyph" style="color:var(--crimson)">✦</div>
+        <div class="name">Dominion</div>
+        <div class="start">start 0 · no cap · the headline</div>
+        <div class="desc">The pact's favour — the number every cabal chases and the leaderboard is built on. Grown all game, never spent, never protects you from ruin. Bad omens claw it back; it floors at 0.</div>
+      </div>
+      <div class="res">
+        <div class="glyph" style="color:#c9b6f0">☾</div>
+        <div class="name">Thralls</div>
+        <div class="start">start 0 · no cap · the gate</div>
+        <div class="desc">Bound followers. They <strong>scale your Dominion at the Reckoning</strong> — a cabal with no flock keeps ~30% of its favour; a large devoted following doubles it. Several "rite with the faithful" options also grant Dominion <em>per Thrall</em>, so a following actively earns favour, not just multiplies it.</div>
+      </div>
+    </div>
+    <p><em>The shape of it:</em> chase Dominion, but you cannot cash it in without followers — and you cannot afford much of anything if you let Gold run dry. Offerings are the tactical supply that powers your biggest Dominion swings.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">III</div>
+    <h2>The Round</h2>
+    <p>18 nights. Each night every cabal sees one <strong>scenario</strong> and <strong>four responses, A–D</strong>, each applying a set of resource changes — spend Gold for Dominion, burn Offerings, recruit or sacrifice Thralls. Most mix a give and a take. Everyone faces an identical script; the night turns once all cabals commit.</p>
+
+    <div class="phase-band">
+      <div class="phase-a"><span class="lbl">Nights 1–12 — The Bargain</span>Outcomes are fixed. Same choice → same result. Pure decision-making under a tight Gold constraint.</div>
+      <div class="phase-b"><span class="lbl">Nights 13–18 — The Thinning</span>Fate's Dice rolls on the chosen option — cost and reward together, worst to best.</div>
+    </div>
+
+    <h3>Nothing is blocked. You keep your own books.</h3>
+    <p>The game never greys out a choice, never warns you, never previews an outcome. Every option is always selectable. The screen keeps an honest tracker — <strong>current Gold / Offerings / Dominion / Thralls and a ledger of every past night</strong> — but the <em>planning</em> is yours: read the option, do the maths, decide whether you can carry it, before you commit.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Mistake</th><th>What happens</th></tr>
+      <tr><td>Gold below 0, any night</td><td><strong style="color:var(--bad)">The Pact is Broken.</strong> Run ends where it stands. Score 0.</td></tr>
+      <tr><td>A choice would push Offerings past 90</td><td>The rest of the option resolves; the vault fills to 90, the excess spoils, and you take <strong>−80 Dominion, −3 Thralls</strong>.</td></tr>
+      <tr><td>A choice costs more Offerings / Thralls than you hold</td><td>The <strong>ritual fails</strong> — any Gold it cost is lost, nothing else happens, the night is spent. (This is the anti-exploit rule: you can't "sacrifice" souls you don't have.)</td></tr>
+    </table>
+    </div>
+
+    <h3>Delayed payoffs ⏳</h3>
+    <p>A few options pay — or bite — several nights later. The cost lands now; the ledger holds the pending line and resolves it on the named night. <em>e.g. Night 3: "Seize a slice of the rival's standing" — Dominion +50 now, Gold +450 on night 6.</em> Three in the first twelve nights, one in the dice nights. They must be planned around, not reacted to.</p>
+
+    <h3>Rites with the faithful <span class="eng">✦</span></h3>
+    <p>Four options across the game read <strong>"Dominion + (Thralls × N)"</strong> — they convert your current following straight into favour. A cabal that has built its flock gets an enormous swing here; a cabal that hasn't gets almost nothing. This is what makes followers worth protecting <em>during</em> the game, not just at the end.</p>
+
+    <p>Each night one option is a low-stakes <strong>hold</strong> — small, safe effects — but <strong>its position rotates</strong> (it is not always D), and it is a choice, not a lifeline: it won't dig you out of a hole.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">IV</div>
+    <h2>Fate's Dice — Nights 13–18</h2>
+    <p>On nights 13–18, when a cabal commits, it <strong>casts Fate's Dice</strong> — a single d6, shown as a physical die-throw animation on screen. Each cabal rolls its own (a team rolls once for the team). The face that lands picks one band, applied to <em>every</em> value on the chosen option at once:</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Roll</th><th>Band</th><th>"Strike the rival coven first" (Night 14-A), resolved</th></tr>
+      <tr><td class="num">1–2</td><td><strong style="color:var(--bad)">Ill Fortune</strong></td><td>Gold −350 · Thralls −4 · Dominion +30 &nbsp;<em>(a bloody repulse)</em></td></tr>
+      <tr><td class="num">3–4</td><td><strong>The Turning</strong></td><td>Gold −250 · Thralls −2 · Dominion +120 &nbsp;<em>(a costly win)</em></td></tr>
+      <tr><td class="num">5–6</td><td><strong style="color:var(--good)">Favour</strong></td><td>Gold −150 · Thralls 0 · Dominion +260 &nbsp;<em>(a rout)</em></td></tr>
+    </table>
+    </div>
+    <p>Every value is authored as a <code>[low, mid, high]</code> triple <strong>ordered worst → best for the player</strong>. <strong>Costs swing modestly; rewards swing wide</strong> — you can plan for the worst-case cost, but never the payoff. One roll, one band, across the whole row: a risky play fails on all fronts or wins on all fronts.</p>
+    <p><strong>Archetypes</strong>, one spread per night: <strong>Safe</strong> (narrow, mildly positive in every band) · <strong>Balanced</strong> (Ill Fortune stings but survives, Favour is solid) · <strong>Gamble</strong> (wide upside, real cost to the other resources) · <strong>Hold</strong> (tiny, near-flat). Position rotates.</p>
+    <p><em>Determinism:</em> the roll for cabal <code>C</code> on night <code>R</code> is seeded from <code>(sessionId, cabalId, R)</code> — reproducible and auditable server-side, different for every cabal.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">V</div>
+    <h2>The Score</h2>
+    <div class="formula">Score = Dominion × loyaltyMod × cashMod &nbsp;&nbsp;(× 10 for display)</div>
+    <div class="formula">loyaltyMod = clamp( 0.3 + Thralls / 25 , 0.3 , 2.0 )</div>
+    <div class="formula">cashMod&nbsp;&nbsp;&nbsp; = clamp( 0.75 + Gold / 4000 , 0.75 , 1.5 )</div>
+    <ul>
+      <li><strong>Dominion</strong> is the thing being multiplied — the number every option chases and every cabal grows all game.</li>
+      <li><strong>loyaltyMod</strong> — no followers → you keep just <strong>30%</strong> of your Dominion at the Reckoning. A following of 25+ <strong>doubles</strong> it. This is "you need followers to your Dominion", made literal.</li>
+      <li><strong>cashMod</strong> — minor. Starting Gold sits at ~1.0×; finishing with a treasury nudges toward 1.5×, near-broke down to 0.75×. Gold is mostly the bankruptcy line, not a score lever.</li>
+      <li><strong>Offerings</strong> — not in the score at all. Fuel + the overfill penalty.</li>
+      <li><strong>Pact Broken → Score 0.</strong> Recorded with "fell on Night N"; all broken runs tie at the bottom.</li>
+    </ul>
+    <div class="card tight">
+      <strong>Worked example.</strong> Reckoning — Dominion 950, Thralls 12, Gold 600.<br>
+      loyaltyMod = 0.3 + 12/25 = 0.78 &nbsp;·&nbsp; cashMod = 0.75 + 600/4000 = 0.9 &nbsp;→&nbsp; 950 × 0.78 × 0.9 × 10 = <strong>6,670</strong>.<br>
+      <em>Same Dominion, no followers (Thralls 2):</em> 950 × 0.38 × 0.9 × 10 = <strong>3,250</strong> — over half the score gone.
+    </div>
+
+    <h3>Playtest — full 18 nights, 8,000 runs per strategy</h3>
+    <div class="scroll">
+    <table>
+      <tr><th>Strategy</th><th class="num">Bankrupt</th><th class="num">Score p10 / p50 / p90</th><th>Read</th></tr>
+      <tr><td>follower-heavy</td><td class="num">11%</td><td class="num">0 / 535 / 792</td><td>the winning path — higher variance, runs lean on Gold</td></tr>
+      <tr><td>balanced / greedy-Dominion</td><td class="num">~7%</td><td class="num">210 / 320 / 465</td><td>big Dominion, ~⅓ of it kept for want of followers</td></tr>
+      <tr><td>spam one option</td><td class="num">100%</td><td class="num">0 / 0 / 0</td><td>bankrupt every time</td></tr>
+      <tr><td>ABCD pattern</td><td class="num">80%</td><td class="num">0 / 0 / 352</td><td>rituals misfire, Gold runs out</td></tr>
+    </table>
+    </div>
+    <p class="foot">All constants — the two mods, the −80/−3 penalty, every night's numbers — are v1 tuning targets, to be revised after live playtests.</p>
+
+    <h3>Leaderboards</h3>
+    <ul>
+      <li><strong>Season board</strong> — the primary. The month's completed runs by final Score. Resets monthly with the new scenario set.</li>
+      <li><strong>All-time board</strong> — each player's <strong>best single season Score</strong> ever, with "seasons played / survived" alongside. <code>MAX(final_score) GROUP BY user_id</code>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow">VI</div>
+    <h2>The Setting</h2>
+    <p>You've inherited <strong>the Order</strong> — a cold chapel above a sealed crypt, and a pact with the thing behind the door. Over 18 nights you feed it, and it feeds you favour. Your rivals: a <strong>coven across the river</strong>, the <strong>town's bishop and his inquisitors</strong>, and whatever you keep feeding in the dark. No factions, no forums — a self-contained occult world.</p>
+    <p class="legend">Notation &nbsp; G Gold · O Offerings · D Dominion · T Thralls &nbsp;|&nbsp; <span class="eng">✦</span> rite with the faithful (D + T×N) &nbsp;|&nbsp; <span class="dly">⏳</span> delayed &nbsp;|&nbsp; dice nights: <span class="neg">[Ill Fortune</span>, Turning, <span class="pos">Favour]</span></p>
+  </section>
+
+  <section>
+    <div class="eyebrow">VII</div>
+    <h2>The 18 Nights <span style="color:var(--faint);font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:1px">v1 — playtested</span></h2>
+
+    <h3>Nights 1–12 · The Bargain <span style="color:var(--faint);font-size:14px">(fixed outcomes · start Gold 1,000)</span></h3>
+    <div class="scroll">
+    <table class="nights">
+      <tr><th>Night</th><th>A</th><th>B</th><th>C</th><th>D</th></tr>
+      <tr><td class="nn">1<br>First Binding</td>
+        <td>rites alone<span class="eff">D+15 O+2</span></td><td>open a vein<span class="eff">D+45</span></td>
+        <td>preach in the square<span class="eff">T+3</span></td><td>herb &amp; bone<span class="eff">G−350 O+10</span></td></tr>
+      <tr><td class="nn">2<br>Hungry Crypt</td>
+        <td>bargain through the door<span class="eff">G−300 D+55</span></td><td>tribute the grate<span class="eff">O−3 D+22 T+1</span></td>
+        <td>send a thrall in<span class="eff">T−1 D+60</span></td><td>wall it up<span class="eff">G−150 D+5</span></td></tr>
+      <tr><td class="nn">3<br>Rival Coven</td>
+        <td>sell a share of favour<span class="eff">D−35 G+550</span></td><td>pay your half<span class="eff">G−300 D+25 T+3</span></td>
+        <td>trade recipes<span class="eff">O+6</span></td><td class="dly">seize their standing ⏳<span class="eff">D+50 → n6: G+450</span></td></tr>
+      <tr><td class="nn">4<br>Bishop's Eye</td>
+        <td>buy silence<span class="eff">G−450 D+15</span></td><td>lie low<span class="eff">D−12 O+1</span></td>
+        <td>curse him<span class="eff">T−2 D+75</span></td><td>preach against him<span class="eff">D−10 T+4</span></td></tr>
+      <tr><td class="nn">5<br>The Glut</td>
+        <td>buy heavy<span class="eff">G−600 O+22</span></td><td>modest + hire hands<span class="eff">G−250 O+8 T+2</span></td>
+        <td>sell into the frenzy<span class="eff">O−9 G+650</span></td><td>one true relic<span class="eff">G−350 D+45 O+2</span></td></tr>
+      <tr><td class="nn">6<br>Long Vigil</td>
+        <td class="eng">lead the faithful ✦<span class="eff">G−150 D+40 + T×6</span></td><td>shortened vigil<span class="eff">G−250 D+45</span></td>
+        <td>sell your slot<span class="eff">G+600 D−45</span></td><td>burn offerings<span class="eff">O−11 D+70</span></td></tr>
+      <tr><td class="nn">7<br>Faithless Steward</td>
+        <td>buy back loyalty<span class="eff">G−500 D+12</span></td><td>let them walk<span class="eff">T−5 D+30</span></td>
+        <td>give them to the crypt<span class="eff">T−2 D+75</span></td><td>quiet buyout<span class="eff">G−300 T−1</span></td></tr>
+      <tr><td class="nn">8<br>Blood Moon</td>
+        <td>great pyre<span class="eff">O−18 D+125</span></td><td>modest pyre<span class="eff">O−6 D+45</span></td>
+        <td>burn bought reagents<span class="eff">G−450 D+55</span></td><td>one offering<span class="eff">O−2 D+15 T+1</span></td></tr>
+      <tr><td class="nn">9<br>The Pilgrims</td>
+        <td>take them all in<span class="eff">O−6 T+5</span></td><td>take a careful few<span class="eff">D−15 T+3</span></td>
+        <td class="dly">send them home ⏳<span class="eff">G−200 → n11: D+60 T+3</span></td><td>give the column to the crypt<span class="eff">D+115 T−3</span></td></tr>
+      <tr><td class="nn">10<br>Thing That Got Out</td>
+        <td>chain it again<span class="eff">G−450 D+80</span></td><td class="eng">drive it back with the faithful ✦<span class="eff">D+20 + T×6 · T−1</span></td>
+        <td>wall off the crypt<span class="eff">G−200 D−20 O−3</span></td><td class="dly">loose it on the coven ⏳<span class="eff">D+100 → n12: T−4</span></td></tr>
+      <tr><td class="nn">11<br>The Schism</td>
+        <td>purge dissenters<span class="eff">T−4 D+95</span></td><td>expensive peace<span class="eff">G−450 D+22 T+1</span></td>
+        <td>let it burn<span class="eff">T−3 D−10</span></td><td>day of silence<span class="eff">G−120 D+8 T+2</span></td></tr>
+      <tr><td class="nn">12<br>Last Certain Bargain</td>
+        <td>deep pledge<span class="eff">G−550 T−3 D+140</span></td><td>measured pledge<span class="eff">G−250 D+55</span></td>
+        <td>fill the vault<span class="eff">G−450 O+18</span></td><td>call in debts<span class="eff">G+750 D+10 T+2</span></td></tr>
+    </table>
+    </div>
+
+    <h3>Nights 13–18 · The Thinning <span style="color:var(--faint);font-size:14px">(Fate's Dice — values are [Ill Fortune, Turning, Favour])</span></h3>
+    <div class="scroll">
+    <table class="nights">
+      <tr><th>Night</th><th>A</th><th>B</th><th>C</th><th>D</th></tr>
+      <tr><td class="nn">13<br>Veil Tears</td>
+        <td>reach through<span class="eff">G[−400,−200,+100] D[−30,+80,+200] O[0,+4,+10]</span></td>
+        <td>warded reaching<span class="eff">G[−250,−180,−110] D[+30,+65,+120]</span></td>
+        <td>seal the breach<span class="eff">G[−120,−70,−30] D[+12,+28,+50] T[0,+1,+2]</span></td>
+        <td>bar the doors<span class="eff">G[−20,+30,+100] D[+2,+10,+22]</span></td></tr>
+      <tr><td class="nn">14<br>Coven's Reckoning</td>
+        <td>strike first<span class="eff">G[−350,−250,−150] T[−4,−2,0] D[+30,+120,+260]</span></td>
+        <td>buy them off<span class="eff">G[−350,−260,−170] D[+5,+22,+45]</span></td>
+        <td class="eng">rally the faithful ✦<span class="eff">G[−100,−60,−20] D[+10,+22,+40] + T×[3,5,7]</span></td>
+        <td class="dly">let them overextend ⏳<span class="eff">G[−120,−60,0] → n17: D[+40,+110,+230]</span></td></tr>
+      <tr><td class="nn">15<br>Hungering Dark</td>
+        <td>feed the vault<span class="eff">O[−26,−20,−14] D[+50,+120,+240] G[0,+250,+800]</span></td>
+        <td>measured tribute<span class="eff">O[−11,−8,−5] D[+35,+75,+140]</span></td>
+        <td>tribute in blood<span class="eff">G[−350,−250,−150] T[−3,−2,−1] D[+55,+120,+230]</span></td>
+        <td>smallest offering<span class="eff">O[−4,−3,−2] D[+8,+18,+35]</span></td></tr>
+      <tr><td class="nn">16<br>The Great Doubt</td>
+        <td>stake the Order's faith<span class="eff">G[−450,−300,−150] T[−5,−2,+2] D[−20,+130,+320]</span></td>
+        <td>public rite<span class="eff">G[−250,−170,−90] D[+30,+75,+140] T[−1,0,+1]</span></td>
+        <td>let doubters leave<span class="eff">T[−5,−3,−1] D[+30,+75,+150]</span></td>
+        <td>postpone the test<span class="eff">G[−120,−60,−10] D[−10,+5,+18]</span></td></tr>
+      <tr><td class="nn">17<br>Debt Comes Due</td>
+        <td>settle now<span class="eff">G[−420,−320,−220] D[+45,+95,+175]</span></td>
+        <td>refuse, face it<span class="eff">G[−300,−120,+120] D[−70,+35,+180] T[−3,−1,0]</span></td>
+        <td>pay in relics<span class="eff">O[−20,−15,−10] D[+40,+90,+180]</span></td>
+        <td>partial settlement<span class="eff">G[−220,−150,−80] D[+18,+55,+110]</span></td></tr>
+      <tr><td class="nn">18<br>The Reckoning</td>
+        <td>demand everything<span class="eff">G[−350,−80,+500] D[−40,+150,+430] T[−4,0,+4]</span></td>
+        <td>fair final measure<span class="eff">G[−200,−60,+150] D[+65,+160,+320]</span></td>
+        <td class="eng">one last rite ✦<span class="eff">G[−150,−90,−30] D[+25,+55,+100] + T×[5,8,12]</span></td>
+        <td>close the books<span class="eff">G[+120,+320,+700] D[+15,+40,+90]</span></td></tr>
+    </table>
+    </div>
+    <p><em>Monthly seasons swap the whole 18-night set. This is Season 1.</em></p>
+  </section>
+
+  <section>
+    <div class="eyebrow">VIII</div>
+    <h2>Content &amp; Engine</h2>
+    <p>The 18 scenarios live in one versioned file (the <code>sanctumData.js</code> pattern). The <strong>backend is sole authority</strong> on effects — the client renders scenario text and option labels only, never outcomes.</p>
+    <pre><span class="c">// one option. scalar = fixed; [a,b,c] = dice-band triple, worst -&gt; best.</span>
+{ <span class="k">label</span>: <span class="s">"Rally the faithful"</span>, <span class="k">archetype</span>: <span class="s">"engine"</span>,
+  <span class="k">effects</span>: { <span class="k">gold</span>: [<span class="s">-100</span>,<span class="s">-60</span>,<span class="s">-20</span>], <span class="k">dominion</span>: [<span class="s">10</span>,<span class="s">22</span>,<span class="s">40</span>], <span class="k">dominionPerThrall</span>: [<span class="s">3</span>,<span class="s">5</span>,<span class="s">7</span>] } }
+
+{ <span class="k">label</span>: <span class="s">"Seize their standing"</span>,
+  <span class="k">effects</span>: { <span class="k">dominion</span>: 50 },
+  <span class="k">delayed</span>: { <span class="k">on</span>: 6, <span class="k">effects</span>: { <span class="k">gold</span>: 450 } } }</pre>
+    <p><code>pactEngine.resolveChoice(state, scenario, optionKey, roll)</code> — one pure module — picks the band, applies deltas (<code>dominionPerThrall × current Thralls</code>), clamps Offerings/Thralls at 0, applies the overfill penalty past 90, checks Gold &lt; 0 → Pact Broken, and queues any <code>delayed</code> block. The session controller and any future Discord client call nothing else.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">IX</div>
+    <h2>How a Game Runs</h2>
+    <p>The Pact is always played as a <strong>convened group</strong> — never a private idle save. One member opens the lobby and sets the game up; others join by code. It borrows The Rite's session-and-polling shape (no websockets).</p>
+    <p>The <strong>host</strong> is simply whoever opened the lobby. They choose the settings and start the game — and that is the extent of their power. The host has <strong>no influence on play</strong>: they don't advance nights, don't break ties, don't see anything other players can't.</p>
+
+    <div class="phase-band">
+      <div class="phase-a"><span class="lbl">Solo mode</span>Every member runs their own cabal — sees only their own scenario, books, and outcome. The night turns once <strong>every player</strong> has committed.</div>
+      <div class="phase-b" style="background:var(--surface)"><span class="lbl">Team mode</span>Members split into teams — <strong>up to 4 each, sizes can be uneven</strong>. A team shares one cabal. Each member votes; when all have voted the majority option commits. The night turns once <strong>every team</strong> has committed.</div>
+    </div>
+
+    <h3>Team voting — no captain</h3>
+    <ul>
+      <li>A team can commit early once a member has a majority the outstanding votes can't overturn (e.g. 3 of 4).</li>
+      <li><strong>Ties break by Fate</strong> — the session RNG picks among the tied options. No captain, no host, no deadlock.</li>
+    </ul>
+
+    <h3>Game settings (set in the lobby)</h3>
+    <ul>
+      <li><strong>Mode</strong> — Solo or Teams.</li>
+      <li><strong>Per-night timer</strong> — <strong>OFF (default)</strong>, or 90 / 120 / 180 seconds. On expiry any cabal that hasn't committed auto-takes the night's <strong>hold</strong> option — "the night passes them by".</li>
+    </ul>
+
+    <h3>Leaving &amp; rejoining</h3>
+    <ul>
+      <li>A disconnected player can <strong>rejoin the session</strong> and pick up exactly where their cabal stands.</li>
+      <li>If the group is only waiting on a missing cabal to advance, a <strong>90-second</strong> countdown starts. Rejoin in time → play resumes. Miss it → that cabal <strong>gives up</strong>: marked <code>abandoned</code>, out of the game, <strong>no score posted</strong>. In team mode only that member is dropped; the team plays on (a team abandons only if every member gives up).</li>
+    </ul>
+
+    <ul>
+      <li>A group of one is legal — the night turns the moment you commit.</li>
+      <li>Standings stay hidden during play (you see only "4 / 6 cabals have committed"); the full ranking is revealed at the <strong>Reckoning</strong>.</li>
+      <li>Every cabal that reaches night 18 posts its <code>final_score</code> to the active season's board, regardless of mode.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow">X</div>
+    <h2>Build — Phase 1: Web, Session-Based</h2>
+
+    <h3>Data</h3>
+    <div class="scroll">
+    <table>
+      <tr><th>Table</th><th>Shape</th></tr>
+      <tr><td><code>pact_seasons</code></td><td><code>id, name, scenario_version, starts_at, ends_at, is_active</code> — one active at a time; a new season = new 18-scenario set + fresh season board.</td></tr>
+      <tr><td><code>pact_sessions</code></td><td><code>id, code, season_id, host_user_id, mode (solo│team), status (lobby│playing│ended), current_night, night_ends_at, timer_seconds (0│90│120│180), is_practice (0│1), created_at</code></td></tr>
+      <tr><td><code>pact_cabals</code></td><td>one row per player (solo) or per team. <code>id, session_id, name, night, status (active│won│broken│abandoned), gold, offerings, dominion, thralls, ledger JSON, final_score, broke_on_night</code></td></tr>
+      <tr><td><code>pact_cabal_members</code></td><td><code>cabal_id, user_id, status (active│gave_up)</code> — solo cabals have exactly one.</td></tr>
+      <tr><td><code>pact_choices</code></td><td><code>cabal_id, night, option, roll, resolved JSON</code> · in team mode also holds each member's vote before the lock. <code>UNIQUE(cabal_id, night)</code> once locked.</td></tr>
+    </table>
+    </div>
+    <p>Season board: <code>final_score DESC</code> where <code>season_id = active</code> <strong>and the session is not practice</strong>. All-time board: <code>MAX(final_score) GROUP BY user_id</code> across non-practice cabals joined through members.</p>
+
+    <div class="callout">
+      <span class="tag">Admin — Practice Mode</span>
+      An admin can start a <strong>solo practice run</strong> via <code>POST /api/admin/pact/practice</code> (same admin gate as <code>/api/admin/pact/reset</code>). It's an ordinary solo session with <code>is_practice = 1</code>: identical rules, identical blindness (no previews), plays all 18 nights and shows the Reckoning — but <strong>every leaderboard query filters <code>is_practice = 0</code></strong>, so nothing it produces is ever ranked. Practice runs also skip the <strong>one-run-per-season lock</strong>, so a playtester can run the set as many times as they like. Optionally takes <code>{ season_id }</code> to test an unreleased night set, and <code>{ debug: true }</code> to expand the ledger with the resolved band and per-resource deltas.
+    </div>
+
+    <h3>Endpoints (auth-required, <code>routes.js</code> convention; engine authoritative)</h3>
+    <ul>
+      <li><code>POST /api/pact/session</code> create (host sets <code>mode</code>, <code>timer_seconds</code>) · <code>POST /api/pact/session/:code/join</code> · <code>POST /api/pact/session/:code/team</code> form/join a team (≤ 4) · <code>POST /api/pact/session/:code/start</code> (host).</li>
+      <li><code>GET /api/pact/session/:code/state</code> — your cabal's resources + ledger, the current night's scenario text and four option <em>labels</em>, <code>rollsDice</code>, commit progress (<code>n/total</code>), your team's current vote tally, any active rejoin countdown. <strong>No effect data, no previews.</strong></li>
+      <li><code>POST /api/pact/session/:code/vote {option}</code> — solo: locks your choice. Team: casts/changes your vote; the server auto-commits the cabal when the votes settle a majority (ties → session RNG picks).</li>
+      <li>On commit the server rolls Fate's Dice if night &gt; 12 (seeded <code>sha(sessionId, cabalId, night)</code> → 1–6), resolves via <code>pactEngine</code>, returns the die face + resolved deltas, writes the ledger. When all live cabals are committed (or the timer expires → non-committers take the hold option) → advance the night; after night 18 → compute every <code>final_score</code>, set <code>status = ended</code>.</li>
+      <li><code>POST /api/pact/session/:code/rejoin</code> — reattach to your cabal after a disconnect.</li>
+      <li><code>GET /api/pact/leaderboard?scope=season|alltime</code> · <code>POST /api/admin/pact/season</code> / <code>reset</code> / <code>practice</code> (admin gate, mirrors <code>/api/admin/sanctum/reset</code>).</li>
+    </ul>
+
+    <h3>Frontend — <code>/pact</code> route, built mobile-first</h3>
+    <ul>
+      <li>New card in <code>src/pages/Games.jsx</code> → route <code>/pact</code>; components under <code>src/components/Pact/</code>. Lobby / play / reckoning screens, following the <code>GameRoom</code> component split.</li>
+      <li><strong>The tracker.</strong> Compact resource strip — Gold / Offerings (n / 90) / Dominion / Thralls — <strong>sticky on mobile, side rail on wide screens</strong>. Expandable <strong>ledger</strong> below the scenario: every past night, the choice, the dice band, each delta. The game keeps honest books; it never does your forward planning.</li>
+      <li><strong>Night flow:</strong> scenario card → four full-width stacked option cards (tap to select, confirm to commit — no hover-only affordances). Team mode shows live vote tallies; the cabal locks once the votes settle a majority.</li>
+      <li><strong>The die throw (nights 13–18):</strong> on commit, a <strong>physical d6 tumbles and settles</strong> on the cabal's own face — one roll, rendered with CSS 3D transforms (or a short pre-rendered sprite sequence), settling on the server-returned value so it can't be re-rolled. The landed face maps to <strong>Ill Fortune / The Turning / Favour</strong>, then the outcome deltas count up on the tracker. Honours <code>prefers-reduced-motion</code> (snap to the face, skip the tumble). Then a "waiting on N cabals" gate, then the next night. Ends on the <strong>Reckoning</strong>: Dominion × loyaltyMod × cashMod broken out line by line, then both boards.</li>
+      <li>Reconnect straight from <code>/state</code>. Zero rules logic on the client — it renders text and animates a result the server already computed.</li>
+      <li>Touch targets ≥ 44px, single column ≤ 640px, one type/spacing scale across breakpoints. Test at 360 / 768 / desktop.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow">XI</div>
+    <h2>Build — Phase 2: Discord &amp; Event Polish</h2>
+    <p>The engine and session endpoints already exist from Phase 1, and the backend already runs guest-token game flows (Cards Against Occultus, the CAH bot). So Phase 2 is thin:</p>
+    <ul>
+      <li><strong>Discord <code>/pact</code> command</strong> — a wrapper on the same session endpoints: an embed per night, option buttons A–D, team votes via the same buttons. No rules logic in the bot.</li>
+      <li><strong>Host event screen</strong> — a big-screen view for game nights: the scenario, a live "cabals committed" board, and a per-cabal Fate's Dice reveal the host can read aloud.</li>
+      <li><strong>Spectator link</strong> — read-only session view for members who aren't playing.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow">XII</div>
+    <h2>Milestones</h2>
+    <ol class="steps">
+      <li><strong>Design locked.</strong> ✓ §XIII.</li>
+      <li><strong>Season 1 night set drafted &amp; Monte-Carlo'd.</strong> ✓ §VII. Constants are v1 targets.</li>
+      <li><strong>Engine.</strong> <code>pactEngine.js</code> as a pure module + unit tests reproducing the Monte-Carlo results. <em>← next step.</em></li>
+      <li><strong>Session backend.</strong> Migration, the <code>/api/pact/session/*</code> + leaderboard + admin routes.</li>
+      <li><strong>Web frontend.</strong> Games card, <code>/pact</code> route, lobby / solo + team play / the die throw / Reckoning / boards. Mobile-first.</li>
+      <li><strong>Season 1</strong> to the Order as a game night. Gather scores, retune constants, swap weak nights.</li>
+      <li><strong>Phase 2</strong> — Discord command + host event screen.</li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="eyebrow">XIII</div>
+    <h2>Design — Locked</h2>
+    <ul>
+      <li><strong>Structure</strong> — 18 nights; 1–12 fixed, 13–18 Fate's Dice across the whole chosen option (costs swing modestly, rewards swing wide), triples worst → best. One d6 per cabal per night, shown as a die-throw animation.</li>
+      <li><strong>Resources</strong> — Gold (start <strong>1,000</strong>; scarce; &lt; 0 = Pact Broken) · Offerings (start 0, hard cap 90, overfill = −80 D / −3 T; <strong>not scored</strong>) · Dominion (the headline; floors at 0) · Thralls (gate the score + power "rite with the faithful" options that grant D per Thrall).</li>
+      <li><strong>Score</strong> — <code>Dominion × loyaltyMod × cashMod</code> (×10 for display). <code>loyaltyMod = clamp(0.3 + Thralls/25, 0.3, 2.0)</code> · <code>cashMod = clamp(0.75 + Gold/4000, 0.75, 1.5)</code>. Validated by Monte-Carlo (8k runs/strategy): followers are the winning path, Dominion-hoarding keeps ~⅓ of its score, pattern/spam play bankrupts. All constants are v1 tuning targets.</li>
+      <li><strong>Anti-exploit</strong> — a choice you can't cover in Offerings/Thralls <em>fails</em> (Gold lost, night spent). No "sacrifice" of resources you don't hold. 3 delayed payoffs in nights 1–12, 1 in 13–18.</li>
+      <li><strong>Seasons</strong> — monthly, new 18-night set each. Season board + all-time board (best single season). One run per player per season.</li>
+      <li><strong>Play</strong> — always a group session. Mode Solo or Teams (≤ 4, uneven ok). Night turns when every live cabal commits, or the timer (OFF default / 90 / 120 / 180s) expires and non-committers take the hold option.</li>
+      <li><strong>Teams</strong> — no captain; vote, majority commits, ties broken by session RNG. <strong>Host</strong> = lobby creator, settings only, no gameplay influence.</li>
+      <li><strong>Leaving</strong> — rejoin anytime; if the group waits only on you, a 90s countdown, then <code>abandoned</code>, no score (team drops just that member).</li>
+      <li><strong>Practice mode</strong> — admins start solo <code>is_practice = 1</code> runs (unlimited, same rules) for playtesting; excluded from every leaderboard.</li>
+      <li><strong>No help</strong> — no greyed options, no warnings, no previews. On-screen tracker + ledger only. Hold option rotates position.</li>
+      <li><strong>Surface</strong> — <code>/pact</code> route, mobile-first. Name <strong>The Pact</strong> · "nights" · "the Pact is Broken" · "Fate's Dice".</li>
+    </ul>
+    <p>What's left before code: a live playtest of the Season 1 night set (§VII) to tune the constants — then build the engine.</p>
+  </section>
+
+  <hr>
+  <p class="foot">The Pact · design plan v0.6 · Season 1 night set playtested, ready to build</p>
+
+</div>
