@@ -266,14 +266,16 @@ export async function getArmoryDeposits(request, env, user) {
 // This month's Armory expense for one faction — sum of deposited quantity ×
 // current cached item price, for deposits logged since the start of the
 // current UTC month. Used by accountingController's Armory expense line.
-// Excludes bulk restocks (>99 units in one deposit) — same threshold
-// getArmoryDeposits already applies to the admin deposit log, for the same
-// reason: a bulk restock isn't a member "giving back what they didn't use",
-// it's someone stocking the armory, and shouldn't inflate this expense
-// figure. This function was previously missing that filter entirely — found
-// live: a handful of bulk restocks this month (14 deposits, ~15k items)
-// were massively overstating Occul3us's reported Armory Spend vs. what the
-// deposit log itself showed for the same period.
+// Deliberately counts EVERY deposit, bulk restocks included — this is meant
+// to represent the faction's real total armory spend, not a specific war's
+// energy-repaid credit. The >99-unit bulk-restock exclusion used by
+// getArmoryDeposits (the admin log display) and the war-scoped calculations
+// (Energy Repaid, War Armory tab, War Economics) is intentionally narrower
+// than this: those are about "energy spent then given back for THAT war,"
+// where a bulk restock unrelated to war usage shouldn't count as repayment —
+// that reasoning doesn't apply here. (A brief attempt to apply the same
+// >99 filter here was reverted the same day — restocking the armory is
+// still real spend for accounting purposes, whatever the deposit size.)
 export async function getFactionArmoryExpense(env, factionId) {
   const now = new Date();
   const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
@@ -282,7 +284,7 @@ export async function getFactionArmoryExpense(env, factionId) {
     `SELECT d.quantity, COALESCE(p.effective_price, 0) AS unit_price
      FROM armory_deposits d
      LEFT JOIN item_prices_cache p ON p.name = d.item_name
-     WHERE d.faction_id = ? AND d.deposited_at >= ? AND d.quantity <= 99`
+     WHERE d.faction_id = ? AND d.deposited_at >= ?`
   ).bind(factionId, monthStartTs).all();
 
   let depositCount = 0;
