@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import WarStatsPanel from '../components/StatsTabs/WarStatsPanel'
+import ChainStatsPanel from '../components/StatsTabs/ChainStatsPanel'
 
 const TABS = [
   { value: 'wars',   label: 'Wars' },
@@ -38,11 +39,7 @@ export default function Stats() {
       </div>
 
       {tab === 'wars' && <WarStatsPanel />}
-      {tab === 'chains' && (
-        <p style={{ color: "var(--text-muted)", fontSize: '13px', padding: '20px 0' }}>
-          Chain stats are coming soon.
-        </p>
-      )}
+      {tab === 'chains' && <ChainStatsPanel />}
     </div>
   )
 }

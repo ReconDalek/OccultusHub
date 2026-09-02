@@ -360,6 +360,10 @@ export async function handleRequest(request, env, ctx) {
     if (!user) return errorResponse('Authentication required', 401);
     return warController.getWarStats(request, env);
   }
+  if (pathname === '/api/stats/chains' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainController.getChainStats(request, env);
+  }
 
   // Forums endpoints (member auth required)
   if (pathname === '/api/forums/posts' && method === 'GET') {

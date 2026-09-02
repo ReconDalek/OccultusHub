@@ -374,6 +374,55 @@ export async function getSavedChainHits(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/stats/chains — public (member-auth) counterpart to warController's
+// getWarStats. All-time/global per-member chain stats, one row per (member,
+// chain) they have saved hits for. Frontend aggregates/sorts client-side, same
+// pattern as the Wars tab on the /stats page.
+// Filters: faction_id (optional), year+month (optional single calendar month,
+// filtered on the chain's start_at).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getChainStats(request, env) {
+  try {
+    const url       = new URL(request.url);
+    const factionId = url.searchParams.get('faction_id');
+    const year      = url.searchParams.get('year');
+    const month     = url.searchParams.get('month');
+
+    const clauses = [];
+    const params  = [];
+    if (factionId) { clauses.push('ch.faction_id = ?'); params.push(parseInt(factionId, 10)); }
+    if (year && month) {
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const monthStartTs = Math.floor(Date.UTC(y, m - 1, 1) / 1000);
+      const monthEndTs   = Math.floor(Date.UTC(y, m, 1) / 1000) - 1;
+      clauses.push('cc.start_at >= ? AND cc.start_at <= ?');
+      params.push(monthStartTs, monthEndTs);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+    const { results } = await env.DB.prepare(
+      `SELECT ch.torn_chain_id, ch.faction_id, ch.torn_user_id,
+              COALESCE(fm.username, u.username) AS username,
+              ch.total_attacks, ch.total_respect, ch.bonus_hits,
+              ch.xanax_used, ch.xanax_deposited, ch.overdoses,
+              cc.chain_length, cc.start_at, cc.end_at
+       FROM chain_hits ch
+       JOIN chain_cache cc ON cc.torn_chain_id = ch.torn_chain_id
+       LEFT JOIN faction_members fm ON fm.torn_user_id = ch.torn_user_id
+       LEFT JOIN users u ON u.torn_user_id = ch.torn_user_id
+       ${where}
+       ORDER BY cc.start_at DESC`
+    ).bind(...params).all();
+
+    return jsonResponse({ rows: results || [] });
+  } catch (err) {
+    console.error('getChainStats error:', err);
+    return errorResponse('Failed to fetch chain stats', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/leadership/chain-report?chain_id=XXXXXXXX
 // Proxies the Torn API chainreport and enriches attacker IDs with site usernames.
 // ─────────────────────────────────────────────────────────────────────────────
