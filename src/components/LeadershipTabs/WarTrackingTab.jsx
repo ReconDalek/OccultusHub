@@ -468,7 +468,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
   )
 }
 
-function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSaved, payoutVerified, payoutProcessedBy, payoutProcessedAt }) {
+function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved, onPayoutSaved, payoutVerified, payoutProcessedBy, payoutProcessedAt }) {
   const [warPct,      setWarPct]      = useState(100)
   const [outsidePct,  setOutsidePct]  = useState(0)
   const [assistPct,   setAssistPct]   = useState(0)
@@ -568,17 +568,29 @@ function PayoutCalculator({ warId, attackerStats, initialHitsSaved, onPayoutSave
         method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ payout: { settings, paid, overrides }, is_paid: true }),
       })
-      // Then write permanent war_hits
-      const members = rows.map(r => ({
-        torn_user_id:   r.attacker_id,
-        username:       r.attacker_name,
-        war_hits:       r.war_hits       || 0,
-        outside_hits:   r.outside_attacks || 0,
-        assists:        r.assists         || 0,
-        respect_gained: r.war_respect_gained || 0,
-        payout_amount:  r.payout,
-        units:          r.units,
-      }))
+      // Then write permanent war_hits — merge in defend-side stats (respect
+      // lost, defends won/lost) since attackerStats alone doesn't carry them
+      const defendById = {}
+      for (const d of defendStats || []) defendById[d.defender_id] = d
+      const members = rows.map(r => {
+        const def = defendById[r.attacker_id] || {}
+        return {
+          torn_user_id:   r.attacker_id,
+          username:       r.attacker_name,
+          war_hits:       r.war_hits       || 0,
+          outside_hits:   r.outside_attacks || 0,
+          assists:        r.assists         || 0,
+          respect_gained: r.war_respect_gained || 0,
+          payout_amount:  r.payout,
+          units:          r.units,
+          respect_lost:   def.respect_lost_defending || 0,
+          war_attempts:   r.war_attacks   || 0,
+          war_losses:     r.war_losses    || 0,
+          defends_won:    def.defends_won  || 0,
+          defends_lost:   def.defends_lost || 0,
+          avg_fair_fight: r.avg_fair_fight || 0,
+        }
+      })
       const res = await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/save-hits`, {
         method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ members }),
@@ -1605,7 +1617,7 @@ function WarDetail({ warId, onPayoutSaved }) {
         />
       )}
       {activeSection === 'payout' && (
-        <PayoutCalculator warId={warId} attackerStats={attackerStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved}
+        <PayoutCalculator warId={warId} attackerStats={attackerStats} defendStats={defendStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved}
           payoutVerified={!!war?.payout_verified} payoutProcessedBy={war?.payout_processed_by_username} payoutProcessedAt={war?.payout_processed_at} />
       )}
       {activeSection === 'economics' && (

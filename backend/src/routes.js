@@ -562,6 +562,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/wars/archive' && method === 'GET') {
       return warController.getWarsArchive(request, env);
     }
+    if (pathname === '/api/leadership/war-stats' && method === 'GET') {
+      return warController.getWarStats(request, env);
+    }
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/attacks$/) && method === 'GET') {
       return warController.getWarAttackLog(request, env);
     }

@@ -1183,6 +1183,53 @@ export async function getWarsSummary(request, env) {
   }
 }
 
+// ── GET /api/leadership/war-stats ────────────────────────────────────────────
+// All-time/global per-member war stats, one row per (member, war) they saved
+// hits for — permanent record, unaffected by war_attacks getting purged.
+// Frontend aggregates/sorts client-side so any column can be a leaderboard.
+// Filters: faction_id (optional, all factions if omitted), year+month (optional
+// single calendar month, filtered on the war's started_at — same convention as
+// the armory deposit log's month mode).
+
+export async function getWarStats(request, env) {
+  try {
+    const url       = new URL(request.url);
+    const factionId = url.searchParams.get('faction_id');
+    const year      = url.searchParams.get('year');
+    const month     = url.searchParams.get('month');
+
+    const clauses = [];
+    const params  = [];
+    if (factionId) { clauses.push('wh.faction_id = ?'); params.push(parseInt(factionId, 10)); }
+    if (year && month) {
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const monthStartTs = Math.floor(Date.UTC(y, m - 1, 1) / 1000);
+      const monthEndTs   = Math.floor(Date.UTC(y, m, 1) / 1000) - 1;
+      clauses.push('rw.started_at >= ? AND rw.started_at <= ?');
+      params.push(monthStartTs, monthEndTs);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+    const { results } = await env.DB.prepare(
+      `SELECT wh.ranked_war_id, wh.faction_id, wh.torn_user_id, wh.username,
+              wh.war_hits, wh.war_attempts, wh.war_losses, wh.outside_hits, wh.assists,
+              wh.respect_gained, wh.respect_lost, wh.defends_won, wh.defends_lost,
+              wh.avg_fair_fight, wh.payout_amount, wh.units,
+              rw.opponent_faction_name, rw.started_at, rw.ended_at, rw.result, rw.is_manual
+       FROM war_hits wh
+       JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
+       ${where}
+       ORDER BY rw.started_at DESC`
+    ).bind(...params).all();
+
+    return jsonResponse({ rows: results || [] });
+  } catch (err) {
+    console.error('getWarStats error:', err);
+    return errorResponse('Failed to fetch war stats', 500);
+  }
+}
+
 // ── GET /api/leadership/war/:id/payout ───────────────────────────────────────
 
 export async function getWarPayout(request, env) {
@@ -1239,18 +1286,24 @@ export async function saveWarHits(request, env, user) {
       if (!m.torn_user_id) continue;
       await env.DB.prepare(
         `INSERT INTO war_hits
-           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by,
+            respect_lost, war_attempts, war_losses, defends_won, defends_lost, avg_fair_fight)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
            username=excluded.username, war_hits=excluded.war_hits,
            outside_hits=excluded.outside_hits, assists=excluded.assists,
            respect_gained=excluded.respect_gained, payout_amount=excluded.payout_amount,
-           units=excluded.units, saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP`
+           units=excluded.units, saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP,
+           respect_lost=excluded.respect_lost, war_attempts=excluded.war_attempts,
+           war_losses=excluded.war_losses, defends_won=excluded.defends_won,
+           defends_lost=excluded.defends_lost, avg_fair_fight=excluded.avg_fair_fight`
       ).bind(
         id, war.faction_id, m.torn_user_id, m.username ?? null,
         m.war_hits ?? 0, m.outside_hits ?? 0, m.assists ?? 0,
         m.respect_gained ?? 0, m.payout_amount ?? 0, m.units ?? 0,
-        user.userId
+        user.userId,
+        m.respect_lost ?? 0, m.war_attempts ?? (m.war_hits ?? 0), m.war_losses ?? 0,
+        m.defends_won ?? 0, m.defends_lost ?? 0, m.avg_fair_fight ?? 0
       ).run();
 
       // Ensure member is in faction_members (add if unknown)
@@ -1331,12 +1384,12 @@ export async function createManualWar(request, env, user) {
       warHitsStmts.push(
         env.DB.prepare(
           `INSERT INTO war_hits
-             (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by)
-           VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)
+             (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by, war_attempts)
+           VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?)
            ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
              username=excluded.username, war_hits=excluded.war_hits, units=excluded.units,
-             saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP`
-        ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, user.userId)
+             saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP, war_attempts=excluded.war_attempts`
+        ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, user.userId, m.war_hits)
       );
 
       if (username) {
