@@ -454,13 +454,31 @@ export async function checkWarMatches(env, trigger = 'cron') {
           // existing manually-created "enlisting" schedule if leadership set one
           // up ahead of time, otherwise creates the active-stage row from
           // scratch. Removes the need to manually mark a war as matched.
+          //
+          // Only the SOONEST enlisting placeholder is consumed here — leadership
+          // often queues up several weeks of enlisting placeholders at once (one
+          // per upcoming week). An unscoped UPDATE would stamp every one of them
+          // with this single match's date/opponent, collapsing them into
+          // duplicate copies of the same war that all vanish together once that
+          // shared date passes — emptying the whole schedule after one war ends.
+          // Found live 2026-09-02: faction 33097 had 4 duplicate "active" rows
+          // for the same war (ids 26/27/28/31) from exactly this bug.
           const scheduledAtIso = new Date(scheduledStart * 1000).toISOString();
-          const advanced = await env.DB.prepare(
-            `UPDATE faction_schedules
-             SET stage='active', scheduled_at=?, opponent_faction_id=?, opponent_faction_name=?
+          const nextEnlisting = await env.DB.prepare(
+            `SELECT id FROM faction_schedules
              WHERE faction_id=? AND type='war' AND stage='enlisting'
-             RETURNING id`
-          ).bind(scheduledAtIso, opponentId, opponentName, factionId).first();
+             ORDER BY COALESCE(scheduled_at, '9999-12-31') ASC, id ASC
+             LIMIT 1`
+          ).bind(factionId).first();
+
+          const advanced = nextEnlisting
+            ? await env.DB.prepare(
+                `UPDATE faction_schedules
+                 SET stage='active', scheduled_at=?, opponent_faction_id=?, opponent_faction_name=?
+                 WHERE id=?
+                 RETURNING id`
+              ).bind(scheduledAtIso, opponentId, opponentName, nextEnlisting.id).first()
+            : null;
 
           if (!advanced) {
             await env.DB.prepare(
