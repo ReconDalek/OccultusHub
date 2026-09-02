@@ -352,6 +352,15 @@ export async function handleRequest(request, env, ctx) {
     }
   }
 
+  // Faction Stats (member auth required — not leadership-gated, open to all
+  // faction members). Shares the war_hits aggregation logic with the old
+  // leadership-only endpoint, moved here 2026-09-02 so the page can live on
+  // the public /stats route instead of buried in Leadership.
+  if (pathname === '/api/stats/wars' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return warController.getWarStats(request, env);
+  }
+
   // Forums endpoints (member auth required)
   if (pathname === '/api/forums/posts' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
@@ -561,9 +570,6 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/wars/archive' && method === 'GET') {
       return warController.getWarsArchive(request, env);
-    }
-    if (pathname === '/api/leadership/war-stats' && method === 'GET') {
-      return warController.getWarStats(request, env);
     }
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/attacks$/) && method === 'GET') {
       return warController.getWarAttackLog(request, env);

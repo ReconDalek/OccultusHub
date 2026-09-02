@@ -34,6 +34,7 @@ import Sanctum        from './pages/Sanctum'
 import Binding        from './pages/Binding'
 import Pact           from './pages/Pact'
 import Stocks         from './pages/Stocks'
+import Stats          from './pages/Stats'
 import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding', '/pact'] // active gameplay routes — suppress easter egg overlays
@@ -58,6 +59,10 @@ const PAGE_META = {
   '/respect': {
     title: 'Respect — Occultus Hub',
     description: 'Respect and recognition within the Occultus faction family on Torn City.',
+  },
+  '/stats': {
+    title: 'Faction Stats — Occultus Hub',
+    description: 'Career war stats and leaderboards for every member across the Occultus faction family.',
   },
   '/tos': {
     title: 'Terms of Service — Occultus Hub',
@@ -255,6 +260,17 @@ function AppRoutes() {
           <Layout>
             <ProtectedRoute requiredLevel="member">
               <Stocks />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/stats"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="member">
+              <Stats />
             </ProtectedRoute>
           </Layout>
         }

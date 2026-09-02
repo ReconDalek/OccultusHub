@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import WarTrackingTab from './WarTrackingTab'
 import BountiesTab from './BountiesTab'
-import WarStatsTab from './WarStatsTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1485,10 +1484,9 @@ export default function ChainTrackingTab() {
   const [factionId, setFactionId] = useState(33097)
 
   const topTabs     = [
-    { value: 'chains',    label: 'Chains' },
-    { value: 'wars',      label: 'Wars'  },
-    { value: 'war-stats', label: 'War Stats' },
-    { value: 'bounties',  label: 'Bounties' },
+    { value: 'chains',   label: 'Chains' },
+    { value: 'wars',     label: 'Wars'  },
+    { value: 'bounties', label: 'Bounties' },
   ]
   const factionTabs = FACTIONS.map((f) => ({ value: f.id, label: f.name }))
 
@@ -1545,8 +1543,6 @@ export default function ChainTrackingTab() {
       </div>
 
       {topTab === 'wars' && <WarTrackingTab />}
-
-      {topTab === 'war-stats' && <WarStatsTab />}
 
       {topTab === 'bounties' && <BountiesTab />}
 

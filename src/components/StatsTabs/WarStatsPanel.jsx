@@ -152,9 +152,9 @@ function LeaderboardCard({ category, members }) {
   )
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main panel — used on the public /stats page ─────────────────────────────
 
-export default function WarStatsTab() {
+export default function WarStatsPanel() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -174,7 +174,7 @@ export default function WarStatsTab() {
       params.set('month', mo + 1)
     }
     setLoading(true)
-    fetch(`${API_BASE_URL}/api/leadership/war-stats?${params}`, { headers: { Authorization: token } })
+    fetch(`${API_BASE_URL}/api/stats/wars?${params}`, { headers: { Authorization: token } })
       .then((r) => r.json())
       .then((d) => {
         if (d.error) setError(d.error)

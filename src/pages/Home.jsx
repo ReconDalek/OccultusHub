@@ -97,6 +97,11 @@ function MemberHome({ user }) {
 
         {/* Ranked War History */}
         <div style={{ marginTop: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '8px' }}>
+            <Link to="/stats" style={{ color: '#9f67ff', fontSize: '13px', textDecoration: 'none' }}>
+              View Faction Stats →
+            </Link>
+          </div>
           <WarSummary />
         </div>
       </div>
