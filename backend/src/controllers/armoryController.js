@@ -309,16 +309,24 @@ export async function getArmoryDeposits(request, env, user) {
 // that reasoning doesn't apply here. (A brief attempt to apply the same
 // >99 filter here was reverted the same day — restocking the armory is
 // still real spend for accounting purposes, whatever the deposit size.)
-export async function getFactionArmoryExpense(env, factionId) {
+// `monthStartTs`/`monthEndTs` (unix seconds) let accountingController ask
+// about a past month instead of always the live current one — both default
+// to the current calendar month when omitted, preserving prior behavior.
+// Note: valuation always uses TODAY's item_prices_cache regardless of which
+// month is requested (no historical price log exists) — a past month's
+// figure here is "what those items would cost today", not what they
+// actually cost back then.
+export async function getFactionArmoryExpense(env, factionId, monthStartTs, monthEndTs) {
   const now = new Date();
-  const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const start = monthStartTs ?? Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const end   = monthEndTs   ?? Math.floor(now.getTime() / 1000);
 
   const { results } = await env.DB.prepare(
     `SELECT d.quantity, COALESCE(p.effective_price, 0) AS unit_price
      FROM armory_deposits d
      LEFT JOIN item_prices_cache p ON p.name = d.item_name
-     WHERE d.faction_id = ? AND d.deposited_at >= ?`
-  ).bind(factionId, monthStartTs).all();
+     WHERE d.faction_id = ? AND d.deposited_at >= ? AND d.deposited_at <= ?`
+  ).bind(factionId, start, end).all();
 
   let depositCount = 0;
   let totalItems = 0;

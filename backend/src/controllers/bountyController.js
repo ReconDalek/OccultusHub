@@ -421,15 +421,19 @@ export async function deleteBounty(request, env) {
 // those already reduce that specific war's own net_profit inside
 // computeWarEconomics, and Accounting's war income already nets through that
 // figure. Counting them again here would double-subtract the same expense.
-export async function getFactionBountyExpense(env, factionId) {
+// `monthStartTs`/`monthEndTs` (unix seconds) let accountingController ask
+// about a past month instead of always the live current one — both default
+// to the current calendar month when omitted, preserving prior behavior.
+export async function getFactionBountyExpense(env, factionId, monthStartTs, monthEndTs) {
   const now = new Date();
-  const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const start = monthStartTs ?? Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const end   = monthEndTs   ?? Math.floor(now.getTime() / 1000);
 
   const row = await env.DB.prepare(
     `SELECT COUNT(*) AS bounty_count, COALESCE(SUM(total_cost), 0) AS monthly_cost
      FROM bounties
-     WHERE faction_id = ? AND ranked_war_id IS NULL AND placed_at >= ?`
-  ).bind(factionId, monthStartTs).first();
+     WHERE faction_id = ? AND ranked_war_id IS NULL AND placed_at >= ? AND placed_at <= ?`
+  ).bind(factionId, start, end).first();
 
   return {
     bounty_count: row?.bounty_count ?? 0,

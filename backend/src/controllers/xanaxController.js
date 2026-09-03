@@ -41,9 +41,12 @@ function currentUtcMonth() {
 // Active members of a faction who rank Adept or above — the shared
 // eligibility rule for both Rank Perks and OD Insurance. Rank/hits mirror
 // getDistributions (hits banked before this month started).
-async function getEligibleMembers(env, factionId) {
+// `asOfTs` lets callers ask "who was eligible as of month X" (OD Insurance
+// looking at a past month) instead of always the live current month — an
+// omitted asOfTs keeps the original current-month behavior.
+async function getEligibleMembers(env, factionId, asOfTs) {
   const now = new Date();
-  const monthStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const monthStart = asOfTs ?? Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
 
   const { results } = await env.DB.prepare(`
     SELECT
@@ -100,21 +103,30 @@ export async function getFactionRankPerkExpense(env, factionId) {
   };
 }
 
-// Computes this month's OD Insurance xanax cost for one faction: +1 xanax
-// replacement per overdose logged this month, for Adept+ members only.
+// Computes one month's OD Insurance xanax cost for one faction: +1 xanax
+// replacement per overdose logged that month, for Adept+ members only.
 // Overdose count comes from personal_stats_snapshots ($.drugs.overdoses),
-// delta from the first snapshot this month to the most recent one.
-export async function getFactionODInsuranceExpense(env, factionId) {
-  const eligible = await getEligibleMembers(env, factionId);
+// delta from the first snapshot in the month to the last. `monthStartTs`/
+// `monthEndTs` (unix seconds) let accountingController ask about a past
+// month instead of always the live current one — both default to the
+// current calendar month when omitted, preserving prior behavior.
+export async function getFactionODInsuranceExpense(env, factionId, monthStartTs, monthEndTs) {
+  const now = new Date();
+  const defaultStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const start = monthStartTs ?? defaultStart;
+  const end   = monthEndTs   ?? Math.floor(now.getTime() / 1000);
+
+  // Eligibility (Adept+) is judged as of the START of the target month —
+  // matches "hits banked before this month started" for a historical month too.
+  const eligible = await getEligibleMembers(env, factionId, start);
   const unitPrice = await getXanaxUnitPrice(env);
 
   if (!eligible.length) {
     return { eligible_members: 0, members_with_overdoses: 0, total_overdoses: 0, unit_price: unitPrice, monthly_cost: 0, configured: true };
   }
 
-  const now = new Date();
-  const monthStartDate = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
-  const todayDate = now.toISOString().slice(0, 10);
+  const monthStartDate = new Date(start * 1000).toISOString().slice(0, 10);
+  const todayDate      = new Date(end * 1000).toISOString().slice(0, 10);
   const ids = eligible.map(m => m.torn_user_id);
   const placeholders = ids.map(() => '?').join(',');
 

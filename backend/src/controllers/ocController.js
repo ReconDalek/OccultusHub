@@ -694,9 +694,13 @@ export async function predictSuccess(request, env, user) {
 // have no payout). Item expense is scoped separately by executed_at across
 // BOTH Successful and Failure crimes, since a failed crime still burns
 // non-reusable items (e.g. a lost/used item) even though it earned nothing.
-export async function getFactionOCProfit(env, factionId) {
+// `monthStartTs`/`monthEndTs` (unix seconds) let accountingController ask
+// about a past month instead of always the live current one — both default
+// to the current calendar month when omitted, preserving prior behavior.
+export async function getFactionOCProfit(env, factionId, monthStartTs, monthEndTs) {
   const now = new Date();
-  const monthStartTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const start = monthStartTs ?? Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  const end   = monthEndTs   ?? Math.floor(now.getTime() / 1000);
 
   const { results: successfulCrimes } = await env.DB.prepare(
     `SELECT id, rewards_json FROM oc_crimes WHERE faction_id = ? AND status = 'Successful' AND rewards_json IS NOT NULL`
@@ -708,7 +712,7 @@ export async function getFactionOCProfit(env, factionId) {
     let rewards;
     try { rewards = JSON.parse(row.rewards_json); } catch { continue; }
     const payout = rewards?.payout;
-    if (!payout?.paid_at || payout.paid_at < monthStartTs) continue;
+    if (!payout?.paid_at || payout.paid_at < start || payout.paid_at > end) continue;
     const money = rewards.money || 0;
     if (!money) continue;
 
@@ -718,12 +722,12 @@ export async function getFactionOCProfit(env, factionId) {
     paidCrimes++;
   }
 
-  // Every crime (Successful or Failure) that finished this month — item
-  // expense is real regardless of whether the crime itself succeeded.
+  // Every crime (Successful or Failure) that finished in the target month —
+  // item expense is real regardless of whether the crime itself succeeded.
   const { results: completedCrimes } = await env.DB.prepare(
     `SELECT id FROM oc_crimes
-     WHERE faction_id = ? AND status IN ('Successful','Failure') AND executed_at >= ?`
-  ).bind(factionId, monthStartTs).all();
+     WHERE faction_id = ? AND status IN ('Successful','Failure') AND executed_at >= ? AND executed_at <= ?`
+  ).bind(factionId, start, end).all();
   const completedIds = completedCrimes.map(c => c.id);
 
   // Non-reusable, faction-owned items actually consumed (used or lost) on

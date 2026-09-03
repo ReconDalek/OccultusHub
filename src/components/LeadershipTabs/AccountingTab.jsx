@@ -11,6 +11,19 @@ const FACTION_OPTIONS = [
   { id: 9171,  label: 'Occul3us' },
 ]
 
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+// Last 18 months, most recent first — same convention as ArmoryTab.jsx's deposit log / WarStatsPanel.jsx
+function buildMonthOptions() {
+  const now = new Date()
+  const options = []
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+    options.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() }) // month is 0-indexed here
+  }
+  return options
+}
+
 const SUB_TABS = [
   { id: 'overview',    label: 'Overview' },
   { id: 'investments', label: 'Investments' },
@@ -120,6 +133,12 @@ function OverviewSubTab({ factionId, onNavigate }) {
   const [racketValues, setRacketValues] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const now = new Date()
+  const [monthSel, setMonthSel] = useState(`${now.getUTCFullYear()}-${now.getUTCMonth()}`) // 'YYYY-M' (0-indexed month), defaults to current month
+  const monthOptions = buildMonthOptions()
+  const [selYear, selMonth0] = monthSel.split('-').map(Number) // selMonth0 is 0-indexed
+  const isCurrentMonthSel = selYear === now.getUTCFullYear() && selMonth0 === now.getUTCMonth()
+  const monthLabel = isCurrentMonthSel ? 'this month' : `in ${MONTHS_FULL[selMonth0]} ${selYear}`
   const token = localStorage.getItem('occultusSession')
 
   useEffect(() => {
@@ -166,7 +185,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
         const ids = factionId != null ? [factionId] : OUR_FACTION_IDS
         const results = await Promise.all(
           ids.map(id =>
-            fetch(`${API_BASE_URL}/api/leadership/accounting/summary?faction_id=${id}`, {
+            fetch(`${API_BASE_URL}/api/leadership/accounting/summary?faction_id=${id}&year=${selYear}&month=${selMonth0 + 1}`, {
               headers: { Authorization: token },
             }).then(r => r.json())
           )
@@ -180,7 +199,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
       setLoading(false)
     }
     load()
-  }, [factionId, token])
+  }, [factionId, token, monthSel])
 
   async function handleSaveSettings(e) {
     e.preventDefault()
@@ -222,6 +241,22 @@ function OverviewSubTab({ factionId, onNavigate }) {
             Per-faction monthly financial overview.
           </p>
         </div>
+
+        {/* Month selector */}
+        <select
+          value={monthSel}
+          onChange={e => setMonthSel(e.target.value)}
+          style={{
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '6px', color: '#f4f4f5', padding: '6px 10px', fontSize: '12px',
+          }}
+        >
+          {monthOptions.map(({ year, month }) => (
+            <option key={`${year}-${month}`} value={`${year}-${month}`}>
+              {year === now.getUTCFullYear() && month === now.getUTCMonth() ? 'Current Month' : `${MONTHS_FULL[month]} ${year}`}
+            </option>
+          ))}
+        </select>
 
         {/* Global value settings */}
         {!editSettings ? (
@@ -291,6 +326,8 @@ function OverviewSubTab({ factionId, onNavigate }) {
               armoryValue={armoryValues[faction.basic?.id] ?? 0}
               racketValue={racketValues[faction.basic?.id] ?? 0}
               summary={summaries[faction.basic?.id]}
+              isCurrentMonth={isCurrentMonthSel}
+              monthLabel={monthLabel}
             />
 
           ))}
@@ -300,7 +337,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
 
           {/* Investment summary card */}
           {displayFactions.length > 0 && (
-            <InvestmentCard summaries={summaries} shownIds={displayFactions.map(f => f.basic?.id)} />
+            <InvestmentCard summaries={summaries} shownIds={displayFactions.map(f => f.basic?.id)} isCurrentMonth={isCurrentMonthSel} monthLabel={monthLabel} />
           )}
 
           {/* Combined networth */}
@@ -337,7 +374,13 @@ function OverviewSubTab({ factionId, onNavigate }) {
                   <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600' }}>Combined Overview</span>
                   <div style={{ color: "var(--text-muted)", fontSize: '11px', marginTop: '3px' }}>
                     {displayFactions.map(f => f.basic?.name).join(' + ')}
+                    {!isCurrentMonthSel && ` — ${MONTHS_FULL[selMonth0]} ${selYear}`}
                   </div>
+                  {!isCurrentMonthSel && (
+                    <div style={{ color: '#f0a020', fontSize: '11px', marginTop: '4px' }}>
+                      Networth is live (today), not historical — only Profit/Expenses below reflect the selected month.
+                    </div>
+                  )}
                 </div>
 
                 {/* Two big figures */}
@@ -451,7 +494,7 @@ function calcFactionNetworth(faction, settings, armoryValue = 0) {
 
 // Group-owned assets — not tied to any one faction (unlike wars, OC, and
 // expenses, which now live in each FactionNetworthCard instead).
-function InvestmentCard({ summaries, shownIds }) {
+function InvestmentCard({ summaries, shownIds, isCurrentMonth = true, monthLabel = 'this month' }) {
   const [collapsed, setCollapsed] = useState(false)
 
   const invMonthly     = shownIds.reduce((s, id) => s + (summaries[id]?.investments?.monthly_income ?? 0), 0)
@@ -468,20 +511,29 @@ function InvestmentCard({ summaries, shownIds }) {
 
   const rows = [
     {
+      // Bank investments have no actual-payout log — always a flat amortized
+      // estimate of currently active investments, proposed/potential profit
+      // regardless of which month is selected.
       label: 'Bank Investments',
-      sub: `${shownIds.reduce((s, id) => s + (summaries[id]?.investments?.total ?? 0), 0)} active — est. monthly faction income`,
+      sub: `${shownIds.reduce((s, id) => s + (summaries[id]?.investments?.total ?? 0), 0)} active — est. monthly faction income (current rate, not specific to this month)`,
       principal: invPrincipal,
       monthly: invMonthly,
     },
     {
+      // Stocks: current month is a flat estimate; a past month uses the
+      // actual amounts logged as paid to the faction that month.
       label: 'Stocks',
-      sub: `${shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total ?? 0), 0)} schemes — est. monthly faction income`,
+      sub: isCurrentMonth
+        ? `${shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total ?? 0), 0)} schemes — est. monthly faction income`
+        : `${shownIds.reduce((s, id) => s + (summaries[id]?.stocks?.total ?? 0), 0)} schemes — actual amount paid to faction ${monthLabel}`,
       principal: stockInvested,
       monthly: stockMonthly,
     },
     {
       label: 'Companies',
-      sub: `${companyTotal} companies, ${companyWithKey} with API key — 30% of monthly profit`,
+      sub: isCurrentMonth
+        ? `${companyTotal} companies, ${companyWithKey} with API key — 30% of monthly profit (projected)`
+        : `${companyTotal} companies, ${companyWithKey} with API key — actual 30% cut ${monthLabel}`,
       principal: companyPrincipal,
       monthly: companyMonthly,
       partial: companyWithKey < companyTotal,
@@ -551,7 +603,7 @@ function InvestmentCard({ summaries, shownIds }) {
   )
 }
 
-function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue = 0, summary }) {
+function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue = 0, summary, isCurrentMonth = true, monthLabel = 'this month' }) {
   const [collapsed, setCollapsed] = useState(false)
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
@@ -603,8 +655,10 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   const netMonthly     = totalProfit - totalExpenses
 
   const itemRackets = rackets.filter(r => r.reward?.type === 'Item')
+  // Rackets are always the CURRENT racket config/prices — there's no historical
+  // racket log, so this can't reflect a past month even when one is selected.
   const racketSub = itemRackets.length > 0
-    ? `${itemRackets.length} racket${itemRackets.length !== 1 ? 's' : ''} — est. 30-day item income`
+    ? `${itemRackets.length} racket${itemRackets.length !== 1 ? 's' : ''} — est. 30-day item income${isCurrentMonth ? '' : ' (current rate, not specific to this month)'}`
     : rackets.length > 0 ? `${rackets.length} racket${rackets.length !== 1 ? 's' : ''} — non-item rewards` : 'None owned'
 
   const rows = [
@@ -648,7 +702,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     },
     {
       label: 'Wars',
-      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`,
+      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out ${monthLabel} — faction's cut of the payout`,
       value: warMonthly,
     },
     {
@@ -656,7 +710,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
       sub: ocConfigured
         ? (ocItemExpense > 0
             ? `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid — ${fmt(ocGrossIncome)} cut − ${fmt(ocItemExpense)} item costs = net`
-            : `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid out this month — faction's cut of the payout`)
+            : `${ocPaidCrimes} crime${ocPaidCrimes !== 1 ? 's' : ''} paid out ${monthLabel} — faction's cut of the payout`)
         : 'Not yet tracked',
       value: ocMonthly,
       placeholder: !ocConfigured,
@@ -667,7 +721,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     {
       label: 'Armory Spend',
       sub: armoryConfigured
-        ? `${armoryDepositCount} deposit${armoryDepositCount !== 1 ? 's' : ''} this month — ${armoryTotalItems.toLocaleString()} items`
+        ? `${armoryDepositCount} deposit${armoryDepositCount !== 1 ? 's' : ''} ${monthLabel} — ${armoryTotalItems.toLocaleString()} items`
         : 'Not yet tracked',
       value: armoryExpense,
       configured: armoryConfigured,
@@ -675,15 +729,17 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     {
       label: 'OD Insurance',
       sub: odConfigured
-        ? `${odMembersWithOD} member${odMembersWithOD !== 1 ? 's' : ''} overdosed this month — ${odOverdoses.toLocaleString()} xanax replaced @ $${odUnitPrice.toLocaleString()} each`
+        ? `${odMembersWithOD} member${odMembersWithOD !== 1 ? 's' : ''} overdosed ${monthLabel} — ${odOverdoses.toLocaleString()} xanax replaced @ $${odUnitPrice.toLocaleString()} each`
         : 'Not yet tracked',
       value: odExpense,
       configured: odConfigured,
     },
     {
       label: 'Rank Perks',
+      // Always the CURRENT membership's entitlement — no dated record of who
+      // was "eligible" in a past month, so this never changes with the month picker.
       sub: perksConfigured
-        ? `${perksMembers} eligible member${perksMembers !== 1 ? 's' : ''} — ${perksXanax.toLocaleString()} xanax @ $${perksUnitPrice.toLocaleString()} each`
+        ? `${perksMembers} eligible member${perksMembers !== 1 ? 's' : ''} — ${perksXanax.toLocaleString()} xanax @ $${perksUnitPrice.toLocaleString()} each${isCurrentMonth ? '' : ' (current rate, not specific to this month)'}`
         : 'Not yet tracked',
       value: perksExpense,
       configured: perksConfigured,
@@ -691,7 +747,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     {
       label: 'Bounties',
       sub: bountyConfigured
-        ? `${bountyCount} ${bountyCount === 1 ? 'bounty' : 'bounties'} this month not tied to a war`
+        ? `${bountyCount} ${bountyCount === 1 ? 'bounty' : 'bounties'} ${monthLabel} not tied to a war`
         : 'Not yet tracked',
       value: bountyExpense,
       configured: bountyConfigured,
@@ -728,6 +784,11 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
 
       {/* Networth rows */}
       {!collapsed && <div style={{ padding: '0 4px' }}>
+        {!isCurrentMonth && (
+          <div style={{ padding: '8px 16px', fontSize: '11px', color: '#f0a020', background: 'rgba(240,160,32,0.08)' }}>
+            Vault balance, points, respect, and armory value below are live (right now) — there's no historical snapshot of them for {monthLabel.replace('in ', '')}. Income/Expenses below ARE scoped to that month.
+          </div>
+        )}
         {rows.map((row, i) => (
           <div key={row.label} style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',

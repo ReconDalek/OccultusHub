@@ -21,6 +21,22 @@ function daysUntil(dateStr) {
   return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
 }
 
+// Resolves an optional ?year=&month= pair (1-indexed month) into the bounds
+// every date-scoped income/expense figure below needs. Omitted year/month
+// default to the current calendar month, so every caller that doesn't pass
+// them keeps behaving exactly as before this was added.
+function getMonthBounds(yearParam, monthParam) {
+  const now = new Date();
+  const year  = yearParam  ? parseInt(yearParam, 10)  : now.getUTCFullYear();
+  const month = monthParam ? parseInt(monthParam, 10) : now.getUTCMonth() + 1; // 1-indexed
+  const monthStartTs = Math.floor(Date.UTC(year, month - 1, 1) / 1000);
+  const monthEndTs   = Math.floor(Date.UTC(year, month, 1) / 1000) - 1;
+  const monthStartDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const monthEndDate   = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const isCurrentMonth = year === now.getUTCFullYear() && month === now.getUTCMonth() + 1;
+  return { year, month, monthStartTs, monthEndTs, monthStartDate, monthEndDate, isCurrentMonth };
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 export async function getAccountingSettings(request, env) {
@@ -336,6 +352,8 @@ export async function getSummary(request, env) {
   try {
     const url = new URL(request.url);
     const factionId = url.searchParams.get('faction_id');
+    const { year, month, monthStartTs, monthEndTs, monthStartDate, monthEndDate, isCurrentMonth } =
+      getMonthBounds(url.searchParams.get('year'), url.searchParams.get('month'));
 
     const invParams = factionId ? [parseInt(factionId)] : [];
     const invWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
@@ -344,34 +362,63 @@ export async function getSummary(request, env) {
 
     const companyWhere = factionId ? `WHERE c.faction_id = ?` : ``;
     const warWhere = factionId ? `WHERE faction_id = ? AND is_paid = 1 AND hits_saved = 1` : `WHERE is_paid = 1 AND hits_saved = 1`;
-    const now = new Date();
-    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-    const [invRows, stockRows, companyRows, warIdRows] = await Promise.all([
-      env.DB.prepare(`SELECT amount, rate, duration_months, member_profit_pct FROM accounting_investments ${invWhere}`).bind(...invParams).all(),
-      env.DB.prepare(`SELECT payout_frequency, tier, stock_cost, member_keeps_amount FROM accounting_stocks ${stockWhere}`).bind(...invParams).all(),
-      env.DB.prepare(
-        `SELECT c.principal, c.has_api_key, c.principal_paid,
-                COALESCE(AVG(CASE WHEN s.snapshot_date >= date('now','start of month') THEN CAST(s.faction_cut AS REAL) END), c.faction_cut) AS avg_daily_cut
+    // Companies and stocks both branch on isCurrentMonth: the current month
+    // isn't finished yet, so we keep the existing run-rate PROJECTION (avg
+    // daily cut × days in month / flat per-payout estimate) — genuinely
+    // "proposed/potential profit", never written anywhere as real funds.
+    // A past month already happened, so instead of projecting we sum the
+    // ACTUAL dated records for it (company_profit_snapshots.faction_cut,
+    // accounting_stock_collections.amount_paid) — real settled income for
+    // that specific month, not an estimate.
+    const companyQuery = isCurrentMonth
+      ? `SELECT c.principal, c.has_api_key, c.principal_paid,
+                COALESCE(AVG(CASE WHEN s.snapshot_date >= date('now','start of month') THEN CAST(s.faction_cut AS REAL) END), c.faction_cut) AS avg_daily_cut,
+                NULL AS actual_month_cut
          FROM company_profit_cache c
          LEFT JOIN company_profit_snapshots s ON s.company_id = c.company_id
          ${companyWhere}
          GROUP BY c.company_id`
-      ).bind(...invParams).all(),
-      // War income (MTD actual): which fully paid-out wars this month qualify.
-      // Wars are sporadic, not daily recurring like companies, so MTD-actual is
-      // more honest than a projection. Bucketed by payout_processed_at (when
-      // Save to Rankings locked it in) with a fallback to ended_at for wars
-      // paid before that column existed. Only the war IDs are fetched here —
-      // the actual income figure is computed per-war below via
-      // computeWarEconomics, so it nets out that war's own armory/bounty/other
-      // expenses instead of counting the gross faction-share-of-payout.
+      : `SELECT c.principal, c.has_api_key, c.principal_paid, NULL AS avg_daily_cut,
+                COALESCE(SUM(CASE WHEN s.snapshot_date >= ? AND s.snapshot_date <= ? THEN CAST(s.faction_cut AS REAL) END), 0) AS actual_month_cut
+         FROM company_profit_cache c
+         LEFT JOIN company_profit_snapshots s ON s.company_id = c.company_id
+         ${companyWhere}
+         GROUP BY c.company_id`;
+    const companyParams = isCurrentMonth ? invParams : [monthStartDate, monthEndDate, ...invParams];
+
+    // stockWhere is either "WHERE faction_id = ? AND is_active = 1" or "WHERE is_active = 1" —
+    // the aliased past-month query needs the faction column qualified as s.faction_id.
+    const stockWhereAliased = factionId ? `WHERE s.faction_id = ? AND s.is_active = 1` : `WHERE s.is_active = 1`;
+    const stockQuery = isCurrentMonth
+      ? `SELECT id, payout_frequency, tier, stock_cost, member_keeps_amount, NULL AS actual_collected FROM accounting_stocks ${stockWhere}`
+      : `SELECT s.id, s.payout_frequency, s.tier, s.stock_cost, s.member_keeps_amount,
+                (SELECT COALESCE(SUM(c.amount_paid), 0) FROM accounting_stock_collections c
+                  WHERE c.stock_entry_id = s.id AND date(c.collected_at) >= ? AND date(c.collected_at) <= ?) AS actual_collected
+         FROM accounting_stocks s ${stockWhereAliased}`;
+    const stockParams = isCurrentMonth ? invParams : [monthStartDate, monthEndDate, ...invParams];
+
+    const [invRows, stockRows, companyRows, warIdRows] = await Promise.all([
+      env.DB.prepare(`SELECT amount, rate, duration_months, member_profit_pct FROM accounting_investments ${invWhere}`).bind(...invParams).all(),
+      env.DB.prepare(stockQuery).bind(...stockParams).all(),
+      env.DB.prepare(companyQuery).bind(...companyParams).all(),
+      // War income (actual): which fully paid-out wars in the target month
+      // qualify. Wars are sporadic, not daily recurring like companies, so
+      // actual-per-war is more honest than a projection regardless of month.
+      // Bucketed by payout_processed_at (when Save to Rankings locked it in)
+      // with a fallback to ended_at for wars paid before that column existed.
+      // Only the war IDs are fetched here — the actual income figure is
+      // computed per-war below via computeWarEconomics, so it nets out that
+      // war's own armory/bounty/other expenses instead of counting the gross
+      // faction-share-of-payout.
       env.DB.prepare(
         `SELECT id FROM ranked_wars
          ${warWhere}
            AND payout_json IS NOT NULL
-           AND date(COALESCE(payout_processed_at, datetime(ended_at, 'unixepoch'))) >= date('now','start of month')`
-      ).bind(...invParams).all(),
+           AND date(COALESCE(payout_processed_at, datetime(ended_at, 'unixepoch'))) >= ?
+           AND date(COALESCE(payout_processed_at, datetime(ended_at, 'unixepoch'))) <= ?`
+      ).bind(...invParams, monthStartDate, monthEndDate).all(),
     ]);
 
     // Net, not gross: each war's own armory usage, bounty spend, and any
@@ -387,6 +434,10 @@ export async function getSummary(request, env) {
     warIncome = Math.round(warIncome * 100) / 100;
     const warCount = warIds.length;
 
+    // Bank investments have no actual-payout log (unlike stocks below), so
+    // this stays a flat amortized run-rate of currently active investments
+    // for every month — clearly "proposed/potential profit" on the frontend,
+    // never written into vault/networth anywhere in this response.
     const invResults = invRows.results || [];
     let invTotalAmount = 0;
     let invMonthlyIncome = 0;
@@ -400,8 +451,12 @@ export async function getSummary(request, env) {
     let stockMonthlyIncome = 0;
     let stockTotalInvested = 0;
     for (const row of (stockRows.results || [])) {
-      const payoutsPerMonth = row.payout_frequency === '7-day' ? 4 : 1;
-      stockMonthlyIncome += (row.member_keeps_amount || 0) * (row.tier || 1) * payoutsPerMonth;
+      if (isCurrentMonth) {
+        const payoutsPerMonth = row.payout_frequency === '7-day' ? 4 : 1;
+        stockMonthlyIncome += (row.member_keeps_amount || 0) * (row.tier || 1) * payoutsPerMonth;
+      } else {
+        stockMonthlyIncome += row.actual_collected || 0;
+      }
       stockTotalInvested += row.stock_cost || 0;
     }
 
@@ -410,7 +465,9 @@ export async function getSummary(request, env) {
     let companyWithKey = 0;
     for (const row of (companyRows.results || [])) {
       if (row.principal_paid) companyTotalPrincipal += row.principal || 0;
-      companyMonthlyIncome += Math.round((row.avg_daily_cut || 0) * daysInMonth);
+      companyMonthlyIncome += isCurrentMonth
+        ? Math.round((row.avg_daily_cut || 0) * daysInMonth)
+        : Math.round(row.actual_month_cut || 0);
       if (row.has_api_key) companyWithKey++;
     }
 
@@ -421,16 +478,18 @@ export async function getSummary(request, env) {
       AND date(end_date) <= date('now', '+7 days') AND date(end_date) >= date('now')
     `).bind(...invParams).first();
 
-    // Rank Perks / OD Insurance expenses: both priced at the current cached
-    // Xanax market value (item_prices_cache), both Adept+ eligibility only.
-    // Armory expense: this month's deposited items × current item price.
+    // Rank Perks stays a flat current-membership run-rate for every month
+    // (no dated record of who was "entitled" in a past month) — clearly
+    // labeled on the frontend as a current rate, not this month's actual.
+    // OD Insurance / Armory / OC / Bounties are all genuinely dated records,
+    // so they're scoped to the requested month's bounds below.
     const perkFactionIds = factionId ? [parseInt(factionId)] : FACTION_IDS;
     const [rankPerkResults, odInsuranceResults, armoryExpenseResults, ocProfitResults, bountyExpenseResults] = await Promise.all([
       Promise.all(perkFactionIds.map(id => getFactionRankPerkExpense(env, id))),
-      Promise.all(perkFactionIds.map(id => getFactionODInsuranceExpense(env, id))),
-      Promise.all(perkFactionIds.map(id => getFactionArmoryExpense(env, id))),
-      Promise.all(perkFactionIds.map(id => getFactionOCProfit(env, id))),
-      Promise.all(perkFactionIds.map(id => getFactionBountyExpense(env, id))),
+      Promise.all(perkFactionIds.map(id => getFactionODInsuranceExpense(env, id, monthStartTs, monthEndTs))),
+      Promise.all(perkFactionIds.map(id => getFactionArmoryExpense(env, id, monthStartTs, monthEndTs))),
+      Promise.all(perkFactionIds.map(id => getFactionOCProfit(env, id, monthStartTs, monthEndTs))),
+      Promise.all(perkFactionIds.map(id => getFactionBountyExpense(env, id, monthStartTs, monthEndTs))),
     ]);
     const rankPerks = rankPerkResults.reduce((acc, r) => ({
       eligible_members: acc.eligible_members + r.eligible_members,
@@ -471,22 +530,33 @@ export async function getSummary(request, env) {
     }), { bounty_count: 0, monthly_cost: 0, configured: false });
 
     return jsonResponse({
+      month: { year, month, is_current_month: isCurrentMonth },
       investments: {
         total: invResults.length,
         total_amount: invTotalAmount,
         monthly_income: invMonthlyIncome,
+        // Always a projection (no actual-payout log exists for bank
+        // investments) — "proposed/potential profit", not a real settled
+        // figure for the selected month. Never added to vault/networth.
+        is_estimate: true,
         tci_action_required: tciDue?.count ?? 0,
       },
       stocks: {
         total: (stockRows.results || []).length,
         monthly_income: stockMonthlyIncome,
         total_invested: stockTotalInvested,
+        // Current month = projected run-rate; past month = actual logged
+        // collections for that month (accounting_stock_collections).
+        is_estimate: isCurrentMonth,
       },
       companies: {
         total: (companyRows.results || []).length,
         with_key: companyWithKey,
         total_principal: companyTotalPrincipal,
         monthly_income: companyMonthlyIncome,
+        // Current month = avg-daily-cut × days-in-month projection; past
+        // month = actual summed daily snapshots for that month.
+        is_estimate: isCurrentMonth,
       },
       wars: {
         count: warCount,
@@ -496,7 +566,9 @@ export async function getSummary(request, env) {
       expenses: {
         armory:       armoryExpense,
         od_insurance: odInsurance,
-        rank_perks:   rankPerks,
+        // Rank Perks is always a flat current-membership run-rate — no dated
+        // record of who was "entitled" in a past month exists to look up.
+        rank_perks:   { ...rankPerks, is_estimate: true },
         bounties:     bountyExpense,
       },
     });
