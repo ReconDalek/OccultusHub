@@ -163,6 +163,12 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/item-prices/refresh' && method === 'POST') {
       return armoryController.refreshItemPricesCache(request, env, user);
     }
+    // Freezes one month's Accounting summary per faction (defaults to last
+    // month if no { year, month } body given) — see accounting_feature memory
+    // for why armory/OD/OC figures need freezing at all (item price drift).
+    if (pathname === '/api/admin/accounting/snapshot' && method === 'POST') {
+      return accountingController.refreshAccountingSnapshot(request, env);
+    }
     if (pathname === '/api/admin/company-profits/status' && method === 'GET') {
       return companyProfitController.getCompanyProfitStatus(request, env, user);
     }

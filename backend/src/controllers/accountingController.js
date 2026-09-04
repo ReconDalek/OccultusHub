@@ -347,15 +347,19 @@ export async function deleteCollection(request, env) {
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────
+// Split into computeAccountingSummaryData (the actual query/math, reusable for
+// both the live endpoint and the month-end snapshot cron) and getSummary (the
+// HTTP handler, which prefers a frozen snapshot for any completed past month
+// before falling back to a live recompute) — see snapshotAccountingMonth below
+// for why a past month needs freezing at all: armory expense, OD Insurance,
+// and OC item costs all price against item_prices_cache's CURRENT price, so
+// recomputing a past month live months later silently uses today's drifted
+// prices instead of what those items actually cost back then.
 
-export async function getSummary(request, env) {
-  try {
-    const url = new URL(request.url);
-    const factionId = url.searchParams.get('faction_id');
-    const { year, month, monthStartTs, monthEndTs, monthStartDate, monthEndDate, isCurrentMonth } =
-      getMonthBounds(url.searchParams.get('year'), url.searchParams.get('month'));
+async function computeAccountingSummaryData(env, factionId, monthBounds) {
+  const { year, month, monthStartTs, monthEndTs, monthStartDate, monthEndDate, isCurrentMonth } = monthBounds;
 
-    const invParams = factionId ? [parseInt(factionId)] : [];
+  const invParams = factionId ? [parseInt(factionId)] : [];
     const invWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
 
     const stockWhere = factionId ? `WHERE faction_id = ? AND is_active = 1` : `WHERE is_active = 1`;
@@ -529,50 +533,122 @@ export async function getSummary(request, env) {
       configured:    true,
     }), { bounty_count: 0, monthly_cost: 0, configured: false });
 
-    return jsonResponse({
-      month: { year, month, is_current_month: isCurrentMonth },
-      investments: {
-        total: invResults.length,
-        total_amount: invTotalAmount,
-        monthly_income: invMonthlyIncome,
-        // Always a projection (no actual-payout log exists for bank
-        // investments) — "proposed/potential profit", not a real settled
-        // figure for the selected month. Never added to vault/networth.
-        is_estimate: true,
-        tci_action_required: tciDue?.count ?? 0,
-      },
-      stocks: {
-        total: (stockRows.results || []).length,
-        monthly_income: stockMonthlyIncome,
-        total_invested: stockTotalInvested,
-        // Current month = projected run-rate; past month = actual logged
-        // collections for that month (accounting_stock_collections).
-        is_estimate: isCurrentMonth,
-      },
-      companies: {
-        total: (companyRows.results || []).length,
-        with_key: companyWithKey,
-        total_principal: companyTotalPrincipal,
-        monthly_income: companyMonthlyIncome,
-        // Current month = avg-daily-cut × days-in-month projection; past
-        // month = actual summed daily snapshots for that month.
-        is_estimate: isCurrentMonth,
-      },
-      wars: {
-        count: warCount,
-        monthly_income: warIncome,
-      },
-      oc: ocProfit,
-      expenses: {
-        armory:       armoryExpense,
-        od_insurance: odInsurance,
-        // Rank Perks is always a flat current-membership run-rate — no dated
-        // record of who was "entitled" in a past month exists to look up.
-        rank_perks:   { ...rankPerks, is_estimate: true },
-        bounties:     bountyExpense,
-      },
-    });
+  return {
+    investments: {
+      total: invResults.length,
+      total_amount: invTotalAmount,
+      monthly_income: invMonthlyIncome,
+      // Always a projection (no actual-payout log exists for bank
+      // investments) — "proposed/potential profit", not a real settled
+      // figure for the selected month. Never added to vault/networth.
+      is_estimate: true,
+      tci_action_required: tciDue?.count ?? 0,
+    },
+    stocks: {
+      total: (stockRows.results || []).length,
+      monthly_income: stockMonthlyIncome,
+      total_invested: stockTotalInvested,
+      // Current month = projected run-rate; past month = actual logged
+      // collections for that month (accounting_stock_collections).
+      is_estimate: isCurrentMonth,
+    },
+    companies: {
+      total: (companyRows.results || []).length,
+      with_key: companyWithKey,
+      total_principal: companyTotalPrincipal,
+      monthly_income: companyMonthlyIncome,
+      // Current month = avg-daily-cut × days-in-month projection; past
+      // month = actual summed daily snapshots for that month.
+      is_estimate: isCurrentMonth,
+    },
+    wars: {
+      count: warCount,
+      monthly_income: warIncome,
+    },
+    oc: ocProfit,
+    expenses: {
+      armory:       armoryExpense,
+      od_insurance: odInsurance,
+      // Rank Perks is always a flat current-membership run-rate — no dated
+      // record of who was "entitled" in a past month exists to look up.
+      rank_perks:   { ...rankPerks, is_estimate: true },
+      bounties:     bountyExpense,
+    },
+  };
+}
+
+// ── HTTP handler: prefers a frozen snapshot for a completed past month ──────
+
+export async function getSummary(request, env) {
+  try {
+    const url = new URL(request.url);
+    const factionIdParam = url.searchParams.get('faction_id');
+    const factionId = factionIdParam ? parseInt(factionIdParam, 10) : null;
+    const monthBounds = getMonthBounds(url.searchParams.get('year'), url.searchParams.get('month'));
+    const { year, month, isCurrentMonth } = monthBounds;
+
+    // Only single-faction requests get snapshotted (that's the only shape the
+    // frontend ever asks for — see AccountingTab.jsx) — a past month with a
+    // faction_id and a frozen row wins over recomputing live.
+    if (factionId && !isCurrentMonth) {
+      const snap = await env.DB.prepare(
+        `SELECT summary_json FROM accounting_monthly_snapshots WHERE faction_id=? AND year=? AND month=?`
+      ).bind(factionId, year, month).first();
+      if (snap) {
+        const data = JSON.parse(snap.summary_json);
+        return jsonResponse({ month: { year, month, is_current_month: false, is_snapshot: true }, ...data });
+      }
+    }
+
+    const data = await computeAccountingSummaryData(env, factionId, monthBounds);
+    return jsonResponse({ month: { year, month, is_current_month: isCurrentMonth, is_snapshot: false }, ...data });
   } catch (e) {
     return errorResponse('Failed to fetch summary: ' + e.message, 500);
+  }
+}
+
+// ── Month-end snapshot: freezes each faction's completed-month summary ──────
+// Called by the cron on the 1st of the month (targeting the month that just
+// ended) and by the admin manual-refresh endpoint below (for backfilling
+// months that predate this feature, or re-freezing one after a data fix).
+
+export async function snapshotAccountingMonth(env, year, month) {
+  const monthBounds = getMonthBounds(String(year), String(month));
+  const results = [];
+  for (const factionId of FACTION_IDS) {
+    const data = await computeAccountingSummaryData(env, factionId, monthBounds);
+    const summaryJson = JSON.stringify(data);
+    await env.DB.prepare(
+      `INSERT INTO accounting_monthly_snapshots (faction_id, year, month, summary_json)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(faction_id, year, month) DO UPDATE SET
+         summary_json = excluded.summary_json, snapshotted_at = CURRENT_TIMESTAMP`
+    ).bind(factionId, year, month, summaryJson).run();
+    results.push({ factionId, year, month });
+  }
+  return { snapshotted: results.length, results };
+}
+
+// ── POST /api/admin/accounting/snapshot ──────────────────────────────────────
+// Manual trigger — defaults to the previous calendar month (same target the
+// cron uses), or accepts an explicit { year, month } body for backfilling
+// older months / re-freezing one after a correction.
+export async function refreshAccountingSnapshot(request, env) {
+  try {
+    let body = {};
+    try { body = await request.json(); } catch { /* empty body is fine */ }
+
+    let { year, month } = body;
+    if (!year || !month) {
+      const now = new Date();
+      const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      year = prev.getUTCFullYear();
+      month = prev.getUTCMonth() + 1;
+    }
+
+    const result = await snapshotAccountingMonth(env, parseInt(year, 10), parseInt(month, 10));
+    return jsonResponse({ year: parseInt(year, 10), month: parseInt(month, 10), ...result });
+  } catch (e) {
+    return errorResponse('Failed to snapshot accounting month: ' + e.message, 500);
   }
 }

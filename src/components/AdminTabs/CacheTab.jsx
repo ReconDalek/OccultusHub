@@ -5,6 +5,19 @@ import { timeAgo, formatUTC } from '../../lib/dates'
 const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
 const FACTION_IDS = [33097, 9728, 9171]
 
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+// Last 18 months (excluding the current, still-open one), most recent first
+function buildPastMonthOptions() {
+  const now = new Date()
+  const options = []
+  for (let i = 1; i <= 18; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+    options.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 }) // 1-indexed
+  }
+  return options
+}
+
 // Shared card/row/action styling so every section on this page — whether it
 // has real per-faction stats or is just a description + auto-run schedule —
 // presents at the same visual weight instead of some being a detailed panel
@@ -65,6 +78,8 @@ export default function CacheTab() {
   const [lastResult,          setLastResult]          = useState(null)
   const [error,               setError]               = useState(null)
   const [snapshotRunning,     setSnapshotRunning]     = useState(false)
+  const pastMonthOptions = buildPastMonthOptions()
+  const [acctSnapshotTarget, setAcctSnapshotTarget] = useState(`${pastMonthOptions[0].year}-${pastMonthOptions[0].month}`)
   const pollRef = useRef(null)
 
   useEffect(() => { fetchAll() }, [])
@@ -278,6 +293,28 @@ export default function CacheTab() {
       } else {
         setError(data.error || `Error ${res.status}`)
       }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(null)
+    }
+  }
+
+  const refreshAccountingSnapshot = async () => {
+    try {
+      setRefreshing('accounting-snapshot')
+      setError(null)
+      setLastResult(null)
+      const [year, month] = acctSnapshotTarget.split('-').map(Number)
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/admin/accounting/snapshot`, {
+        method: 'POST',
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, month }),
+      })
+      const data = await res.json()
+      if (res.ok) setLastResult({ message: `Snapshotted ${MONTHS_FULL[month - 1]} ${year} for ${data.snapshotted} factions` })
+      else setError(data.error || `Error ${res.status}`)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -967,6 +1004,49 @@ export default function CacheTab() {
               Manual run is safe — today's snapshot uses INSERT OR IGNORE so it won't duplicate if already run.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Accounting monthly snapshot */}
+      <div>
+        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Accounting Snapshot</h3>
+        <StatCard title="Freeze a Month's Accounting Summary">
+          <StatDescription>
+            Freezes each faction's Overview figures for one completed month — armory expense, OD Insurance, and
+            OC item costs all price against today's item value, so recomputing an old month later would silently
+            use today's drifted prices instead of what things actually cost back then. Also backfills months from
+            before this existed.
+          </StatDescription>
+          <StatRow label="Auto-runs" value="1st of month, 02:00 UTC (previous month)" valueColor="var(--text-secondary)" />
+        </StatCard>
+        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <select
+            value={acctSnapshotTarget}
+            onChange={(e) => setAcctSnapshotTarget(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '6px', color: '#f4f4f5', padding: '7px 10px', fontSize: '13px',
+            }}
+          >
+            {pastMonthOptions.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>{MONTHS_FULL[month - 1]} {year}</option>
+            ))}
+          </select>
+          <button
+            onClick={refreshAccountingSnapshot}
+            disabled={!!refreshing}
+            className="px-5 py-2 rounded border-none cursor-pointer transition-all hover:opacity-80 text-sm font-medium"
+            style={{
+              background: 'rgba(179,18,63,0.2)',
+              color: '#ff2f6d',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            {refreshing === 'accounting-snapshot' ? 'Snapshotting…' : 'Snapshot Selected Month'}
+          </button>
+          <p style={{ color: "var(--text-secondary)", fontSize: '12px', margin: 0 }}>
+            Safe to re-run — overwrites that month's existing snapshot with freshly computed figures.
+          </p>
         </div>
       </div>
 
