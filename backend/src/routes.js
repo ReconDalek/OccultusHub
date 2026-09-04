@@ -675,6 +675,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/accounting/summary' && method === 'GET') {
       return accountingController.getSummary(request, env);
     }
+    if (pathname === '/api/leadership/accounting/snapshot-months' && method === 'GET') {
+      return accountingController.getSnapshotMonths(request, env);
+    }
     if (pathname === '/api/leadership/accounting/investments' && method === 'GET') {
       return accountingController.getInvestments(request, env);
     }

@@ -13,17 +13,6 @@ const FACTION_OPTIONS = [
 
 const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
-// Last 18 months, most recent first — same convention as ArmoryTab.jsx's deposit log / WarStatsPanel.jsx
-function buildMonthOptions() {
-  const now = new Date()
-  const options = []
-  for (let i = 0; i < 18; i++) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
-    options.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() }) // month is 0-indexed here
-  }
-  return options
-}
-
 const SUB_TABS = [
   { id: 'overview',    label: 'Overview' },
   { id: 'investments', label: 'Investments' },
@@ -135,11 +124,28 @@ function OverviewSubTab({ factionId, onNavigate }) {
   const [saving, setSaving] = useState(false)
   const now = new Date()
   const [monthSel, setMonthSel] = useState(`${now.getUTCFullYear()}-${now.getUTCMonth()}`) // 'YYYY-M' (0-indexed month), defaults to current month
-  const monthOptions = buildMonthOptions()
+  // Only months that actually have a frozen snapshot are offered — a past
+  // month with no snapshot would just silently recompute from today's
+  // drifted prices, which is exactly what snapshotting was built to avoid.
+  // Current month is always offered separately since that's always live.
+  const [snapshotMonths, setSnapshotMonths] = useState([])
+  const monthOptions = [
+    { year: now.getUTCFullYear(), month: now.getUTCMonth() },
+    ...snapshotMonths
+      .filter(m => !(m.year === now.getUTCFullYear() && m.month - 1 === now.getUTCMonth()))
+      .map(m => ({ year: m.year, month: m.month - 1 })), // API is 1-indexed, this component uses 0-indexed
+  ]
   const [selYear, selMonth0] = monthSel.split('-').map(Number) // selMonth0 is 0-indexed
   const isCurrentMonthSel = selYear === now.getUTCFullYear() && selMonth0 === now.getUTCMonth()
   const monthLabel = isCurrentMonthSel ? 'this month' : `in ${MONTHS_FULL[selMonth0]} ${selYear}`
   const token = localStorage.getItem('occultusSession')
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/leadership/accounting/snapshot-months`, { headers: { Authorization: token } })
+      .then(r => r.json())
+      .then(d => setSnapshotMonths(d.months || []))
+      .catch(() => {})
+  }, [token])
 
   useEffect(() => {
     async function load() {

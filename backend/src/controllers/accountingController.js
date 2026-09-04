@@ -607,6 +607,21 @@ export async function getSummary(request, env) {
   }
 }
 
+// ── GET /api/leadership/accounting/snapshot-months ───────────────────────────
+// Which past months actually have a frozen snapshot — the frontend's month
+// picker uses this to only ever offer months it can show real data for
+// (current month is always offered separately, since that's always live).
+export async function getSnapshotMonths(request, env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT DISTINCT year, month FROM accounting_monthly_snapshots ORDER BY year DESC, month DESC`
+    ).all();
+    return jsonResponse({ months: results || [] });
+  } catch (e) {
+    return errorResponse('Failed to fetch snapshot months: ' + e.message, 500);
+  }
+}
+
 // ── Month-end snapshot: freezes each faction's completed-month summary ──────
 // Called by the cron on the 1st of the month (targeting the month that just
 // ended) and by the admin manual-refresh endpoint below (for backfilling
