@@ -231,7 +231,8 @@ function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
     lines.push('')
     for (const r of rows) {
       const name = r.tornUserId ? `[${r.username}](${tornProfileUrl(r.tornUserId)})` : r.username
-      lines.push(`${name} — Target: ${r.target ?? '—'} · ${achievedLabel}: ${fmt(r.achieved)} · Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}`)
+      const kickNote = r.atKickThreshold ? ` · ⚠ KICK THRESHOLD (${r.kickCount}/3)` : ''
+      lines.push(`${name} — Target: ${r.target ?? '—'} · ${achievedLabel}: ${fmt(r.achieved)} · Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}${kickNote}`)
     }
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
       setCopied(true)
@@ -277,7 +278,14 @@ function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
                 display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px', gap: '8px', padding: '7px 10px',
                 borderRadius: '6px', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
               }}>
-                <span style={{ color: '#f4f4f5', fontSize: '13px' }}>{r.username}</span>
+                <span style={{ color: '#f4f4f5', fontSize: '13px' }}>
+                  {r.username}
+                  {r.atKickThreshold && (
+                    <span title={`${r.kickCount} warnings in the last 6 months already`} style={{ color: '#f87171', marginLeft: '6px', fontSize: '10px', fontWeight: '700' }}>
+                      ⚠ {r.kickCount}/3
+                    </span>
+                  )}
+                </span>
                 <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{r.target ?? '—'}</span>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{fmt(r.achieved)}</span>
                 <span style={{ fontSize: '13px', color: r.variance == null ? 'var(--text-faint)' : (r.variance < 0 ? '#f87171' : '#4ade80') }}>
@@ -394,6 +402,18 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
               <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+                {m.at_kick_threshold && (
+                  <span
+                    title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
+                    style={{
+                      marginLeft: '6px', color: '#f87171', fontSize: '10px', fontWeight: '700',
+                      padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
+                      background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)',
+                    }}
+                  >
+                    ⚠ KICK THRESHOLD ({m.kick_count_6mo}/3)
+                  </span>
+                )}
                 <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
                   {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
                   {m.joined_mid_month && (
@@ -598,6 +618,8 @@ function EnergyGenerator({ onWarningSaved }) {
         target: hasTarget ? Number(target) : null,
         achieved: m.avg_per_day,
         variance: hasTarget ? m.avg_per_day - Number(target) : null,
+        atKickThreshold: m.at_kick_threshold,
+        kickCount: m.kick_count_6mo,
       }
     })
   const summarySubtitle = selectedFactions.map(id => FACTION_LABEL[id]).join(', ')
@@ -880,6 +902,18 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
                   <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
                   <div style={{ minWidth: 0 }}>
                     <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+                    {m.at_kick_threshold && (
+                      <span
+                        title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
+                        style={{
+                          marginLeft: '6px', color: '#f87171', fontSize: '10px', fontWeight: '700',
+                          padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
+                          background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)',
+                        }}
+                      >
+                        ⚠ KICK THRESHOLD ({m.kick_count_6mo}/3)
+                      </span>
+                    )}
                     {m.no_hits_recorded && (
                       <span title="No chain_hits record — confirmed in faction during this chain, but never attacked" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ no hits</span>
                     )}
@@ -1020,6 +1054,8 @@ function ChainGenerator({ onWarningSaved }) {
             target: hasTarget ? Number(target) : null,
             achieved: m.total_attacks,
             variance: hasTarget ? m.total_attacks - Number(target) : null,
+            atKickThreshold: m.at_kick_threshold,
+            kickCount: m.kick_count_6mo,
           }))
       })
     : []

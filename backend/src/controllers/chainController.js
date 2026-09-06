@@ -2,6 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomUserApiKey, getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD, suppressSameDayOverdoseXanax } from './warController.js';
+import { getKickThresholdCounts } from './activityController.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -744,6 +745,7 @@ export async function generateChainWarningReport(request, env) {
       WHERE warning_type = 'Chain' AND period_year = ? AND period_month = ?
     `).bind(year, month).all();
     const warnedSet = new Set((warnedRows.results || []).map(r => r.torn_user_id));
+    const kickCounts = await getKickThresholdCounts(env);
 
     const chains = [];
     for (const factionId of factions) {
@@ -880,6 +882,8 @@ export async function generateChainWarningReport(request, env) {
             overdoses:     overdoses[h.torn_user_id] ?? 0,
             exemption:     exemptionByUser[h.torn_user_id] ?? null,
             already_warned: warnedSet.has(h.torn_user_id),
+            kick_count_6mo:    kickCounts[h.torn_user_id] ?? 0,
+            at_kick_threshold: (kickCounts[h.torn_user_id] ?? 0) >= 3,
             _estDays:      estimatedDaysInFactionAtChainStart(h.days_in_faction),
           })),
           ...zeroHitMembers.map(r => ({
@@ -893,6 +897,8 @@ export async function generateChainWarningReport(request, env) {
             exemption:     exemptionByUser[r.torn_user_id] ?? null,
             no_hits_recorded: true,
             already_warned: warnedSet.has(r.torn_user_id),
+            kick_count_6mo:    kickCounts[r.torn_user_id] ?? 0,
+            at_kick_threshold: (kickCounts[r.torn_user_id] ?? 0) >= 3,
             _estDays:      estimatedDaysInFactionAtChainStart(r.days_in_faction),
           })),
         ]
