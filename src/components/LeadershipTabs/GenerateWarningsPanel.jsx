@@ -436,20 +436,20 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
                   </div>
                 )}
                 {m.exemption?.partial && (
-                  <div title={m.exemption.reason} style={{ color: '#f59e0b', fontSize: '11px', marginTop: '3px' }}>
+                  <div
+                    title={m.exemption.reason}
+                    style={{
+                      color: m.exemption.raw_avg_higher ? '#60a5fa' : '#f59e0b', fontSize: '11px', marginTop: '3px',
+                      padding: '4px 8px', borderRadius: '5px',
+                      background: m.exemption.raw_avg_higher ? 'rgba(96,165,250,0.08)' : 'transparent',
+                      border: m.exemption.raw_avg_higher ? '1px solid rgba(96,165,250,0.25)' : 'none',
+                    }}
+                  >
                     ⚠ Exempt {fmtShortDate(m.exemption.overlap_start)}–{fmtShortDate(m.exemption.overlap_end)} ({m.exemption.excluded_days}d) —
-                    {' '}−{fmt(m.exemption.energy_removed)} energy{m.exemption.attack_hits_removed > 0 && `, −${fmt(m.exemption.attack_hits_removed)} hits`} excluded from average
-                  </div>
-                )}
-                {m.exemption?.raw_avg_higher && (
-                  <div style={{
-                    color: '#60a5fa', fontSize: '11px', marginTop: '3px', padding: '4px 8px',
-                    background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: '5px',
-                  }}>
-                    ℹ They were MORE active during the excused days than the rest of the month — excluding them
-                    actually lowers this average ({fmt(m.avg_per_day)}/day) below what they'd get with everything
-                    counted ({fmt(m.exemption.raw_avg_per_day)}/day). The exemption is taking their best days away
-                    rather than helping — consider judging them on the full month instead.
+                    {' '}used here: {fmt(m.avg_per_day)}/day · full month (no exemption): {fmt(m.exemption.raw_avg_per_day)}/day
+                    {m.exemption.raw_avg_higher && (
+                      <> — they were more active during the excused days, so excluding them is lowering this average against them</>
+                    )}
                   </div>
                 )}
               </div>

@@ -1125,28 +1125,32 @@ export async function generateEnergyWarningReport(request, env) {
       const effectiveTotalEnergy  = effectiveGymEnergy + effectiveAttackEnergy;
       const effectiveAvgPerDay    = Math.round(effectiveTotalEnergy / effectiveTrackedDays);
 
-      // A partial exemption is meant to help — excuse days a member couldn't
-      // play — but removing a day only helps if that day dragged the average
-      // DOWN. If they were actually MORE active during the excused days than
-      // their own average elsewhere in the month, cutting those days out
-      // removes their BEST days instead and drags the average down, working
-      // against them. Compare against the raw (un-exempted) average over the
-      // full tracked days — mathematically a weighted blend of the excused
-      // days' own rate and effectiveAvgPerDay, so rawAvgPerDay > effectiveAvgPerDay
-      // is exactly "the excused days' rate beat the rest of the month's rate",
-      // without needing to compute that rate separately.
+      // Always show the plain full-month figure alongside the exemption-
+      // adjusted one — a "-740 energy excluded" delta makes the reader do
+      // the math themselves to see what it means; stating both end averages
+      // directly doesn't. The adjusted figure (avg_per_day below) is still
+      // what actually drives the warning/target comparison — this is purely
+      // informational.
+      //
+      // raw_avg_higher flags when a partial exemption is backfiring: it's
+      // meant to help (excuse days that dragged the average down), but if
+      // the member was actually MORE active during the excused days than
+      // the rest of the month, excluding those days removes their BEST days
+      // instead and lowers the average against them. rawAvgPerDay is
+      // mathematically a weighted blend of the excused days' own rate and
+      // effectiveAvgPerDay, so rawAvgPerDay > effectiveAvgPerDay is exactly
+      // "the excused days' rate beat the rest of the month's", without
+      // needing to compute that rate separately.
       if (exemptionForMember?.partial) {
         const rawTotalEnergy = gymEnergy + attackHits * 25;
         const rawAvgPerDay   = Math.round(rawTotalEnergy / trackedDays);
-        if (rawAvgPerDay > effectiveAvgPerDay) {
-          exemptionForMember = {
-            ...exemptionForMember,
-            raw_avg_higher:  true,
-            raw_avg_per_day: rawAvgPerDay,
-            raw_total_energy: rawTotalEnergy,
-            raw_tracked_days: trackedDays,
-          };
-        }
+        exemptionForMember = {
+          ...exemptionForMember,
+          raw_avg_per_day:  rawAvgPerDay,
+          raw_total_energy: rawTotalEnergy,
+          raw_tracked_days: trackedDays,
+          raw_avg_higher:   rawAvgPerDay > effectiveAvgPerDay,
+        };
       }
 
       members.push({
