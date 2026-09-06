@@ -1123,6 +1123,31 @@ export async function generateEnergyWarningReport(request, env) {
 
       const effectiveAttackEnergy = effectiveAttackHits * 25;
       const effectiveTotalEnergy  = effectiveGymEnergy + effectiveAttackEnergy;
+      const effectiveAvgPerDay    = Math.round(effectiveTotalEnergy / effectiveTrackedDays);
+
+      // A partial exemption is meant to help — excuse days a member couldn't
+      // play — but removing a day only helps if that day dragged the average
+      // DOWN. If they were actually MORE active during the excused days than
+      // their own average elsewhere in the month, cutting those days out
+      // removes their BEST days instead and drags the average down, working
+      // against them. Compare against the raw (un-exempted) average over the
+      // full tracked days — mathematically a weighted blend of the excused
+      // days' own rate and effectiveAvgPerDay, so rawAvgPerDay > effectiveAvgPerDay
+      // is exactly "the excused days' rate beat the rest of the month's rate",
+      // without needing to compute that rate separately.
+      if (exemptionForMember?.partial) {
+        const rawTotalEnergy = gymEnergy + attackHits * 25;
+        const rawAvgPerDay   = Math.round(rawTotalEnergy / trackedDays);
+        if (rawAvgPerDay > effectiveAvgPerDay) {
+          exemptionForMember = {
+            ...exemptionForMember,
+            raw_avg_higher:  true,
+            raw_avg_per_day: rawAvgPerDay,
+            raw_total_energy: rawTotalEnergy,
+            raw_tracked_days: trackedDays,
+          };
+        }
+      }
 
       members.push({
         torn_user_id:     r.torn_user_id,
@@ -1138,7 +1163,7 @@ export async function generateEnergyWarningReport(request, env) {
         end_date:         r.end_date,
         joined_mid_month: isBrandNewMember,
         tracked_days:     effectiveTrackedDays,
-        avg_per_day:      Math.round(effectiveTotalEnergy / effectiveTrackedDays),
+        avg_per_day:      effectiveAvgPerDay,
         overdoses:        overdoses[r.torn_user_id] ?? 0,
         movements:        buildMovements(r.torn_user_id, r.current_faction_id),
         exemption:        exemptionForMember,

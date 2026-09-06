@@ -441,6 +441,17 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
                     {' '}−{fmt(m.exemption.energy_removed)} energy{m.exemption.attack_hits_removed > 0 && `, −${fmt(m.exemption.attack_hits_removed)} hits`} excluded from average
                   </div>
                 )}
+                {m.exemption?.raw_avg_higher && (
+                  <div style={{
+                    color: '#60a5fa', fontSize: '11px', marginTop: '3px', padding: '4px 8px',
+                    background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: '5px',
+                  }}>
+                    ℹ They were MORE active during the excused days than the rest of the month — excluding them
+                    actually lowers this average ({fmt(m.avg_per_day)}/day) below what they'd get with everything
+                    counted ({fmt(m.exemption.raw_avg_per_day)}/day). The exemption is taking their best days away
+                    rather than helping — consider judging them on the full month instead.
+                  </div>
+                )}
               </div>
               {showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               {showAttacks && <span style={{ color: '#f87171', fontSize: '12px' }}>{m.attack_hits > 0 ? `+${fmt(m.attack_energy)}` : '—'}</span>}
