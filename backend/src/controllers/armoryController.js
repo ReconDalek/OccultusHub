@@ -26,6 +26,22 @@ export async function fetchAndCacheArmory(env) {
       }
       console.log(`[armory] faction ${factionId}: using key from user ${apiKeyObj.tornUserId} (${apiKeyObj.username})`);
 
+      // Previous cache, used to fall back a single failed category onto its
+      // last known-good data (see the category loop below) instead of the
+      // whole armory_cache blob silently losing that category — see
+      // [[armory_feature]] for the incident this fixes: a category call
+      // that fails (Torn error code, or exhausts fetchWithRetry's 3 retries)
+      // just had `data[cat]` left unset entirely, and since the ENTIRE data
+      // blob gets overwritten on every run (ON CONFLICT DO UPDATE SET data=...),
+      // that category vanished from the cache outright — read back by every
+      // consumer (getArmory, the low-stock webhook) as 0 items, indistinguishable
+      // from a real, accurate zero. No error ever reached the admin panel either:
+      // categoryErrors only surfaced in a manual refresh's HTTP response, never
+      // persisted anywhere durable for the automatic 6h cron run.
+      const existingRow = await env.DB.prepare(`SELECT data FROM armory_cache WHERE faction_id=?`).bind(factionId).first();
+      let previousData = {};
+      try { previousData = existingRow?.data ? JSON.parse(existingRow.data) : {}; } catch { previousData = {}; }
+
       // Reassemble into the same category-keyed shape (data.weapons = [...],
       // data.drugs = [...], etc.) every existing consumer (getArmory,
       // ArmoryTab's loan-detail expander, the low-stock webhook) already
@@ -49,12 +65,17 @@ export async function fetchAndCacheArmory(env) {
       // LoanExpandedRow already parses with `.split(',')`.
       const data = {};
       const categoryErrors = [];
+      let succeededCategories = 0;
       for (const cat of ARMORY_CATEGORIES) {
         try {
           const url = `https://api.torn.com/v2/faction/inventory?cat=${cat}`;
           const catData = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` });
           if (catData?.error) {
             categoryErrors.push(`${cat}: ${catData.error.code} ${catData.error.error}`);
+            // Fall back to last known-good data for just this category rather
+            // than leaving it unset (which would wipe it from the cache
+            // entirely once the full blob below gets overwritten).
+            if (previousData[cat]) data[cat] = previousData[cat];
             continue;
           }
           const merged = new Map(); // item id -> aggregated row
@@ -84,18 +105,29 @@ export async function fetchAndCacheArmory(env) {
             loaned_to: r.loanedTo.join(','),
             uids:      r.uids,
           }));
+          succeededCategories++;
         } catch (catErr) {
           categoryErrors.push(`${cat}: ${catErr.message}`);
+          // Same fallback as the catData.error branch above — a thrown
+          // error (HTTP failure, fetchWithRetry exhausted) is just as
+          // capable of silently erasing a category as a Torn error code.
+          if (previousData[cat]) data[cat] = previousData[cat];
         }
       }
 
       if (categoryErrors.length) {
         console.warn(`[armory] faction ${factionId}: category errors — ${categoryErrors.join('; ')}`);
       }
-      if (!Object.keys(data).length) {
+      if (!succeededCategories) {
         const err = `All categories failed: ${categoryErrors.join('; ')}`;
         console.error(`[armory] faction ${factionId}: ${err}`);
         results.errors.push({ factionId, error: err });
+        // Still persist the errors below so admin can see this faction's
+        // fetch failed entirely, even though we're not touching its cached
+        // data (it's all fallback-only, nothing new succeeded this run).
+        await env.DB.prepare(
+          `UPDATE armory_cache SET last_errors=?, last_error_at=CURRENT_TIMESTAMP WHERE faction_id=?`
+        ).bind(JSON.stringify(categoryErrors), factionId).run();
         continue;
       }
 
@@ -103,11 +135,18 @@ export async function fetchAndCacheArmory(env) {
       const totalItems = categories.reduce((s, k) => s + data[k].length, 0);
       console.log(`[armory] faction ${factionId}: got ${totalItems} item types across [${categories.join(', ')}]`);
 
+      // last_errors/last_error_at cleared to NULL when this run had none —
+      // a stale warning from a previous run that's since resolved itself
+      // shouldn't linger in the admin panel forever.
+      const errorsJson = categoryErrors.length ? JSON.stringify(categoryErrors) : null;
+      const errorAtSql = errorsJson ? 'CURRENT_TIMESTAMP' : 'NULL';
       await env.DB.prepare(
-        `INSERT INTO armory_cache (faction_id, data, fetched_at)
-         VALUES (?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(faction_id) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at`
-      ).bind(factionId, JSON.stringify(data)).run();
+        `INSERT INTO armory_cache (faction_id, data, fetched_at, last_errors, last_error_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP, ?, ${errorAtSql})
+         ON CONFLICT(faction_id) DO UPDATE SET
+           data = excluded.data, fetched_at = excluded.fetched_at,
+           last_errors = excluded.last_errors, last_error_at = excluded.last_error_at`
+      ).bind(factionId, JSON.stringify(data), errorsJson).run();
 
       console.log(`[armory] faction ${factionId}: cached successfully`);
       results.fetched++;
@@ -391,11 +430,13 @@ export async function fetchAndCacheItemPrices(env) {
 export async function getArmoryStatus(request, env, user) {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT faction_id, fetched_at FROM armory_cache`
+      `SELECT faction_id, fetched_at, last_errors, last_error_at FROM armory_cache`
     ).all();
     const status = {};
     for (const row of results) {
-      status[row.faction_id] = { fetched_at: row.fetched_at };
+      let lastErrors = null;
+      try { lastErrors = row.last_errors ? JSON.parse(row.last_errors) : null; } catch { lastErrors = null; }
+      status[row.faction_id] = { fetched_at: row.fetched_at, last_errors: lastErrors, last_error_at: row.last_error_at };
     }
     return jsonResponse({ status });
   } catch (e) {

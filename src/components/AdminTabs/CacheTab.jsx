@@ -799,6 +799,19 @@ export default function CacheTab() {
             return (
               <StatCard key={fid} title={FACTION_NAMES[fid]}>
                 <StatRow label="Last updated" value={info?.fetched_at ? timeAgo(info.fetched_at) : '—'} title={info?.fetched_at ?? ''} valueColor="var(--text-secondary)" />
+                {info?.last_errors?.length > 0 && (
+                  <div style={{
+                    marginTop: '8px', padding: '6px 8px', borderRadius: '6px',
+                    background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)',
+                  }}>
+                    <p style={{ color: '#f87171', fontSize: '11px', fontWeight: '600', margin: '0 0 3px' }}>
+                      ⚠ {info.last_errors.length} categor{info.last_errors.length !== 1 ? 'ies' : 'y'} failed {info.last_error_at ? timeAgo(info.last_error_at) : ''} — showing last known-good data
+                    </p>
+                    {info.last_errors.map((e, i) => (
+                      <p key={i} style={{ color: 'var(--text-secondary)', fontSize: '11px', margin: '2px 0' }}>{e}</p>
+                    ))}
+                  </div>
+                )}
               </StatCard>
             )
           })}
