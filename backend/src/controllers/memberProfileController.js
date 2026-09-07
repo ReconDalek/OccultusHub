@@ -2,6 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { requireLeadership } from '../middleware/auth.js';
 import { getWarningsForMember } from './warningsController.js';
 import { PERSONAL_STAT_FIELDS, getEnergyDeltaForUser } from './activityController.js';
+import { computeAchievements } from '../services/achievements.js';
 
 // Small curated subset of the 135 personal-stat fields — this is a summary
 // card, not the full breakdown PersonalStatsPanel already provides.
@@ -63,9 +64,12 @@ export async function getMemberProfile(request, env, user) {
       energy,
       monthStatsRows,
       warnings,
+      warsFoughtRow,
+      chainsFoughtRow,
+      mentorRow,
     ] = await Promise.all([
       env.DB.prepare(
-        `SELECT torn_user_id, username, faction_id, faction_position, level, is_active, joined_at
+        `SELECT torn_user_id, username, faction_id, faction_position, level, is_active, joined_at, days_in_faction
          FROM faction_members WHERE torn_user_id=?`
       ).bind(tornUserId).first(),
 
@@ -159,6 +163,13 @@ export async function getMemberProfile(request, env, user) {
       ).bind(tornUserId, monthStart).all(),
 
       getWarningsForMember(env, tornUserId),
+
+      // Achievements need DISTINCT counts (how many separate wars/chains they
+      // were part of), not the SUM-of-hits totals chainRow/warRow already
+      // fetch above — different question, so a separate small query each.
+      env.DB.prepare(`SELECT COUNT(DISTINCT ranked_war_id) AS count FROM war_hits WHERE torn_user_id=?`).bind(tornUserId).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT torn_chain_id) AS count FROM chain_hits WHERE torn_user_id=?`).bind(tornUserId).first(),
+      env.DB.prepare(`SELECT 1 FROM mentors WHERE torn_user_id=? LIMIT 1`).bind(tornUserId).first(),
     ]);
 
     // This-month delta, not lifetime cumulative — same MIN/MAX-date pattern
@@ -185,9 +196,10 @@ export async function getMemberProfile(request, env, user) {
     // (users.id) — fishing/runes/sanctum/familiars/CAH/Rite all key off that
     // internal id, not torn_user_id. Skip the whole batch if they've never logged in.
     let games = null;
+    let siteAccount = { discord_linked: false, forum_posts: 0, cipher_solves: 0 };
     if (accountRow?.id) {
       const internalId = accountRow.id;
-      const [fishing, runes, sanctum, familiar, cah, rite] = await Promise.all([
+      const [fishing, runes, sanctum, familiar, cah, rite, discordLink, forumPosts, cipherSolves] = await Promise.all([
         env.DB.prepare(`SELECT COUNT(*) AS catches FROM fishing_catches WHERE user_id=?`).bind(internalId).first(),
         env.DB.prepare(`SELECT COUNT(*) AS casts FROM rune_casts WHERE user_id=?`).bind(internalId).first(),
         env.DB.prepare(`SELECT essence, total_essence FROM sanctum_saves WHERE user_id=?`).bind(internalId).first(),
@@ -197,7 +209,15 @@ export async function getMemberProfile(request, env, user) {
            FROM cah_players WHERE user_id=?`
         ).bind(internalId).first(),
         env.DB.prepare(`SELECT COUNT(DISTINCT room_id) AS games_played FROM game_players WHERE user_id=?`).bind(internalId).first(),
+        env.DB.prepare(`SELECT 1 FROM discord_links WHERE user_id=? LIMIT 1`).bind(internalId).first(),
+        env.DB.prepare(`SELECT COUNT(*) AS count FROM forum_posts WHERE author_id=?`).bind(internalId).first(),
+        env.DB.prepare(`SELECT COUNT(*) AS count FROM cipher_submissions WHERE user_id=? AND is_correct=1`).bind(internalId).first(),
       ]);
+      siteAccount = {
+        discord_linked: !!discordLink,
+        forum_posts:    forumPosts?.count ?? 0,
+        cipher_solves:  cipherSolves?.count ?? 0,
+      };
 
       let familiarBattles = null;
       if (familiar?.id) {
@@ -219,6 +239,24 @@ export async function getMemberProfile(request, env, user) {
         rite: { games_played: rite?.games_played ?? 0 },
       };
     }
+
+    const achievements = computeAchievements({
+      days_in_faction:       identity?.days_in_faction ?? 0,
+      wars_fought:           warsFoughtRow?.count ?? 0,
+      chains_fought:         chainsFoughtRow?.count ?? 0,
+      total_respect:         (warRow?.respect_gained ?? 0) + (chainRow?.total_respect ?? 0),
+      oc_joined:             ocJoined,
+      fishing_catches:       games?.fishing?.catches ?? 0,
+      rune_casts:            games?.runes?.casts ?? 0,
+      has_sanctum:           !!games?.sanctum,
+      familiar_level:        games?.binding_game?.level ?? 0,
+      cah_games:             games?.cah?.games_played ?? 0,
+      rite_games:            games?.rite?.games_played ?? 0,
+      forum_posts:           siteAccount.forum_posts,
+      cipher_solves:         siteAccount.cipher_solves,
+      is_mentor:             !!mentorRow,
+      discord_linked:        siteAccount.discord_linked,
+    });
 
     return jsonResponse({
       identity: { ...(identity ?? { torn_user_id: tornUserId }), image_url: accountRow?.image_url ?? null },
@@ -251,6 +289,7 @@ export async function getMemberProfile(request, env, user) {
       },
       games,
       warnings,
+      achievements,
     });
   } catch (err) {
     console.error('getMemberProfile error:', err);

@@ -39,6 +39,31 @@ function Row({ label, value, color }) {
   )
 }
 
+const TIER_COLORS = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700' }
+
+function badgeTooltip(a) {
+  if (a.binary) return a.earned ? `${a.label} — earned` : `${a.label} — not yet earned`
+  if (a.earned && !a.next_threshold) return `${a.label}: ${a.tier} (${fmt(a.value)}) — max tier`
+  if (a.earned) return `${a.label}: ${a.tier} (${fmt(a.value)}) — ${fmt(a.next_threshold - a.value)} more to ${a.next_tier}`
+  return `${a.label}: ${fmt(a.value)} / ${fmt(a.next_threshold)} to earn Bronze`
+}
+
+function AchievementBadge({ a }) {
+  const color = a.binary ? '#4ade80' : (TIER_COLORS[a.tier] || 'rgba(255,255,255,0.15)')
+  return (
+    <div title={badgeTooltip(a)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', opacity: a.earned ? 1 : 0.35, width: '58px' }}>
+      <div style={{
+        width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '18px', background: a.earned ? `${color}22` : 'rgba(255,255,255,0.04)',
+        border: `2px solid ${a.earned ? color : 'rgba(255,255,255,0.1)'}`,
+      }}>
+        {a.icon}
+      </div>
+      <span style={{ fontSize: '9px', color: a.earned ? '#f4f4f5' : 'var(--text-faint)', textAlign: 'center', lineHeight: 1.2 }}>{a.label}</span>
+    </div>
+  )
+}
+
 export default function ProfileCard({ tornUserId, onClose }) {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
@@ -93,6 +118,16 @@ export default function ProfileCard({ tornUserId, onClose }) {
 
         {data && !loading && !error && (
           <>
+            {/* Achievements */}
+            {data.achievements?.length > 0 && (
+              <div style={sectionStyle}>
+                <p style={sectionTitle}>Achievements ({data.achievements.filter(a => a.earned).length}/{data.achievements.length})</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {data.achievements.map(a => <AchievementBadge key={a.key} a={a} />)}
+                </div>
+              </div>
+            )}
+
             {/* Combat / War — all lifetime totals, not this-month */}
             <div style={sectionStyle}>
               <p style={sectionTitle}>Combat & War (Totals)</p>
