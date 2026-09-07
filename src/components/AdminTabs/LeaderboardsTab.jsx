@@ -118,8 +118,8 @@ function LeaderTable({ loading, rows, columns }) {
   if (loading) return <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>Loading...</div>
   if (!rows.length) return <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>No data yet.</div>
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+    <div className="table-scroll">
+      <table className="tbl-freeze-2" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '620px', '--freeze-2-offset': '42px' }}>
         <thead>
           <tr style={{ color: "var(--text-secondary)", textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <th style={{ padding: '8px 12px', fontWeight: 600 }}>#</th>

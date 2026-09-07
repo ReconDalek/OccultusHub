@@ -130,12 +130,11 @@ export default function CipherReviewTab() {
           </div>
 
           {/* Submissions table */}
-          <div style={{
+          <div className="table-scroll" style={{
             border: '1px solid rgba(255,255,255,0.07)',
             borderRadius: 12,
-            overflow: 'hidden',
           }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 560 }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                   {['Member', 'Answer', 'Result', 'Submitted'].map(h => (

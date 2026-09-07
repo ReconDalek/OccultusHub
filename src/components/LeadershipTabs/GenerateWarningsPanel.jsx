@@ -362,22 +362,18 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
     ? ['#', 'Member', 'Gym', 'Attacks', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
     : ['#', 'Member', 'Gym', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
 
-  // No overflowX:auto wrapper here on purpose — CSS forces overflow-y to a
-  // non-'visible' computed value whenever overflow-x isn't 'visible' either
-  // (confirmed live: even overflow-y:'clip' still computed to 'hidden' in
-  // testing), and any non-'visible' overflow on an ancestor becomes the
-  // scroll boundary position:sticky binds to — silently limiting "stick to
-  // the page as it scrolls" to "stick to the top of this table" (a no-op,
-  // since this element has no internal scrollbar of its own). Letting the
-  // table's min-width overflow the page itself (page-level horizontal
-  // scroll on very narrow viewports) is the trade-off that keeps the header
-  // genuinely sticky against the real page scroll, which is what was asked for.
+  // Wrapped in .table-scroll so a wide report scrolls within its own box on
+  // mobile instead of blowing out the page width. The trade-off (documented
+  // history): the header no longer sticks to the *page* on vertical scroll,
+  // since a horizontal-scroll container forces overflow-y to a non-visible
+  // computed value. The frozen #/Member columns (gridtbl-freeze-2) are the
+  // priority now — they keep every row identifiable while scrolling sideways.
   return (
-    <div>
+    <div className="table-scroll">
       <div style={{ minWidth: showAttacks ? '880px' : '800px' }}>
-        <div style={{
+        <div className="gridtbl-freeze-2" style={{
           display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
-          position: 'sticky', top: 0, zIndex: 5, background: '#141414',
+          zIndex: 5, background: '#141414',
         }}>
           {headers.map((h, i) => (
             <span key={h + i} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
@@ -393,7 +389,7 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
           const flagged = hasTarget && delta < 0 && !excluded
 
           return (
-            <div key={m.torn_user_id} style={{
+            <div key={m.torn_user_id} className="gridtbl-freeze-2" style={{
               display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
               gap: '8px', padding: '9px 12px', borderRadius: '8px',
               background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
@@ -883,11 +879,11 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
           <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
         </div>
       ) : (
-        <div style={{ padding: '10px' }}>
+        <div className="table-scroll" style={{ padding: '10px' }}>
           <div style={{ minWidth: '700px' }}>
-            <div style={{
+            <div className="gridtbl-freeze-2" style={{
               display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
-              position: 'sticky', top: 0, zIndex: 5, background: '#141414',
+              zIndex: 5, background: '#141414',
             }}>
               {['#', 'Member', 'Attacks', 'Bonus', 'OD', 'vs Target', ''].map(h => (
                 <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
@@ -904,7 +900,7 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
               const flagged = hasTarget && delta < 0 && !excluded
 
               return (
-                <div key={m.torn_user_id} style={{
+                <div key={m.torn_user_id} className="gridtbl-freeze-2" style={{
                   display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
                   gap: '8px', padding: '9px 12px', borderRadius: '8px',
                   background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),

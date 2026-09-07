@@ -248,8 +248,8 @@ function CompanyMonthTab({ factionId, token }) {
               ))}
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
+            <div className="table-scroll">
+              <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     <TH>Company</TH>
@@ -439,8 +439,8 @@ function CompanyBreakdownPanel({ companies, token }) {
             </p>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '800px' }}>
+          <div className="table-scroll">
+            <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '800px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                   <TH>Date</TH>
@@ -702,8 +702,8 @@ export default function CompanySubTab({ factionId }) {
       )}
 
       {/* Table */}
-      <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
+      <div className="table-scroll" style={{ marginBottom: '24px' }}>
+        <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
               <TH>Company</TH>

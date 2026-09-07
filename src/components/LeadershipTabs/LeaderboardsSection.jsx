@@ -263,9 +263,9 @@ export default function LeaderboardsSection() {
                   <p style={{ color: "var(--text-faint)", fontSize: '14px', margin: 0 }}>No gains recorded for this stat/month yet.</p>
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <div style={{ minWidth: '480px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 140px', gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
+                <div className="table-scroll">
+                  <div style={{ minWidth: '480px', '--gridfreeze-2-offset': '48px' }}>
+                    <div className="gridtbl-freeze-2" style={{ display: 'grid', gridTemplateColumns: '40px 1fr 140px', gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
                       {['#', 'Member', 'Gained'].map(h => (
                         <span key={h} style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
                       ))}
@@ -273,6 +273,7 @@ export default function LeaderboardsSection() {
                     {board.entries.map((e, i) => (
                       <div
                         key={e.torn_user_id}
+                        className="gridtbl-freeze-2"
                         style={{
                           display: 'grid', gridTemplateColumns: '40px 1fr 140px', alignItems: 'center',
                           gap: '8px', padding: '9px 12px', borderRadius: '8px',

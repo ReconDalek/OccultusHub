@@ -131,6 +131,7 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
   return (
     <div>
       <div
+        className="gridtbl-freeze"
         style={{
           display: 'grid', gridTemplateColumns: colTemplate, gap: '8px',
           padding: '7px 14px', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)',
@@ -251,12 +252,13 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
 
   // Column template
   const colTemplate = isSimple
-    ? '1fr 90px 90px 90px'
-    : '1fr 80px 100px 100px 100px'
+    ? 'minmax(150px,1fr) 90px 90px 90px'
+    : 'minmax(150px,1fr) 80px 100px 100px 100px'
+  const minW = isSimple ? 470 : 580
 
   // Table header
   const header = (
-    <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
+    <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
       <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name</span>
       {!isSimple && <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</span>}
       {FACTIONS.map(f => (
@@ -266,9 +268,11 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
   )
 
   if (!items.length) return (
-    <div>
-      {header}
-      <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '12px 14px', margin: 0 }}>No items.</p>
+    <div className="table-scroll">
+      <div style={{ minWidth: minW }}>
+        {header}
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '12px 14px', margin: 0 }}>No items.</p>
+      </div>
     </div>
   )
 
@@ -281,25 +285,29 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
     }
     const types = [...WEAPON_TYPE_ORDER, ...Object.keys(byType).filter(t => !WEAPON_TYPE_ORDER.includes(t))].filter(t => byType[t]?.length)
     return (
-      <div>
-        {header}
-        {types.map(type => (
-          <SubTypeGroup key={type} type={type} items={byType[type]} isSimple={false}
-            members={members} colTemplate={colTemplate}
-            expandedLoans={expandedLoans} onToggleLoan={onToggleLoan}
-            collapsedTypes={collapsedTypes} onToggleType={onToggleType} minMap={minMap} />
-        ))}
+      <div className="table-scroll">
+        <div style={{ minWidth: minW }}>
+          {header}
+          {types.map(type => (
+            <SubTypeGroup key={type} type={type} items={byType[type]} isSimple={false}
+              members={members} colTemplate={colTemplate}
+              expandedLoans={expandedLoans} onToggleLoan={onToggleLoan}
+              collapsedTypes={collapsedTypes} onToggleType={onToggleType} minMap={minMap} />
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
-    <div>
-      {header}
-      {items.map(item => (
-        <ItemRow key={item.ID} item={item} isSimple={isSimple} members={members} colTemplate={colTemplate}
-          expandedLoans={expandedLoans} onToggleLoan={onToggleLoan} minMap={minMap} />
-      ))}
+    <div className="table-scroll">
+      <div style={{ minWidth: minW }}>
+        {header}
+        {items.map(item => (
+          <ItemRow key={item.ID} item={item} isSimple={isSimple} members={members} colTemplate={colTemplate}
+            expandedLoans={expandedLoans} onToggleLoan={onToggleLoan} minMap={minMap} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -441,14 +449,15 @@ function ArmoryDepositsTab() {
         deposits.length === 0 ? (
           <p style={{ color: "var(--text-faint)", fontSize: '13px' }}>No deposits logged yet.</p>
         ) : (
-          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '150px 90px 1fr 130px 90px 110px', gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
+          <div className="table-scroll" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+           <div style={{ minWidth: '760px' }}>
+            <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: '150px 90px minmax(160px,1fr) 130px 90px 110px', gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
               {['Time', 'Faction', 'Item', 'User', 'Qty', 'Est. Value'].map((h, i) => (
                 <span key={h} style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i >= 4 ? 'right' : 'left' }}>{h}</span>
               ))}
             </div>
             {deposits.map(d => (
-              <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '150px 90px 1fr 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <div key={d.id} className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: '150px 90px minmax(160px,1fr) 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <span style={{ color: '#4ade80', fontSize: '12px', fontFamily: 'monospace' }}>{formatDepositTime(d.deposited_at)}</span>
                 <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{FACTIONS.find(f => f.id === d.faction_id)?.label ?? d.faction_id}</span>
                 <span style={{ color: '#4ade80', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -467,6 +476,7 @@ function ArmoryDepositsTab() {
                 </span>
               </div>
             ))}
+           </div>
           </div>
         )
       )}

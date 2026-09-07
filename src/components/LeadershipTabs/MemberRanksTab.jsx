@@ -67,6 +67,7 @@ function fmt(n) {
 function ColumnHeaders() {
   return (
     <div
+      className="gridtbl-freeze"
       style={{
         display: 'grid',
         gridTemplateColumns: GRID,
@@ -99,6 +100,7 @@ function MemberRow({ member, showFaction }) {
 
   return (
     <div
+      className="gridtbl-freeze"
       style={{
         display: 'grid',
         gridTemplateColumns: GRID,

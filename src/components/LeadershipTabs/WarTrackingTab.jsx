@@ -704,8 +704,8 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
       {rows.length === 0 ? (
         <p style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+        <div className="table-scroll">
+          <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
             <thead>
               <tr>
                 <th style={th('left')}>Member</th>
@@ -914,8 +914,8 @@ function AttackLogTab({ warId }) {
       {!filtered.length ? (
         <p style={{ color: "var(--text-muted)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attacks match this filter.</p>
       ) : (
-        <div style={{ overflowX: 'auto', maxHeight: '500px', overflowY: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', minWidth: '900px', width: '100%' }}>
+        <div className="table-scroll" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+          <table className="tbl-freeze" style={{ borderCollapse: 'collapse', minWidth: '900px', width: '100%' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
               <tr>
                 <th style={th}>Time (UTC/TCT)</th>

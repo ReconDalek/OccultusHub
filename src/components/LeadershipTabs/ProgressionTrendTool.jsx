@@ -211,9 +211,9 @@ function BreakdownTable({ factions }) {
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="table-scroll">
       <div style={{ minWidth: '520px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `1fr repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
+        <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: `1fr repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
           <span />
           {FACTION_IDS.map(id => (
             <span key={id} style={{ color: FACTION_COLORS[id], fontSize: '11px', fontWeight: '700', textAlign: 'right' }}>
@@ -222,7 +222,7 @@ function BreakdownTable({ factions }) {
           ))}
         </div>
         {rows.map(r => (
-          <div key={r.key} style={{ display: 'grid', gridTemplateColumns: `1fr repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', marginBottom: '4px' }}>
+          <div key={r.key} className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: `1fr repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', marginBottom: '4px' }}>
             <span style={{ color: "var(--text-secondary)", fontSize: '12px' }}>{r.label}</span>
             {FACTION_IDS.map(id => {
               const { sum, activeMembers } = totals(id)
@@ -246,9 +246,9 @@ function TimeToRankTable({ factions }) {
   const tiers = factions[FACTION_IDS[0]]?.rankEstimates?.map(r => r.tier) || []
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="table-scroll">
       <div style={{ minWidth: '620px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `100px repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
+        <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: `100px repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
           <span style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Rank</span>
           {FACTION_IDS.map(id => (
             <span key={id} style={{ color: FACTION_COLORS[id], fontSize: '11px', fontWeight: '700', textAlign: 'center' }}>
@@ -257,7 +257,7 @@ function TimeToRankTable({ factions }) {
           ))}
         </div>
         {tiers.map(tierName => (
-          <div key={tierName} style={{ display: 'grid', gridTemplateColumns: `100px repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', marginBottom: '4px', alignItems: 'center' }}>
+          <div key={tierName} className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: `100px repeat(${FACTION_IDS.length}, 1fr)`, gap: '8px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', marginBottom: '4px', alignItems: 'center' }}>
             <span style={{ color: '#f4f4f5', fontSize: '12px', fontWeight: '600' }}>{tierName}</span>
             {FACTION_IDS.map(id => {
               const est = factions[id]?.rankEstimates?.find(r => r.tier === tierName)

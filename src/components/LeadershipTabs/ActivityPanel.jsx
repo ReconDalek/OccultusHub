@@ -333,9 +333,9 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, snapshot
   const showBreakdown = includeRevives || includeAttacks
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: showBreakdown ? '640px' : '540px' }}>
-        <div style={{
+    <div className="table-scroll">
+      <div style={{ minWidth: showBreakdown ? '640px' : '540px', '--gridfreeze-2-offset': '38px' }}>
+        <div className="gridtbl-freeze-2" style={{
           display: 'grid',
           gridTemplateColumns: showBreakdown ? '30px 1fr 140px 160px 110px' : '30px 1fr 140px 110px',
           gap: '8px', padding: '6px 12px', marginBottom: '4px',
@@ -353,6 +353,7 @@ function EnergyTable({ members, extras, includeRevives, includeAttacks, snapshot
           return (
             <div
               key={m.id}
+              className="gridtbl-freeze-2"
               style={{
                 display: 'grid',
                 gridTemplateColumns: showBreakdown ? '30px 1fr 140px 160px 110px' : '30px 1fr 140px 110px',
@@ -434,9 +435,9 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
   const colTemplate = '30px 1fr 110px 110px 140px 60px 100px'
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: '700px' }}>
-        <div style={{
+    <div className="table-scroll">
+      <div style={{ minWidth: '700px', '--gridfreeze-2-offset': '38px' }}>
+        <div className="gridtbl-freeze-2" style={{
           display: 'grid',
           gridTemplateColumns: colTemplate,
           gap: '8px', padding: '6px 12px', marginBottom: '4px',
@@ -453,6 +454,7 @@ function ComparisonTable({ members, extras, includeRevives, includeAttacks, peri
           return (
             <div
               key={m.id}
+              className="gridtbl-freeze-2"
               style={{
                 display: 'grid',
                 gridTemplateColumns: colTemplate,
@@ -524,9 +526,9 @@ function MemberBreakdownTable({ data }) {
   const colTemplate = '120px 100px 120px 120px 130px'
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="table-scroll">
       <div style={{ minWidth: '590px' }}>
-        <div style={{
+        <div className="gridtbl-freeze" style={{
           display: 'grid',
           gridTemplateColumns: colTemplate,
           gap: '8px', padding: '6px 12px', marginBottom: '4px',
@@ -543,6 +545,7 @@ function MemberBreakdownTable({ data }) {
           return (
             <div
               key={d.date}
+              className="gridtbl-freeze"
               style={{
                 display: 'grid',
                 gridTemplateColumns: colTemplate,

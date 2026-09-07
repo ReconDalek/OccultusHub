@@ -189,9 +189,9 @@ function MemberContributionsTable({ hits, usernames }) {
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="table-scroll">
       <div style={{ minWidth: '760px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '4px 10px', gap: '8px' }}>
+        <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: cols, padding: '4px 10px', gap: '8px' }}>
           {MEMBER_TABLE_COLUMNS.map((col) => (
             <span
               key={col.key}
@@ -211,6 +211,7 @@ function MemberContributionsTable({ hits, usernames }) {
           return (
             <div
               key={h.torn_user_id}
+              className="gridtbl-freeze"
               style={{
                 display: 'grid', gridTemplateColumns: cols, alignItems: 'center', gap: '8px',
                 padding: '8px 10px', borderRadius: '8px', background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',

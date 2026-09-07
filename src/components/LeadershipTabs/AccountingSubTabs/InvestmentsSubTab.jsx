@@ -290,8 +290,8 @@ export default function InvestmentsSubTab({ factionId }) {
       ) : sorted.length === 0 ? (
         <p style={{ color: "var(--text-secondary)", fontSize: '13px' }}>No active investments recorded.</p>
       ) : (
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+        <div className="table-scroll">
+          <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>
                 {['Member', 'Principal', 'Rate', 'Duration', 'Profit', 'Member Keeps', 'Faction Income', 'Start', 'End', 'Days Left', 'TCI Purchased', ''].map(h => (

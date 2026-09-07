@@ -589,7 +589,7 @@ function OverviewSubTab({ restricted, mentorId }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
         <h3 style={{ color: '#f4f4f5', fontFamily: 'Cinzel,serif', fontSize: '15px', letterSpacing: '0.5px', margin: 0 }}>Mentees</h3>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           {['active', 'completed', 'removed', 'all'].map(s => (
             <button key={s} onClick={() => setStatusFilter(s)} style={{
               padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer', textTransform: 'capitalize',
