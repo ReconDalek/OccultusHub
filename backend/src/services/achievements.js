@@ -1,8 +1,11 @@
 // Member achievements/badges — derived entirely from data already tracked
 // elsewhere (war_hits, chain_hits, oc_crime_slots, the mini-games, forums,
-// cipher, mentoring, discord linking). No new tables: badges are always
-// recomputed live from a stats snapshot, never stored/unlocked-once, so
-// tweaking a threshold here takes effect immediately for everyone.
+// cipher, mentoring, discord linking). No new tables for the badges
+// themselves: they're always recomputed live from a stats snapshot, never
+// stored/unlocked-once, so tweaking a threshold takes effect immediately for
+// everyone. `achievement_configs` (migration_add_achievement_configs.sql)
+// only stores admin overrides — enabled/disabled + tier thresholds — on top
+// of the coded defaults below; see Admin > Achievements.
 //
 // Tiered badges (`tiers`) count up Bronze → Silver → Gold as a numeric stat
 // crosses each threshold. Binary badges (`binary: true`) are earned/not —
@@ -30,30 +33,67 @@ export const BADGE_DEFS = [
   { key: 'discord_linked', label: 'Discord Linked', icon: '💬', statKey: 'discord_linked',    binary: true },
 ];
 
-export function computeAchievements(stats) {
-  return BADGE_DEFS.map(def => {
-    const raw = stats[def.statKey];
+// ── Config overrides ──────────────────────────────────────────────────────
 
-    if (def.binary) {
-      const earned = !!raw;
-      return { key: def.key, label: def.label, icon: def.icon, binary: true, earned, value: earned };
-    }
+export async function getAchievementConfigs(env) {
+  const { results } = await env.DB.prepare(`SELECT * FROM achievement_configs`).all();
+  const map = {};
+  for (const row of (results || [])) map[row.key] = row;
+  return map;
+}
 
-    const value = raw ?? 0;
-    let tier = null, tierIndex = -1;
-    def.tiers.forEach((t, i) => { if (value >= t.threshold) { tier = t.name; tierIndex = i; } });
-    const nextTier = def.tiers[tierIndex + 1] ?? null;
+// Merges a badge def with its DB override (if any) into what computeAchievements
+// actually uses — a missing config row falls back to the coded default
+// (enabled, default thresholds), so this table only needs to store what an
+// admin actually changed.
+function effectiveDef(def, configs) {
+  const cfg = configs?.[def.key];
+  const enabled = cfg ? !!cfg.enabled : true;
+  if (def.binary) return { ...def, enabled };
 
-    return {
-      key: def.key,
-      label: def.label,
-      icon: def.icon,
-      value,
-      earned: tierIndex >= 0,
-      tier,
-      next_tier: nextTier?.name ?? null,
-      next_threshold: nextTier?.threshold ?? null,
-      max_threshold: def.tiers[def.tiers.length - 1].threshold,
-    };
+  const overrideNames = ['bronze_threshold', 'silver_threshold', 'gold_threshold'];
+  const tiers = def.tiers.map((t, i) => {
+    const override = cfg?.[overrideNames[i]];
+    return { ...t, threshold: (override != null) ? override : t.threshold };
   });
+  return { ...def, enabled, tiers };
+}
+
+export function getEffectiveBadgeDefs(configs) {
+  return BADGE_DEFS.map(def => effectiveDef(def, configs));
+}
+
+// ── Compute a member's badge results from a flat stats snapshot ────────────
+// `configs` (from getAchievementConfigs) is optional — omit it to use pure
+// coded defaults (e.g. a quick script), pass it for anything user-facing so
+// admin overrides actually apply. Disabled badges are left out entirely.
+
+export function computeAchievements(stats, configs = null) {
+  return getEffectiveBadgeDefs(configs)
+    .filter(def => def.enabled)
+    .map(def => {
+      const raw = stats[def.statKey];
+
+      if (def.binary) {
+        const earned = !!raw;
+        return { key: def.key, label: def.label, icon: def.icon, binary: true, earned, value: earned };
+      }
+
+      const value = raw ?? 0;
+      let tier = null, tierIndex = -1;
+      def.tiers.forEach((t, i) => { if (value >= t.threshold) { tier = t.name; tierIndex = i; } });
+      const nextTier = def.tiers[tierIndex + 1] ?? null;
+
+      return {
+        key: def.key,
+        label: def.label,
+        icon: def.icon,
+        value,
+        earned: tierIndex >= 0,
+        tier,
+        next_tier: nextTier?.name ?? null,
+        next_threshold: nextTier?.threshold ?? null,
+        max_threshold: def.tiers[def.tiers.length - 1].threshold,
+      };
+    });
 }

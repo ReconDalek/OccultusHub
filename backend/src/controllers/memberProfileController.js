@@ -2,7 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { requireLeadership } from '../middleware/auth.js';
 import { getWarningsForMember } from './warningsController.js';
 import { PERSONAL_STAT_FIELDS, getEnergyDeltaForUser } from './activityController.js';
-import { computeAchievements } from '../services/achievements.js';
+import { computeAchievements, getAchievementConfigs } from '../services/achievements.js';
 
 // Small curated subset of the 135 personal-stat fields — this is a summary
 // card, not the full breakdown PersonalStatsPanel already provides.
@@ -240,6 +240,7 @@ export async function getMemberProfile(request, env, user) {
       };
     }
 
+    const achievementConfigs = await getAchievementConfigs(env);
     const achievements = computeAchievements({
       days_in_faction:       identity?.days_in_faction ?? 0,
       wars_fought:           warsFoughtRow?.count ?? 0,
@@ -256,7 +257,7 @@ export async function getMemberProfile(request, env, user) {
       cipher_solves:         siteAccount.cipher_solves,
       is_mentor:             !!mentorRow,
       discord_linked:        siteAccount.discord_linked,
-    });
+    }, achievementConfigs);
 
     return jsonResponse({
       identity: { ...(identity ?? { torn_user_id: tornUserId }), image_url: accountRow?.image_url ?? null },

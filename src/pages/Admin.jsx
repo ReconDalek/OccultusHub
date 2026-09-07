@@ -7,6 +7,7 @@ import AdminCardsTab from '../components/AdminTabs/AdminCardsTab'
 import LogsTab from '../components/AdminTabs/LogsTab'
 import WebhooksTab from '../components/AdminTabs/WebhooksTab'
 import AnalyticsTab from '../components/AdminTabs/AnalyticsTab'
+import AchievementsTab from '../components/AdminTabs/AchievementsTab'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
@@ -14,6 +15,7 @@ export default function Admin() {
   const tabs = [
     { id: 'users', label: 'Users' },
     { id: 'analytics', label: 'Analytics' },
+    { id: 'achievements', label: 'Achievements' },
     { id: 'cache', label: 'Cache' },
     { id: 'events',      label: 'Themes' },
     { id: 'logs',        label: 'Logs' },
@@ -84,6 +86,7 @@ export default function Admin() {
         >
           {activeTab === 'users' && <UsersTab />}
           {activeTab === 'analytics' && <AnalyticsTab />}
+          {activeTab === 'achievements' && <AchievementsTab />}
           {activeTab === 'cache' && <CacheTab />}
           {activeTab === 'leaderboards' && <LeaderboardsTab />}
           {activeTab === 'events'      && <SeasonalEventsTab />}

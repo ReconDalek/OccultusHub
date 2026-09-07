@@ -2,6 +2,7 @@ import { verifyToken, requireAdmin, requireLeadership, getMentoringAccess } from
 import { errorResponse, jsonResponse } from './middleware/errorHandler.js';
 import * as authController from './controllers/authController.js';
 import * as adminController from './controllers/adminController.js';
+import * as achievementsController from './controllers/achievementsController.js';
 import * as cacheController from './controllers/cacheController.js';
 import * as eventsController from './controllers/eventsController.js';
 import * as discordController from './controllers/discordController.js';
@@ -205,6 +206,17 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/admin/analytics/dashboard' && method === 'GET') {
       return adminController.getAnalyticsDashboard(request, env, user);
+    }
+
+    // Achievements management
+    if (pathname === '/api/admin/achievements/configs' && method === 'GET') {
+      return achievementsController.getAchievementAdminConfigs(request, env);
+    }
+    if (pathname.match(/^\/api\/admin\/achievements\/configs\/[a-z_]+$/) && method === 'PUT') {
+      return achievementsController.updateAchievementConfig(request, env, user);
+    }
+    if (pathname === '/api/admin/achievements/holders' && method === 'GET') {
+      return achievementsController.getAchievementHolders(request, env);
     }
 
     if (pathname === '/api/admin/fishing/reset' && method === 'POST') {
