@@ -42,10 +42,11 @@ function Row({ label, value, color }) {
 const TIER_COLORS = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700' }
 
 function badgeTooltip(a) {
-  if (a.binary) return a.earned ? `${a.label} — earned` : `${a.label} — not yet earned`
-  if (a.earned && !a.next_threshold) return `${a.label}: ${a.tier} (${fmt(a.value)}) — max tier`
-  if (a.earned) return `${a.label}: ${a.tier} (${fmt(a.value)}) — ${fmt(a.next_threshold - a.value)} more to ${a.next_tier}`
-  return `${a.label}: ${fmt(a.value)} / ${fmt(a.next_threshold)} to earn Bronze`
+  const desc = a.description ? `\n${a.description}` : ''
+  if (a.binary) return `${a.label} — ${a.earned ? 'earned' : 'not yet earned'}${desc}`
+  if (a.earned && !a.next_threshold) return `${a.label}: ${a.tier} (${fmt(a.value)}) — max tier${desc}`
+  if (a.earned) return `${a.label}: ${a.tier} (${fmt(a.value)}) — ${fmt(a.next_threshold - a.value)} more to ${a.next_tier}${desc}`
+  return `${a.label}: ${fmt(a.value)} / ${fmt(a.next_threshold)} to earn Bronze${desc}`
 }
 
 function AchievementBadge({ a }) {

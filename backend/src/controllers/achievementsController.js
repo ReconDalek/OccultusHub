@@ -11,6 +11,7 @@ export async function getAchievementAdminConfigs(request, env) {
       key: def.key,
       label: def.label,
       icon: def.icon,
+      description: def.description,
       binary: !!def.binary,
       enabled: def.enabled,
       tiers: def.binary ? null : def.tiers,

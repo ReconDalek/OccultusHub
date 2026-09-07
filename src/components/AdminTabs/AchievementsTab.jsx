@@ -68,10 +68,15 @@ function BadgeRow({ badge, holders, onSave }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '22px' }}>{badge.icon}</span>
-        <div style={{ flex: '1 1 140px', minWidth: 0 }}>
-          <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600', margin: 0 }}>{badge.label}</p>
-          <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '2px 0 0' }}>
-            {badge.binary ? 'Binary — earned or not' : 'Tiered — Bronze / Silver / Gold'}
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <p style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: '600', margin: 0 }}>
+            {badge.label}
+            <span style={{ color: 'var(--text-faint)', fontSize: '10px', fontWeight: '400', marginLeft: '8px' }}>
+              {badge.binary ? 'Binary' : 'Tiered'}
+            </span>
+          </p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '12px', margin: '3px 0 0' }}>
+            {badge.description}
           </p>
         </div>
 
