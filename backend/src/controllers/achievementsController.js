@@ -161,9 +161,22 @@ export async function getAchievementHolders(request, env) {
       }
     }
 
-    // Sort holders: tiered by value desc, binary just alphabetical.
+    // Sort holders: tiered by value desc (torn_user_id asc tie-break — same
+    // rule STAT_LEADER_QUERIES uses, so this view and any individual profile
+    // always agree on who's #1), binary just left as query order.
     for (const key of Object.keys(badgeHolders)) {
-      badgeHolders[key].sort((a, b) => (typeof a.value === 'number' && typeof b.value === 'number') ? b.value - a.value : 0);
+      badgeHolders[key].sort((a, b) => {
+        if (typeof a.value === 'number' && typeof b.value === 'number' && a.value !== b.value) return b.value - a.value;
+        if (typeof a.value === 'number' && typeof b.value === 'number') return a.torn_user_id - b.torn_user_id;
+        return 0;
+      });
+    }
+
+    // Legendary: the single top holder of a tiered badge, but only if they've
+    // actually reached Gold — never falls back to a lower tier's leader.
+    for (const key of Object.keys(badgeHolders)) {
+      const top = badgeHolders[key][0];
+      if (top?.tier === 'Gold') top.tier = 'Legendary';
     }
 
     return jsonResponse({ holders: badgeHolders, member_count: (members.results || []).length });

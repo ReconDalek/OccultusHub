@@ -39,26 +39,34 @@ function Row({ label, value, color }) {
   )
 }
 
-const TIER_COLORS = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700' }
+// Legendary sits above Gold — held by at most one member per badge, the
+// current #1 in the faction for that stat (never awarded unless they've
+// already reached Gold). Distinct magenta rather than a tier metal, since
+// it isn't really a "tier" so much as a crown.
+const TIER_COLORS = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700', Legendary: '#ff2f6d' }
 
 function badgeTooltip(a) {
   const desc = a.description ? `\n${a.description}` : ''
   if (a.binary) return `${a.label} — ${a.earned ? 'earned' : 'not yet earned'}${desc}`
+  if (a.tier === 'Legendary') return `${a.label}: 👑 Legendary (${fmt(a.value)}) — highest in the faction!${desc}`
   if (a.earned && !a.next_threshold) return `${a.label}: ${a.tier} (${fmt(a.value)}) — max tier${desc}`
   if (a.earned) return `${a.label}: ${a.tier} (${fmt(a.value)}) — ${fmt(a.next_threshold - a.value)} more to ${a.next_tier}${desc}`
   return `${a.label}: ${fmt(a.value)} / ${fmt(a.next_threshold)} to earn Bronze${desc}`
 }
 
 function AchievementBadge({ a }) {
+  const isLegendary = a.tier === 'Legendary'
   const color = a.binary ? '#4ade80' : (TIER_COLORS[a.tier] || 'rgba(255,255,255,0.15)')
   return (
     <div title={badgeTooltip(a)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', opacity: a.earned ? 1 : 0.35, width: '58px' }}>
       <div style={{
-        width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        position: 'relative', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: '18px', background: a.earned ? `${color}22` : 'rgba(255,255,255,0.04)',
         border: `2px solid ${a.earned ? color : 'rgba(255,255,255,0.1)'}`,
+        boxShadow: isLegendary ? `0 0 10px ${color}88` : 'none',
       }}>
         {a.icon}
+        {isLegendary && <span style={{ position: 'absolute', top: '-8px', right: '-4px', fontSize: '13px' }}>👑</span>}
       </div>
       <span style={{ fontSize: '9px', color: a.earned ? '#f4f4f5' : 'var(--text-faint)', textAlign: 'center', lineHeight: 1.2 }}>{a.label}</span>
     </div>

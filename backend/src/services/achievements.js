@@ -98,3 +98,59 @@ export function computeAchievements(stats, configs = null) {
       };
     });
 }
+
+// ── Legendary tier ──────────────────────────────────────────────────────────
+// A special tier ABOVE Gold, held by at most one member per tiered badge —
+// whoever currently has the single highest value for that stat, but ONLY if
+// that value already clears the Gold threshold. If nobody has reached Gold
+// yet, nobody is Legendary either — it never "falls back" to whoever merely
+// leads at a lower tier. Not applicable to binary badges (no ranking).
+//
+// One query per tiered stat, ORDER BY value DESC with a torn_user_id ASC
+// tie-break for a single deterministic winner on an exact tie —
+// getAchievementHolders (achievementsController.js) uses the identical
+// tie-break in its own in-memory sort, so both views always agree on who
+// holds it.
+const STAT_LEADER_QUERIES = {
+  days_in_faction: `SELECT torn_user_id, days_in_faction AS value FROM faction_members WHERE days_in_faction IS NOT NULL ORDER BY value DESC, torn_user_id ASC LIMIT 1`,
+  wars_fought:     `SELECT torn_user_id, COUNT(DISTINCT ranked_war_id) AS value FROM war_hits GROUP BY torn_user_id ORDER BY value DESC, torn_user_id ASC LIMIT 1`,
+  chains_fought:   `SELECT torn_user_id, COUNT(DISTINCT torn_chain_id) AS value FROM chain_hits GROUP BY torn_user_id ORDER BY value DESC, torn_user_id ASC LIMIT 1`,
+  total_respect:   `SELECT torn_user_id, SUM(v) AS value FROM (
+                       SELECT torn_user_id, respect_gained AS v FROM war_hits
+                       UNION ALL
+                       SELECT torn_user_id, total_respect AS v FROM chain_hits
+                     ) GROUP BY torn_user_id ORDER BY value DESC, torn_user_id ASC LIMIT 1`,
+  oc_joined:       `SELECT torn_user_id, COUNT(*) AS value FROM oc_crime_slots WHERE torn_user_id IS NOT NULL GROUP BY torn_user_id ORDER BY value DESC, torn_user_id ASC LIMIT 1`,
+  fishing_catches: `SELECT u.torn_user_id, COUNT(*) AS value FROM fishing_catches f JOIN users u ON u.id = f.user_id GROUP BY u.torn_user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+  rune_casts:      `SELECT u.torn_user_id, COUNT(*) AS value FROM rune_casts r JOIN users u ON u.id = r.user_id GROUP BY u.torn_user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+  familiar_level:  `SELECT u.torn_user_id, f.level AS value FROM familiars f JOIN users u ON u.id = f.user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+  cah_games:       `SELECT u.torn_user_id, COUNT(DISTINCT c.room_id) AS value FROM cah_players c JOIN users u ON u.id = c.user_id WHERE c.user_id IS NOT NULL GROUP BY u.torn_user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+  rite_games:      `SELECT u.torn_user_id, COUNT(DISTINCT g.room_id) AS value FROM game_players g JOIN users u ON u.id = g.user_id WHERE g.user_id IS NOT NULL GROUP BY u.torn_user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+  forum_posts:     `SELECT u.torn_user_id, COUNT(*) AS value FROM forum_posts p JOIN users u ON u.id = p.author_id GROUP BY u.torn_user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+  cipher_solves:   `SELECT u.torn_user_id, COUNT(*) AS value FROM cipher_submissions cs JOIN users u ON u.id = cs.user_id WHERE cs.is_correct=1 GROUP BY u.torn_user_id ORDER BY value DESC, u.torn_user_id ASC LIMIT 1`,
+};
+
+async function getStatLeader(env, statKey) {
+  const sql = STAT_LEADER_QUERIES[statKey];
+  if (!sql) return null;
+  return env.DB.prepare(sql).first();
+}
+
+// Upgrades any of THIS member's Gold-tier badges to Legendary if they're
+// currently the single #1 for that stat. Only bothers querying for badges
+// already at Gold — anyone below Gold can never be Legendary regardless of
+// rank, so there's nothing to check for the rest. Mutates and returns the
+// same array `computeAchievements` produced.
+export async function applyLegendaryTier(env, tornUserId, achievements) {
+  const goldOnes = achievements.filter(a => !a.binary && a.tier === 'Gold');
+  if (!goldOnes.length) return achievements;
+
+  const defsByKey = {};
+  for (const d of BADGE_DEFS) defsByKey[d.key] = d;
+
+  await Promise.all(goldOnes.map(async (a) => {
+    const leader = await getStatLeader(env, defsByKey[a.key]?.statKey);
+    if (leader && String(leader.torn_user_id) === String(tornUserId)) a.tier = 'Legendary';
+  }));
+  return achievements;
+}

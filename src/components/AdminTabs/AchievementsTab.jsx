@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
 const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
-const TIER_COLORS = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700' }
+// Legendary sits above Gold — the single #1 member for that stat, only once
+// they've already reached Gold. See [[achievements_feature]].
+const TIER_COLORS = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700', Legendary: '#ff2f6d' }
 
 function fmt(n) {
   if (n == null) return '—'
@@ -135,6 +137,7 @@ function BadgeRow({ badge, holders, onSave }) {
                     {h.username} <span style={{ color: 'var(--text-faint)', fontSize: '10px' }}>({FACTION_NAMES[h.faction_id] ?? '—'})</span>
                   </span>
                   <span style={{ flexShrink: 0, color: h.tier ? TIER_COLORS[h.tier] : '#4ade80', fontWeight: '600' }}>
+                    {h.tier === 'Legendary' && '👑 '}
                     {h.tier ? `${h.tier} (${fmt(h.value)})` : 'Earned'}
                   </span>
                 </div>

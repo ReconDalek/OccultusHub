@@ -2,7 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { requireLeadership } from '../middleware/auth.js';
 import { getWarningsForMember } from './warningsController.js';
 import { PERSONAL_STAT_FIELDS, getEnergyDeltaForUser } from './activityController.js';
-import { computeAchievements, getAchievementConfigs } from '../services/achievements.js';
+import { computeAchievements, getAchievementConfigs, applyLegendaryTier } from '../services/achievements.js';
 
 // Small curated subset of the 135 personal-stat fields — this is a summary
 // card, not the full breakdown PersonalStatsPanel already provides.
@@ -258,6 +258,7 @@ export async function getMemberProfile(request, env, user) {
       is_mentor:             !!mentorRow,
       discord_linked:        siteAccount.discord_linked,
     }, achievementConfigs);
+    await applyLegendaryTier(env, tornUserId, achievements);
 
     return jsonResponse({
       identity: { ...(identity ?? { torn_user_id: tornUserId }), image_url: accountRow?.image_url ?? null },
