@@ -28,6 +28,16 @@ const DEFAULT_TEMPLATES = {
     '> 💰 **{amount}** · {faction_name}',
   ].join('\n'),
 
+  investment_ended: [
+    '{mention}{member_mention}',
+    '💰 **Bank Investment Matured**',
+    '**{member_name}**\'s investment ended on **{end_date}**.',
+    '> Principal to return: **{principal}**',
+    '> Faction\'s profit share: **{faction_income}**',
+    '> **Total owed to faction: {total_owed}**',
+    '{faction_name}',
+  ].join('\n'),
+
   stock_monthly: [
     '{mention}',
     '📊 **Monthly Stock Payouts — {month} {year}**',
@@ -246,6 +256,82 @@ export async function sendInvestmentTciAlerts(env, { testMode = false } = {}) {
       : `Sent ${sent}, skipped ${skipped} (already sent today)`;
     await setStatus(env, 'investment_tci', status);
     console.log(`[webhook:tci] ${status}`);
+  }
+  return { sent, skipped };
+}
+
+// ── Investment Ended (matured) Alerts ────────────────────────────────────────
+// Fires once per investment, the first time its end_date has passed — not
+// tied to any TCI purchase state (that's investment_tci's job, a separate
+// concern). Dedup key is per-investment-id only (no date component, unlike
+// TCI's per-day-remaining key) since this is a one-time "it's over" event,
+// not a recurring reminder — once sent, never sent again for that investment
+// even if it stays is_active=1 for weeks after maturing.
+
+export async function sendInvestmentEndedAlerts(env, { testMode = false } = {}) {
+  const cfg = await getConfig(env, 'investment_ended');
+  if (!cfg?.webhook_url) return { sent: 0, skipped: 0, reason: 'no webhook configured' };
+  if (!testMode && !cfg.enabled) return { sent: 0, skipped: 0, reason: 'disabled' };
+
+  const { results: investments } = await env.DB.prepare(`
+    SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
+           i.amount, i.rate, i.member_profit_pct, i.end_date,
+           u.username AS member_name
+    FROM accounting_investments i
+    LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+    WHERE i.is_active = 1 AND date(i.end_date) <= date('now')
+    ORDER BY i.end_date ASC
+  `).all();
+
+  const template = cfg.message_template || DEFAULT_TEMPLATES.investment_ended;
+  const mention   = cfg.mention_user_id ? `<@${cfg.mention_user_id}> ` : '';
+
+  let sent = 0, skipped = 0;
+
+  for (const inv of investments) {
+    const eventKey = `investment_ended_${inv.id}`;
+    if (!testMode && await alreadySent(env, 'investment_ended', eventKey)) { skipped++; continue; }
+
+    const profit        = (inv.amount || 0) * ((inv.rate || 0) / 100);
+    const memberKeeps    = profit * ((inv.member_profit_pct || 0) / 100);
+    const factionIncome  = profit - memberKeeps;
+    const totalOwed      = (inv.amount || 0) + factionIncome;
+
+    const memberMention = inv.discord_id ? `<@${inv.discord_id}> ` : '';
+
+    const body = applyTemplate(template, {
+      mention,
+      member_mention: memberMention,
+      member_name:    inv.member_name ?? `User ${inv.torn_user_id}`,
+      end_date:       inv.end_date,
+      principal:      fmtMoney(inv.amount),
+      profit:         fmtMoney(profit),
+      member_keeps:   fmtMoney(memberKeeps),
+      faction_income: fmtMoney(factionIncome),
+      total_owed:     fmtMoney(totalOwed),
+      faction_name:   FACTION_NAMES[inv.faction_id] ?? `Faction ${inv.faction_id}`,
+    });
+
+    const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
+
+    try {
+      await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg));
+      if (!testMode) await markSent(env, 'investment_ended', eventKey);
+      sent++;
+      if (testMode) break; // only send first match in test mode
+    } catch (e) {
+      console.error(`[webhook:investment_ended] Failed for investment ${inv.id}:`, e.message);
+      if (!testMode) await setStatus(env, 'investment_ended', `Error: ${e.message}`);
+      return { sent, skipped, error: e.message };
+    }
+  }
+
+  if (!testMode) {
+    const status = investments.length === 0
+      ? 'No matured investments'
+      : `Sent ${sent}, skipped ${skipped} (already sent)`;
+    await setStatus(env, 'investment_ended', status);
+    console.log(`[webhook:investment_ended] ${status}`);
   }
   return { sent, skipped };
 }
@@ -555,6 +641,43 @@ export async function previewWebhook(request, env, user) {
         messages.push({ label: `${inv.member_name ?? `User ${inv.torn_user_id}`} — ${days} day${days === 1 ? '' : 's'} left`, content: body });
       }
 
+    } else if (eventType === 'investment_ended') {
+      const { results: investments } = await env.DB.prepare(`
+        SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
+               i.amount, i.rate, i.member_profit_pct, i.end_date,
+               u.username AS member_name
+        FROM accounting_investments i
+        LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+        WHERE i.is_active = 1 AND date(i.end_date) <= date('now')
+        ORDER BY i.end_date ASC
+      `).all();
+
+      const template = cfg.message_template || DEFAULT_TEMPLATES.investment_ended;
+      const mention  = cfg.mention_user_id ? `<@${cfg.mention_user_id}> ` : '';
+
+      if (!investments.length) {
+        messages.push({ label: 'No matured investments', content: 'No active investments have passed their end date.' });
+      }
+      for (const inv of investments) {
+        const profit       = (inv.amount || 0) * ((inv.rate || 0) / 100);
+        const memberKeeps  = profit * ((inv.member_profit_pct || 0) / 100);
+        const factionIncome = profit - memberKeeps;
+        const totalOwed    = (inv.amount || 0) + factionIncome;
+        const body = applyTemplate(template, {
+          mention,
+          member_mention: inv.discord_id ? `<@${inv.discord_id}> ` : '',
+          member_name:    inv.member_name ?? `User ${inv.torn_user_id}`,
+          end_date:       inv.end_date,
+          principal:      fmtMoney(inv.amount),
+          profit:         fmtMoney(profit),
+          member_keeps:   fmtMoney(memberKeeps),
+          faction_income: fmtMoney(factionIncome),
+          total_owed:     fmtMoney(totalOwed),
+          faction_name:   FACTION_NAMES[inv.faction_id] ?? `Faction ${inv.faction_id}`,
+        });
+        messages.push({ label: `${inv.member_name ?? `User ${inv.torn_user_id}`} — ended ${inv.end_date}`, content: body });
+      }
+
     } else if (eventType === 'stock_monthly') {
       const now = new Date();
       const { results: stocks } = await env.DB.prepare(`
@@ -650,6 +773,7 @@ export async function triggerWebhook(request, env, user) {
 
     switch (eventType) {
       case 'investment_tci':   return jsonResponse(await sendInvestmentTciAlerts(env));
+      case 'investment_ended': return jsonResponse(await sendInvestmentEndedAlerts(env));
       case 'stock_monthly':    return jsonResponse(await sendStockMonthlyPayouts(env));
       case 'armory_low':       return jsonResponse(await sendArmoryLowStockAlerts(env));
       default: return errorResponse(`Unknown event type: ${eventType}`, 400);
@@ -678,6 +802,16 @@ export async function sendTestMessage(request, env, user) {
             targetFromConfig(cfg)
           );
           result = { sent: 1, note: 'no qualifying investments; sent connection notice' };
+        }
+        break;
+      case 'investment_ended':
+        result = await sendInvestmentEndedAlerts(env, { testMode: true });
+        if (result.sent === 0 && !result.error) {
+          await sendDiscordMessage(env, cfg.webhook_url,
+            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo matured investments found, but the webhook is connected.`,
+            targetFromConfig(cfg)
+          );
+          result = { sent: 1, note: 'no matured investments; sent connection notice' };
         }
         break;
       case 'stock_monthly':

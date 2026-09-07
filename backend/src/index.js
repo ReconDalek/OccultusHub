@@ -39,7 +39,7 @@ export default {
       try {
         const { takeEnergySnapshot, takePersonalStatsSnapshot } = await import('./controllers/activityController.js');
         const { fetchAndCacheCompanyProfits } = await import('./controllers/companyProfitController.js');
-        const { sendInvestmentTciAlerts, sendArmoryLowStockAlerts } = await import('./controllers/webhookController.js');
+        const { sendInvestmentTciAlerts, sendInvestmentEndedAlerts, sendArmoryLowStockAlerts } = await import('./controllers/webhookController.js');
         const { syncUserKeys } = await import('./controllers/authController.js');
         const { fetchAndCacheFactionCrimes } = await import('./controllers/ocController.js');
         ctx.waitUntil(
@@ -54,6 +54,9 @@ export default {
             .then(() => sendInvestmentTciAlerts(env))
             .then(r => console.log(`[cron] TCI alerts: ${JSON.stringify(r)}`))
             .catch(e => console.error('[cron] TCI alerts failed:', e))
+            .then(() => sendInvestmentEndedAlerts(env))
+            .then(r => console.log(`[cron] investment ended alerts: ${JSON.stringify(r)}`))
+            .catch(e => console.error('[cron] investment ended alerts failed:', e))
             .then(() => sendArmoryLowStockAlerts(env))
             .catch(e => console.error('[cron] armory alerts failed:', e))
             .then(() => syncUserKeys(env))

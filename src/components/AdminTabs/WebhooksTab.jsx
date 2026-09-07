@@ -39,6 +39,34 @@ const EVENT_META = {
     ].join('\n'),
   },
 
+  investment_ended: {
+    label:    'Investment Matured Alerts',
+    icon:     '💰',
+    schedule: 'Daily at 01:00 UTC',
+    description: 'Sends a Discord message the first time a bank investment\'s end date has passed, stating how much is owed back to the faction (principal + faction\'s profit share). Fires once per investment — separate from the TCI purchase reminder above, which is about the interim bonus, not maturity.',
+    vars: [
+      ['{mention}',        'Discord @mention from the configured user ID above'],
+      ['{member_mention}', 'Discord @mention of the investor (from their investment record)'],
+      ['{member_name}',    'Torn username of the investor'],
+      ['{end_date}',       'Investment end date (YYYY-MM-DD)'],
+      ['{principal}',      'Original investment amount, to be returned (formatted)'],
+      ['{profit}',         'Total profit earned (principal × rate, formatted)'],
+      ['{member_keeps}',   'The investor\'s cut of the profit (formatted)'],
+      ['{faction_income}', 'The faction\'s cut of the profit (formatted)'],
+      ['{total_owed}',     'Principal + faction\'s profit share — the total the investor owes back (formatted)'],
+      ['{faction_name}',   'Faction the investment belongs to'],
+    ],
+    defaultTemplate: [
+      '{mention}{member_mention}',
+      '💰 **Bank Investment Matured**',
+      '**{member_name}**\'s investment ended on **{end_date}**.',
+      '> Principal to return: **{principal}**',
+      '> Faction\'s profit share: **{faction_income}**',
+      '> **Total owed to faction: {total_owed}**',
+      '{faction_name}',
+    ].join('\n'),
+  },
+
   stock_monthly: {
     label:    'Stock Monthly Payouts',
     icon:     '📊',
@@ -708,7 +736,7 @@ export default function WebhooksTab() {
 
   if (loading) return <p style={{ color: "var(--text-secondary)" }}>Loading webhook configs…</p>
 
-  const ordered = ['investment_tci', 'stock_monthly', 'armory_low']
+  const ordered = ['investment_tci', 'investment_ended', 'stock_monthly', 'armory_low']
   const sorted  = ordered.map(t => configs.find(c => c.event_type === t)).filter(Boolean)
 
   return (

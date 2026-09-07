@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /leadership
+Disallow: /factions
+Disallow: /companies
+Disallow: /forums
+Disallow: /stocks
+
+Sitemap: https://occultushub.com/sitemap.xml
