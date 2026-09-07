@@ -139,7 +139,7 @@ export default function RuneTab() {
         <div style={{ color: "var(--text-secondary)", textAlign: 'center', padding: '24px' }}>No rune data yet.</div>
       ) : (
         <div className="table-scroll">
-          <table className="tbl-freeze-2" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '460px', '--freeze-2-offset': '42px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '460px' }}>
             <thead>
               <tr style={{ color: "var(--text-secondary)", textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                 <th style={{ padding: '8px 12px', fontWeight: 600 }}>#</th>

@@ -657,7 +657,7 @@ export default function BountiesTab() {
         <p style={{ color: "var(--text-secondary)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No bounties recorded.</p>
       ) : (
         <div className="table-scroll">
-          <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr>
                 {COLUMNS.map(c => (

@@ -131,7 +131,6 @@ function ItemRow({ item, isSimple, members, colTemplate, expandedLoans, onToggle
   return (
     <div>
       <div
-        className="gridtbl-freeze"
         style={{
           display: 'grid', gridTemplateColumns: colTemplate, gap: '8px',
           padding: '7px 14px', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)',
@@ -258,7 +257,7 @@ function CategoryContent({ cat, items, members, isMobile, minMap }) {
 
   // Table header
   const header = (
-    <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
       <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name</span>
       {!isSimple && <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</span>}
       {FACTIONS.map(f => (
@@ -451,13 +450,13 @@ function ArmoryDepositsTab() {
         ) : (
           <div className="table-scroll" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
            <div style={{ minWidth: '760px' }}>
-            <div className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: '150px 90px minmax(160px,1fr) 130px 90px 110px', gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '150px 90px minmax(160px,1fr) 130px 90px 110px', gap: '8px', padding: '6px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)' }}>
               {['Time', 'Faction', 'Item', 'User', 'Qty', 'Est. Value'].map((h, i) => (
                 <span key={h} style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i >= 4 ? 'right' : 'left' }}>{h}</span>
               ))}
             </div>
             {deposits.map(d => (
-              <div key={d.id} className="gridtbl-freeze" style={{ display: 'grid', gridTemplateColumns: '150px 90px minmax(160px,1fr) 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '150px 90px minmax(160px,1fr) 130px 90px 110px', gap: '8px', padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <span style={{ color: '#4ade80', fontSize: '12px', fontFamily: 'monospace' }}>{formatDepositTime(d.deposited_at)}</span>
                 <span style={{ color: "var(--text-muted)", fontSize: '12px' }}>{FACTIONS.find(f => f.id === d.faction_id)?.label ?? d.faction_id}</span>
                 <span style={{ color: '#4ade80', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

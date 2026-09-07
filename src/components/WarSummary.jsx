@@ -243,7 +243,7 @@ function MemberStatsTable({ attackerStats, defendStats }) {
 
   return (
     <div className="table-scroll" style={{ marginTop: '12px' }}>
-      <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '980px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '980px' }}>
         <thead>
           <tr>
             {SUMMARY_STATS_COLUMNS.map(headerCell)}

@@ -140,7 +140,7 @@ export default function UsersTab() {
         </h3>
 
         <div className="overflow-x-auto">
-          <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>
@@ -195,7 +195,7 @@ export default function UsersTab() {
         <p style={{ color: "var(--text-secondary)" }}>Loading users...</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Username</th>

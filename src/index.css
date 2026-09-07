@@ -242,66 +242,6 @@ select option {
   scrollbar-width: thin;
 }
 
-/* ── Frozen leading column(s) while a table scrolls sideways ──
-   Put .tbl-freeze (or .tbl-freeze-2) on a <table>; wrap it in .table-scroll.
-   Grid-based "tables" use .gridtbl-freeze on the header row + every data row. */
-.tbl-freeze  th:first-child,
-.tbl-freeze  td:first-child,
-.tbl-freeze-2 th:first-child,
-.tbl-freeze-2 td:first-child,
-.tbl-freeze-2 th:nth-child(2),
-.tbl-freeze-2 td:nth-child(2) {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: #141414;
-}
-.tbl-freeze  thead th:first-child,
-.tbl-freeze-2 thead th:first-child,
-.tbl-freeze-2 thead th:nth-child(2) { z-index: 3; }
-/* Second frozen column starts after the first — width set per-table via the var */
-.tbl-freeze-2 th:nth-child(2),
-.tbl-freeze-2 td:nth-child(2) { left: var(--freeze-2-offset, 44px); }
-/* Shadow on the trailing edge of the frozen block so scrolled content tucks under cleanly */
-.tbl-freeze  th:first-child::after,
-.tbl-freeze  td:first-child::after,
-.tbl-freeze-2 th:nth-child(2)::after,
-.tbl-freeze-2 td:nth-child(2)::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: -1px;
-  width: 8px;
-  transform: translateX(100%);
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.4), transparent);
-  pointer-events: none;
-}
-
-.gridtbl-freeze > *:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: #141414;
-  box-shadow: 6px 0 10px -4px rgba(0, 0, 0, 0.65);
-}
-
-/* Freeze the first TWO cells of a grid row (e.g. rank # + member name).
-   Set --gridfreeze-2-offset to the first column's width (grid gap included). */
-.gridtbl-freeze-2 > *:first-child,
-.gridtbl-freeze-2 > *:nth-child(2) {
-  position: sticky;
-  z-index: 1;
-  background: #141414;
-}
-.gridtbl-freeze-2 > *:first-child { left: 0; }
-.gridtbl-freeze-2 > *:nth-child(2) {
-  left: var(--gridfreeze-2-offset, 38px);
-  margin-left: calc(var(--gridtbl-gap, 8px) * -1);
-  padding-left: var(--gridtbl-gap, 8px);
-  box-shadow: 6px 0 10px -4px rgba(0, 0, 0, 0.65);
-}
-
 @media (max-width: 640px) {
   .page-shell { padding: 28px clamp(12px, 4vw, 24px); }
   .panel      { border-radius: 12px; }

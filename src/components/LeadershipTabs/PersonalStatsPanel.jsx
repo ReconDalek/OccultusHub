@@ -293,8 +293,8 @@ function StatsTable({ members, fields, categoryKeys, sortKey, setSortKey, sortDi
   })
 
   return (
-    <div className="table-scroll" style={{ '--freeze-2-offset': '40px' }}>
-      <table className="tbl-freeze-2" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '500px' }}>
+    <div className="table-scroll">
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '500px' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <th style={{ textAlign: 'left', padding: '8px 12px', color: "var(--text-muted)", fontWeight: '500', width: '32px' }}>#</th>

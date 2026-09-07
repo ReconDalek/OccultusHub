@@ -705,7 +705,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
         <p style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
       ) : (
         <div className="table-scroll">
-          <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
             <thead>
               <tr>
                 <th style={th('left')}>Member</th>
@@ -915,7 +915,7 @@ function AttackLogTab({ warId }) {
         <p style={{ color: "var(--text-muted)", fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No attacks match this filter.</p>
       ) : (
         <div className="table-scroll" style={{ maxHeight: '500px', overflowY: 'auto' }}>
-          <table className="tbl-freeze" style={{ borderCollapse: 'collapse', minWidth: '900px', width: '100%' }}>
+          <table style={{ borderCollapse: 'collapse', minWidth: '900px', width: '100%' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
               <tr>
                 <th style={th}>Time (UTC/TCT)</th>

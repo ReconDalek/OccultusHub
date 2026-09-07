@@ -363,15 +363,13 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
     : ['#', 'Member', 'Gym', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
 
   // Wrapped in .table-scroll so a wide report scrolls within its own box on
-  // mobile instead of blowing out the page width. The trade-off (documented
-  // history): the header no longer sticks to the *page* on vertical scroll,
-  // since a horizontal-scroll container forces overflow-y to a non-visible
-  // computed value. The frozen #/Member columns (gridtbl-freeze-2) are the
-  // priority now — they keep every row identifiable while scrolling sideways.
+  // mobile instead of blowing out the page width. Trade-off: the header no
+  // longer sticks to the page on vertical scroll, since a horizontal-scroll
+  // container forces overflow-y to a non-visible computed value.
   return (
     <div className="table-scroll">
       <div style={{ minWidth: showAttacks ? '880px' : '800px' }}>
-        <div className="gridtbl-freeze-2" style={{
+        <div style={{
           display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
           zIndex: 5, background: '#141414',
         }}>
@@ -389,7 +387,7 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
           const flagged = hasTarget && delta < 0 && !excluded
 
           return (
-            <div key={m.torn_user_id} className="gridtbl-freeze-2" style={{
+            <div key={m.torn_user_id} style={{
               display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
               gap: '8px', padding: '9px 12px', borderRadius: '8px',
               background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
@@ -881,7 +879,7 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
       ) : (
         <div className="table-scroll" style={{ padding: '10px' }}>
           <div style={{ minWidth: '700px' }}>
-            <div className="gridtbl-freeze-2" style={{
+            <div style={{
               display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
               zIndex: 5, background: '#141414',
             }}>
@@ -900,7 +898,7 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
               const flagged = hasTarget && delta < 0 && !excluded
 
               return (
-                <div key={m.torn_user_id} className="gridtbl-freeze-2" style={{
+                <div key={m.torn_user_id} style={{
                   display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
                   gap: '8px', padding: '9px 12px', borderRadius: '8px',
                   background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),

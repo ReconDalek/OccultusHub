@@ -262,7 +262,7 @@ export default function WarStatsPanel() {
 
           {/* Full sortable table */}
           <div className="table-scroll" style={{ border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px' }}>
-            <table className="tbl-freeze" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
               <thead>
                 <tr>
                   {COLUMNS.map((c) => (
