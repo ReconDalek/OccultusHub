@@ -32,9 +32,8 @@ const DEFAULT_TEMPLATES = {
     '{mention}{member_mention}',
     '💰 **Bank Investment Matured**',
     '**{member_name}**\'s investment ended on **{end_date}**.',
-    '> Principal to return: **{principal}**',
-    '> Faction\'s profit share: **{faction_income}**',
-    '> **Total owed to faction: {total_owed}**',
+    '> Principal (**{principal}**) is assumed reinvested — not owed back.',
+    '> **Owed to faction: {faction_income}** ({member_name} keeps {member_keeps} of {profit} total profit)',
     '{faction_name}',
   ].join('\n'),
 
@@ -292,10 +291,11 @@ export async function sendInvestmentEndedAlerts(env, { testMode = false } = {}) 
     const eventKey = `investment_ended_${inv.id}`;
     if (!testMode && await alreadySent(env, 'investment_ended', eventKey)) { skipped++; continue; }
 
+    // Only the faction's profit share is actually owed at maturity — the
+    // principal is assumed reinvested by the member, not returned to vault.
     const profit        = (inv.amount || 0) * ((inv.rate || 0) / 100);
     const memberKeeps    = profit * ((inv.member_profit_pct || 0) / 100);
     const factionIncome  = profit - memberKeeps;
-    const totalOwed      = (inv.amount || 0) + factionIncome;
 
     const memberMention = inv.discord_id ? `<@${inv.discord_id}> ` : '';
 
@@ -308,7 +308,6 @@ export async function sendInvestmentEndedAlerts(env, { testMode = false } = {}) 
       profit:         fmtMoney(profit),
       member_keeps:   fmtMoney(memberKeeps),
       faction_income: fmtMoney(factionIncome),
-      total_owed:     fmtMoney(totalOwed),
       faction_name:   FACTION_NAMES[inv.faction_id] ?? `Faction ${inv.faction_id}`,
     });
 
@@ -662,7 +661,6 @@ export async function previewWebhook(request, env, user) {
         const profit       = (inv.amount || 0) * ((inv.rate || 0) / 100);
         const memberKeeps  = profit * ((inv.member_profit_pct || 0) / 100);
         const factionIncome = profit - memberKeeps;
-        const totalOwed    = (inv.amount || 0) + factionIncome;
         const body = applyTemplate(template, {
           mention,
           member_mention: inv.discord_id ? `<@${inv.discord_id}> ` : '',
@@ -672,7 +670,6 @@ export async function previewWebhook(request, env, user) {
           profit:         fmtMoney(profit),
           member_keeps:   fmtMoney(memberKeeps),
           faction_income: fmtMoney(factionIncome),
-          total_owed:     fmtMoney(totalOwed),
           faction_name:   FACTION_NAMES[inv.faction_id] ?? `Faction ${inv.faction_id}`,
         });
         messages.push({ label: `${inv.member_name ?? `User ${inv.torn_user_id}`} — ended ${inv.end_date}`, content: body });
