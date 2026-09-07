@@ -1,0 +1,5 @@
+# Security contact for occultushub.com
+Contact: https://discord.gg/3QMhcxfEWq
+Expires: 2027-09-07T00:00:00.000Z
+Canonical: https://occultushub.com/.well-known/security.txt
+Preferred-Languages: en
