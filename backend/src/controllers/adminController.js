@@ -1,4 +1,18 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
+import { getKickThresholdCounts } from './activityController.js';
+
+const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' };
+
+// Coarse device classification from a raw User-Agent string — no library,
+// just enough to split Mobile/Tablet/Desktop for a pie chart. Order matters:
+// iPad's UA also contains "Mobile" on newer iOS versions, so Tablet is
+// checked first.
+function classifyDevice(ua) {
+  if (!ua) return 'Unknown';
+  if (/iPad|Tablet/i.test(ua)) return 'Tablet';
+  if (/Mobi|Android|iPhone/i.test(ua)) return 'Mobile';
+  return 'Desktop';
+}
 
 export async function getAllUsers(request, env, user) {
   try {
@@ -385,6 +399,151 @@ export async function getAnalytics(request, env, user) {
   } catch (error) {
     console.error('getAnalytics error:', error);
     return errorResponse('Failed to fetch analytics', 500);
+  }
+}
+
+// ── Full Analytics dashboard (Admin > Analytics tab) ────────────────────────
+// A much broader survey than getAnalytics above (kept as-is for backward
+// compatibility, though the new Analytics tab replaces its old home at the
+// top of the Cache page) — growth, activity trends, feature engagement
+// across the site's many mini-features, and a moderation/health snapshot.
+// Every section is its own query (or small group), run in parallel — none of
+// this needs to be fast-refreshing so a handful of extra COUNT(*) queries on
+// an admin-only page is a non-issue.
+export async function getAnalyticsDashboard(request, env, user) {
+  try {
+    const [
+      totalsRow,
+      signupsByDayRows,
+      factionRows,
+      activeBucketsRow,
+      loginsByDayRows,
+      uniqueActiveByDayRows,
+      deviceRows,
+      forumsRow,
+      forumsAuthorsRow,
+      riteRow,
+      cahRow,
+      pactRow,
+      sanctumRow,
+      bindingRow,
+      cipherRow,
+      cipherSolversRow,
+      cipherMonthRow,
+      discordRow,
+      fishingRow,
+      fishingUsersRow,
+      runeRow,
+      runeUsersRow,
+      warningsMonthRow,
+      webhookRows,
+    ] = await Promise.all([
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM users`).first(),
+      env.DB.prepare(`SELECT date(created_at) AS day, COUNT(*) AS count FROM users WHERE created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`).all(),
+      env.DB.prepare(`SELECT faction_id, COUNT(*) AS count FROM users GROUP BY faction_id`).all(),
+      env.DB.prepare(`
+        SELECT
+          SUM(CASE WHEN last_login >= datetime('now','-1 day')  THEN 1 ELSE 0 END) AS last24h,
+          SUM(CASE WHEN last_login >= datetime('now','-7 days') THEN 1 ELSE 0 END) AS last7d,
+          SUM(CASE WHEN last_login >= datetime('now','-30 days') THEN 1 ELSE 0 END) AS last30d,
+          SUM(CASE WHEN last_login >= datetime('now','-90 days') THEN 1 ELSE 0 END) AS last90d,
+          SUM(CASE WHEN last_login IS NULL THEN 1 ELSE 0 END) AS never
+        FROM users
+      `).first(),
+      env.DB.prepare(`SELECT date(login_at) AS day, COUNT(*) AS count FROM login_history WHERE login_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`).all(),
+      env.DB.prepare(`SELECT date(login_at) AS day, COUNT(DISTINCT user_id) AS count FROM login_history WHERE login_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`).all(),
+      env.DB.prepare(`SELECT user_agent FROM login_history WHERE login_at >= datetime('now','-30 days')`).all(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM forum_posts`).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT author_id) AS count FROM forum_posts WHERE created_at >= datetime('now','-30 days')`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM game_rooms`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM cah_rooms`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM pact_sessions`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM sanctum_saves`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM familiars`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM cipher_submissions`).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT user_id) AS count FROM cipher_submissions WHERE is_correct = 1 AND user_id IS NOT NULL`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM cipher_submissions WHERE submitted_at >= datetime('now','-30 days')`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM discord_links`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM fishing_catches`).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT user_id) AS count FROM fishing_catches`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM rune_casts`).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT user_id) AS count FROM rune_casts`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM member_warnings WHERE date_reported >= date('now','-30 days')`).first(),
+      env.DB.prepare(`SELECT event_type, enabled, last_status, last_triggered FROM webhook_configs`).all(),
+    ]);
+
+    // Device breakdown parsed in JS — SQLite has no regex function to lean on.
+    const deviceCounts = {};
+    for (const row of (deviceRows.results || [])) {
+      const device = classifyDevice(row.user_agent);
+      deviceCounts[device] = (deviceCounts[device] || 0) + 1;
+    }
+
+    // "at or over the kick threshold right now" — same trailing-6-complete-
+    // months window Generate Warnings/WarningsTab both use (see
+    // [[generate_warnings_feature]]), reused rather than reimplemented.
+    const kickCounts = await getKickThresholdCounts(env);
+    const membersAtKickThreshold = Object.values(kickCounts).filter(c => c >= 3).length;
+
+    const factionDistribution = (factionRows.results || []).map(r => ({
+      faction_id: r.faction_id,
+      faction_name: r.faction_id ? (FACTION_NAMES[r.faction_id] ?? `Faction ${r.faction_id}`) : 'No faction / guest',
+      count: r.count,
+    })).sort((a, b) => b.count - a.count);
+
+    const totalUsers = totalsRow?.count || 0;
+    const linkedDiscord = discordRow?.count || 0;
+
+    return jsonResponse({
+      growth: {
+        total_users: totalUsers,
+        signups_by_day: signupsByDayRows.results || [],
+        faction_distribution: factionDistribution,
+        active_buckets: {
+          last_24h: activeBucketsRow?.last24h || 0,
+          last_7d:  activeBucketsRow?.last7d  || 0,
+          last_30d: activeBucketsRow?.last30d || 0,
+          last_90d: activeBucketsRow?.last90d || 0,
+          never:    activeBucketsRow?.never   || 0,
+          total:    totalUsers,
+        },
+      },
+      activity: {
+        logins_by_day: loginsByDayRows.results || [],
+        unique_active_by_day: uniqueActiveByDayRows.results || [],
+        device_breakdown: Object.entries(deviceCounts).map(([device, count]) => ({ device, count })).sort((a, b) => b.count - a.count),
+      },
+      engagement: {
+        forums: { total_posts: forumsRow?.count || 0, active_authors_month: forumsAuthorsRow?.count || 0 },
+        games: {
+          rite_rooms:      riteRow?.count    || 0,
+          cah_rooms:       cahRow?.count     || 0,
+          pact_sessions:   pactRow?.count    || 0,
+          sanctum_players: sanctumRow?.count || 0,
+          binding_players: bindingRow?.count || 0,
+        },
+        cipher: {
+          total_submissions:    cipherRow?.count        || 0,
+          unique_solvers:       cipherSolversRow?.count  || 0,
+          submissions_month:    cipherMonthRow?.count    || 0,
+        },
+        discord: { linked: linkedDiscord, total_users: totalUsers, pct: totalUsers ? Math.round((linkedDiscord / totalUsers) * 100) : 0 },
+        easter_eggs: {
+          fishing_catches:  fishingRow?.count      || 0,
+          fishing_users:    fishingUsersRow?.count || 0,
+          rune_casts:       runeRow?.count         || 0,
+          rune_users:       runeUsersRow?.count    || 0,
+        },
+      },
+      moderation: {
+        warnings_issued_month: warningsMonthRow?.count || 0,
+        members_at_kick_threshold: membersAtKickThreshold,
+        webhooks: webhookRows.results || [],
+      },
+    });
+  } catch (error) {
+    console.error('getAnalyticsDashboard error:', error);
+    return errorResponse('Failed to fetch analytics dashboard', 500);
   }
 }
 

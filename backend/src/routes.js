@@ -203,6 +203,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/analytics' && method === 'GET') {
       return adminController.getAnalytics(request, env, user);
     }
+    if (pathname === '/api/admin/analytics/dashboard' && method === 'GET') {
+      return adminController.getAnalyticsDashboard(request, env, user);
+    }
 
     if (pathname === '/api/admin/fishing/reset' && method === 'POST') {
       return fishingController.resetLeaderboard(request, env, user);

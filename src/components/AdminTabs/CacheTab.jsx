@@ -64,7 +64,6 @@ export default function CacheTab() {
   const [cacheStatus,         setCacheStatus]         = useState(null)
   const [chainStatus,         setChainStatus]         = useState(null)
   const [memberStatus,        setMemberStatus]        = useState(null)
-  const [analytics,           setAnalytics]           = useState(null)
   const [personalStatsStatus, setPersonalStatsStatus] = useState(null)
   const [armoryStatus,        setArmoryStatus]        = useState(null)
   const [armoryDepositsStatus,setArmoryDepositsStatus] = useState(null)
@@ -104,8 +103,6 @@ export default function CacheTab() {
     await Promise.all([
       fetch(`${API_BASE_URL}/api/admin/cache/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then(setCacheStatus).catch(console.error),
-      fetch(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: token } })
-        .then((r) => r.json()).then(setAnalytics).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/chains/status`, { headers: { Authorization: token } })
         .then((r) => r.json()).then((d) => setChainStatus(d.status)).catch(console.error),
       fetch(`${API_BASE_URL}/api/admin/members/status`, { headers: { Authorization: token } })
@@ -452,28 +449,6 @@ export default function CacheTab() {
 
   return (
     <div className="space-y-8">
-      {/* Analytics */}
-      <div>
-        <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Analytics</h3>
-        {analytics ? (
-          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-            {[
-              { label: 'Total Users',  value: analytics.totalUsers,    color: '#ff2f6d', bg: 'rgba(179,18,63,0.1)',    border: 'rgba(179,18,63,0.3)' },
-              { label: 'Admins',       value: analytics.totalAdmins,   color: '#9f67ff', bg: 'rgba(109,40,217,0.1)',   border: 'rgba(109,40,217,0.3)' },
-              { label: 'Total Logins', value: analytics.totalLogins,   color: '#f4f4f5', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' },
-              { label: 'Last 7 Days',  value: analytics.loginsLastWeek,color: '#f4f4f5', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' },
-            ].map(({ label, value, color, bg, border }) => (
-              <div key={label} className="p-4 rounded-lg" style={{ background: bg, border: `1px solid ${border}` }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: '12px', marginBottom: '4px' }}>{label}</p>
-                <p style={{ color, fontSize: '28px', fontWeight: 'bold' }}>{value}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={{ color: "var(--text-secondary)" }}>Failed to load analytics</p>
-        )}
-      </div>
-
       {/* Cache status */}
       <div>
         <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Factions</h3>

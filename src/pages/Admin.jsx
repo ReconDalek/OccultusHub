@@ -6,12 +6,14 @@ import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
 import AdminCardsTab from '../components/AdminTabs/AdminCardsTab'
 import LogsTab from '../components/AdminTabs/LogsTab'
 import WebhooksTab from '../components/AdminTabs/WebhooksTab'
+import AnalyticsTab from '../components/AdminTabs/AnalyticsTab'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
 
   const tabs = [
     { id: 'users', label: 'Users' },
+    { id: 'analytics', label: 'Analytics' },
     { id: 'cache', label: 'Cache' },
     { id: 'events',      label: 'Themes' },
     { id: 'logs',        label: 'Logs' },
@@ -81,6 +83,7 @@ export default function Admin() {
           style={{ background: 'rgba(22, 22, 32, 0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
         >
           {activeTab === 'users' && <UsersTab />}
+          {activeTab === 'analytics' && <AnalyticsTab />}
           {activeTab === 'cache' && <CacheTab />}
           {activeTab === 'leaderboards' && <LeaderboardsTab />}
           {activeTab === 'events'      && <SeasonalEventsTab />}
