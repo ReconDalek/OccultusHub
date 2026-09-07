@@ -58,7 +58,7 @@ function CompanyCard({ company, membershipTier }) {
       style={{
         background: 'rgba(22,22,32,0.82)',
         border: highlight ? undefined : '1px solid rgba(255,255,255,0.05)',
-        padding: '40px',
+        padding: 'clamp(20px, 5vw, 40px)',
         backdropFilter: 'blur(12px)',
       }}
       onClick={() => setExpanded((v) => !v)}
@@ -227,12 +227,12 @@ export default function Companies() {
       {/* HERO */}
       <section
         className="flex items-center justify-center text-center"
-        style={{ minHeight: '40vh', padding: '80px 24px' }}
+        style={{ minHeight: '40vh', padding: 'clamp(48px, 12vw, 80px) clamp(16px, 5vw, 24px)' }}
       >
         <div>
           <h1
             className="font-cinzel animate-fade-up"
-            style={{ fontSize: 'clamp(42px, 8vw, 68px)', lineHeight: 1.1, marginBottom: '28px' }}
+            style={{ fontSize: 'clamp(34px, 8vw, 68px)', lineHeight: 1.1, marginBottom: '28px' }}
           >
             Occultus Companies
           </h1>
@@ -247,7 +247,7 @@ export default function Companies() {
       </section>
 
       {/* GRID */}
-      <section style={{ padding: '60px 48px' }}>
+      <section style={{ padding: '60px clamp(16px, 5vw, 48px)' }}>
         {loading ? (
           <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
             <p style={{ color: "var(--text-secondary)", fontSize: '15px' }}>Loading company data…</p>

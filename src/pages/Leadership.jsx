@@ -42,12 +42,12 @@ export default function Leadership() {
 
   return (
     <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
-      <div className="max-w-[1600px] mx-auto px-6 py-12">
+      <div className="page-shell">
         {/* Header */}
         <div className="mb-12">
           <h1
             className="font-cinzel text-white mb-2"
-            style={{ fontSize: '40px', letterSpacing: '2px' }}
+            style={{ fontSize: 'clamp(26px, 5vw, 40px)', letterSpacing: '2px' }}
           >
             {isMentorOnly ? 'MENTORING' : 'LEADERSHIP DASHBOARD'}
           </h1>
@@ -57,10 +57,7 @@ export default function Leadership() {
         </div>
 
         {isMentorOnly ? (
-          <div
-            className="rounded-2xl p-8"
-            style={{ background: 'rgba(22, 22, 32, 0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
+          <div className="panel">
             <MentoringTab restricted mentorId={mentorStatus.mentorId} />
           </div>
         ) : !user?.isLeader ? (
@@ -110,13 +107,7 @@ export default function Leadership() {
             </div>
 
             {/* Tab content */}
-            <div
-              className="rounded-2xl p-8"
-              style={{
-                background: 'rgba(22, 22, 32, 0.82)',
-                border: '1px solid rgba(255,255,255,0.08)',
-              }}
-            >
+            <div className="panel">
               {activeTab === 'notices' && <InternalNoticesTab />}
               {activeTab === 'events'  && <EventsSchedulesTab />}
               {activeTab === 'tools'   && <LeaderToolsTab />}

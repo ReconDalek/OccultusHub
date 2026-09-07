@@ -47,7 +47,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
         style={{
           background: 'rgba(22,22,32,0.82)',
           border: highlight ? undefined : '1px solid rgba(255,255,255,0.05)',
-          padding: '40px',
+          padding: 'clamp(20px, 5vw, 40px)',
           backdropFilter: 'blur(12px)',
         }}
       >
@@ -78,7 +78,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
           : expanded
             ? '1px solid rgba(255,255,255,0.2)'
             : '1px solid rgba(255,255,255,0.05)',
-        padding: '40px',
+        padding: 'clamp(20px, 5vw, 40px)',
         backdropFilter: 'blur(12px)',
       }}
       onClick={() => setExpanded((v) => !v)}
@@ -136,7 +136,7 @@ function FactionCard({ faction, membershipTier, isLive }) {
             {members.map((m) => (
               <div
                 key={m.id}
-                className="grid gap-3 py-3"
+                className="grid gap-3 py-3 faction-member-row"
                 style={{
                   gridTemplateColumns: '1.5fr 1fr 1fr',
                   borderBottom: '1px solid rgba(255,255,255,0.05)',
@@ -204,12 +204,12 @@ export default function Factions() {
       {/* HERO */}
       <section
         className="flex items-center justify-center text-center"
-        style={{ minHeight: '40vh', padding: '80px 24px' }}
+        style={{ minHeight: '40vh', padding: 'clamp(48px, 12vw, 80px) clamp(16px, 5vw, 24px)' }}
       >
         <div>
           <h1
             className="font-cinzel animate-fade-up"
-            style={{ fontSize: 'clamp(42px, 8vw, 68px)', lineHeight: 1.1, marginBottom: '28px' }}
+            style={{ fontSize: 'clamp(34px, 8vw, 68px)', lineHeight: 1.1, marginBottom: '28px' }}
           >
             The Three Circles
           </h1>
@@ -225,7 +225,7 @@ export default function Factions() {
       </section>
 
       {/* FACTION GRID */}
-      <section style={{ padding: '60px 48px' }}>
+      <section style={{ padding: '60px clamp(16px, 5vw, 48px)' }}>
         {loading ? (
           <div className="flex items-center justify-center" style={{ minHeight: '200px' }}>
             <p style={{ color: "var(--text-secondary)", fontSize: '15px' }}>Loading faction data…</p>

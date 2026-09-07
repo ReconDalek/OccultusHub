@@ -1248,8 +1248,8 @@ function VerifyDiffTable({ title, rows, color, note }) {
     <div style={{ marginBottom: '10px' }}>
       <p style={{ color, fontSize: '11px', fontWeight: '600', margin: '0 0 4px' }}>{title} ({rows.length})</p>
       {note && <p style={{ color: "var(--text-faint)", fontSize: '10px', margin: '0 0 6px' }}>{note}</p>}
-      <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px' }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+      <div style={{ maxHeight: '220px', overflowY: 'auto', overflowX: 'auto', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '440px' }}>
           <thead>
             <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
               {['Time', 'Attacker', 'Defender', 'Type', 'Result', 'Respect'].map(h => (
@@ -1388,7 +1388,7 @@ function WarEconomicsTab({ warId, hitsSaved }) {
             </span>
           </div>
           {showBreakdown && (
-            <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+            <div style={{ maxHeight: '220px', overflowY: 'auto', overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
                   <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
@@ -1428,7 +1428,7 @@ function WarEconomicsTab({ warId, hitsSaved }) {
             </span>
           </div>
           {showBountyBreakdown && (
-            <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+            <div style={{ maxHeight: '220px', overflowY: 'auto', overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
                   <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>
@@ -1488,7 +1488,7 @@ function WarEconomicsTab({ warId, hitsSaved }) {
           )}
 
           {showOtherBreakdown && data.other_breakdown?.length > 0 && (
-            <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+            <div style={{ maxHeight: '220px', overflowY: 'auto', overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead>
                   <tr style={{ position: 'sticky', top: 0, background: '#141414' }}>

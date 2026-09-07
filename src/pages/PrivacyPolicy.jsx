@@ -1,6 +1,6 @@
 export default function PrivacyPolicy() {
   return (
-    <main className="max-w-4xl mx-auto px-6 py-16">
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
       <h1
         className="font-cinzel text-center"
         style={{ fontSize: 'clamp(28px, 4vw, 42px)', marginBottom: '12px', letterSpacing: '4px' }}
@@ -130,7 +130,7 @@ function Section({ title, children }) {
       style={{
         background: 'rgba(255,255,255,0.03)',
         border: '1px solid rgba(255,255,255,0.06)',
-        padding: '28px 32px',
+        padding: 'clamp(16px, 4vw, 28px) clamp(16px, 4vw, 32px)',
       }}
     >
       <h2

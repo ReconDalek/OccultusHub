@@ -93,7 +93,7 @@ export default function Games() {
           <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.7 }}>⚉</div>
           <h1
             className="font-cinzel"
-            style={{ fontSize: 'clamp(26px, 5vw, 40px)', letterSpacing: 8, marginBottom: 12 }}
+            style={{ fontSize: 'clamp(26px, 5vw, 40px)', letterSpacing: 'clamp(3px, 1.5vw, 8px)', marginBottom: 12 }}
           >
             GAME ROOM
           </h1>
@@ -150,7 +150,7 @@ export default function Games() {
                 </div>
 
                 {/* Description */}
-                <p style={{
+                <p className="game-card-body" style={{
                   fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.75,
                   marginBottom: 20, marginLeft: 54,
                 }}>
@@ -158,7 +158,7 @@ export default function Games() {
                 </p>
 
                 {/* CTA */}
-                <div style={{ marginLeft: 54 }}>
+                <div className="game-card-body" style={{ marginLeft: 54 }}>
                   <Link
                     to={g.to}
                     style={{

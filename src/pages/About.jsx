@@ -2,7 +2,7 @@
 export default function About() {
   return (
     <>
-      <main className="max-w-5xl mx-auto px-6 py-16">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
         <h1
           className="font-cinzel text-center"
           style={{ fontSize: 'clamp(36px, 5vw, 48px)', marginBottom: '60px' }}
@@ -11,7 +11,7 @@ export default function About() {
         </h1>
 
         <div
-          className="max-w-3xl mx-auto p-10 rounded-3xl text-center"
+          className="max-w-3xl mx-auto p-6 sm:p-10 rounded-3xl text-center"
           style={{ background: 'rgba(255,255,255,0.03)' }}
         >
           <p

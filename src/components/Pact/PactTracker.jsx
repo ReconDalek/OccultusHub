@@ -35,7 +35,7 @@ export default function PactTracker({ cabal, night }) {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+      <div className="pact-tracker-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         {RES.map((r) => (
           <div key={r.key} style={{
             background: '#151220', border: '1px solid #302943', borderRadius: 8,

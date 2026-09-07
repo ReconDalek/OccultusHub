@@ -379,7 +379,7 @@ export default function Stocks() {
   )
 
   return (
-    <div style={{ color: '#f4f4f5', padding: '24px 20px', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ color: '#f4f4f5', padding: '24px clamp(12px, 4vw, 20px)', maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#f4f4f5' }}>Torn Stock Market</h1>
@@ -413,8 +413,8 @@ export default function Stocks() {
       </div>
 
       <div style={{ background: '#0d0d18', border: '1px solid #1e1e2e', borderRadius: 8, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 880 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #2a2a3a', background: '#07070a' }}>
                 <SortTh col="acronym" label="STOCK" />

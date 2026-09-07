@@ -207,4 +207,41 @@ select option {
     width: 100%;
     align-items: center;
   }
+  /* Faction card member rows — collapse to a single column like .employee-row */
+  .faction-member-row { grid-template-columns: 1fr !important; gap: 4px !important; }
+  /* Game cards — drop the icon-aligned indent so body text uses full width */
+  .game-card-body { margin-left: 0 !important; }
+  /* The Pact tracker — 4 tiles is too tight on a phone */
+  .pact-tracker-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  /* Forum thread list — stack title over author/date instead of 3 columns */
+  .forum-thread-row { grid-template-columns: 1fr !important; row-gap: 2px; }
+  .forum-thread-row > *:nth-child(2),
+  .forum-thread-row > *:nth-child(3) { text-align: left !important; }
+}
+
+/* ── Mobile layout shell ──────────────────── */
+/* Shared page container: wide cap on desktop, thin 12px gutter on phones. */
+.page-shell {
+  max-width: 1600px;
+  margin-inline: auto;
+  padding: 48px clamp(12px, 4vw, 24px);
+}
+
+/* Standard content card — padding and radius scale down on small screens. */
+.panel {
+  background: rgba(22, 22, 32, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: clamp(16px, 4vw, 32px);
+}
+
+/* Any wide table/row-grid drops this on its wrapper to scroll instead of break. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  .page-shell { padding: 28px clamp(12px, 4vw, 24px); }
+  .panel      { border-radius: 12px; }
 }

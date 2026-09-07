@@ -378,10 +378,10 @@ function PostsList({ posts, onSelect, onNew, loading }) {
         overflow: 'hidden',
       }}>
         {/* Column headers */}
-        <div style={{
+        <div className="forum-thread-row" style={{
           display: 'grid',
           gridTemplateColumns: '1fr 120px 120px',
-          padding: '10px 20px',
+          padding: '10px clamp(14px, 4vw, 20px)',
           background: 'rgba(0,0,0,0.3)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           fontSize: '11px', color: "var(--text-faint)", letterSpacing: '1.5px',
@@ -408,10 +408,11 @@ function PostsList({ posts, onSelect, onNew, loading }) {
           <div
             key={post.id}
             onClick={() => onSelect(post)}
+            className="forum-thread-row"
             style={{
               display: 'grid',
               gridTemplateColumns: '1fr 120px 120px',
-              padding: '14px 20px',
+              padding: '14px clamp(14px, 4vw, 20px)',
               borderBottom: idx < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
               cursor: 'pointer',
               alignItems: 'center',
@@ -555,7 +556,7 @@ export default function Forums() {
   }
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '40px 24px' }}>
+    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '40px clamp(12px, 4vw, 24px)' }}>
       {/* Breadcrumbs */}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '32px', fontSize: '12px', color: "var(--text-faint)" }}>
         <span

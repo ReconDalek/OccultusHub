@@ -11,7 +11,7 @@ export default function Stats() {
   const [tab, setTab] = useState('wars')
 
   return (
-    <div style={{ color: '#f4f4f5', padding: '24px 20px', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ color: '#f4f4f5', padding: '24px clamp(12px, 4vw, 20px)', maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ marginBottom: '20px' }}>
         <h1 className="font-cinzel" style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#f4f4f5', letterSpacing: '1px' }}>
           Faction Stats

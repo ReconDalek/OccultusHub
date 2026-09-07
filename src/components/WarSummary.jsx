@@ -408,10 +408,7 @@ export default function WarSummary() {
   })
 
   return (
-    <div
-      className="rounded-2xl p-8"
-      style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
-    >
+    <div className="panel">
       <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: "var(--text-secondary)" }}>
         ACTIVE WARS
       </h2>

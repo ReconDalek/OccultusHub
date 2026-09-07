@@ -135,7 +135,7 @@ function RespectLayout() {
       <nav
         className="sticky top-0 w-full z-[1000] flex items-center justify-between"
         style={{
-          padding: '20px 48px',
+          padding: '16px clamp(16px, 4vw, 48px)',
           background: 'rgba(5,5,10,0.82)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           backdropFilter: 'blur(14px)',
@@ -144,7 +144,7 @@ function RespectLayout() {
         <div className="flex items-center">
           <span
             className="font-cinzel text-white"
-            style={{ fontSize: '28px', letterSpacing: '6px' }}
+            style={{ fontSize: 'clamp(20px, 4vw, 28px)', letterSpacing: 'clamp(3px, 1.5vw, 6px)' }}
           >
             OCCULTUS
           </span>

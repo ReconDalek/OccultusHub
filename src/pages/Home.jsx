@@ -43,7 +43,7 @@ function MemberHome({ user }) {
 
   return (
     <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
-      <div className="max-w-[1600px] mx-auto px-6 py-12">
+      <div className="page-shell">
         {/* Welcome header */}
         <div className="mb-12">
           <h1
@@ -68,10 +68,7 @@ function MemberHome({ user }) {
           className="member-home-grid"
         >
           {/* Calendar */}
-          <div
-            className="rounded-2xl p-8"
-            style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
+          <div className="panel">
             <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: "var(--text-secondary)" }}>
               UPCOMING EVENTS
             </h2>
@@ -79,10 +76,7 @@ function MemberHome({ user }) {
           </div>
 
           {/* Faction event cards */}
-          <div
-            className="rounded-2xl p-8"
-            style={{ background: 'rgba(22,22,32,0.82)', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
+          <div className="panel">
             <h2 className="font-cinzel mb-6" style={{ fontSize: '16px', letterSpacing: '2px', color: "var(--text-secondary)" }}>
               FACTION OPERATIONS
             </h2>
@@ -115,7 +109,7 @@ function PublicHome() {
       {/* HERO */}
       <section
         className="flex items-center justify-center text-center"
-        style={{ minHeight: '90vh', padding: '100px 24px' }}
+        style={{ minHeight: '90vh', padding: 'clamp(64px, 12vw, 100px) clamp(16px, 5vw, 24px)' }}
       >
         <div style={{ maxWidth: '900px' }}>
           <div
@@ -133,7 +127,7 @@ function PublicHome() {
 
           <h1
             className="font-cinzel animate-fade-up"
-            style={{ fontSize: 'clamp(52px, 8vw, 76px)', lineHeight: 1.1, marginBottom: '28px' }}
+            style={{ fontSize: 'clamp(40px, 8vw, 76px)', lineHeight: 1.1, marginBottom: '28px' }}
           >
             The Veil Watches
           </h1>
@@ -180,7 +174,7 @@ function PublicHome() {
       </section>
 
       {/* FACTIONS */}
-      <section id="join-section" style={{ padding: '120px 48px' }}>
+      <section id="join-section" style={{ padding: 'clamp(56px, 12vw, 120px) clamp(16px, 5vw, 48px)' }}>
         <h2
           className="font-cinzel text-center"
           style={{ fontSize: 'clamp(36px, 5vw, 48px)', marginBottom: '60px' }}
@@ -225,7 +219,7 @@ function PublicHome() {
       </section>
 
       {/* Daily Cipher — visible to guests */}
-      <section style={{ padding: '0 48px 80px', maxWidth: 900, margin: '0 auto' }}>
+      <section style={{ padding: '0 clamp(16px, 5vw, 48px) 80px', maxWidth: 900, margin: '0 auto' }}>
         <DailyCipher guest={true} />
       </section>
     </>

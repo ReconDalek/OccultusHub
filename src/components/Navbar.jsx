@@ -136,14 +136,14 @@ export default function Navbar() {
         {/* ── Row 1: Logo (left) · Desktop nav links (center) · Auth (right) ── */}
         <div
           className="relative flex items-center justify-between"
-          style={{ padding: '20px 48px' }}
+          style={{ padding: '16px clamp(16px, 4vw, 48px)' }}
         >
           {/* LEFT – Logo */}
           <div className="flex items-center z-20 shrink-0">
             <Link to="/" style={{ textDecoration: 'none' }} onClick={handleLogoClick}>
               <h1
                 className="font-cinzel text-white"
-                style={{ fontSize: 'clamp(18px, 3.5vw, 28px)', letterSpacing: '6px', margin: 0 }}
+                style={{ fontSize: 'clamp(18px, 3.5vw, 28px)', letterSpacing: 'clamp(3px, 1.5vw, 6px)', margin: 0 }}
               >
                 OCCULTUS
               </h1>
