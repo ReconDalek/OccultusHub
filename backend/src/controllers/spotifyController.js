@@ -504,3 +504,92 @@ export async function removeTrack(request, env, user) {
   // admin moderation view calls this too — return the fresh member view
   return getPlaylist(request, env, user);
 }
+
+// ─── shuffle: reorder the real playlist so the embed plays it randomly ───────
+
+async function getAllPlaylistUris(token, playlistId) {
+  const uris = [];
+  let url = `${SPOTIFY_API}/playlists/${playlistId}/tracks?fields=items(track(uri,type)),next&limit=100`;
+  while (url && uris.length < 500) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Could not read the playlist (${res.status})`);
+    const j = await res.json();
+    for (const it of (j.items || [])) {
+      const u = it.track?.uri;
+      if (u && /^spotify:(track|episode):/.test(u)) uris.push(u);
+    }
+    url = j.next || null;
+  }
+  return uris;
+}
+
+// PUT replace (first ≤100) then POST-append the rest, tolerating the
+// /tracks vs /items enforcement quirk.
+async function replacePlaylistUris(token, playlistId, uris) {
+  const first = uris.slice(0, 100);
+  let done = false;
+  for (const path of ['tracks', 'items']) {
+    const res = await fetch(`${SPOTIFY_API}/playlists/${playlistId}/${path}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: first }),
+    });
+    if (res.ok) { done = true; break; }
+    if (res.status !== 403 && res.status !== 404) {
+      throw new Error(`Spotify rejected the reorder (${res.status})`);
+    }
+  }
+  if (!done) throw new Error('Spotify rejected the reorder (403)');
+  for (let i = 100; i < uris.length; i += 100) {
+    const r = await addBatch(token, playlistId, uris.slice(i, i + 100));
+    if (!r.ok) throw new Error(`Reorder append failed (${r.status})`);
+  }
+}
+
+async function addBatch(token, playlistId, uris) {
+  for (const path of ['tracks', 'items']) {
+    const res = await fetch(`${SPOTIFY_API}/playlists/${playlistId}/${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris }),
+    });
+    if (res.ok) return { ok: true };
+    if (res.status !== 403 && res.status !== 404) return { ok: false, status: res.status };
+  }
+  return { ok: false, status: 403 };
+}
+
+// POST /api/spotify/shuffle — any logged-in user, globally throttled
+export async function shuffle(request, env, user) {
+  let cfg;
+  try { cfg = await requireEnabled(env); } catch { return errorResponse('Music is disabled', 403); }
+
+  if (cfg.last_shuffled_at) {
+    const ageMs = Date.now() - new Date(cfg.last_shuffled_at.replace(' ', 'T') + 'Z').getTime();
+    if (ageMs < 90_000) {
+      return errorResponse('The playlist was just shuffled — give it a minute', 429);
+    }
+  }
+
+  try {
+    const token = await getJukeboxToken(env, cfg);
+    const uris = await getAllPlaylistUris(token, cfg.playlist_id);
+    if (uris.length < 3) return errorResponse('Not enough tracks to shuffle', 400);
+
+    for (let i = uris.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [uris[i], uris[j]] = [uris[j], uris[i]];
+    }
+    await replacePlaylistUris(token, cfg.playlist_id, uris);
+
+    await env.DB.prepare('UPDATE spotify_config SET last_shuffled_at = CURRENT_TIMESTAMP WHERE id = 1').run();
+    await writeLog(env, {
+      category: 'game', event: 'spotify_shuffled',
+      message: `${user.username} shuffled the playlist (${uris.length} tracks)`,
+      torn_user_id: user.tornUserId, username: user.username,
+    });
+    return jsonResponse({ ok: true, count: uris.length });
+  } catch (e) {
+    return errorResponse(e.message || 'Shuffle failed', 502);
+  }
+}

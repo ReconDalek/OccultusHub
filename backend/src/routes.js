@@ -439,6 +439,7 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/spotify/search'   && method === 'GET')    return spotifyController.search(request, env, user);
     if (pathname === '/api/spotify/playlist' && method === 'GET')    return spotifyController.getPlaylist(request, env, user);
     if (pathname === '/api/spotify/add'      && method === 'POST')   return spotifyController.addTrack(request, env, user);
+    if (pathname === '/api/spotify/shuffle'  && method === 'POST')   return spotifyController.shuffle(request, env, user);
     if (pathname === '/api/spotify/track'    && method === 'DELETE') return spotifyController.removeTrack(request, env, user);
   }
 

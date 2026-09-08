@@ -24,6 +24,8 @@ export default function SpotifyPlayer() {
   const [q, setQ]             = useState('')
   const [results, setResults] = useState(null)
   const [busy, setBusy]       = useState(false)
+  const [shuffling, setShuffling] = useState(false)
+  const [embedKey, setEmbedKey] = useState(0)    // bump to reload the iframe
   const [err, setErr]         = useState(null)
   const searchTimer = useRef(null)
 
@@ -94,6 +96,17 @@ export default function SpotifyPlayer() {
     } finally { setBusy(false) }
   }
 
+  async function doShuffle() {
+    setShuffling(true); setErr(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/spotify/shuffle`, { method: 'POST', headers: authHeaders() })
+      const d = await res.json()
+      if (!res.ok) { setErr(d.error || 'Could not shuffle'); return }
+      setEmbedKey(k => k + 1)   // reload the embed so it starts on the new order
+      loadPlaylist()
+    } finally { setShuffling(false) }
+  }
+
   function hide() {
     setOpen(false); setHidden(true)
     try { sessionStorage.setItem(HIDE_KEY, '1') } catch { /* ignore */ }
@@ -136,6 +149,10 @@ export default function SpotifyPlayer() {
             <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: 12, letterSpacing: 2, flex: 1 }}>
               OCCULT RADIO
             </span>
+            <button onClick={doShuffle} disabled={shuffling} title="Shuffle the playlist for everyone"
+              style={{ ...navBtn, color: shuffling ? 'var(--text-faint)' : accent, fontSize: 13 }}>
+              {shuffling ? '…' : '🔀'}
+            </button>
             {data?.meta?.url && (
               <a href={data.meta.url} target="_blank" rel="noreferrer"
                  style={{ color: 'var(--text-faint)', fontSize: 10, textDecoration: 'none' }}
@@ -148,6 +165,7 @@ export default function SpotifyPlayer() {
 
           {/* embed player */}
           <iframe
+            key={embedKey}
             title="Occult Radio"
             src={`https://open.spotify.com/embed/playlist/${status.playlistId}?theme=0`}
             width="100%" height="352" frameBorder="0" loading="lazy"
