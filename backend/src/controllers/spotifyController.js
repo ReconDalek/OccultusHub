@@ -245,20 +245,32 @@ export async function diagnose(request, env) {
       if (!owns) {
         out.problem = `The playlist is owned by "${p.owner?.display_name || p.owner?.id}", but you authorized "${out.jukebox.name || out.jukebox.id}". Re-authorize while logged into the account that owns the playlist, or use a playlist that account owns.`;
       } else {
-        // Ownership is fine — prove the token actually carries a
-        // playlist-modify-* scope with a no-op rename (same name in, same out).
-        const wr = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, {
-          method: 'PUT',
+        // Ownership is fine — do a REAL add + remove of a known-good track
+        // and report the raw Spotify response, since "add items" 403s
+        // independently of "change details" succeeding.
+        const TEST_URI = 'spotify:track:4cOdK2wGLETKBW3PvgPWqT'; // Never Gonna Give You Up — available everywhere
+        const addRes = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks`, {
+          method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: p.name }),
+          body: JSON.stringify({ uris: [TEST_URI] }),
         });
-        out.writeTest = { status: wr.status, ok: wr.ok };
-        out.canModify = wr.ok;
-        if (!wr.ok) {
-          const detail = await spotifyErr(wr);
-          out.problem = wr.status === 403
-            ? `Ownership is fine, but the stored token can't write to the playlist (403: ${detail}). Click "Re-authorize" — the consent screen must grant "Add and remove items from your playlists".`
-            : `Write test failed (${wr.status}: ${detail}).`;
+        const rawBody = await addRes.text();
+        out.writeTest = {
+          status: addRes.status,
+          ok: addRes.ok,
+          body: rawBody.slice(0, 400),
+          retryAfter: addRes.headers.get('retry-after'),
+        };
+        out.canModify = addRes.ok;
+        if (addRes.ok) {
+          // clean up the test track
+          await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tracks: [{ uri: TEST_URI }] }),
+          }).catch(() => {});
+        } else {
+          out.problem = `Adding a track returned ${addRes.status}. Spotify said: ${rawBody.slice(0, 300) || '(empty body)'}`;
         }
       }
     } else {

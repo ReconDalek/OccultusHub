@@ -134,7 +134,7 @@ export default function SpotifyPlayer() {
           }}>
             <span style={{ color: accent, fontSize: 13 }}>♫</span>
             <span className="font-cinzel" style={{ color: '#f4f4f5', fontSize: 12, letterSpacing: 2, flex: 1 }}>
-              OCCULTUS RADIO
+              OCCULT RADIO
             </span>
             {data?.meta?.url && (
               <a href={data.meta.url} target="_blank" rel="noreferrer"
@@ -148,7 +148,7 @@ export default function SpotifyPlayer() {
 
           {/* embed player */}
           <iframe
-            title="Occultus Radio"
+            title="Occult Radio"
             src={`https://open.spotify.com/embed/playlist/${status.playlistId}?theme=0`}
             width="100%" height="352" frameBorder="0" loading="lazy"
             allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
@@ -229,7 +229,7 @@ export default function SpotifyPlayer() {
           }}
         >
           <span style={{ color: accent, fontSize: 14 }}>♫</span>
-          <span className="font-cinzel" style={{ fontSize: 11, letterSpacing: 2 }}>OCCULTUS RADIO</span>
+          <span className="font-cinzel" style={{ fontSize: 11, letterSpacing: 2 }}>OCCULT RADIO</span>
         </button>
       )}
     </div>
@@ -250,7 +250,7 @@ function RestoreNub({ onClick }) {
   return (
     <button
       onClick={onClick}
-      title="Occultus Radio"
+      title="Occult Radio"
       style={{
         position: 'fixed', right: 16, bottom: 16, zIndex: 900,
         width: 40, height: 40, borderRadius: 999, cursor: 'pointer',

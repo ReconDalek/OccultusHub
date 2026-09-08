@@ -196,7 +196,13 @@ export default function MusicTab() {
           }}>
             {diag.jukebox && <div>Authorized account: <b>{diag.jukebox.name || diag.jukebox.id}</b> ({diag.jukebox.product || 'unknown plan'})</div>}
             {diag.grantedScope !== undefined && <div>Granted scopes: <code>{diag.grantedScope || '(none)'}</code></div>}
-            {diag.writeTest && <div>Write test: <b style={{ color: diag.writeTest.ok ? '#4ade80' : '#f87171' }}>{diag.writeTest.ok ? 'passed' : `HTTP ${diag.writeTest.status}`}</b></div>}
+            {diag.writeTest && (
+              <div>Add-track test: <b style={{ color: diag.writeTest.ok ? '#4ade80' : '#f87171' }}>{diag.writeTest.ok ? 'passed' : `HTTP ${diag.writeTest.status}`}</b>
+                {diag.writeTest.body && !diag.writeTest.ok && (
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '4px 0 0', fontSize: 11, color: '#f87171' }}>{diag.writeTest.body}</pre>
+                )}
+              </div>
+            )}
             {diag.playlist && <div>Playlist: <b>{diag.playlist.name}</b> — owned by <b>{diag.playlist.ownerName || diag.playlist.ownerId}</b>{diag.playlist.public ? '' : ' · not public'}{diag.playlist.collaborative ? ' · collaborative' : ''}</div>}
             <div style={{ marginTop: 6, color: diag.canModify ? '#4ade80' : '#f87171', fontWeight: 600 }}>
               {diag.canModify ? '✓ The jukebox can add to this playlist.' : (diag.problem || 'Cannot modify this playlist.')}
