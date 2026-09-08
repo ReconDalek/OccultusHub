@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from '../../hooks/useSession'
 import { API_BASE_URL } from '../../config/api'
 
@@ -32,8 +32,22 @@ function embedSrc(id) {
 // compact Spotify player carries its own bottom padding — so pin an explicit
 // height inline and crop that padding with an overflow-hidden wrapper.
 const PLAYER_H = 152        // Occult Radio — compact player (add via search, not the list)
-const LEAGUE_PLAYER_H = 260 // Music League — taller so the round's tracklist shows,
-                            // and so the panel matches the Radio tab's overall height
+const LEAGUE_PLAYER_H = 247 // Music League — no shuffle/search bar, so the player
+                            // frame grows to fill that space and keep the panel the
+                            // same overall height as the Radio tab
+function LoginHint() {
+  return (
+    <p style={{
+      color: 'var(--text-faint)', fontSize: 10, lineHeight: 1.5, margin: 0,
+      padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)',
+    }}>
+      <a href="https://accounts.spotify.com/login" target="_blank" rel="noreferrer"
+         style={{ color: '#1DB954', textDecoration: 'none' }}>Log in to Spotify</a>
+      {' '}to play full track length
+    </p>
+  )
+}
+
 function PlayerEmbed({ id, iframeKey, title, height = PLAYER_H }) {
   return (
     <div style={{ height, overflow: 'hidden' }}>
@@ -59,7 +73,6 @@ export default function SpotifyPlayer() {
     try { return sessionStorage.getItem(HIDE_KEY) === '1' } catch { return false }
   })
 
-  const [data, setData]       = useState(null)      // { meta } for the radio playlist
   const [q, setQ]             = useState('')
   const [results, setResults] = useState(null)
   const [busy, setBusy]       = useState(false)
@@ -87,19 +100,6 @@ export default function SpotifyPlayer() {
     else if (radioOn) setView('radio')
   }, [radioOn, league])
 
-  // ── radio playlist meta (for the "open in Spotify" link) ─────────────────
-  const loadPlaylist = useCallback(() => {
-    fetch(`${API_BASE_URL}/api/spotify/playlist`, { headers: authHeaders() })
-      .then(r => r.json())
-      .then(d => { if (!d.error) setData(d) })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!open || !radioOn || hidden) return
-    loadPlaylist()
-  }, [open, radioOn, hidden, loadPlaylist])
-
   // ── search (debounced) ─────────────────────────────────────────────────
   useEffect(() => {
     clearTimeout(searchTimer.current)
@@ -123,7 +123,7 @@ export default function SpotifyPlayer() {
       })
       const d = await res.json()
       if (!res.ok) { setErr(d.error || 'Could not add that track'); return }
-      setData(d); setQ(''); setResults(null)
+      setQ(''); setResults(null); setEmbedKey(k => k + 1)
     } finally { setBusy(false) }
   }
 
@@ -134,7 +134,6 @@ export default function SpotifyPlayer() {
       const d = await res.json()
       if (!res.ok) { setErr(d.error || 'Could not shuffle'); return }
       setEmbedKey(k => k + 1)
-      loadPlaylist()
     } finally { setShuffling(false) }
   }
 
@@ -198,9 +197,7 @@ export default function SpotifyPlayer() {
           {showingLeague ? (
             <>
               <PlayerEmbed id={league.playlistId} iframeKey={`league-${league.playlistId}`} title="Music League" height={LEAGUE_PLAYER_H} />
-              <p style={{ color: 'var(--text-faint)', fontSize: 10, margin: 0, padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                Music League · listen-only, new playlist each round
-              </p>
+              <LoginHint />
             </>
           ) : (
             <>
@@ -224,18 +221,7 @@ export default function SpotifyPlayer() {
                 {shuffling ? 'Shuffling…' : 'Shuffle playlist'}
               </button>
 
-              <p style={{
-                color: 'var(--text-faint)', fontSize: 10, lineHeight: 1.5, margin: 0,
-                padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)',
-              }}>
-                30-second previews by default.{' '}
-                <a href="https://accounts.spotify.com/login" target="_blank" rel="noreferrer"
-                   style={{ color: accent, textDecoration: 'none' }}>Log in to Spotify</a>
-                {' '}for full tracks (Premium plays end-to-end).
-                {data?.meta?.url && (
-                  <> · <a href={data.meta.url} target="_blank" rel="noreferrer" style={{ color: accent, textDecoration: 'none' }}>Open in Spotify</a></>
-                )}
-              </p>
+              <LoginHint />
 
               {/* add a track */}
               <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
