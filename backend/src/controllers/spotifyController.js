@@ -366,6 +366,22 @@ export async function getAdminPlaylist(request, env) {
     return jsonResponse({ tracks: [], error: e.message });
   }
 
+  // If we still got nothing, capture the shape of the response so it's diagnosable.
+  let debug;
+  if (tracks.length === 0) {
+    try {
+      const token = await getJukeboxToken(env, cfg);
+      const r = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const j = await r.json();
+      debug = {
+        status: r.status,
+        itemsType: Array.isArray(j.items) ? 'array' : typeof j.items,
+        itemsKeys: (j.items && !Array.isArray(j.items)) ? Object.keys(j.items) : null,
+        itemsSnippet: JSON.stringify(j.items).slice(0, 300),
+      };
+    } catch (e) { debug = { probeError: e.message }; }
+  }
+
   const { results } = await env.DB.prepare(
     'SELECT track_uri, added_by_username, created_at FROM spotify_submissions'
   ).all();
@@ -373,6 +389,7 @@ export async function getAdminPlaylist(request, env) {
   for (const r of (results || [])) byUri[r.track_uri] = r;
 
   return jsonResponse({
+    debug,
     tracks: tracks.map(t => ({
       ...t,
       addedBy: byUri[t.uri]?.added_by_username || null,
@@ -578,8 +595,22 @@ export async function removeTrack(request, env, user) {
 
 // ─── reading the real playlist ──────────────────────────────────────────────
 
+// Pull the track array out of whatever shape Spotify returned: the documented
+// `{ tracks: { items } }`, this account's top-level `items` (array OR a nested
+// paging object `{ items: [...] }`), or a bare array.
+function resolveItems(j) {
+  if (Array.isArray(j)) return j;
+  if (Array.isArray(j?.tracks?.items)) return j.tracks.items;
+  if (Array.isArray(j?.items)) return j.items;
+  if (Array.isArray(j?.items?.items)) return j.items.items;
+  return [];
+}
+function resolveNext(j) {
+  return j?.tracks?.next || (typeof j?.items?.next === 'string' ? j.items.next : null) || (typeof j?.next === 'string' ? j.next : null) || null;
+}
+
 function mapItems(rawItems, out) {
-  for (const it of (rawItems || [])) {
+  for (const it of (Array.isArray(rawItems) ? rawItems : [])) {
     const t = it?.track || it; // some responses wrap in { added_at, track }, others are flat
     if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
     out.push({
@@ -608,14 +639,14 @@ async function getPlaylistItems(env, cfg) {
     throw new Error(`Could not read the playlist (${first.status}: ${body.slice(0, 150)})`);
   }
   const j = await first.json();
-  mapItems(j.tracks?.items || j.items, out);
-  let next = j.tracks?.next || j.next || null;
+  mapItems(resolveItems(j), out);
+  let next = resolveNext(j);
   while (next && out.length < 1000) {
     const r = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) break; // partial is better than nothing
     const jn = await r.json();
-    mapItems(jn.tracks?.items || jn.items, out);
-    next = jn.tracks?.next || jn.next || null;
+    mapItems(resolveItems(jn), out);
+    next = resolveNext(jn);
   }
   return out;
 }
