@@ -288,16 +288,22 @@ async function spotifyErr(res) {
 
 // Add one track URI to the playlist. Spotify documents this endpoint at both
 // /tracks (historical) and /items (current docs), and accepts the URIs in the
-// JSON body OR as a query param — enforcement has been reported to differ
-// between them. Try each combination, fastest/canonical first, stop on the
-// first success. Returns { ok, status, detail, form }.
+// JSON body OR as a query param — enforcement differs between them (the
+// /tracks + JSON-body combo 403s for some apps). Try each combination, stop
+// on the first success, and remember which form worked for this isolate so
+// later adds don't re-pay the failed attempts. Returns { ok, status, detail, form }.
+let workingAddForm = null;
+
 async function addUriToPlaylist(token, playlistId, uri) {
-  const attempts = [
+  const ALL = [
     { form: 'tracks+body',  path: 'tracks', body: true },
     { form: 'tracks+query', path: 'tracks', body: false },
     { form: 'items+body',   path: 'items',  body: true },
     { form: 'items+query',  path: 'items',  body: false },
   ];
+  const attempts = workingAddForm
+    ? [...ALL.filter(a => a.form === workingAddForm), ...ALL.filter(a => a.form !== workingAddForm)]
+    : ALL;
   let last = { ok: false, status: 0, detail: '', form: 'none' };
   let firstMeaningful = null; // prefer a 403/other over a 404 from the /items path guess
   for (const a of attempts) {
@@ -311,7 +317,7 @@ async function addUriToPlaylist(token, playlistId, uri) {
         : { Authorization: `Bearer ${token}` },
       body: a.body ? JSON.stringify({ uris: [uri] }) : undefined,
     });
-    if (res.ok) return { ok: true, status: res.status, form: a.form };
+    if (res.ok) { workingAddForm = a.form; return { ok: true, status: res.status, form: a.form }; }
     last = { ok: false, status: res.status, detail: (await res.text()) || last.detail, form: a.form };
     if (res.status !== 404 && !firstMeaningful) firstMeaningful = last;
     // A non-permission error (bad id, rate limit) won't be fixed by another form
