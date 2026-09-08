@@ -388,11 +388,16 @@ export async function getAdminPlaylist(request, env) {
       const token = await getJukeboxToken(env, cfg);
       const r = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, { headers: { Authorization: `Bearer ${token}` } });
       const j = await r.json();
+      const arr = j?.items?.items || j?.tracks?.items || (Array.isArray(j?.items) ? j.items : []);
       debug = {
         status: r.status,
-        itemsType: Array.isArray(j.items) ? 'array' : typeof j.items,
-        itemsKeys: (j.items && !Array.isArray(j.items)) ? Object.keys(j.items) : null,
-        itemsSnippet: JSON.stringify(j.items).slice(0, 300),
+        count: Array.isArray(arr) ? arr.length : 'n/a',
+        entryKeys: arr?.[0] ? Object.keys(arr[0]) : null,
+        trackIsNull: arr?.[0] ? (arr[0].track === null) : null,
+        trackKeys: arr?.[0]?.track ? Object.keys(arr[0].track) : null,
+        trackUri: arr?.[0]?.track?.uri ?? null,
+        trackType: arr?.[0]?.track?.type ?? null,
+        firstEntry: JSON.stringify(arr?.[0] || null).slice(0, 400),
       };
     } catch (e) { debug = { probeError: e.message }; }
   }
@@ -627,9 +632,10 @@ function resolveNext(j) {
 function mapItems(rawItems, out) {
   for (const it of (Array.isArray(rawItems) ? rawItems : [])) {
     const t = it?.track || it; // some responses wrap in { added_at, track }, others are flat
-    if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
+    const uri = t?.uri || (t?.id ? `spotify:track:${t.id}` : null);
+    if (!uri) continue;
     out.push({
-      uri: t.uri, id: t.id, name: t.name || '(unknown)',
+      uri, id: t.id, name: t.name || '(unknown)',
       artist: (t.artists || []).map(a => a.name).join(', '),
       albumArt: t.album?.images?.[t.album.images.length - 1]?.url || null,
     });
@@ -646,7 +652,7 @@ async function getPlaylistItems(env, cfg) {
   const out = [];
 
   const first = await fetch(
-    `${SPOTIFY_API}/playlists/${cfg.playlist_id}`,
+    `${SPOTIFY_API}/playlists/${cfg.playlist_id}?market=from_token`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!first.ok) {
