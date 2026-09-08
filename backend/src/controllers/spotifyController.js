@@ -351,50 +351,60 @@ async function removeUriFromPlaylist(token, playlistId, uri) {
   return last;
 }
 
-// The set of track/episode URIs currently on the real playlist (best effort).
-async function livePlaylistUriSet(token, playlistId) {
-  try {
-    const uris = await getAllPlaylistUris(token, playlistId);
-    return new Set(uris);
-  } catch {
-    return null;
+// GET /api/admin/spotify/playlist — every track actually on the playlist,
+// annotated with who added it via the hub (if anyone).
+export async function getAdminPlaylist(request, env) {
+  const cfg = await getConfig(env);
+  if (!cfg?.client_id || !env.SPOTIFY_CLIENT_SECRET || !cfg?.playlist_id) {
+    return jsonResponse({ tracks: [], error: 'Not configured' });
   }
+  let tracks;
+  try {
+    tracks = await getPlaylistItems(env, cfg);
+  } catch (e) {
+    return jsonResponse({ tracks: [], error: e.message });
+  }
+
+  const { results } = await env.DB.prepare(
+    'SELECT track_uri, added_by_username, created_at FROM spotify_submissions'
+  ).all();
+  const byUri = {};
+  for (const r of (results || [])) byUri[r.track_uri] = r;
+
+  return jsonResponse({
+    tracks: tracks.map(t => ({
+      ...t,
+      addedBy: byUri[t.uri]?.added_by_username || null,
+      addedAt: byUri[t.uri]?.created_at || null,
+    })),
+  });
 }
 
-// GET /api/admin/spotify/submissions — cross-checked against the live playlist
-// so tracks removed manually in Spotify show as gone here too.
-export async function getAdminSubmissions(request, env) {
+// DELETE /api/admin/spotify/playlist-track  { uri }
+export async function removePlaylistTrackAdmin(request, env, user) {
   const cfg = await getConfig(env);
-  const { results } = await env.DB.prepare(
-    `SELECT id, track_uri, track_name, artist, album_art, added_by_username, added_by_torn_id,
-            created_at, removed, removed_by
-     FROM spotify_submissions ORDER BY created_at DESC LIMIT 200`
-  ).all();
-  const rows = results || [];
+  if (!cfg?.refresh_token || !cfg?.playlist_id) return errorResponse('Not configured', 400);
+  const { uri } = await request.json();
+  if (!uri || !/^spotify:(track|episode):[A-Za-z0-9]+$/.test(uri)) return errorResponse('Bad URI', 400);
 
-  let liveSet = null;
-  if (cfg?.refresh_token && cfg?.playlist_id) {
-    try {
-      const token = await getJukeboxToken(env, cfg);
-      liveSet = await livePlaylistUriSet(token, cfg.playlist_id);
-    } catch { /* leave liveSet null — just don't annotate */ }
+  try {
+    const token = await getJukeboxToken(env, cfg);
+    const r = await removeUriFromPlaylist(token, cfg.playlist_id, uri);
+    if (!r.ok && r.status !== 404) {
+      return errorResponse(`Spotify rejected the removal (${r.status}).`, 502);
+    }
+  } catch (e) {
+    return errorResponse(e.message || 'Removal failed', 500);
   }
 
-  // Reconcile: a not-removed row whose URI is no longer on the playlist was
-  // pulled manually in Spotify — mark it removed so moderation stays honest.
-  const drifted = [];
-  const out = rows.map(r => {
-    const onPlaylist = liveSet ? liveSet.has(r.track_uri) : null;
-    if (r.removed === 0 && onPlaylist === false) drifted.push(r.id);
-    return { ...r, onPlaylist, removed: r.removed === 0 && onPlaylist === false ? 1 : r.removed };
+  await env.DB.prepare("UPDATE spotify_submissions SET removed = 1, removed_by = ? WHERE track_uri = ? AND removed = 0")
+    .bind(user.username, uri).run();
+  await writeLog(env, {
+    category: 'admin', event: 'spotify_track_removed_admin',
+    message: `${user.username} removed a track from the playlist`,
+    torn_user_id: user.tornUserId, username: user.username,
   });
-  if (drifted.length) {
-    await env.DB.prepare(
-      `UPDATE spotify_submissions SET removed = 1, removed_by = 'spotify' WHERE id IN (${drifted.map(() => '?').join(',')})`
-    ).bind(...drifted).run();
-  }
-
-  return jsonResponse({ submissions: out });
+  return getAdminPlaylist(request, env);
 }
 
 // ─── member: search / playlist / add / remove ───────────────────────────────
@@ -565,22 +575,36 @@ export async function removeTrack(request, env, user) {
   return getPlaylist(request, env, user);
 }
 
-// ─── shuffle: reorder the real playlist so the embed plays it randomly ───────
+// ─── reading the real playlist ──────────────────────────────────────────────
 
-async function getAllPlaylistUris(token, playlistId) {
-  const uris = [];
-  let url = `${SPOTIFY_API}/playlists/${playlistId}/tracks?fields=items(track(uri,type)),next&limit=100`;
-  while (url && uris.length < 500) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`Could not read the playlist (${res.status})`);
-    const j = await res.json();
-    for (const it of (j.items || [])) {
-      const u = it.track?.uri;
-      if (u && /^spotify:(track|episode):/.test(u)) uris.push(u);
+// Full track list of the configured playlist. Reads with the app
+// (client-credentials) token — works for any public playlist and sidesteps
+// the jukebox token's scope gaps — and tolerates the /tracks vs /items quirk.
+async function getPlaylistItems(env, cfg) {
+  const appTok = await getAppToken(env, cfg);
+  let lastStatus = 0;
+  for (const path of ['tracks', 'items']) {
+    const items = [];
+    let url = `${SPOTIFY_API}/playlists/${cfg.playlist_id}/${path}?limit=100&fields=${encodeURIComponent('items(track(uri,id,name,type,artists(name),album(images))),next')}`;
+    let ok = true;
+    while (url && items.length < 500) {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${appTok}` } });
+      if (!res.ok) { ok = false; lastStatus = res.status; break; }
+      const j = await res.json();
+      for (const it of (j.items || [])) {
+        const t = it.track;
+        if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
+        items.push({
+          uri: t.uri, id: t.id, name: t.name || '(unknown)',
+          artist: (t.artists || []).map(a => a.name).join(', '),
+          albumArt: t.album?.images?.[t.album.images.length - 1]?.url || null,
+        });
+      }
+      url = j.next || null;
     }
-    url = j.next || null;
+    if (ok) return items;
   }
-  return uris;
+  throw new Error(`Could not read the playlist (${lastStatus || 'error'})`);
 }
 
 // PUT replace (first ≤100) then POST-append the rest, tolerating the
@@ -632,14 +656,15 @@ export async function shuffle(request, env, user) {
   }
 
   try {
-    const token = await getJukeboxToken(env, cfg);
-    const uris = await getAllPlaylistUris(token, cfg.playlist_id);
+    const items = await getPlaylistItems(env, cfg);
+    const uris = items.map(t => t.uri);
     if (uris.length < 3) return errorResponse('Not enough tracks to shuffle', 400);
 
     for (let i = uris.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [uris[i], uris[j]] = [uris[j], uris[i]];
     }
+    const token = await getJukeboxToken(env, cfg);
     await replacePlaylistUris(token, cfg.playlist_id, uris);
 
     await env.DB.prepare('UPDATE spotify_config SET last_shuffled_at = CURRENT_TIMESTAMP WHERE id = 1').run();

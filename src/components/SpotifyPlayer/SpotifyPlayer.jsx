@@ -143,10 +143,13 @@ export default function SpotifyPlayer() {
           background: 'rgba(12,12,18,0.97)', border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: 14, overflow: 'hidden', backdropFilter: 'blur(14px)',
           boxShadow: '0 16px 50px rgba(0,0,0,0.55)',
+          display: 'flex', flexDirection: 'column',
+          maxHeight: 'calc(100vh - 32px)',
+          ...(showingLeague ? {} : { height: 'min(620px, calc(100vh - 32px))' }),
         }}>
           {/* header */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', flexShrink: 0,
             borderBottom: '1px solid rgba(255,255,255,0.08)',
           }}>
             <span style={{ color: accent, fontSize: 13 }}>♫</span>
@@ -159,7 +162,7 @@ export default function SpotifyPlayer() {
 
           {/* Radio / Music League switch */}
           {radioOn && league && (
-            <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
               {[['radio', 'Radio'], ['league', 'Music League']].map(([k, lbl]) => (
                 <button key={k} onClick={() => setView(k)}
                   style={{
@@ -182,10 +185,10 @@ export default function SpotifyPlayer() {
                 src={embedSrc(league.playlistId)}
                 width="100%" height="352" frameBorder="0" loading="lazy"
                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                style={{ display: 'block', border: 0 }}
+                style={{ display: 'block', border: 0, flexShrink: 0 }}
               />
-              <p style={{ color: 'var(--text-faint)', fontSize: 10, margin: 0, padding: '7px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                {league.label} · listen-only, changes each round
+              <p style={{ color: 'var(--text-faint)', fontSize: 10, margin: 0, padding: '7px 12px', flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                Music League · listen-only, new playlist each round
               </p>
             </>
           ) : (
@@ -196,30 +199,34 @@ export default function SpotifyPlayer() {
                 src={embedSrc(status.playlistId)}
                 width="100%" height="352" frameBorder="0" loading="lazy"
                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                style={{ display: 'block', border: 0 }}
+                style={{ display: 'block', border: 0, flexShrink: 0 }}
               />
 
-              {/* shuffle bar — attached to the player */}
+              {/* shuffle bar — fused to the bottom of the player, no gap */}
               <button
                 onClick={doShuffle}
                 disabled={shuffling}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                  padding: '9px 0', border: 'none', cursor: shuffling ? 'default' : 'pointer',
-                  borderTop: '1px solid rgba(255,255,255,0.08)',
-                  background: 'rgba(255,255,255,0.06)', color: '#f4f4f5',
+                  padding: '10px 0', border: 'none', flexShrink: 0,
+                  cursor: shuffling ? 'default' : 'pointer',
+                  background: 'rgba(255,255,255,0.07)', color: '#f4f4f5',
                   fontSize: 12, letterSpacing: 0.5,
                 }}
-                onMouseEnter={e => { if (!shuffling) e.currentTarget.style.background = 'rgba(255,255,255,0.11)' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                onMouseEnter={e => { if (!shuffling) e.currentTarget.style.background = 'rgba(255,255,255,0.12)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)' }}
               >
                 <ShuffleIcon />
                 {shuffling ? 'Shuffling…' : 'Shuffle playlist'}
               </button>
 
+              {/* empty space */}
+              <div style={{ flex: 1, minHeight: 10 }} />
+
+              <div style={{ flexShrink: 0, overflowY: 'auto', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <p style={{
                 color: 'var(--text-faint)', fontSize: 10, lineHeight: 1.5, margin: 0,
-                padding: '6px 12px', borderTop: '1px solid rgba(255,255,255,0.06)',
+                padding: '8px 12px 4px',
               }}>
                 30-second previews by default.{' '}
                 <a href="https://accounts.spotify.com/login" target="_blank" rel="noreferrer"
@@ -231,7 +238,7 @@ export default function SpotifyPlayer() {
               </p>
 
               {/* add a track */}
-              <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ padding: '6px 12px 10px' }}>
                 <input
                   value={q}
                   onChange={e => setQ(e.target.value)}
@@ -259,6 +266,7 @@ export default function SpotifyPlayer() {
                     ))}
                   </div>
                 )}
+              </div>
               </div>
             </>
           )}

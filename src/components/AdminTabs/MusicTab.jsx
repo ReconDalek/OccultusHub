@@ -27,11 +27,22 @@ export default function MusicTab() {
   const [playlistId, setPlaylistId] = useState('')
   const [limit, setLimit]     = useState(5)
   const [mlPlaylist, setMlPlaylist] = useState('')
-  const [mlLabel, setMlLabel]       = useState('')
   const [saving, setSaving]   = useState(false)
   const [msg, setMsg]         = useState(null)
   const [diag, setDiag]       = useState(null)
   const [diagBusy, setDiagBusy] = useState(false)
+
+  const [tracksErr, setTracksErr] = useState(null)
+  const [tracksLoading, setTracksLoading] = useState(false)
+
+  const loadTracks = useCallback(() => {
+    setTracksLoading(true)
+    fetch(`${API_BASE_URL}/api/admin/spotify/playlist`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => { setSubs(d.tracks || []); setTracksErr(d.error || null) })
+      .catch(() => setTracksErr('Could not load the playlist'))
+      .finally(() => setTracksLoading(false))
+  }, [])
 
   const load = useCallback(() => {
     fetch(`${API_BASE_URL}/api/admin/spotify/config`, { headers: authHeaders() })
@@ -42,14 +53,10 @@ export default function MusicTab() {
         setPlaylistId(d.playlistId || '')
         setLimit(d.addLimitPerDay ?? 5)
         setMlPlaylist(d.mlPlaylistId || '')
-        setMlLabel(d.mlLabel || '')
       })
       .catch(() => {})
-    fetch(`${API_BASE_URL}/api/admin/spotify/submissions`, { headers: authHeaders() })
-      .then(r => r.json())
-      .then(d => setSubs(d.submissions || []))
-      .catch(() => {})
-  }, [])
+    loadTracks()
+  }, [loadTracks])
 
   useEffect(() => {
     load()
@@ -89,13 +96,15 @@ export default function MusicTab() {
     else setMsg({ ok: false, text: d.error || 'Could not start authorization' })
   }
 
-  async function removeSub(id) {
-    await fetch(`${API_BASE_URL}/api/admin/spotify/track`, {
+  async function removeTrack(uri) {
+    const res = await fetch(`${API_BASE_URL}/api/admin/spotify/playlist-track`, {
       method: 'DELETE',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissionId: id }),
+      body: JSON.stringify({ uri }),
     })
-    load()
+    const d = await res.json()
+    if (res.ok) setSubs(d.tracks || [])
+    else setMsg({ ok: false, text: d.error || 'Could not remove that track' })
   }
 
   if (!cfg) return <p style={{ color: 'var(--text-secondary)' }}>Loading…</p>
@@ -149,28 +158,26 @@ export default function MusicTab() {
               Independent of the jukebox setup below.
             </p>
           </div>
-          <button
-            onClick={() => save({ mlEnabled: !cfg.mlEnabled })}
-            disabled={saving || (!cfg.mlEnabled && !cfg.mlPlaylistId)}
-            style={{ ...btn, flexShrink: 0, background: cfg.mlEnabled ? 'rgba(34,197,94,0.25)' : 'rgba(255,255,255,0.08)', opacity: (!cfg.mlEnabled && !cfg.mlPlaylistId) ? 0.5 : 1 }}
-          >
-            {cfg.mlEnabled ? 'Enabled' : 'Disabled'}
-          </button>
+          {cfg.mlEnabled && (
+            <button
+              onClick={() => save({ mlEnabled: false })}
+              disabled={saving}
+              style={{ ...btn, flexShrink: 0, background: 'rgba(255,255,255,0.08)' }}
+            >
+              Hide tab
+            </button>
+          )}
         </div>
-        <div style={{ marginTop: 12, marginBottom: 10 }}>
-          <label style={label}>Round label</label>
-          <input style={input} value={mlLabel} onChange={e => setMlLabel(e.target.value)} placeholder="e.g. Round 12 — Movie Themes" />
+        <div style={{ marginTop: 12, marginBottom: 12 }}>
+          <label style={label}>Round playlist (URL, id, or spotify: URI)</label>
+          <input style={input} value={mlPlaylist} onChange={e => setMlPlaylist(e.target.value)} placeholder="paste the round's public Spotify playlist" />
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={label}>Playlist (URL, id, or spotify: URI)</label>
-          <input style={input} value={mlPlaylist} onChange={e => setMlPlaylist(e.target.value)} placeholder="the round's public Spotify playlist" />
-        </div>
-        <button style={btn} disabled={saving} onClick={() => save({ mlPlaylistId: mlPlaylist, mlLabel })}>
-          {saving ? 'Saving…' : 'Save round'}
+        <button style={btn} disabled={saving || !mlPlaylist.trim()} onClick={() => save({ mlPlaylistId: mlPlaylist, mlEnabled: true })}>
+          {saving ? 'Saving…' : (cfg.mlEnabled ? 'Update round' : 'Save & show tab')}
         </button>
         {cfg.mlPlaylistId && (
           <p style={{ color: 'var(--text-faint)', fontSize: 11, marginTop: 8 }}>
-            Current: <code style={{ color: '#9f67ff' }}>{cfg.mlPlaylistId}</code>{cfg.mlLabel ? ` — ${cfg.mlLabel}` : ''}
+            Current: <code style={{ color: '#9f67ff' }}>{cfg.mlPlaylistId}</code> — tab is {cfg.mlEnabled ? 'visible' : 'hidden'}
           </p>
         )}
       </div>
@@ -251,33 +258,37 @@ export default function MusicTab() {
         )}
       </div>
 
-      {/* Moderation */}
+      {/* Playlist contents (Occult Radio) */}
       <div style={card}>
-        <p style={{ color: '#f4f4f5', marginTop: 0, marginBottom: 4, fontWeight: 600 }}>
-          Submissions ({cfg.submissionCounts?.active || 0} on the playlist)
-        </p>
-        {subs.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13, margin: 0 }}>Nothing added yet.</p>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <p style={{ color: '#f4f4f5', margin: 0, fontWeight: 600 }}>
+            Occult Radio playlist ({subs.length})
+          </p>
+          <button onClick={loadTracks} disabled={tracksLoading}
+            style={{ ...btn, background: 'rgba(255,255,255,0.08)', padding: '4px 12px', fontSize: 12 }}>
+            {tracksLoading ? '…' : 'Refresh'}
+          </button>
+        </div>
+        {tracksErr && <p style={{ color: '#f87171', fontSize: 12, margin: '0 0 8px' }}>{tracksErr}</p>}
+        {!tracksErr && subs.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13, margin: 0 }}>Playlist is empty.</p>}
         {subs.map(s => (
-          <div key={s.id} style={{
+          <div key={s.uri} style={{
             display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
-            borderBottom: '1px solid rgba(255,255,255,0.05)', opacity: s.removed ? 0.4 : 1,
+            borderBottom: '1px solid rgba(255,255,255,0.05)',
           }}>
-            {s.album_art && <img src={s.album_art} alt="" width={32} height={32} style={{ borderRadius: 4, flexShrink: 0 }} />}
+            {s.albumArt && <img src={s.albumArt} alt="" width={32} height={32} style={{ borderRadius: 4, flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: '#f4f4f5', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {s.track_name} <span style={{ color: 'var(--text-faint)' }}>— {s.artist}</span>
+                {s.name} <span style={{ color: 'var(--text-faint)' }}>— {s.artist}</span>
               </div>
               <div style={{ color: 'var(--text-faint)', fontSize: 11 }}>
-                {s.added_by_username} · {new Date(s.created_at + 'Z').toLocaleDateString('en-GB')}
-                {s.removed ? ` · removed by ${s.removed_by || '—'}` : ''}
+                {s.addedBy ? `added by ${s.addedBy}` : 'added outside the hub'}
               </div>
             </div>
-            {!s.removed && (
-              <button onClick={() => removeSub(s.id)}
-                style={{ ...btn, background: 'rgba(248,113,113,0.15)', color: '#f87171', padding: '4px 12px', fontSize: 12 }}>
-                Remove
-              </button>
-            )}
+            <button onClick={() => removeTrack(s.uri)}
+              style={{ ...btn, background: 'rgba(248,113,113,0.15)', color: '#f87171', padding: '4px 12px', fontSize: 12 }}>
+              Remove
+            </button>
           </div>
         ))}
       </div>

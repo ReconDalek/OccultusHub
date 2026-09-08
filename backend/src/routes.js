@@ -303,8 +303,11 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/spotify/auth-url' && method === 'GET') {
       return spotifyController.getAuthUrl(request, env, user);
     }
-    if (pathname === '/api/admin/spotify/submissions' && method === 'GET') {
-      return spotifyController.getAdminSubmissions(request, env);
+    if (pathname === '/api/admin/spotify/playlist' && method === 'GET') {
+      return spotifyController.getAdminPlaylist(request, env);
+    }
+    if (pathname === '/api/admin/spotify/playlist-track' && method === 'DELETE') {
+      return spotifyController.removePlaylistTrackAdmin(request, env, user);
     }
     if (pathname === '/api/admin/spotify/diagnose' && method === 'GET') {
       return spotifyController.diagnose(request, env);
