@@ -326,14 +326,66 @@ async function addUriToPlaylist(token, playlistId, uri) {
   return firstMeaningful || last;
 }
 
-// GET /api/admin/spotify/submissions
+// Remove one URI from the playlist — same /tracks vs /items tolerance.
+async function removeUriFromPlaylist(token, playlistId, uri) {
+  let last = { ok: false, status: 0, detail: '' };
+  for (const path of ['tracks', 'items']) {
+    const res = await fetch(`${SPOTIFY_API}/playlists/${playlistId}/${path}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tracks: [{ uri }] }),
+    });
+    if (res.ok) return { ok: true, status: res.status };
+    last = { ok: false, status: res.status, detail: (await res.text()) || last.detail };
+    if (res.status !== 403 && res.status !== 404) return last;
+  }
+  return last;
+}
+
+// The set of track/episode URIs currently on the real playlist (best effort).
+async function livePlaylistUriSet(token, playlistId) {
+  try {
+    const uris = await getAllPlaylistUris(token, playlistId);
+    return new Set(uris);
+  } catch {
+    return null;
+  }
+}
+
+// GET /api/admin/spotify/submissions — cross-checked against the live playlist
+// so tracks removed manually in Spotify show as gone here too.
 export async function getAdminSubmissions(request, env) {
+  const cfg = await getConfig(env);
   const { results } = await env.DB.prepare(
     `SELECT id, track_uri, track_name, artist, album_art, added_by_username, added_by_torn_id,
             created_at, removed, removed_by
      FROM spotify_submissions ORDER BY created_at DESC LIMIT 200`
   ).all();
-  return jsonResponse({ submissions: results || [] });
+  const rows = results || [];
+
+  let liveSet = null;
+  if (cfg?.refresh_token && cfg?.playlist_id) {
+    try {
+      const token = await getJukeboxToken(env, cfg);
+      liveSet = await livePlaylistUriSet(token, cfg.playlist_id);
+    } catch { /* leave liveSet null — just don't annotate */ }
+  }
+
+  // Reconcile: a not-removed row whose URI is no longer on the playlist was
+  // pulled manually in Spotify — mark it removed so moderation stays honest.
+  const drifted = [];
+  const out = rows.map(r => {
+    const onPlaylist = liveSet ? liveSet.has(r.track_uri) : null;
+    if (r.removed === 0 && onPlaylist === false) drifted.push(r.id);
+    return { ...r, onPlaylist, removed: r.removed === 0 && onPlaylist === false ? 1 : r.removed };
+  });
+  if (drifted.length) {
+    await env.DB.prepare(
+      `UPDATE spotify_submissions SET removed = 1, removed_by = 'spotify' WHERE id IN (${drifted.map(() => '?').join(',')})`
+    ).bind(...drifted).run();
+  }
+
+  return jsonResponse({ submissions: out });
 }
 
 // ─── member: search / playlist / add / remove ───────────────────────────────
@@ -481,12 +533,11 @@ export async function removeTrack(request, env, user) {
 
   try {
     const token = await getJukeboxToken(env, cfg);
-    const res = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tracks: [{ uri: row.track_uri }] }),
-    });
-    if (!res.ok) return errorResponse(`Spotify rejected the removal: ${await spotifyErr(res)}`, 502);
+    const r = await removeUriFromPlaylist(token, cfg.playlist_id, row.track_uri);
+    // 404 = already gone from Spotify (e.g. removed manually there) — treat as success
+    if (!r.ok && r.status !== 404) {
+      return errorResponse(`Spotify rejected the removal (${r.status}).`, 502);
+    }
   } catch (e) {
     return errorResponse(e.message || 'Removal failed', 500);
   }

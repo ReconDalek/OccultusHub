@@ -82,20 +82,6 @@ export default function SpotifyPlayer() {
     } finally { setBusy(false) }
   }
 
-  async function removeTrack(id) {
-    setBusy(true); setErr(null)
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/spotify/track`, {
-        method: 'DELETE',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId: id }),
-      })
-      const d = await res.json()
-      if (!res.ok) { setErr(d.error || 'Could not remove that track'); return }
-      setData(d)
-    } finally { setBusy(false) }
-  }
-
   async function doShuffle() {
     setShuffling(true); setErr(null)
     try {
@@ -213,28 +199,6 @@ export default function SpotifyPlayer() {
               </div>
             )}
           </div>
-
-          {/* recently added by the circle */}
-          {data?.submissions?.length > 0 && (
-            <div style={{ padding: '0 12px 12px', maxHeight: 176, overflowY: 'auto' }}>
-              <p style={{ color: 'var(--text-faint)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, margin: '4px 0 6px' }}>
-                Added by the circle
-              </p>
-              {data.submissions.map(s => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                  {s.album_art && <img src={s.album_art} alt="" width={24} height={24} style={{ borderRadius: 3, flexShrink: 0 }} />}
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ color: '#d4d4d8', fontSize: 11, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.track_name}</span>
-                    <span style={{ color: 'var(--text-faint)', fontSize: 10 }}>{s.artist} · {s.added_by_username}</span>
-                  </span>
-                  {s.mine && (
-                    <button onClick={() => removeTrack(s.id)} disabled={busy} title="Remove"
-                      style={{ ...navBtn, fontSize: 12 }}>×</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       ) : (
         <button
