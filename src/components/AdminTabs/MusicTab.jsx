@@ -28,6 +28,8 @@ export default function MusicTab() {
   const [limit, setLimit]     = useState(5)
   const [saving, setSaving]   = useState(false)
   const [msg, setMsg]         = useState(null)
+  const [diag, setDiag]       = useState(null)
+  const [diagBusy, setDiagBusy] = useState(false)
 
   const load = useCallback(() => {
     fetch(`${API_BASE_URL}/api/admin/spotify/config`, { headers: authHeaders() })
@@ -64,6 +66,16 @@ export default function MusicTab() {
       if (!res.ok) { setMsg({ ok: false, text: d.error || 'Save failed' }); return }
       setCfg(d)
     } finally { setSaving(false) }
+  }
+
+  async function runDiagnostic() {
+    setDiagBusy(true); setDiag(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/spotify/diagnose`, { headers: authHeaders() })
+      setDiag(await res.json())
+    } catch {
+      setDiag({ problem: 'Could not reach the server' })
+    } finally { setDiagBusy(false) }
   }
 
   async function authorizeJukebox() {
@@ -166,9 +178,29 @@ export default function MusicTab() {
         <p style={{ color: cfg.jukeboxLinked ? '#4ade80' : 'var(--text-secondary)', fontSize: 13, margin: '0 0 10px' }}>
           {cfg.jukeboxLinked ? `✓ Linked${cfg.jukeboxName ? ` as ${cfg.jukeboxName}` : ''}` : 'Not linked'}
         </p>
-        <button style={btn} disabled={!cfg.clientId || !cfg.secretSet} onClick={authorizeJukebox}>
-          {cfg.jukeboxLinked ? 'Re-authorize' : 'Authorize jukebox account'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button style={btn} disabled={!cfg.clientId || !cfg.secretSet} onClick={authorizeJukebox}>
+            {cfg.jukeboxLinked ? 'Re-authorize' : 'Authorize jukebox account'}
+          </button>
+          <button style={{ ...btn, background: 'rgba(255,255,255,0.08)' }} disabled={diagBusy || !cfg.jukeboxLinked} onClick={runDiagnostic}>
+            {diagBusy ? 'Checking…' : 'Run diagnostic'}
+          </button>
+        </div>
+
+        {diag && (
+          <div style={{
+            marginTop: 12, padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6,
+            background: diag.canModify ? 'rgba(34,197,94,0.08)' : 'rgba(248,113,113,0.08)',
+            border: `1px solid ${diag.canModify ? 'rgba(34,197,94,0.3)' : 'rgba(248,113,113,0.3)'}`,
+            color: '#d4d4d8',
+          }}>
+            {diag.jukebox && <div>Authorized account: <b>{diag.jukebox.name || diag.jukebox.id}</b> ({diag.jukebox.product || 'unknown plan'})</div>}
+            {diag.playlist && <div>Playlist: <b>{diag.playlist.name}</b> — owned by <b>{diag.playlist.ownerName || diag.playlist.ownerId}</b>{diag.playlist.public ? '' : ' · not public'}{diag.playlist.collaborative ? ' · collaborative' : ''}</div>}
+            <div style={{ marginTop: 6, color: diag.canModify ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+              {diag.canModify ? '✓ The jukebox can add to this playlist.' : (diag.problem || 'Cannot modify this playlist.')}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Moderation */}

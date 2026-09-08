@@ -306,6 +306,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/spotify/submissions' && method === 'GET') {
       return spotifyController.getAdminSubmissions(request, env);
     }
+    if (pathname === '/api/admin/spotify/diagnose' && method === 'GET') {
+      return spotifyController.diagnose(request, env);
+    }
     if (pathname === '/api/admin/spotify/track' && method === 'DELETE') {
       return spotifyController.removeTrack(request, env, user);
     }

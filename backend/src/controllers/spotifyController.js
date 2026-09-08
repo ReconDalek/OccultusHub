@@ -208,6 +208,61 @@ function parsePlaylistId(input) {
   return s.replace(/[^A-Za-z0-9]/g, '') || null;
 }
 
+// GET /api/admin/spotify/diagnose — confirms the jukebox account can actually
+// write to the configured playlist (the #1 cause of a 403 on add is that the
+// playlist isn't owned by the account that was authorized).
+export async function diagnose(request, env) {
+  const cfg = await getConfig(env);
+  const out = {
+    secretSet: !!env.SPOTIFY_CLIENT_SECRET,
+    clientIdSet: !!cfg?.client_id,
+    playlistId: cfg?.playlist_id || null,
+    jukeboxLinked: !!cfg?.refresh_token,
+    jukebox: null,
+    playlist: null,
+    canModify: false,
+    problem: null,
+  };
+  try {
+    const token = await getJukeboxToken(env, cfg);
+    const meRes = await fetch(`${SPOTIFY_API}/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      out.jukebox = { id: me.id, name: me.display_name, product: me.product };
+    } else {
+      out.problem = `Could not read the jukebox account (${meRes.status}) — re-authorize.`;
+      return jsonResponse(out);
+    }
+    const plRes = await fetch(
+      `${SPOTIFY_API}/playlists/${cfg.playlist_id}?fields=name,public,collaborative,owner(id,display_name)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (plRes.ok) {
+      const p = await plRes.json();
+      out.playlist = { name: p.name, public: p.public, collaborative: p.collaborative, ownerId: p.owner?.id, ownerName: p.owner?.display_name };
+      out.canModify = p.owner?.id === out.jukebox.id || p.collaborative === true;
+      if (!out.canModify) {
+        out.problem = `The playlist is owned by "${p.owner?.display_name || p.owner?.id}", but you authorized "${out.jukebox.name || out.jukebox.id}". Re-authorize while logged into the account that owns the playlist, or use a playlist that account owns.`;
+      }
+    } else {
+      out.problem = `Could not read the playlist (${plRes.status}) — check the playlist ID; it must be public.`;
+    }
+  } catch (e) {
+    out.problem = e.message || 'Diagnostic failed';
+  }
+  return jsonResponse(out);
+}
+
+// Pull { status, message } out of a Spotify error response for surfacing.
+async function spotifyErr(res) {
+  try {
+    const j = await res.json();
+    return j?.error?.message || `HTTP ${res.status}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
+
 // GET /api/admin/spotify/submissions
 export async function getAdminSubmissions(request, env) {
   const { results } = await env.DB.prepare(
@@ -318,8 +373,17 @@ export async function addTrack(request, env, user) {
       body: JSON.stringify({ uris: [uri] }),
     });
     if (!res.ok) {
-      const txt = await res.text();
-      return errorResponse(`Spotify rejected the add (${res.status})`, 502);
+      const detail = await spotifyErr(res);
+      await writeLog(env, {
+        category: 'api_error', level: 'warn', event: 'spotify_add_rejected',
+        message: `Spotify add rejected (${res.status}): ${detail}`, username: user.username,
+      });
+      return errorResponse(
+        res.status === 403
+          ? `Spotify refused: ${detail}. An admin needs to run the diagnostic in Admin → Music.`
+          : `Spotify rejected the add: ${detail}`,
+        502,
+      );
     }
   } catch (e) {
     return errorResponse(e.message || 'Add failed', 500);
@@ -363,7 +427,7 @@ export async function removeTrack(request, env, user) {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ tracks: [{ uri: row.track_uri }] }),
     });
-    if (!res.ok) return errorResponse(`Spotify rejected the removal (${res.status})`, 502);
+    if (!res.ok) return errorResponse(`Spotify rejected the removal: ${await spotifyErr(res)}`, 502);
   } catch (e) {
     return errorResponse(e.message || 'Removal failed', 500);
   }
