@@ -286,27 +286,38 @@ async function spotifyErr(res) {
   }
 }
 
-// Add one track URI to the playlist. Tries the JSON-body form; if that 403s
-// (some app states enforce the two documented forms inconsistently) retries
-// with the query-string form. Returns { ok, status, detail, form }.
+// Add one track URI to the playlist. Spotify documents this endpoint at both
+// /tracks (historical) and /items (current docs), and accepts the URIs in the
+// JSON body OR as a query param — enforcement has been reported to differ
+// between them. Try each combination, fastest/canonical first, stop on the
+// first success. Returns { ok, status, detail, form }.
 async function addUriToPlaylist(token, playlistId, uri) {
-  const jsonRes = await fetch(`${SPOTIFY_API}/playlists/${playlistId}/tracks`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uris: [uri] }),
-  });
-  if (jsonRes.ok) return { ok: true, status: jsonRes.status, form: 'body' };
-  const jsonDetail = await jsonRes.text();
-
-  if (jsonRes.status !== 403) {
-    return { ok: false, status: jsonRes.status, detail: jsonDetail, form: 'body' };
+  const attempts = [
+    { form: 'tracks+body',  path: 'tracks', body: true },
+    { form: 'tracks+query', path: 'tracks', body: false },
+    { form: 'items+body',   path: 'items',  body: true },
+    { form: 'items+query',  path: 'items',  body: false },
+  ];
+  let last = { ok: false, status: 0, detail: '', form: 'none' };
+  let firstMeaningful = null; // prefer a 403/other over a 404 from the /items path guess
+  for (const a of attempts) {
+    const url = a.body
+      ? `${SPOTIFY_API}/playlists/${playlistId}/${a.path}`
+      : `${SPOTIFY_API}/playlists/${playlistId}/${a.path}?uris=${encodeURIComponent(uri)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: a.body
+        ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+        : { Authorization: `Bearer ${token}` },
+      body: a.body ? JSON.stringify({ uris: [uri] }) : undefined,
+    });
+    if (res.ok) return { ok: true, status: res.status, form: a.form };
+    last = { ok: false, status: res.status, detail: (await res.text()) || last.detail, form: a.form };
+    if (res.status !== 404 && !firstMeaningful) firstMeaningful = last;
+    // A non-permission error (bad id, rate limit) won't be fixed by another form
+    if (res.status !== 403 && res.status !== 404) return last;
   }
-  const qsRes = await fetch(
-    `${SPOTIFY_API}/playlists/${playlistId}/tracks?uris=${encodeURIComponent(uri)}`,
-    { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (qsRes.ok) return { ok: true, status: qsRes.status, form: 'query' };
-  return { ok: false, status: qsRes.status, detail: (await qsRes.text()) || jsonDetail, form: 'query' };
+  return firstMeaningful || last;
 }
 
 // GET /api/admin/spotify/submissions
