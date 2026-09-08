@@ -247,21 +247,6 @@ export async function diagnose(request, env) {
       `${SPOTIFY_API}/playlists/${cfg.playlist_id}?fields=name,public,collaborative,owner(id,display_name)`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    // Raw shape of the plain playlist GET — this is what getPlaylistItems reads.
-    try {
-      const rawRes = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, { headers: { Authorization: `Bearer ${token}` } });
-      const rawTxt = await rawRes.text();
-      let rj = {}; try { rj = JSON.parse(rawTxt); } catch { /* */ }
-      out.rawRead = {
-        status: rawRes.status,
-        topKeys: Object.keys(rj),
-        itemsType: Array.isArray(rj.items) ? `array[${rj.items.length}]` : typeof rj.items,
-        itemsInner: (rj.items && !Array.isArray(rj.items)) ? Object.keys(rj.items) : null,
-        tracksType: Array.isArray(rj.tracks?.items) ? `array[${rj.tracks.items.length}]` : typeof rj.tracks,
-        firstItem: JSON.stringify((Array.isArray(rj.items) ? rj.items[0] : rj.items?.items?.[0] ?? rj.tracks?.items?.[0]) || null).slice(0, 300),
-      };
-    } catch (e) { out.rawRead = { error: e.message }; }
-
     if (plRes.ok) {
       const p = await plRes.json();
       out.playlist = { name: p.name, public: p.public, collaborative: p.collaborative, ownerId: p.owner?.id, ownerName: p.owner?.display_name };
@@ -300,15 +285,6 @@ export async function diagnose(request, env) {
   return jsonResponse(out);
 }
 
-// Pull { status, message } out of a Spotify error response for surfacing.
-async function spotifyErr(res) {
-  try {
-    const j = await res.json();
-    return j?.error?.message || `HTTP ${res.status}`;
-  } catch {
-    return `HTTP ${res.status}`;
-  }
-}
 
 // Add one track URI to the playlist. Spotify documents this endpoint at both
 // /tracks (historical) and /items (current docs), and accepts the URIs in the
@@ -350,21 +326,6 @@ async function addUriToPlaylist(token, playlistId, uri) {
   return firstMeaningful || last;
 }
 
-// Remove one URI from the playlist — same /tracks vs /items tolerance.
-async function removeUriFromPlaylist(token, playlistId, uri) {
-  let last = { ok: false, status: 0, detail: '' };
-  for (const path of ['tracks', 'items']) {
-    const res = await fetch(`${SPOTIFY_API}/playlists/${playlistId}/${path}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tracks: [{ uri }] }),
-    });
-    if (res.ok) return { ok: true, status: res.status };
-    last = { ok: false, status: res.status, detail: (await res.text()) || last.detail };
-    if (res.status !== 403 && res.status !== 404) return last;
-  }
-  return last;
-}
 
 // GET /api/admin/spotify/playlist — every track actually on the playlist,
 // annotated with who added it via the hub (if anyone).
@@ -381,27 +342,6 @@ export async function getAdminPlaylist(request, env) {
     return jsonResponse({ tracks: [], error: e.message });
   }
 
-  // If we still got nothing, capture the shape of the response so it's diagnosable.
-  let debug;
-  if (tracks.length === 0) {
-    try {
-      const token = await getJukeboxToken(env, cfg);
-      const r = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, { headers: { Authorization: `Bearer ${token}` } });
-      const j = await r.json();
-      const arr = j?.items?.items || j?.tracks?.items || (Array.isArray(j?.items) ? j.items : []);
-      debug = {
-        status: r.status,
-        count: Array.isArray(arr) ? arr.length : 'n/a',
-        entryKeys: arr?.[0] ? Object.keys(arr[0]) : null,
-        trackIsNull: arr?.[0] ? (arr[0].track === null) : null,
-        trackKeys: arr?.[0]?.track ? Object.keys(arr[0].track) : null,
-        trackUri: arr?.[0]?.track?.uri ?? null,
-        trackType: arr?.[0]?.track?.type ?? null,
-        firstEntry: JSON.stringify(arr?.[0] || null).slice(0, 400),
-      };
-    } catch (e) { debug = { probeError: e.message }; }
-  }
-
   const { results } = await env.DB.prepare(
     'SELECT track_uri, added_by_username, created_at FROM spotify_submissions'
   ).all();
@@ -409,13 +349,23 @@ export async function getAdminPlaylist(request, env) {
   for (const r of (results || [])) byUri[r.track_uri] = r;
 
   return jsonResponse({
-    debug,
     tracks: tracks.map(t => ({
       ...t,
       addedBy: byUri[t.uri]?.added_by_username || null,
       addedAt: byUri[t.uri]?.created_at || null,
     })),
   });
+}
+
+// Remove a URI by rewriting the playlist without it — the DELETE sub-resource
+// is as inconsistently gated as everything else on this account, but the PUT
+// replace (same path shuffle uses) works.
+async function removeByRewrite(env, cfg, uri) {
+  const items = await getPlaylistItems(env, cfg);
+  const kept = items.map(t => t.uri).filter(u => u !== uri);
+  if (kept.length === items.length) return; // wasn't there — nothing to do
+  const token = await getJukeboxToken(env, cfg);
+  await replacePlaylistUris(token, cfg.playlist_id, kept);
 }
 
 // DELETE /api/admin/spotify/playlist-track  { uri }
@@ -426,13 +376,9 @@ export async function removePlaylistTrackAdmin(request, env, user) {
   if (!uri || !/^spotify:(track|episode):[A-Za-z0-9]+$/.test(uri)) return errorResponse('Bad URI', 400);
 
   try {
-    const token = await getJukeboxToken(env, cfg);
-    const r = await removeUriFromPlaylist(token, cfg.playlist_id, uri);
-    if (!r.ok && r.status !== 404) {
-      return errorResponse(`Spotify rejected the removal (${r.status}).`, 502);
-    }
+    await removeByRewrite(env, cfg, uri);
   } catch (e) {
-    return errorResponse(e.message || 'Removal failed', 500);
+    return errorResponse(e.message || 'Removal failed', 502);
   }
 
   await env.DB.prepare("UPDATE spotify_submissions SET removed = 1, removed_by = ? WHERE track_uri = ? AND removed = 0")
@@ -589,14 +535,9 @@ export async function removeTrack(request, env, user) {
   }
 
   try {
-    const token = await getJukeboxToken(env, cfg);
-    const r = await removeUriFromPlaylist(token, cfg.playlist_id, row.track_uri);
-    // 404 = already gone from Spotify (e.g. removed manually there) — treat as success
-    if (!r.ok && r.status !== 404) {
-      return errorResponse(`Spotify rejected the removal (${r.status}).`, 502);
-    }
+    await removeByRewrite(env, cfg, row.track_uri);
   } catch (e) {
-    return errorResponse(e.message || 'Removal failed', 500);
+    return errorResponse(e.message || 'Removal failed', 502);
   }
 
   await env.DB.prepare(
