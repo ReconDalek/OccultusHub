@@ -577,34 +577,65 @@ export async function removeTrack(request, env, user) {
 
 // ─── reading the real playlist ──────────────────────────────────────────────
 
-// Full track list of the configured playlist. Reads with the app
-// (client-credentials) token — works for any public playlist and sidesteps
-// the jukebox token's scope gaps — and tolerates the /tracks vs /items quirk.
-async function getPlaylistItems(env, cfg) {
-  const appTok = await getAppToken(env, cfg);
-  let lastStatus = 0;
-  for (const path of ['tracks', 'items']) {
-    const items = [];
-    let url = `${SPOTIFY_API}/playlists/${cfg.playlist_id}/${path}?limit=100&fields=${encodeURIComponent('items(track(uri,id,name,type,artists(name),album(images))),next')}`;
-    let ok = true;
-    while (url && items.length < 500) {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${appTok}` } });
-      if (!res.ok) { ok = false; lastStatus = res.status; break; }
-      const j = await res.json();
-      for (const it of (j.items || [])) {
-        const t = it.track;
-        if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
-        items.push({
-          uri: t.uri, id: t.id, name: t.name || '(unknown)',
-          artist: (t.artists || []).map(a => a.name).join(', '),
-          albumArt: t.album?.images?.[t.album.images.length - 1]?.url || null,
-        });
-      }
-      url = j.next || null;
-    }
-    if (ok) return items;
+const TRACK_FIELDS = 'items(track(uri,id,name,type,artists(name),album(images))),next';
+
+function mapItems(rawItems, out) {
+  for (const it of (rawItems || [])) {
+    const t = it.track;
+    if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
+    out.push({
+      uri: t.uri, id: t.id, name: t.name || '(unknown)',
+      artist: (t.artists || []).map(a => a.name).join(', '),
+      albumArt: t.album?.images?.[t.album.images.length - 1]?.url || null,
+    });
   }
-  throw new Error(`Could not read the playlist (${lastStatus || 'error'})`);
+}
+
+// Full track list of the configured playlist. The `/playlists/{id}/tracks`
+// sub-resource is inconsistently gated (403 with the jukebox token, 401 with
+// client-credentials), but `GET /playlists/{id}` with a fields filter returns
+// the first 100 items and works reliably with the jukebox token — so read the
+// playlist object first, then follow `tracks.next` (best effort) for the rest.
+async function getPlaylistItems(env, cfg) {
+  const token = await getJukeboxToken(env, cfg);
+  const out = [];
+
+  const first = await fetch(
+    `${SPOTIFY_API}/playlists/${cfg.playlist_id}?fields=${encodeURIComponent('tracks(' + TRACK_FIELDS + ')')}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!first.ok) {
+    // last-ditch: app token on the sub-resource
+    const appTok = await getAppToken(env, cfg);
+    const alt = await fetch(
+      `${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks?limit=100&fields=${encodeURIComponent(TRACK_FIELDS)}`,
+      { headers: { Authorization: `Bearer ${appTok}` } }
+    );
+    if (!alt.ok) throw new Error(`Could not read the playlist (${first.status}/${alt.status})`);
+    const j = await alt.json();
+    mapItems(j.items, out);
+    let next = j.next;
+    while (next && out.length < 500) {
+      const r = await fetch(next, { headers: { Authorization: `Bearer ${appTok}` } });
+      if (!r.ok) break;
+      const jn = await r.json();
+      mapItems(jn.items, out);
+      next = jn.next;
+    }
+    return out;
+  }
+
+  const j = await first.json();
+  mapItems(j.tracks?.items, out);
+  let next = j.tracks?.next;
+  while (next && out.length < 500) {
+    const r = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) break; // partial is better than nothing
+    const jn = await r.json();
+    mapItems(jn.items, out);
+    next = jn.next;
+  }
+  return out;
 }
 
 // PUT replace (first ≤100) then POST-append the rest, tolerating the
