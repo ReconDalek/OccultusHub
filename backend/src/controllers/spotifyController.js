@@ -159,6 +159,9 @@ export async function getStatus(request, env, user) {
     configured,
     playlistId: cfg?.enabled === 1 && configured ? cfg.playlist_id : null,
     addLimitPerDay: cfg?.add_limit_per_day ?? 5,
+    musicLeague: (cfg?.ml_enabled === 1 && cfg?.ml_playlist_id)
+      ? { playlistId: cfg.ml_playlist_id, label: cfg.ml_label || 'Music League' }
+      : null,
   });
 }
 
@@ -177,6 +180,9 @@ export async function getAdminConfig(request, env) {
     jukeboxLinked: !!cfg?.refresh_token,
     jukeboxName: cfg?.jukebox_display_name || null,
     submissionCounts: results?.[0] || { total: 0, active: 0 },
+    mlEnabled: cfg?.ml_enabled === 1,
+    mlPlaylistId: cfg?.ml_playlist_id || '',
+    mlLabel: cfg?.ml_label || '',
   });
 }
 
@@ -192,6 +198,9 @@ export async function updateAdminConfig(request, env) {
     const n = Math.max(1, Math.min(50, parseInt(body.addLimitPerDay) || 5));
     fields.push('add_limit_per_day = ?'); binds.push(n);
   }
+  if (body.mlEnabled !== undefined)    { fields.push('ml_enabled = ?');     binds.push(body.mlEnabled ? 1 : 0); }
+  if (body.mlPlaylistId !== undefined) { fields.push('ml_playlist_id = ?'); binds.push(parsePlaylistId(body.mlPlaylistId)); }
+  if (body.mlLabel !== undefined)      { fields.push('ml_label = ?');       binds.push(String(body.mlLabel).trim().slice(0, 80) || null); }
   if (!fields.length) return errorResponse('Nothing to update', 400);
   fields.push('updated_at = CURRENT_TIMESTAMP');
   await env.DB.prepare(`UPDATE spotify_config SET ${fields.join(', ')} WHERE id = 1`).bind(...binds).run();

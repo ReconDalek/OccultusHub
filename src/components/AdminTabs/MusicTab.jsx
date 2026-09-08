@@ -26,6 +26,8 @@ export default function MusicTab() {
   const [clientId, setClientId]   = useState('')
   const [playlistId, setPlaylistId] = useState('')
   const [limit, setLimit]     = useState(5)
+  const [mlPlaylist, setMlPlaylist] = useState('')
+  const [mlLabel, setMlLabel]       = useState('')
   const [saving, setSaving]   = useState(false)
   const [msg, setMsg]         = useState(null)
   const [diag, setDiag]       = useState(null)
@@ -39,6 +41,8 @@ export default function MusicTab() {
         setClientId(d.clientId || '')
         setPlaylistId(d.playlistId || '')
         setLimit(d.addLimitPerDay ?? 5)
+        setMlPlaylist(d.mlPlaylistId || '')
+        setMlLabel(d.mlLabel || '')
       })
       .catch(() => {})
     fetch(`${API_BASE_URL}/api/admin/spotify/submissions`, { headers: authHeaders() })
@@ -135,9 +139,45 @@ export default function MusicTab() {
         </button>
       </div>
 
+      {/* Music League — secondary listen-only player */}
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <p style={{ color: '#f4f4f5', marginTop: 0, marginBottom: 2, fontWeight: 600 }}>Music League player</p>
+            <p style={{ color: 'var(--text-faint)', fontSize: 12, marginTop: 0 }}>
+              A second tab in the overlay — listen-only, no adding. Paste the round's public playlist and swap it each round.
+              Independent of the jukebox setup below.
+            </p>
+          </div>
+          <button
+            onClick={() => save({ mlEnabled: !cfg.mlEnabled })}
+            disabled={saving || (!cfg.mlEnabled && !cfg.mlPlaylistId)}
+            style={{ ...btn, flexShrink: 0, background: cfg.mlEnabled ? 'rgba(34,197,94,0.25)' : 'rgba(255,255,255,0.08)', opacity: (!cfg.mlEnabled && !cfg.mlPlaylistId) ? 0.5 : 1 }}
+          >
+            {cfg.mlEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+        <div style={{ marginTop: 12, marginBottom: 10 }}>
+          <label style={label}>Round label</label>
+          <input style={input} value={mlLabel} onChange={e => setMlLabel(e.target.value)} placeholder="e.g. Round 12 — Movie Themes" />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={label}>Playlist (URL, id, or spotify: URI)</label>
+          <input style={input} value={mlPlaylist} onChange={e => setMlPlaylist(e.target.value)} placeholder="the round's public Spotify playlist" />
+        </div>
+        <button style={btn} disabled={saving} onClick={() => save({ mlPlaylistId: mlPlaylist, mlLabel })}>
+          {saving ? 'Saving…' : 'Save round'}
+        </button>
+        {cfg.mlPlaylistId && (
+          <p style={{ color: 'var(--text-faint)', fontSize: 11, marginTop: 8 }}>
+            Current: <code style={{ color: '#9f67ff' }}>{cfg.mlPlaylistId}</code>{cfg.mlLabel ? ` — ${cfg.mlLabel}` : ''}
+          </p>
+        )}
+      </div>
+
       {/* Credentials */}
       <div style={card}>
-        <p style={{ color: '#f4f4f5', marginTop: 0, marginBottom: 14, fontWeight: 600 }}>1 · Spotify app</p>
+        <p style={{ color: '#f4f4f5', marginTop: 0, marginBottom: 14, fontWeight: 600 }}>1 · Spotify app (for Occult Radio)</p>
 
         <div style={{ marginBottom: 12 }}>
           <label style={label}>Client ID</label>
