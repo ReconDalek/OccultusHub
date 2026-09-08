@@ -577,8 +577,6 @@ export async function removeTrack(request, env, user) {
 
 // ─── reading the real playlist ──────────────────────────────────────────────
 
-const TRACK_FIELDS = 'items(track(uri,id,name,type,artists(name),album(images))),next';
-
 function mapItems(rawItems, out) {
   for (const it of (rawItems || [])) {
     const t = it.track;
@@ -593,38 +591,21 @@ function mapItems(rawItems, out) {
 
 // Full track list of the configured playlist. The `/playlists/{id}/tracks`
 // sub-resource is inconsistently gated (403 with the jukebox token, 401 with
-// client-credentials), but `GET /playlists/{id}` with a fields filter returns
-// the first 100 items and works reliably with the jukebox token — so read the
-// playlist object first, then follow `tracks.next` (best effort) for the rest.
+// client-credentials); `GET /playlists/{id}` (no fields filter) reliably
+// returns the first 100 items with the jukebox token. Follow `tracks.next`
+// best-effort for anything past 100.
 async function getPlaylistItems(env, cfg) {
   const token = await getJukeboxToken(env, cfg);
   const out = [];
 
   const first = await fetch(
-    `${SPOTIFY_API}/playlists/${cfg.playlist_id}?fields=${encodeURIComponent('tracks(' + TRACK_FIELDS + ')')}`,
+    `${SPOTIFY_API}/playlists/${cfg.playlist_id}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!first.ok) {
-    // last-ditch: app token on the sub-resource
-    const appTok = await getAppToken(env, cfg);
-    const alt = await fetch(
-      `${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks?limit=100&fields=${encodeURIComponent(TRACK_FIELDS)}`,
-      { headers: { Authorization: `Bearer ${appTok}` } }
-    );
-    if (!alt.ok) throw new Error(`Could not read the playlist (${first.status}/${alt.status})`);
-    const j = await alt.json();
-    mapItems(j.items, out);
-    let next = j.next;
-    while (next && out.length < 500) {
-      const r = await fetch(next, { headers: { Authorization: `Bearer ${appTok}` } });
-      if (!r.ok) break;
-      const jn = await r.json();
-      mapItems(jn.items, out);
-      next = jn.next;
-    }
-    return out;
+    const body = await first.text();
+    throw new Error(`Could not read the playlist (${first.status}: ${body.slice(0, 150)})`);
   }
-
   const j = await first.json();
   mapItems(j.tracks?.items, out);
   let next = j.tracks?.next;
