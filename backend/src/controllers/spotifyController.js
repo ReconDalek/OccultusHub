@@ -631,7 +631,9 @@ function resolveNext(j) {
 
 function mapItems(rawItems, out) {
   for (const it of (Array.isArray(rawItems) ? rawItems : [])) {
-    const t = it?.track || it; // some responses wrap in { added_at, track }, others are flat
+    // The track object is under `item` (newer /items shape), `track` (classic),
+    // or the entry is the track itself.
+    const t = it?.item || it?.track || it;
     const uri = t?.uri || (t?.id ? `spotify:track:${t.id}` : null);
     if (!uri) continue;
     out.push({
