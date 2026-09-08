@@ -358,11 +358,36 @@ export async function getAdminPlaylist(request, env) {
   if (!cfg?.client_id || !env.SPOTIFY_CLIENT_SECRET || !cfg?.playlist_id) {
     return jsonResponse({ tracks: [], error: 'Not configured' });
   }
-  let tracks;
+
+  // Inline probe so we can see exactly what Spotify returns.
+  const debug = {};
+  let tracks = [];
   try {
-    tracks = await getPlaylistItems(env, cfg);
+    const token = await getJukeboxToken(env, cfg);
+    debug.tokenOk = true;
+    const res = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}?market=from_token`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    debug.status = res.status;
+    const j = await res.json();
+    debug.total = j?.tracks?.total ?? null;
+    debug.itemCount = j?.tracks?.items?.length ?? null;
+    debug.firstItem = j?.tracks?.items?.[0] ? JSON.stringify(j.tracks.items[0]).slice(0, 260) : null;
+    debug.errBody = res.ok ? null : JSON.stringify(j).slice(0, 200);
+
+    const out = [];
+    mapItems(j?.tracks?.items, out);
+    let next = j?.tracks?.next;
+    while (next && out.length < 500) {
+      const r = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) { debug.nextStatus = r.status; break; }
+      const jn = await r.json();
+      mapItems(jn.items, out);
+      next = jn.next;
+    }
+    tracks = out;
   } catch (e) {
-    return jsonResponse({ tracks: [], error: e.message });
+    return jsonResponse({ tracks: [], error: e.message, debug });
   }
 
   const { results } = await env.DB.prepare(
@@ -372,6 +397,7 @@ export async function getAdminPlaylist(request, env) {
   for (const r of (results || [])) byUri[r.track_uri] = r;
 
   return jsonResponse({
+    debug,
     tracks: tracks.map(t => ({
       ...t,
       addedBy: byUri[t.uri]?.added_by_username || null,
