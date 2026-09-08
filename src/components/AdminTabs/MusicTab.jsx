@@ -195,6 +195,8 @@ export default function MusicTab() {
             color: '#d4d4d8',
           }}>
             {diag.jukebox && <div>Authorized account: <b>{diag.jukebox.name || diag.jukebox.id}</b> ({diag.jukebox.product || 'unknown plan'})</div>}
+            {diag.grantedScope !== undefined && <div>Granted scopes: <code>{diag.grantedScope || '(none)'}</code></div>}
+            {diag.writeTest && <div>Write test: <b style={{ color: diag.writeTest.ok ? '#4ade80' : '#f87171' }}>{diag.writeTest.ok ? 'passed' : `HTTP ${diag.writeTest.status}`}</b></div>}
             {diag.playlist && <div>Playlist: <b>{diag.playlist.name}</b> — owned by <b>{diag.playlist.ownerName || diag.playlist.ownerId}</b>{diag.playlist.public ? '' : ' · not public'}{diag.playlist.collaborative ? ' · collaborative' : ''}</div>}
             <div style={{ marginTop: 6, color: diag.canModify ? '#4ade80' : '#f87171', fontWeight: 600 }}>
               {diag.canModify ? '✓ The jukebox can add to this playlist.' : (diag.problem || 'Cannot modify this playlist.')}

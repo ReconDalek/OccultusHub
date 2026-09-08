@@ -9,7 +9,7 @@ const SCOPES = 'playlist-modify-public playlist-modify-private';
 
 // In-isolate token caches — cheap best-effort, safe to miss (we just re-fetch).
 let appToken = { value: null, expiresAt: 0 };
-let jukeboxToken = { value: null, expiresAt: 0 };
+let jukeboxToken = { value: null, expiresAt: 0, scope: null };
 
 // ─── config ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ async function getJukeboxToken(env, cfg) {
   });
   if (!res.ok) throw new Error('Spotify jukebox token refresh failed');
   const j = await res.json();
-  jukeboxToken = { value: j.access_token, expiresAt: Date.now() + (j.expires_in - 60) * 1000 };
+  jukeboxToken = { value: j.access_token, expiresAt: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || jukeboxToken.scope };
   // Spotify occasionally rotates the refresh token
   if (j.refresh_token && j.refresh_token !== cfg.refresh_token) {
     await env.DB.prepare('UPDATE spotify_config SET refresh_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1')
@@ -229,6 +229,7 @@ export async function diagnose(request, env) {
     if (meRes.ok) {
       const me = await meRes.json();
       out.jukebox = { id: me.id, name: me.display_name, product: me.product };
+      out.grantedScope = jukeboxToken.scope || null;
     } else {
       out.problem = `Could not read the jukebox account (${meRes.status}) — re-authorize.`;
       return jsonResponse(out);
@@ -240,9 +241,25 @@ export async function diagnose(request, env) {
     if (plRes.ok) {
       const p = await plRes.json();
       out.playlist = { name: p.name, public: p.public, collaborative: p.collaborative, ownerId: p.owner?.id, ownerName: p.owner?.display_name };
-      out.canModify = p.owner?.id === out.jukebox.id || p.collaborative === true;
-      if (!out.canModify) {
+      const owns = p.owner?.id === out.jukebox.id || p.collaborative === true;
+      if (!owns) {
         out.problem = `The playlist is owned by "${p.owner?.display_name || p.owner?.id}", but you authorized "${out.jukebox.name || out.jukebox.id}". Re-authorize while logged into the account that owns the playlist, or use a playlist that account owns.`;
+      } else {
+        // Ownership is fine — prove the token actually carries a
+        // playlist-modify-* scope with a no-op rename (same name in, same out).
+        const wr = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: p.name }),
+        });
+        out.writeTest = { status: wr.status, ok: wr.ok };
+        out.canModify = wr.ok;
+        if (!wr.ok) {
+          const detail = await spotifyErr(wr);
+          out.problem = wr.status === 403
+            ? `Ownership is fine, but the stored token can't write to the playlist (403: ${detail}). Click "Re-authorize" — the consent screen must grant "Add and remove items from your playlists".`
+            : `Write test failed (${wr.status}: ${detail}).`;
+        }
       }
     } else {
       out.problem = `Could not read the playlist (${plRes.status}) — check the playlist ID; it must be public.`;
