@@ -249,28 +249,22 @@ export async function diagnose(request, env) {
         // and report the raw Spotify response, since "add items" 403s
         // independently of "change details" succeeding.
         const TEST_URI = 'spotify:track:4cOdK2wGLETKBW3PvgPWqT'; // Never Gonna Give You Up — available everywhere
-        const addRes = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uris: [TEST_URI] }),
-        });
-        const rawBody = await addRes.text();
-        out.writeTest = {
-          status: addRes.status,
-          ok: addRes.ok,
-          body: rawBody.slice(0, 400),
-          retryAfter: addRes.headers.get('retry-after'),
-        };
-        out.canModify = addRes.ok;
-        if (addRes.ok) {
-          // clean up the test track
+        const r = await addUriToPlaylist(token, cfg.playlist_id, TEST_URI);
+        out.writeTest = { status: r.status, ok: r.ok, form: r.form, body: String(r.detail || '').slice(0, 400) };
+        out.canModify = r.ok;
+        if (r.ok) {
           await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ tracks: [{ uri: TEST_URI }] }),
           }).catch(() => {});
+        } else if (r.status === 403) {
+          out.problem = 'Reads and playlist-detail edits work, but Spotify returns a generic 403 "Forbidden" on adding tracks. '
+            + 'This is a Spotify Development-Mode restriction on write operations, not a config problem. Fix: on the Spotify dashboard, '
+            + 'open the app → Settings → User Management and add the jukebox account (name + the email on that Spotify account), then Re-authorize. '
+            + 'If that still fails, request "Extended Quota Mode" for the app.';
         } else {
-          out.problem = `Adding a track returned ${addRes.status}. Spotify said: ${rawBody.slice(0, 300) || '(empty body)'}`;
+          out.problem = `Adding a track returned ${r.status} (${r.form} form): ${String(r.detail || '').slice(0, 300) || '(empty body)'}`;
         }
       }
     } else {
@@ -290,6 +284,29 @@ async function spotifyErr(res) {
   } catch {
     return `HTTP ${res.status}`;
   }
+}
+
+// Add one track URI to the playlist. Tries the JSON-body form; if that 403s
+// (some app states enforce the two documented forms inconsistently) retries
+// with the query-string form. Returns { ok, status, detail, form }.
+async function addUriToPlaylist(token, playlistId, uri) {
+  const jsonRes = await fetch(`${SPOTIFY_API}/playlists/${playlistId}/tracks`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris: [uri] }),
+  });
+  if (jsonRes.ok) return { ok: true, status: jsonRes.status, form: 'body' };
+  const jsonDetail = await jsonRes.text();
+
+  if (jsonRes.status !== 403) {
+    return { ok: false, status: jsonRes.status, detail: jsonDetail, form: 'body' };
+  }
+  const qsRes = await fetch(
+    `${SPOTIFY_API}/playlists/${playlistId}/tracks?uris=${encodeURIComponent(uri)}`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (qsRes.ok) return { ok: true, status: qsRes.status, form: 'query' };
+  return { ok: false, status: qsRes.status, detail: (await qsRes.text()) || jsonDetail, form: 'query' };
 }
 
 // GET /api/admin/spotify/submissions
@@ -396,21 +413,17 @@ export async function addTrack(request, env, user) {
 
   try {
     const token = await getJukeboxToken(env, cfg);
-    const res = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}/tracks`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris: [uri] }),
-    });
-    if (!res.ok) {
-      const detail = await spotifyErr(res);
+    const r = await addUriToPlaylist(token, cfg.playlist_id, uri);
+    if (!r.ok) {
       await writeLog(env, {
         category: 'api_error', level: 'warn', event: 'spotify_add_rejected',
-        message: `Spotify add rejected (${res.status}): ${detail}`, username: user.username,
+        message: `Spotify add rejected (${r.status}, ${r.form} form): ${String(r.detail || '').slice(0, 200)}`,
+        username: user.username,
       });
       return errorResponse(
-        res.status === 403
-          ? `Spotify refused: ${detail}. An admin needs to run the diagnostic in Admin → Music.`
-          : `Spotify rejected the add: ${detail}`,
+        r.status === 403
+          ? `Spotify won't let the jukebox add tracks (403). This is a Spotify app restriction — an admin needs to check Admin → Music → Run diagnostic.`
+          : `Spotify rejected the add (${r.status}).`,
         502,
       );
     }
