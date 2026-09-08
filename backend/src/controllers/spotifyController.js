@@ -247,6 +247,21 @@ export async function diagnose(request, env) {
       `${SPOTIFY_API}/playlists/${cfg.playlist_id}?fields=name,public,collaborative,owner(id,display_name)`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
+    // Raw shape of the plain playlist GET — this is what getPlaylistItems reads.
+    try {
+      const rawRes = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const rawTxt = await rawRes.text();
+      let rj = {}; try { rj = JSON.parse(rawTxt); } catch { /* */ }
+      out.rawRead = {
+        status: rawRes.status,
+        topKeys: Object.keys(rj),
+        itemsType: Array.isArray(rj.items) ? `array[${rj.items.length}]` : typeof rj.items,
+        itemsInner: (rj.items && !Array.isArray(rj.items)) ? Object.keys(rj.items) : null,
+        tracksType: Array.isArray(rj.tracks?.items) ? `array[${rj.tracks.items.length}]` : typeof rj.tracks,
+        firstItem: JSON.stringify((Array.isArray(rj.items) ? rj.items[0] : rj.items?.items?.[0] ?? rj.tracks?.items?.[0]) || null).slice(0, 300),
+      };
+    } catch (e) { out.rawRead = { error: e.message }; }
+
     if (plRes.ok) {
       const p = await plRes.json();
       out.playlist = { name: p.name, public: p.public, collaborative: p.collaborative, ownerId: p.owner?.id, ownerName: p.owner?.display_name };

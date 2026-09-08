@@ -252,6 +252,11 @@ export default function MusicTab() {
               </div>
             )}
             {diag.playlist && <div>Playlist: <b>{diag.playlist.name}</b> — owned by <b>{diag.playlist.ownerName || diag.playlist.ownerId}</b>{diag.playlist.public ? '' : ' · not public'}{diag.playlist.collaborative ? ' · collaborative' : ''}</div>}
+            {diag.rawRead && (
+              <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0', fontSize: 10, color: 'var(--text-faint)' }}>
+                {JSON.stringify(diag.rawRead, null, 1)}
+              </pre>
+            )}
             <div style={{ marginTop: 6, color: diag.canModify ? '#4ade80' : '#f87171', fontWeight: 600 }}>
               {diag.canModify ? '✓ The jukebox can add to this playlist.' : (diag.problem || 'Cannot modify this playlist.')}
             </div>
