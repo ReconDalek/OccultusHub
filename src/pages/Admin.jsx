@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import UsersTab from '../components/AdminTabs/UsersTab'
+import MusicTab from '../components/AdminTabs/MusicTab'
 import CacheTab from '../components/AdminTabs/CacheTab'
 import LeaderboardsTab  from '../components/AdminTabs/LeaderboardsTab'
 import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
@@ -18,11 +19,18 @@ export default function Admin() {
     { id: 'achievements', label: 'Achievements' },
     { id: 'cache', label: 'Cache' },
     { id: 'events',      label: 'Themes' },
+    { id: 'music',       label: 'Music' },
     { id: 'logs',        label: 'Logs' },
     { id: 'leaderboards', label: 'Leaderboards' },
     { id: 'cards',       label: 'Cards' },
     { id: 'webhooks',    label: 'Webhooks' },
   ]
+
+  // Deep-link support (e.g. the Spotify OAuth callback returns to ?tab=music)
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t && tabs.some((x) => x.id === t)) setActiveTab(t)
+  }, [])
 
   return (
     <div className="min-h-screen" style={{ color: '#f4f4f5' }}>
@@ -87,6 +95,7 @@ export default function Admin() {
           {activeTab === 'cache' && <CacheTab />}
           {activeTab === 'leaderboards' && <LeaderboardsTab />}
           {activeTab === 'events'      && <SeasonalEventsTab />}
+          {activeTab === 'music'    && <MusicTab />}
           {activeTab === 'cards'    && <AdminCardsTab />}
           {activeTab === 'logs'     && <LogsTab />}
           {activeTab === 'webhooks' && <WebhooksTab />}

@@ -37,6 +37,7 @@ import * as bountyController from './controllers/bountyController.js';
 import * as leaderboardController from './controllers/leaderboardController.js';
 import * as memberProfileController from './controllers/memberProfileController.js';
 import * as progressionController from './controllers/progressionController.js';
+import * as spotifyController from './controllers/spotifyController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -88,6 +89,11 @@ export async function handleRequest(request, env, ctx) {
 
   if (pathname === '/api/faction-schedules' && method === 'GET') {
     return eventsController.getFactionSchedules(request, env);
+  }
+
+  // Spotify jukebox — one-time OAuth link (Spotify redirects the browser here)
+  if (pathname === '/api/spotify/callback' && method === 'GET') {
+    return spotifyController.handleCallback(request, env);
   }
 
   // Protected endpoints (auth required)
@@ -286,6 +292,23 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/personal-stats/snapshot' && method === 'POST') {
       return activityController.triggerPersonalStatsSnapshotAdmin(request, env);
     }
+
+    // Spotify jukebox config + moderation
+    if (pathname === '/api/admin/spotify/config' && method === 'GET') {
+      return spotifyController.getAdminConfig(request, env);
+    }
+    if (pathname === '/api/admin/spotify/config' && method === 'PUT') {
+      return spotifyController.updateAdminConfig(request, env);
+    }
+    if (pathname === '/api/admin/spotify/auth-url' && method === 'GET') {
+      return spotifyController.getAuthUrl(request, env, user);
+    }
+    if (pathname === '/api/admin/spotify/submissions' && method === 'GET') {
+      return spotifyController.getAdminSubmissions(request, env);
+    }
+    if (pathname === '/api/admin/spotify/track' && method === 'DELETE') {
+      return spotifyController.removeTrack(request, env, user);
+    }
   }
 
   // Activity endpoints (leadership)
@@ -404,6 +427,16 @@ export async function handleRequest(request, env, ctx) {
     if (method === 'GET') return forumsController.getPost(request, env, user, postId);
     if (method === 'PUT') return forumsController.updatePost(request, env, user, postId);
     if (method === 'DELETE') return forumsController.deletePost(request, env, user, postId);
+  }
+
+  // Spotify jukebox — any logged-in user
+  if (pathname.startsWith('/api/spotify/')) {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (pathname === '/api/spotify/status'   && method === 'GET')    return spotifyController.getStatus(request, env, user);
+    if (pathname === '/api/spotify/search'   && method === 'GET')    return spotifyController.search(request, env, user);
+    if (pathname === '/api/spotify/playlist' && method === 'GET')    return spotifyController.getPlaylist(request, env, user);
+    if (pathname === '/api/spotify/add'      && method === 'POST')   return spotifyController.addTrack(request, env, user);
+    if (pathname === '/api/spotify/track'    && method === 'DELETE') return spotifyController.removeTrack(request, env, user);
   }
 
   // Fishing endpoints

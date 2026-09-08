@@ -16,6 +16,7 @@ import FishingEasterEgg from './components/FishingEasterEgg'
 import RuneEasterEgg    from './components/RuneEasterEgg'
 import WatchingEye      from './components/WatchingEye'
 import SeasonalEvents  from './components/SeasonalEvents'
+import SpotifyPlayer   from './components/SpotifyPlayer/SpotifyPlayer'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -122,6 +123,7 @@ function Layout({ children }) {
       {!isGameRoute && <FishingEasterEgg />}
       {!isGameRoute && <RuneEasterEgg />}
       {!isGameRoute && <WatchingEye />}
+      {!isGameRoute && <SpotifyPlayer />}
       <SeasonalEvents />
     </>
   )
