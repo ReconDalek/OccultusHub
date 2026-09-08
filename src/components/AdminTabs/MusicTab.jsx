@@ -35,13 +35,11 @@ export default function MusicTab() {
   const [tracksErr, setTracksErr] = useState(null)
   const [tracksLoading, setTracksLoading] = useState(false)
 
-  const [tracksDebug, setTracksDebug] = useState(null)
-
   const loadTracks = useCallback(() => {
     setTracksLoading(true)
     fetch(`${API_BASE_URL}/api/admin/spotify/playlist`, { headers: authHeaders() })
       .then(r => r.json())
-      .then(d => { setSubs(d.tracks || []); setTracksErr(d.error || null); setTracksDebug(d.debug || null) })
+      .then(d => { setSubs(d.tracks || []); setTracksErr(d.error || null) })
       .catch(() => setTracksErr('Could not load the playlist'))
       .finally(() => setTracksLoading(false))
   }, [])
@@ -273,11 +271,6 @@ export default function MusicTab() {
         </div>
         {tracksErr && <p style={{ color: '#f87171', fontSize: 12, margin: '0 0 8px' }}>{tracksErr}</p>}
         {!tracksErr && subs.length === 0 && <p style={{ color: 'var(--text-faint)', fontSize: 13, margin: 0 }}>Playlist is empty.</p>}
-        {subs.length === 0 && tracksDebug && (
-          <pre style={{ color: 'var(--text-faint)', fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '8px 0 0' }}>
-            {JSON.stringify(tracksDebug, null, 1)}
-          </pre>
-        )}
         {subs.map(s => (
           <div key={s.uri} style={{
             display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',

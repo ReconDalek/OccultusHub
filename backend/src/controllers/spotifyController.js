@@ -359,39 +359,11 @@ export async function getAdminPlaylist(request, env) {
     return jsonResponse({ tracks: [], error: 'Not configured' });
   }
 
-  // Inline probe so we can see exactly what Spotify returns.
-  const debug = {};
   let tracks = [];
   try {
-    const token = await getJukeboxToken(env, cfg);
-    debug.tokenOk = true;
-    debug.playlistId = cfg.playlist_id;
-    const res = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    debug.status = res.status;
-    const raw = await res.text();
-    let j = {};
-    try { j = JSON.parse(raw); } catch { debug.notJson = true; }
-    debug.bodyKeys = Object.keys(j);
-    debug.bodySnippet = raw.slice(0, 400);
-    debug.total = j?.tracks?.total ?? null;
-    debug.itemCount = j?.tracks?.items?.length ?? null;
-    debug.firstItem = j?.tracks?.items?.[0] ? JSON.stringify(j.tracks.items[0]).slice(0, 200) : null;
-
-    const out = [];
-    mapItems(j?.tracks?.items, out);
-    let next = j?.tracks?.next;
-    while (next && out.length < 500) {
-      const r = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) { debug.nextStatus = r.status; break; }
-      const jn = await r.json();
-      mapItems(jn.items, out);
-      next = jn.next;
-    }
-    tracks = out;
+    tracks = await getPlaylistItems(env, cfg);
   } catch (e) {
-    return jsonResponse({ tracks: [], error: e.message, debug });
+    return jsonResponse({ tracks: [], error: e.message });
   }
 
   const { results } = await env.DB.prepare(
@@ -401,7 +373,6 @@ export async function getAdminPlaylist(request, env) {
   for (const r of (results || [])) byUri[r.track_uri] = r;
 
   return jsonResponse({
-    debug,
     tracks: tracks.map(t => ({
       ...t,
       addedBy: byUri[t.uri]?.added_by_username || null,
@@ -609,7 +580,7 @@ export async function removeTrack(request, env, user) {
 
 function mapItems(rawItems, out) {
   for (const it of (rawItems || [])) {
-    const t = it.track;
+    const t = it?.track || it; // some responses wrap in { added_at, track }, others are flat
     if (!t?.uri || !/^spotify:(track|episode):/.test(t.uri)) continue;
     out.push({
       uri: t.uri, id: t.id, name: t.name || '(unknown)',
@@ -621,9 +592,9 @@ function mapItems(rawItems, out) {
 
 // Full track list of the configured playlist. The `/playlists/{id}/tracks`
 // sub-resource is inconsistently gated (403 with the jukebox token, 401 with
-// client-credentials); `GET /playlists/{id}` (no fields filter) reliably
-// returns the first 100 items with the jukebox token. Follow `tracks.next`
-// best-effort for anything past 100.
+// client-credentials), so read `GET /playlists/{id}` with the jukebox token.
+// This account's responses put the items at the top level (`items`), not in a
+// `tracks` paging object — handle both shapes, and follow `next` when present.
 async function getPlaylistItems(env, cfg) {
   const token = await getJukeboxToken(env, cfg);
   const out = [];
@@ -637,14 +608,14 @@ async function getPlaylistItems(env, cfg) {
     throw new Error(`Could not read the playlist (${first.status}: ${body.slice(0, 150)})`);
   }
   const j = await first.json();
-  mapItems(j.tracks?.items, out);
-  let next = j.tracks?.next;
-  while (next && out.length < 500) {
+  mapItems(j.tracks?.items || j.items, out);
+  let next = j.tracks?.next || j.next || null;
+  while (next && out.length < 1000) {
     const r = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) break; // partial is better than nothing
     const jn = await r.json();
-    mapItems(jn.items, out);
-    next = jn.next;
+    mapItems(jn.tracks?.items || jn.items, out);
+    next = jn.tracks?.next || jn.next || null;
   }
   return out;
 }
