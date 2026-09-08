@@ -365,15 +365,19 @@ export async function getAdminPlaylist(request, env) {
   try {
     const token = await getJukeboxToken(env, cfg);
     debug.tokenOk = true;
-    const res = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}?market=from_token`, {
+    debug.playlistId = cfg.playlist_id;
+    const res = await fetch(`${SPOTIFY_API}/playlists/${cfg.playlist_id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     debug.status = res.status;
-    const j = await res.json();
+    const raw = await res.text();
+    let j = {};
+    try { j = JSON.parse(raw); } catch { debug.notJson = true; }
+    debug.bodyKeys = Object.keys(j);
+    debug.bodySnippet = raw.slice(0, 400);
     debug.total = j?.tracks?.total ?? null;
     debug.itemCount = j?.tracks?.items?.length ?? null;
-    debug.firstItem = j?.tracks?.items?.[0] ? JSON.stringify(j.tracks.items[0]).slice(0, 260) : null;
-    debug.errBody = res.ok ? null : JSON.stringify(j).slice(0, 200);
+    debug.firstItem = j?.tracks?.items?.[0] ? JSON.stringify(j.tracks.items[0]).slice(0, 200) : null;
 
     const out = [];
     mapItems(j?.tracks?.items, out);
