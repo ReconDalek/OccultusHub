@@ -31,17 +31,19 @@ function embedSrc(id) {
 // The global `iframe { height: auto }` reset collapses the embed, and the
 // compact Spotify player carries its own bottom padding — so pin an explicit
 // height inline and crop that padding with an overflow-hidden wrapper.
-const PLAYER_H = 152
-function PlayerEmbed({ id, iframeKey, title }) {
+const PLAYER_H = 152        // Occult Radio — compact player (add via search, not the list)
+const LEAGUE_PLAYER_H = 260 // Music League — taller so the round's tracklist shows,
+                            // and so the panel matches the Radio tab's overall height
+function PlayerEmbed({ id, iframeKey, title, height = PLAYER_H }) {
   return (
-    <div style={{ height: PLAYER_H, overflow: 'hidden' }}>
+    <div style={{ height, overflow: 'hidden' }}>
       <iframe
         key={iframeKey}
         title={title}
         src={embedSrc(id)}
         loading="lazy"
         allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        style={{ display: 'block', border: 0, width: '100%', height: PLAYER_H + 20 }}
+        style={{ display: 'block', border: 0, width: '100%', height: height + 20 }}
       />
     </div>
   )
@@ -195,7 +197,7 @@ export default function SpotifyPlayer() {
 
           {showingLeague ? (
             <>
-              <PlayerEmbed id={league.playlistId} iframeKey={`league-${league.playlistId}`} title="Music League" />
+              <PlayerEmbed id={league.playlistId} iframeKey={`league-${league.playlistId}`} title="Music League" height={LEAGUE_PLAYER_H} />
               <p style={{ color: 'var(--text-faint)', fontSize: 10, margin: 0, padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 Music League · listen-only, new playlist each round
               </p>
