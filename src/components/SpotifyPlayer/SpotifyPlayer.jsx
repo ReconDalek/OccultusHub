@@ -28,6 +28,25 @@ function embedSrc(id) {
   return `https://open.spotify.com/embed/playlist/${id}?theme=0`
 }
 
+// The global `iframe { height: auto }` reset collapses the embed, and the
+// compact Spotify player carries its own bottom padding — so pin an explicit
+// height inline and crop that padding with an overflow-hidden wrapper.
+const PLAYER_H = 152
+function PlayerEmbed({ id, iframeKey, title }) {
+  return (
+    <div style={{ height: PLAYER_H, overflow: 'hidden' }}>
+      <iframe
+        key={iframeKey}
+        title={title}
+        src={embedSrc(id)}
+        loading="lazy"
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+        style={{ display: 'block', border: 0, width: '100%', height: PLAYER_H + 20 }}
+      />
+    </div>
+  )
+}
+
 export default function SpotifyPlayer() {
   const { user } = useSession()
 
@@ -143,13 +162,10 @@ export default function SpotifyPlayer() {
           background: 'rgba(12,12,18,0.97)', border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: 14, overflow: 'hidden', backdropFilter: 'blur(14px)',
           boxShadow: '0 16px 50px rgba(0,0,0,0.55)',
-          display: 'flex', flexDirection: 'column',
-          maxHeight: 'calc(100vh - 32px)',
-          ...(showingLeague ? {} : { height: 'min(620px, calc(100vh - 32px))' }),
         }}>
           {/* header */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', flexShrink: 0,
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
             borderBottom: '1px solid rgba(255,255,255,0.08)',
           }}>
             <span style={{ color: accent, fontSize: 13 }}>♫</span>
@@ -162,7 +178,7 @@ export default function SpotifyPlayer() {
 
           {/* Radio / Music League switch */}
           {radioOn && league && (
-            <div style={{ display: 'flex', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
               {[['radio', 'Radio'], ['league', 'Music League']].map(([k, lbl]) => (
                 <button key={k} onClick={() => setView(k)}
                   style={{
@@ -179,54 +195,36 @@ export default function SpotifyPlayer() {
 
           {showingLeague ? (
             <>
-              <iframe
-                key={`league-${league.playlistId}`}
-                title="Music League"
-                src={embedSrc(league.playlistId)}
-                width="100%" height="352" frameBorder="0" loading="lazy"
-                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                style={{ display: 'block', border: 0, flexShrink: 0 }}
-              />
-              <p style={{ color: 'var(--text-faint)', fontSize: 10, margin: 0, padding: '7px 12px', flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <PlayerEmbed id={league.playlistId} iframeKey={`league-${league.playlistId}`} title="Music League" />
+              <p style={{ color: 'var(--text-faint)', fontSize: 10, margin: 0, padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 Music League · listen-only, new playlist each round
               </p>
             </>
           ) : (
             <>
-              <iframe
-                key={`radio-${embedKey}`}
-                title="Occult Radio"
-                src={embedSrc(status.playlistId)}
-                width="100%" height="352" frameBorder="0" loading="lazy"
-                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                style={{ display: 'block', border: 0, flexShrink: 0 }}
-              />
+              <PlayerEmbed id={status.playlistId} iframeKey={`radio-${embedKey}`} title="Occult Radio" />
 
-              {/* shuffle bar — fused to the bottom of the player, no gap */}
+              {/* shuffle bar — flush against the bottom of the player */}
               <button
                 onClick={doShuffle}
                 disabled={shuffling}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                  padding: '10px 0', border: 'none', flexShrink: 0,
+                  padding: '10px 0', border: 'none',
                   cursor: shuffling ? 'default' : 'pointer',
-                  background: 'rgba(255,255,255,0.07)', color: '#f4f4f5',
+                  background: '#1b1b24', color: '#f4f4f5',
                   fontSize: 12, letterSpacing: 0.5,
                 }}
-                onMouseEnter={e => { if (!shuffling) e.currentTarget.style.background = 'rgba(255,255,255,0.12)' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)' }}
+                onMouseEnter={e => { if (!shuffling) e.currentTarget.style.background = '#24242e' }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#1b1b24' }}
               >
                 <ShuffleIcon />
                 {shuffling ? 'Shuffling…' : 'Shuffle playlist'}
               </button>
 
-              {/* empty space */}
-              <div style={{ flex: 1, minHeight: 10 }} />
-
-              <div style={{ flexShrink: 0, overflowY: 'auto', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <p style={{
                 color: 'var(--text-faint)', fontSize: 10, lineHeight: 1.5, margin: 0,
-                padding: '8px 12px 4px',
+                padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)',
               }}>
                 30-second previews by default.{' '}
                 <a href="https://accounts.spotify.com/login" target="_blank" rel="noreferrer"
@@ -238,7 +236,7 @@ export default function SpotifyPlayer() {
               </p>
 
               {/* add a track */}
-              <div style={{ padding: '6px 12px 10px' }}>
+              <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <input
                   value={q}
                   onChange={e => setQ(e.target.value)}
@@ -266,7 +264,6 @@ export default function SpotifyPlayer() {
                     ))}
                   </div>
                 )}
-              </div>
               </div>
             </>
           )}
