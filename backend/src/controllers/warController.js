@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getStaffApiKeyForFaction, getStaffApiKeysForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
+import { getKickThresholdCounts } from './activityController.js';
 
 const FACTION_IDS   = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -371,6 +372,105 @@ async function summariseAndCleanWar(env, warId, factionId) {
   const summaryJson = JSON.stringify(stats);
   await env.DB.prepare(`UPDATE ranked_wars SET summary_json=? WHERE id=?`).bind(summaryJson, warId).run();
   console.log(`summariseAndCleanWar: war ${warId} — summary stored (raw attack rows kept until hits_saved)`);
+  // Finalise the war-warning login checks now the war has ended (best effort).
+  await captureWarEndChecks(env, warId, factionId).catch(() => {});
+}
+
+// ── War-warning snapshots (revive setting + login activity) ──────────────────
+// Feeds Leadership > Warnings > Generate > War. Captured best-effort from the
+// every-10-min war cron: once shortly after a war goes active (revive setting +
+// last_action baseline), and once when it ends (last_action again → did they log
+// in at all during the war). Never allowed to throw into the war-tracking flow.
+
+async function fetchFactionMembersForChecks(env, factionId) {
+  // revive_setting is only populated when the request uses a LEADERSHIP key
+  // belonging to that same faction — a non-leadership or other-faction key
+  // returns "Unknown" for every member. getStaffApiKeyForFaction selects only
+  // Leader/Co-leader/Council/Archon keys for this faction and returns null if
+  // none is available (no fallback to a rank-and-file member key).
+  const keyObj = await getStaffApiKeyForFaction(env, factionId);
+  const key = keyObj?.key;
+  if (!key) return null;
+  const data = await fetchWithRetry(
+    `${TORN_API_BASE}/faction/${factionId}/members?striptags=true&comment=OccHub`,
+    { Authorization: `ApiKey ${key}` }
+  );
+  const list = Array.isArray(data?.members) ? data.members : [];
+  return list.map((m) => ({
+    torn_user_id:   m.id,
+    username:       m.name ?? null,
+    revive_setting: m.revive_setting ?? null,
+    last_action:    m.last_action?.timestamp ?? null,
+  }));
+}
+
+export async function captureWarStartChecks(env, warId, factionId) {
+  try {
+    const existing = await env.DB.prepare(
+      `SELECT COUNT(*) AS c FROM war_warning_checks WHERE ranked_war_id=?`
+    ).bind(warId).first();
+    if ((existing?.c ?? 0) > 0) return; // already captured for this war
+
+    const members = await fetchFactionMembersForChecks(env, factionId);
+    if (!members || !members.length) return;
+
+    for (const m of members) {
+      const flagged = m.revive_setting === 'Everyone' ? 1 : 0;
+      await env.DB.prepare(
+        `INSERT INTO war_warning_checks
+           (ranked_war_id, faction_id, torn_user_id, username,
+            revive_setting_at_start, revives_flagged, last_action_at_start)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(ranked_war_id, torn_user_id) DO NOTHING`
+      ).bind(warId, factionId, m.torn_user_id, m.username, m.revive_setting, flagged, m.last_action).run();
+    }
+    await logInfo(env, { category: 'war_cron', event: 'war_checks_captured', message: `War ${warId}: captured start checks for ${members.length} members`, meta: { warId, factionId, count: members.length } }).catch(() => {});
+  } catch (e) {
+    console.error(`captureWarStartChecks: war ${warId}: ${e.message}`);
+    await logError(env, { category: 'war_cron', event: 'war_checks_error', message: `War ${warId} start-check capture failed: ${e.message}`, meta: { warId, factionId } }).catch(() => {});
+  }
+}
+
+async function captureWarEndChecks(env, warId, factionId) {
+  try {
+    const pending = await env.DB.prepare(
+      `SELECT COUNT(*) AS c FROM war_warning_checks WHERE ranked_war_id=? AND end_captured_at IS NULL`
+    ).bind(warId).first();
+    if ((pending?.c ?? 0) === 0) return; // nothing captured at start, or already finalised
+
+    const warRow = await env.DB.prepare(
+      `SELECT started_at FROM ranked_wars WHERE id=?`
+    ).bind(warId).first();
+    const startedAt = warRow?.started_at ?? 0;
+
+    const members = await fetchFactionMembersForChecks(env, factionId);
+    const byId = new Map((members || []).map((m) => [m.torn_user_id, m]));
+
+    const { results: checkRows } = await env.DB.prepare(
+      `SELECT torn_user_id, last_action_at_start FROM war_warning_checks WHERE ranked_war_id=?`
+    ).bind(warId).all();
+
+    for (const cr of (checkRows || [])) {
+      const startAction = cr.last_action_at_start ?? null;
+      const endAction   = byId.get(cr.torn_user_id)?.last_action ?? startAction;
+      // Logged in during the war if their last_action advanced at all between
+      // the start snapshot and now, OR the start snapshot was already inside
+      // the war window (start capture can be up to a couple of hours late).
+      const loggedIn = (
+        (endAction != null && startAction != null && endAction > startAction) ||
+        (startAction != null && startedAt > 0 && startAction >= startedAt)
+      ) ? 1 : 0;
+      await env.DB.prepare(
+        `UPDATE war_warning_checks
+         SET last_action_at_end=?, logged_in_during_war=?, end_captured_at=CURRENT_TIMESTAMP
+         WHERE ranked_war_id=? AND torn_user_id=?`
+      ).bind(endAction, loggedIn, warId, cr.torn_user_id).run();
+    }
+    await logInfo(env, { category: 'war_cron', event: 'war_checks_finalised', message: `War ${warId}: finalised login checks for ${(checkRows || []).length} members`, meta: { warId, factionId } }).catch(() => {});
+  } catch (e) {
+    console.error(`captureWarEndChecks: war ${warId}: ${e.message}`);
+    await logError(env, { category: 'war_cron', event: 'war_checks_error', message: `War ${warId} end-check capture failed: ${e.message}`, meta: { warId, factionId } }).catch(() => {});
+  }
 }
 
 // ── Fetch live scores from rankedwars API and update DB ───────────────────────
@@ -690,6 +790,14 @@ export async function trackActiveWars(env, trigger = 'cron') {
         message: `[${trigger}] War ${warId} (${factionId} vs ${opponentId}, ${currentWar?.status ?? status}): +${newAttacks} attacks, +${newArmory} new armory (${armoryMeta?.dupArmory ?? 0} already logged, ${armoryMeta?.fetched ?? 0} fetched) via ${armoryKeyUser} [${armoryKeyType}]`,
         meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, trigger, newAttacks, newArmory, dupArmory: armoryMeta?.dupArmory ?? 0, armoryFetched: armoryMeta?.fetched ?? 0, keyUser: armoryKeyUser, keyType: armoryKeyType },
       }).catch(() => {});
+
+      // War-warning snapshot: capture each member's revive setting + last_action
+      // once, as close to war start as the 10-min cron allows. captureWarStartChecks
+      // no-ops if it already ran for this war; the time gate just bounds how many
+      // times we re-check that (first 24h of the war → cheap COUNT queries only).
+      if (currentWar?.status === 'active' && warStartedAt && warStartedAt >= now - 86400) {
+        await captureWarStartChecks(env, warId, factionId).catch(() => {});
+      }
 
       checked++;
     } catch (err) {
@@ -2014,4 +2122,146 @@ export async function backfillHistoricWars(request, env) {
   }
 
   return jsonResponse({ summary });
+}
+
+// ── Cron-independent report: War warnings for a calendar month ───────────────
+// Mirrors generateChainWarningReport. One card per war that started in the
+// selected month; each card carries two member lists built from
+// war_warning_checks (captured by the war cron): members whose revive_setting
+// was "Everyone" at war start, and members with no login recorded during the
+// war. Wars with no snapshot rows (started before this feature shipped, or the
+// capture failed) are surfaced via no_data_wars rather than a false all-clear.
+export async function generateWarWarningReport(request, env) {
+  try {
+    const url   = new URL(request.url);
+    const year  = parseInt(url.searchParams.get('year'), 10);
+    const month = parseInt(url.searchParams.get('month'), 10);
+    if (!year || !month || month < 1 || month > 12) {
+      return errorResponse('year and month (1-12) are required', 400);
+    }
+
+    const factionsParam = url.searchParams.get('factions');
+    const factions = (factionsParam ? factionsParam.split(',') : FACTION_IDS.map(String))
+      .map((s) => parseInt(s, 10))
+      .filter((f) => FACTION_IDS.includes(f));
+    if (!factions.length) return errorResponse('At least one valid faction is required', 400);
+
+    const monthStart  = `${year}-${String(month).padStart(2, '0')}-01`;
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const monthEnd    = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    const monthStartTs = Math.floor(new Date(monthStart + 'T00:00:00Z').getTime() / 1000);
+    const monthEndTs   = Math.floor(new Date(monthEnd   + 'T23:59:59Z').getTime() / 1000);
+
+    const ph = factions.map(() => '?').join(',');
+    const { results: warRows } = await env.DB.prepare(`
+      SELECT id, faction_id, opponent_faction_name, scheduled_start, started_at, ended_at, result
+      FROM ranked_wars
+      WHERE faction_id IN (${ph})
+        AND COALESCE(started_at, scheduled_start) >= ?
+        AND COALESCE(started_at, scheduled_start) <= ?
+      ORDER BY faction_id, COALESCE(started_at, scheduled_start) ASC
+    `).bind(...factions, monthStartTs, monthEndTs).all();
+
+    // Already-warned members for this month's War warnings — month-scoped, same
+    // as the Chain generator (one member_warnings row per member per report run).
+    const warnedRows = await env.DB.prepare(`
+      SELECT DISTINCT torn_user_id FROM member_warnings
+      WHERE warning_type = 'War' AND period_year = ? AND period_month = ?
+    `).bind(year, month).all();
+    const warnedSet  = new Set((warnedRows.results || []).map((r) => r.torn_user_id));
+    const kickCounts = await getKickThresholdCounts(env);
+
+    const wars = [];
+    const noDataWars = [];
+
+    for (const war of (warRows || [])) {
+      const { results: checkRows } = await env.DB.prepare(`
+        SELECT wc.torn_user_id, wc.username, wc.revive_setting_at_start, wc.revives_flagged,
+               wc.last_action_at_start, wc.last_action_at_end, wc.logged_in_during_war,
+               wc.end_captured_at,
+               fm.level, fm.is_active, fm.faction_id AS current_faction_id
+        FROM war_warning_checks wc
+        LEFT JOIN faction_members fm ON fm.torn_user_id = wc.torn_user_id
+        WHERE wc.ranked_war_id = ?
+      `).bind(war.id).all();
+
+      const startTs = war.started_at ?? war.scheduled_start ?? null;
+
+      if (!checkRows || !checkRows.length) {
+        noDataWars.push({
+          ranked_war_id: war.id,
+          faction_id: war.faction_id,
+          opponent_faction_name: war.opponent_faction_name,
+          started_at: startTs,
+        });
+        continue;
+      }
+
+      const warStartDate = new Date((startTs ?? monthStartTs) * 1000).toISOString().slice(0, 10);
+      const warEndDate   = new Date((war.ended_at ?? startTs ?? monthEndTs) * 1000).toISOString().slice(0, 10);
+
+      // A War/All exemption covers a member if its date range overlaps the
+      // war's own dates at all.
+      const exemptionRows = await env.DB.prepare(`
+        SELECT torn_user_id, exemption_type, date_start, date_end, reason
+        FROM member_exemptions
+        WHERE exemption_type IN ('War', 'All') AND date_start <= ? AND date_end >= ?
+      `).bind(warEndDate, warStartDate).all();
+      const exemptionByUser = {};
+      for (const r of (exemptionRows.results || [])) {
+        exemptionByUser[r.torn_user_id] ??= { type: r.exemption_type, date_start: r.date_start, date_end: r.date_end, reason: r.reason };
+      }
+
+      const enrich = (row, reason) => ({
+        torn_user_id: row.torn_user_id,
+        username: row.username,
+        faction_id: row.current_faction_id ?? null,
+        level: row.level ?? null,
+        reason,
+        revive_setting: row.revive_setting_at_start ?? null,
+        last_action_at_start: row.last_action_at_start ?? null,
+        last_action_at_end: row.last_action_at_end ?? null,
+        exemption: exemptionByUser[row.torn_user_id] ?? null,
+        already_warned: warnedSet.has(row.torn_user_id),
+        kick_count_6mo: kickCounts[row.torn_user_id] ?? 0,
+        at_kick_threshold: (kickCounts[row.torn_user_id] ?? 0) >= 3,
+      });
+
+      // Departed members excluded, same convention as Energy/Chain.
+      const active = checkRows.filter((r) => r.is_active === 1);
+
+      const revivesOn = active
+        .filter((r) => r.revives_flagged === 1)
+        .map((r) => enrich(r, 'Revives set to "Everyone" at war start'))
+        .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+
+      const noLogin = active
+        .filter((r) => r.end_captured_at != null && r.logged_in_during_war === 0)
+        .map((r) => enrich(r, 'No login recorded during the war'))
+        .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+
+      wars.push({
+        ranked_war_id: war.id,
+        faction_id: war.faction_id,
+        opponent_faction_name: war.opponent_faction_name,
+        started_at: startTs,
+        ended_at: war.ended_at ?? null,
+        result: war.result ?? null,
+        end_checks_done: checkRows.some((r) => r.end_captured_at != null),
+        revives_on: revivesOn,
+        no_login: noLogin,
+      });
+    }
+
+    return jsonResponse({
+      year, month,
+      month_start: monthStart, month_end: monthEnd,
+      factions,
+      no_data_wars: noDataWars,
+      wars,
+    });
+  } catch (err) {
+    console.error('generateWarWarningReport error:', err);
+    return errorResponse('Failed to generate war warning report', 500);
+  }
 }

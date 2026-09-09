@@ -1,6 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
-const VALID_TYPES = ['Energy', 'Chain'];
+const VALID_TYPES = ['Energy', 'Chain', 'War'];
 
 // GET /api/leadership/warnings/exclusions?warning_type=Energy&year=2026&month=7
 // Scoped to a calendar month (not a specific chain/report run) so a toggle
@@ -14,7 +14,7 @@ export async function getWarningExclusions(request, env) {
     const month       = parseInt(url.searchParams.get('month'), 10);
 
     if (!VALID_TYPES.includes(warningType) || !year || !month) {
-      return errorResponse('warning_type (Energy|Chain), year, and month are required', 400);
+      return errorResponse('warning_type (Energy|Chain|War), year, and month are required', 400);
     }
 
     const { results } = await env.DB.prepare(`
@@ -38,7 +38,7 @@ export async function addWarningExclusion(request, env, user) {
     const { torn_user_id, username, warning_type, year, month } = body;
 
     if (!torn_user_id || !VALID_TYPES.includes(warning_type) || !year || !month) {
-      return errorResponse('Missing/invalid fields: torn_user_id, warning_type (Energy|Chain), year, month', 400);
+      return errorResponse('Missing/invalid fields: torn_user_id, warning_type (Energy|Chain|War), year, month', 400);
     }
 
     const { meta } = await env.DB.prepare(`

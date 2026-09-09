@@ -98,14 +98,18 @@ const WARN_MODAL_LABELS = {
   Chain:  { target: 'Target Hits',    achieved: 'Hits Achieved' },
 }
 
-function ReportModal({ member, warningType, achieved, periodLabel, periodMonth, periodYear, target, onClose, onSaved }) {
+function ReportModal({ member, warningType, achieved, reason, periodLabel, periodMonth, periodYear, target, onClose, onSaved }) {
   const today = new Date().toISOString().slice(0, 10)
   const labels = WARN_MODAL_LABELS[warningType] || WARN_MODAL_LABELS.Energy
+  // War warnings aren't numeric — there's no target/achieved to compare, just a
+  // reason (revives left on / no login). Hide the number fields and seed the
+  // comment with the reason instead.
+  const isWar = warningType === 'War'
   const [dateReported, setDateReported]   = useState(today)
   const [dateIssued, setDateIssued]       = useState('')
   const [targetValue, setTargetValue]     = useState(target ?? '')
-  const [achievedValue, setAchievedValue] = useState(achieved)
-  const [comment, setComment]             = useState('')
+  const [achievedValue, setAchievedValue] = useState(isWar ? '' : achieved)
+  const [comment, setComment]             = useState(isWar && reason ? reason : '')
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState(null)
 
@@ -162,18 +166,25 @@ function ReportModal({ member, warningType, achieved, periodLabel, periodMonth, 
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          {isWar ? (
             <div>
-              <label style={labelStyle}>{labels.target}</label>
-              <input type="number" style={{ ...inputStyle, width: '100%' }} value={targetValue}
-                onChange={e => setTargetValue(e.target.value)} placeholder="e.g. 400" />
+              <label style={labelStyle}>Reason</label>
+              <p style={{ color: '#f4f4f5', fontSize: '13px', margin: '2px 0 0' }}>{reason}</p>
             </div>
-            <div>
-              <label style={labelStyle}>{labels.achieved}</label>
-              <input type="number" style={{ ...inputStyle, width: '100%' }} value={achievedValue}
-                onChange={e => setAchievedValue(e.target.value)} />
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={labelStyle}>{labels.target}</label>
+                <input type="number" style={{ ...inputStyle, width: '100%' }} value={targetValue}
+                  onChange={e => setTargetValue(e.target.value)} placeholder="e.g. 400" />
+              </div>
+              <div>
+                <label style={labelStyle}>{labels.achieved}</label>
+                <input type="number" style={{ ...inputStyle, width: '100%' }} value={achievedValue}
+                  onChange={e => setAchievedValue(e.target.value)} />
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
@@ -1213,12 +1224,359 @@ function ChainGenerator({ onWarningSaved }) {
   )
 }
 
-// ─── Coming soon (War) ──────────────────────────────────────────────────────────
+// ─── War generator ──────────────────────────────────────────────────────────────
 
-function ComingSoon({ type }) {
+function fmtWarDate(epochSeconds) {
+  if (!epochSeconds) return '—'
+  return new Date(epochSeconds * 1000).toISOString().slice(0, 10)
+}
+
+// One flagged-member list (revives-on or no-login) within a war card. Members
+// are already filtered server-side; this only splits out anyone with a logged
+// exemption into a plain note, matching ChainCard's convention.
+function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onToggleExclude, detailFor }) {
+  const candidates = members.filter(m => !m.exemption)
+  const exempted   = members.filter(m => m.exemption)
+  const colTemplate = '1fr 200px 150px'
+
+  if (members.length === 0) {
+    return (
+      <div style={{ padding: '10px 16px' }}>
+        <p style={{ color: 'var(--text-faint)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px' }}>{label}</p>
+        <p style={{ color: '#4ade80', fontSize: '13px', margin: 0 }}>None flagged.</p>
+      </div>
+    )
+  }
+
   return (
-    <div style={{ padding: '48px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <p style={{ color: 'var(--text-faint)', fontSize: '14px', margin: 0 }}>{type} warning generation is coming soon.</p>
+    <div style={{ padding: '10px 16px' }}>
+      <p style={{ color: '#f87171', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>
+        {label} — {candidates.length}
+      </p>
+
+      {candidates.length > 0 && (
+        <div className="table-scroll">
+          <div style={{ minWidth: '520px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '4px 10px', marginBottom: '2px' }}>
+              {['Member', 'Detail', ''].map(h => (
+                <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+              ))}
+            </div>
+            {candidates.map((m, i) => {
+              const reported = reportedIds.has(m.torn_user_id)
+              const excluded = excludedMap.has(m.torn_user_id)
+              return (
+                <div key={m.torn_user_id} style={{
+                  display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center', gap: '8px',
+                  padding: '9px 10px', borderRadius: '8px',
+                  background: !excluded ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+                  border: !excluded ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+                    {m.at_kick_threshold && (
+                      <span
+                        title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
+                        style={{
+                          marginLeft: '6px', color: '#f87171', fontSize: '10px', fontWeight: '700',
+                          padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
+                          background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)',
+                        }}
+                      >
+                        ⚠ KICK THRESHOLD ({m.kick_count_6mo}/3)
+                      </span>
+                    )}
+                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
+                      {FACTION_LABEL[m.faction_id] || '—'}{m.level != null && ` · Lv ${m.level}`}
+                    </span>
+                  </div>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{detailFor(m)}</span>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {reported ? (
+                      <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
+                    ) : excluded ? (
+                      <button onClick={() => onToggleExclude(m)}
+                        title="Excused for this month — click to undo"
+                        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        ✓ Excused
+                      </button>
+                    ) : (
+                      <>
+                        <button onClick={() => onReport(m)}
+                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                          Warn
+                        </button>
+                        <button onClick={() => onToggleExclude(m)}
+                          title="Excuse this member for this month, without logging a formal exemption"
+                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                          Excuse
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {exempted.length > 0 && (
+        <div style={{ marginTop: '10px' }}>
+          <p style={{ color: 'var(--text-faint)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+            Exemptions — reason on record
+          </p>
+          {exempted.map(m => (
+            <div key={m.torn_user_id} style={{
+              display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap',
+              padding: '8px 12px', borderRadius: '8px', marginBottom: '6px',
+              background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', minWidth: '140px' }}>
+                {m.username}
+                <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>{FACTION_LABEL[m.faction_id]}</span>
+              </span>
+              <span style={{ flex: 1, minWidth: '160px', color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic' }}>
+                "{m.exemption.reason}"
+              </span>
+              <span style={{ color: 'var(--text-faint)', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                {m.exemption.type} · {fmtShortDate(m.exemption.date_start)}–{fmtShortDate(m.exemption.date_end)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WarCard({ war, reportedIds, excludedMap, onReport, onToggleExclude }) {
+  return (
+    <div style={{ marginBottom: '20px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{FACTION_LABEL[war.faction_id]}</span>
+        <span style={{ marginLeft: '8px', color: 'var(--text-faint)', fontSize: '12px' }}>
+          vs {war.opponent_faction_name || '—'} · started {fmtWarDate(war.started_at)}
+          {war.result ? ` · ${war.result}` : ''}
+        </span>
+      </div>
+
+      <WarFlagList
+        label="Revives left on at war start"
+        members={war.revives_on}
+        reportedIds={reportedIds}
+        excludedMap={excludedMap}
+        onReport={(m) => onReport({ member: m, war, reason: 'Revives set to "Everyone" at war start' })}
+        onToggleExclude={onToggleExclude}
+        detailFor={(m) => `Revive setting: ${m.revive_setting || 'unknown'}`}
+      />
+
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }} />
+
+      {war.end_checks_done ? (
+        <WarFlagList
+          label="No login during the war"
+          members={war.no_login}
+          reportedIds={reportedIds}
+          excludedMap={excludedMap}
+          onReport={(m) => onReport({ member: m, war, reason: 'No login recorded during the war' })}
+          onToggleExclude={onToggleExclude}
+          detailFor={(m) => m.last_action_at_end ? `Last seen ${fmtWarDate(m.last_action_at_end)}` : 'No recent login'}
+        />
+      ) : (
+        <div style={{ padding: '10px 16px' }}>
+          <p style={{ color: 'var(--text-faint)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px' }}>No login during the war</p>
+          <p style={{ color: 'var(--text-faint)', fontSize: '13px', margin: 0 }}>War not finished yet — login check runs when the war ends.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WarGenerator({ onWarningSaved }) {
+  const now = new Date()
+  const months = buildMonthOptions()
+
+  const [selectedMonth, setSelectedMonth]       = useState(() => previousMonth(now))
+  const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
+
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState(null)
+  const [reportedIds, setReportedIds] = useState(new Set())
+  const [excludedMap, setExcludedMap] = useState(new Map())
+  const [reportingItem, setReportingItem] = useState(null) // { member, war, reason }
+
+  function toggleFaction(id) {
+    setSelectedFactions(prev => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev
+        return prev.filter(f => f !== id)
+      }
+      return [...prev, id]
+    })
+  }
+
+  const generate = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
+    const params = new URLSearchParams({
+      year: String(year),
+      month: String(month),
+      factions: selectedFactions.join(','),
+    })
+    Promise.all([
+      fetch(`${API_BASE_URL}/api/leadership/warnings/generate/war?${params}`, { headers: { Authorization: token() } })
+        .then(res => res.json().then(json => ({ res, json }))),
+      fetchWarningExclusions('War', year, month),
+    ])
+      .then(([{ res, json }, exclusionsMap]) => {
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+        setData(json)
+        const warnedIds = (json.wars || [])
+          .flatMap(w => [...w.revives_on, ...w.no_login])
+          .filter(m => m.already_warned)
+          .map(m => m.torn_user_id)
+        setReportedIds(new Set(warnedIds))
+        setExcludedMap(exclusionsMap)
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [selectedMonth, selectedFactions])
+
+  function handleToggleExclude(m) {
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
+    const existingId = excludedMap.get(m.torn_user_id)
+    if (existingId) {
+      setExcludedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      removeWarningExclusion(existingId).catch(() => {})
+    } else {
+      addWarningExclusion('War', year, month, m.torn_user_id, m.username)
+        .then(id => setExcludedMap(prev => new Map(prev).set(m.torn_user_id, id)))
+        .catch(() => {})
+    }
+  }
+
+  const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '18px' }}>
+        <div>
+          <label style={labelStyle}>Month</label>
+          <select
+            value={`${selectedMonth.year}-${selectedMonth.month}`}
+            onChange={e => {
+              const [y, mo] = e.target.value.split('-').map(Number)
+              setSelectedMonth({ year: y, month: mo })
+            }}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            {months.map(({ year, month }) => (
+              <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                {MONTHS_FULL[month]} {year}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Factions</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {FACTION_IDS.map(id => {
+              const active = selectedFactions.includes(id)
+              return (
+                <button key={id} onClick={() => toggleFaction(id)}
+                  style={{
+                    padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                    border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                    background: active ? 'rgba(167,139,250,0.15)' : 'transparent',
+                    color: active ? '#f4f4f5' : 'var(--text-secondary)',
+                  }}
+                >
+                  {FACTION_LABEL[id]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ alignSelf: 'flex-end' }}>
+          <button onClick={generate} disabled={loading}
+            style={{
+              padding: '8px 22px', borderRadius: '8px', border: 'none',
+              background: 'linear-gradient(135deg, #b3123f, #6d28d9)',
+              color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'default' : 'pointer',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? 'Generating…' : 'Generate Report'}
+          </button>
+        </div>
+      </div>
+
+      <p style={{ color: 'var(--text-faint)', fontSize: '12px', margin: '0 0 18px', maxWidth: '640px' }}>
+        Flags members whose revive setting was “Everyone” when the war went active, and members with no login recorded
+        for the duration of the war. Both are captured automatically by the war tracker — a war with no snapshot ran
+        before this was in place.
+      </p>
+
+      {error && (
+        <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'rgba(255,0,0,0.08)', border: '1px solid rgba(255,0,0,0.2)', marginBottom: '16px' }}>
+          <p style={{ color: '#f87171', fontSize: '13px', margin: 0 }}>{error}</p>
+        </div>
+      )}
+
+      {!data && !loading && !error && (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Set your parameters and click Generate Report.</p>
+      )}
+
+      {data && (
+        <>
+          {(data.wars || []).length === 0 && (data.no_data_wars || []).length === 0 && (
+            <p style={{ color: 'var(--text-faint)', fontSize: '13px' }}>No wars started in {periodLabel} for the selected faction(s).</p>
+          )}
+
+          {(data.no_data_wars || []).map(w => (
+            <div key={w.ranked_war_id} style={{ padding: '14px 16px', borderRadius: '10px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.18)', marginBottom: '12px' }}>
+              <p style={{ color: '#fbbf24', fontSize: '13px', margin: 0 }}>
+                {FACTION_LABEL[w.faction_id]} vs {w.opponent_faction_name || '—'} ({fmtWarDate(w.started_at)}) — no pre-war snapshot (started before tracking, or capture failed).
+              </p>
+            </div>
+          ))}
+
+          {(data.wars || []).map(war => (
+            <WarCard
+              key={war.ranked_war_id}
+              war={war}
+              reportedIds={reportedIds}
+              excludedMap={excludedMap}
+              onReport={setReportingItem}
+              onToggleExclude={handleToggleExclude}
+            />
+          ))}
+        </>
+      )}
+
+      {reportingItem && (
+        <ReportModal
+          member={reportingItem.member}
+          warningType="War"
+          reason={reportingItem.reason}
+          periodLabel={periodLabel}
+          periodMonth={selectedMonth.month + 1}
+          periodYear={selectedMonth.year}
+          onClose={() => setReportingItem(null)}
+          onSaved={() => {
+            setReportedIds(prev => new Set(prev).add(reportingItem.member.torn_user_id))
+            setReportingItem(null)
+            onWarningSaved?.()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1233,7 +1591,7 @@ export default function GenerateWarningsPanel({ onWarningSaved }) {
       <TypeSelector reportType={reportType} setReportType={setReportType} />
       {reportType === 'Energy' && <EnergyGenerator onWarningSaved={onWarningSaved} />}
       {reportType === 'Chain' && <ChainGenerator onWarningSaved={onWarningSaved} />}
-      {reportType === 'War' && <ComingSoon type={reportType} />}
+      {reportType === 'War' && <WarGenerator onWarningSaved={onWarningSaved} />}
     </div>
   )
 }

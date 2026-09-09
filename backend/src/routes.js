@@ -594,6 +594,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/warnings/generate/chain' && method === 'GET') {
       return chainController.generateChainWarningReport(request, env);
     }
+    if (pathname === '/api/leadership/warnings/generate/war' && method === 'GET') {
+      return warController.generateWarWarningReport(request, env);
+    }
 
     // Member warning exemptions
     if (pathname === '/api/leadership/exemptions' && method === 'GET') {

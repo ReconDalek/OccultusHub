@@ -6,11 +6,12 @@ import ExemptionsTab from './ExemptionsTab'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
 const FACTION_IDS_ALL = [33097, 9728, 9171]
-const WARNING_TYPES = ['Energy', 'Chain', 'Other']
+const WARNING_TYPES = ['Energy', 'Chain', 'War', 'Other']
 
 const TYPE_LABELS = {
   Energy: { target: 'Target Avg/Day', achieved: 'Achieved Avg/Day' },
   Chain:  { target: 'Target Hits',    achieved: 'Hits Achieved' },
+  War:    { target: 'Target',         achieved: 'Achieved' },
   Other:  { target: 'Target',         achieved: 'Achieved' },
 }
 
@@ -81,6 +82,7 @@ function typeColor(t) {
   switch (t) {
     case 'Energy': return { bg: 'rgba(251,191,36,0.15)',  color: '#fbbf24' }
     case 'Chain':  return { bg: 'rgba(179,18,63,0.15)',   color: '#ff2f6d' }
+    case 'War':    return { bg: 'rgba(96,165,250,0.15)',  color: '#60a5fa' }
     default:       return { bg: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)' }
   }
 }
