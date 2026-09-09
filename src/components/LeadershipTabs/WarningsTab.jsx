@@ -816,6 +816,7 @@ export default function WarningsTab() {
   const [periodFilter,     setPeriodFilter]      = useState('all')
   const [factionFilter,    setFactionFilter]     = useState(FACTION_IDS_ALL)
   const [issuedFilter,     setIssuedFilter]      = useState('all') // 'all' | 'issued' | 'reported'
+  const [typeFilter,       setTypeFilter]        = useState(WARNING_TYPES) // ['Energy','Chain','War','Other']
 
   useEffect(() => {
     Promise.all([fetchWarnings(), fetchMembers()])
@@ -855,6 +856,22 @@ export default function WarningsTab() {
       }
       return [...prev, id]
     })
+  }
+
+  function toggleTypeFilter(t) {
+    setTypeFilter(prev => {
+      if (prev.includes(t)) {
+        if (prev.length === 1) return prev // keep at least one selected
+        return prev.filter(x => x !== t)
+      }
+      return WARNING_TYPES.filter(x => prev.includes(x) || x === t)
+    })
+  }
+
+  // A warning's warning_type is 'Energy'/'Chain'/'War' or an arbitrary custom
+  // string (the "Other" free-text type) — bucket anything unrecognised as 'Other'.
+  function warningBucket(w) {
+    return ['Energy', 'Chain', 'War'].includes(w.warning_type) ? w.warning_type : 'Other'
   }
 
   // Every unique period actually logged on a warning (e.g. "July 2026"), most
@@ -926,14 +943,20 @@ export default function WarningsTab() {
     return true
   }
 
-  // Filter members — issued/reported filtering happens on the individual
-  // warning lists first (a member can have a mix of issued and not-yet-issued
-  // warnings), then member-level filters apply on top of the filtered lists.
+  const typeFilterActive = typeFilter.length < WARNING_TYPES.length
+  const listFilterActive  = issuedFilter !== 'all' || typeFilterActive
+  function matchesWarningFilters(w) {
+    return matchesIssued(w) && typeFilter.includes(warningBucket(w))
+  }
+
+  // Filter members — issued/reported and type filtering happen on the individual
+  // warning lists first (a member can have a mix of issued/not-issued and of
+  // types), then member-level filters apply on top of the filtered lists.
   const displayed = Object.entries(activeGrouped)
-    .map(([id, m]) => (issuedFilter === 'all' ? [id, m] : [id, {
+    .map(([id, m]) => (!listFilterActive ? [id, m] : [id, {
       ...m,
-      windowWarnings:     m.windowWarnings.filter(matchesIssued),
-      historicalWarnings: m.historicalWarnings.filter(matchesIssued),
+      windowWarnings:     m.windowWarnings.filter(matchesWarningFilters),
+      historicalWarnings: m.historicalWarnings.filter(matchesWarningFilters),
     }]))
     .filter(([, m]) => {
       if (activeOnly && !m.is_active) return false
@@ -946,9 +969,10 @@ export default function WarningsTab() {
       // A specific period filter already scopes to matching warnings only, so this
       // additional window check doesn't apply there.
       if (periodFilter === 'all' && !showAllWarnings && m.windowWarnings.length === 0) return false
-      // Issued/reported filtering can empty out a member entirely (e.g. every
-      // warning they have is already issued, but "Not yet issued" is selected).
-      if (issuedFilter !== 'all' && m.windowWarnings.length === 0 && m.historicalWarnings.length === 0) return false
+      // Issued/reported or type filtering can empty out a member entirely (e.g.
+      // every warning they have is issued but "Reported only" is selected, or
+      // none of their warnings are of a selected type).
+      if (listFilterActive && m.windowWarnings.length === 0 && m.historicalWarnings.length === 0) return false
       if (search && !m.username.toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
@@ -1061,6 +1085,24 @@ export default function WarningsTab() {
             )
           })}
         </div>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {WARNING_TYPES.map(t => {
+            const active = typeFilter.includes(t)
+            const c = t === 'Other' ? { bg: 'rgba(148,163,184,0.18)', color: '#94a3b8' } : typeColor(t)
+            return (
+              <button key={t} onClick={() => toggleTypeFilter(t)}
+                style={{
+                  padding: '8px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                  border: `1px solid ${active ? c.color : 'rgba(255,255,255,0.08)'}`,
+                  background: active ? c.bg : 'transparent',
+                  color: active ? c.color : 'var(--text-secondary)',
+                }}
+              >
+                {t}
+              </button>
+            )
+          })}
+        </div>
         <select
           value={issuedFilter}
           onChange={e => setIssuedFilter(e.target.value)}
@@ -1089,11 +1131,14 @@ export default function WarningsTab() {
         {periodFilter === 'all' && (
           <button
             onClick={() => setShowAllWarnings(a => !a)}
+            title="Toggle between the rolling 6-month kick window and every warning on record"
             style={{
+              // Both states are a deliberate selection, so the button always
+              // reads as active (purple) — only the label says which way it's set.
               padding: '8px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap',
-              border: `1px solid ${showAllWarnings ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
-              background: showAllWarnings ? 'rgba(251,191,36,0.1)' : 'transparent',
-              color: showAllWarnings ? '#fbbf24' : 'var(--text-secondary)',
+              border: '1px solid rgba(139,92,246,0.4)',
+              background: 'rgba(139,92,246,0.12)',
+              color: '#a78bfa',
             }}
           >
             {showAllWarnings ? 'All warnings' : 'Last 6 months'}
