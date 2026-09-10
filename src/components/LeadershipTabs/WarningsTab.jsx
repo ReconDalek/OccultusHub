@@ -17,6 +17,14 @@ const TYPE_LABELS = {
 
 const token = () => localStorage.getItem('occultusSession')
 
+// War warnings have no numeric target/achieved — just a reason, which the
+// Generate > War flow also writes into the comment. Keep these strings in sync
+// with the reason strings generateWarWarningReport attaches to each flagged row.
+const WAR_WARNING_REASONS = [
+  'Revives not turned off at war start',
+  'No login during the war',
+]
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -100,6 +108,7 @@ function AddWarningModal({ members, onClose, onRefresh }) {
     date_reported: today,
     date_issued: '',
     target_value: '',
+    war_reason: WAR_WARNING_REASONS[0],
     comment: '',
   })
 
@@ -116,6 +125,7 @@ function AddWarningModal({ members, onClose, onRefresh }) {
 
   const resolvedType = shared.warning_type === 'Other' ? shared.custom_type : shared.warning_type
   const typeInfo     = TYPE_LABELS[shared.warning_type] || TYPE_LABELS.Other
+  const isWar        = shared.warning_type === 'War'
 
   const filteredMembers = members.filter(m =>
     memberSearch.length > 0 &&
@@ -145,8 +155,9 @@ function AddWarningModal({ members, onClose, onRefresh }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (selectedMembers.length === 0) { setError('Add at least one member'); return }
-    if (!resolvedType)                { setError('Enter a warning type'); return }
+    if (selectedMembers.length === 0)   { setError('Add at least one member'); return }
+    if (!resolvedType)                  { setError('Enter a warning type'); return }
+    if (isWar && !shared.war_reason)    { setError('Pick a reason for the war warning'); return }
 
     setSaving(true)
     setError(null)
@@ -165,9 +176,11 @@ function AddWarningModal({ members, onClose, onRefresh }) {
               period_month:   shared.period_month,
               period_year:    shared.period_year,
               warning_type:   resolvedType,
-              target_value:   shared.target_value !== '' ? parseFloat(shared.target_value) : null,
-              achieved_value: m.achieved_value !== '' ? parseFloat(m.achieved_value) : null,
-              comment:        shared.comment || null,
+              target_value:   isWar ? null : (shared.target_value !== '' ? parseFloat(shared.target_value) : null),
+              achieved_value: isWar ? null : (m.achieved_value !== '' ? parseFloat(m.achieved_value) : null),
+              comment:        isWar
+                ? [shared.war_reason, shared.comment].filter(Boolean).join(' — ')
+                : (shared.comment || null),
             }),
           }).then(r => r.json())
         )
@@ -285,13 +298,24 @@ function AddWarningModal({ members, onClose, onRefresh }) {
               </div>
             </div>
 
-            {/* Target (shared) */}
-            <div>
-              <label style={labelStyle}>{typeInfo.target} (shared)</label>
-              <input type="number" style={inputStyle} placeholder="e.g. 500"
-                value={shared.target_value}
-                onChange={e => setShared(f => ({ ...f, target_value: e.target.value }))} />
-            </div>
+            {/* Reason (War) — no numeric target */}
+            {isWar ? (
+              <div>
+                <label style={labelStyle}>Reason *</label>
+                <select style={inputStyle} value={shared.war_reason}
+                  onChange={e => setShared(f => ({ ...f, war_reason: e.target.value }))}>
+                  {WAR_WARNING_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            ) : (
+              /* Target (shared) */
+              <div>
+                <label style={labelStyle}>{typeInfo.target} (shared)</label>
+                <input type="number" style={inputStyle} placeholder="e.g. 500"
+                  value={shared.target_value}
+                  onChange={e => setShared(f => ({ ...f, target_value: e.target.value }))} />
+              </div>
+            )}
 
             {/* Comment */}
             <div>
@@ -307,7 +331,7 @@ function AddWarningModal({ members, onClose, onRefresh }) {
 
             {/* Member picker */}
             <div>
-              <label style={labelStyle}>Members * — achieved value per member</label>
+              <label style={labelStyle}>{isWar ? 'Members *' : 'Members * — achieved value per member'}</label>
               <div style={{ position: 'relative' }}>
                 <input
                   style={inputStyle}
@@ -352,13 +376,15 @@ function AddWarningModal({ members, onClose, onRefresh }) {
                           {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
                         </span>
                       </div>
-                      <input
-                        type="number"
-                        placeholder={typeInfo.achieved}
-                        value={m.achieved_value}
-                        onChange={e => setAchieved(m.torn_user_id, e.target.value)}
-                        style={{ width: '110px', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)', color: '#f4f4f5', fontSize: '12px' }}
-                      />
+                      {!isWar && (
+                        <input
+                          type="number"
+                          placeholder={typeInfo.achieved}
+                          value={m.achieved_value}
+                          onChange={e => setAchieved(m.torn_user_id, e.target.value)}
+                          style={{ width: '110px', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)', color: '#f4f4f5', fontSize: '12px' }}
+                        />
+                      )}
                       <button type="button" onClick={() => removeMember(m.torn_user_id)}
                         style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 4px', flexShrink: 0 }}>
                         ×
@@ -538,23 +564,25 @@ function EditWarningModal({ warning: w, onClose, onSaved }) {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div>
-              <label style={labelStyle}>{typeInfo.target}</label>
-              <input type="number" style={inputStyle} placeholder="e.g. 500"
-                value={form.target_value}
-                onChange={e => setForm(f => ({ ...f, target_value: e.target.value }))} />
+          {form.warning_type !== 'War' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={labelStyle}>{typeInfo.target}</label>
+                <input type="number" style={inputStyle} placeholder="e.g. 500"
+                  value={form.target_value}
+                  onChange={e => setForm(f => ({ ...f, target_value: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>{typeInfo.achieved}</label>
+                <input type="number" style={inputStyle}
+                  value={form.achieved_value}
+                  onChange={e => setForm(f => ({ ...f, achieved_value: e.target.value }))} />
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>{typeInfo.achieved}</label>
-              <input type="number" style={inputStyle}
-                value={form.achieved_value}
-                onChange={e => setForm(f => ({ ...f, achieved_value: e.target.value }))} />
-            </div>
-          </div>
+          )}
 
           <div>
-            <label style={labelStyle}>Comment / Note (optional)</label>
+            <label style={labelStyle}>{form.warning_type === 'War' ? 'Reason / Note' : 'Comment / Note (optional)'}</label>
             <textarea rows={2} style={{ ...inputStyle, resize: 'vertical' }}
               value={form.comment}
               onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} />
