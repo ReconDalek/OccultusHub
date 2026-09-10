@@ -25,6 +25,17 @@ const WAR_WARNING_REASONS = [
   'No login during the war',
 ]
 
+// A War warning's comment is `reason` or `reason — free note`. Split it back
+// out so the edit modal can show the reason dropdown + note separately.
+function splitWarComment(comment) {
+  const c = comment || ''
+  for (const r of WAR_WARNING_REASONS) {
+    if (c === r) return { reason: r, note: '' }
+    if (c.startsWith(r + ' — ')) return { reason: r, note: c.slice(r.length + 3) }
+  }
+  return { reason: WAR_WARNING_REASONS[0], note: c }
+}
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -422,6 +433,7 @@ function AddWarningModal({ members, onClose, onRefresh }) {
 
 function EditWarningModal({ warning: w, onClose, onSaved }) {
   const knownType = WARNING_TYPES.includes(w.warning_type) ? w.warning_type : 'Other'
+  const warParts  = splitWarComment(w.comment)
   const [form, setForm] = useState({
     warning_type:   knownType,
     custom_type:    knownType === 'Other' ? w.warning_type : '',
@@ -431,7 +443,8 @@ function EditWarningModal({ warning: w, onClose, onSaved }) {
     date_issued:    w.date_issued ? w.date_issued.slice(0, 10) : '',
     target_value:   w.target_value ?? '',
     achieved_value: w.achieved_value ?? '',
-    comment:        w.comment || '',
+    comment:        knownType === 'War' ? warParts.note : (w.comment || ''),
+    war_reason:     warParts.reason,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState(null)
@@ -447,37 +460,32 @@ function EditWarningModal({ warning: w, onClose, onSaved }) {
     if (!resolvedType)        { setError('Enter a warning type'); return }
     if (!form.date_reported)  { setError('Date reported is required'); return }
 
+    const isWar = form.warning_type === 'War'
+    const payload = {
+      date_reported:  form.date_reported,
+      date_issued:    form.date_issued || null,
+      period:         periodLabel,
+      period_month:   form.period_month,
+      period_year:    form.period_year,
+      warning_type:   resolvedType,
+      target_value:   isWar ? null : (form.target_value !== '' ? parseFloat(form.target_value) : null),
+      achieved_value: isWar ? null : (form.achieved_value !== '' ? parseFloat(form.achieved_value) : null),
+      comment:        isWar
+        ? ([form.war_reason, form.comment].filter(Boolean).join(' — ') || null)
+        : (form.comment || null),
+    }
+
     setSaving(true)
     setError(null)
     try {
       const res = await fetch(`${API_BASE_URL}/api/leadership/warnings/${w.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: token() },
-        body: JSON.stringify({
-          date_reported:  form.date_reported,
-          date_issued:    form.date_issued || null,
-          period:         periodLabel,
-          period_month:   form.period_month,
-          period_year:    form.period_year,
-          warning_type:   resolvedType,
-          target_value:   form.target_value !== '' ? parseFloat(form.target_value) : null,
-          achieved_value: form.achieved_value !== '' ? parseFloat(form.achieved_value) : null,
-          comment:        form.comment || null,
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (data.error) { setError(data.error); return }
-      onSaved({
-        date_reported:  form.date_reported,
-        date_issued:    form.date_issued || null,
-        period:         periodLabel,
-        period_month:   form.period_month,
-        period_year:    form.period_year,
-        warning_type:   resolvedType,
-        target_value:   form.target_value !== '' ? parseFloat(form.target_value) : null,
-        achieved_value: form.achieved_value !== '' ? parseFloat(form.achieved_value) : null,
-        comment:        form.comment || null,
-      })
+      onSaved(payload)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -564,6 +572,16 @@ function EditWarningModal({ warning: w, onClose, onSaved }) {
             </div>
           </div>
 
+          {form.warning_type === 'War' && (
+            <div>
+              <label style={labelStyle}>Reason *</label>
+              <select style={inputStyle} value={form.war_reason}
+                onChange={e => setForm(f => ({ ...f, war_reason: e.target.value }))}>
+                {WAR_WARNING_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+          )}
+
           {form.warning_type !== 'War' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
@@ -582,7 +600,7 @@ function EditWarningModal({ warning: w, onClose, onSaved }) {
           )}
 
           <div>
-            <label style={labelStyle}>{form.warning_type === 'War' ? 'Reason / Note' : 'Comment / Note (optional)'}</label>
+            <label style={labelStyle}>{form.warning_type === 'War' ? 'Note (optional)' : 'Comment / Note (optional)'}</label>
             <textarea rows={2} style={{ ...inputStyle, resize: 'vertical' }}
               value={form.comment}
               onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} />
