@@ -899,6 +899,71 @@ export async function generateEnergyWarningReport(request, env) {
       endOfMonthFactionByUser[id] = segments[segments.length - 1].faction_id;
     }
 
+    // Days each member was actually registered as an active member of ANY of
+    // our 3 factions this month — the basis for tracked_days. energy_snapshots
+    // can't say this (frozen leftover rows make "has an energy row" true long
+    // after someone left), so a member who left and rejoined later in the same
+    // report window used to be judged over the whole month as if they'd never
+    // been away. personal_stats_snapshots is one row per ACTIVE member per day
+    // from our own registry, so a missing run of days = not in the faction.
+    // A single isolated missing day (previous AND next day both present) is
+    // bridged as a missed cron run rather than an absence.
+    //
+    // Recruit period: joining the faction — including rejoining after a gap or
+    // switching between our own factions — puts a member in "recruit" status
+    // for 3 days, during which their contributions don't count. Measured on
+    // real joiners, energy first shows up exactly 4 registry days after a
+    // member's first snapshot (3 recruit days + 1 day of snapshot-date lag), so
+    // the first RECRUIT_LEAD_DAYS days of every membership run are excluded
+    // from the day count. A "run" is consecutive registry days in the same
+    // faction — it restarts on a gap of 2+ missing days or a faction change.
+    // Registry rows are read from a few days BEFORE the report window so a run
+    // that began just before the 1st still has its recruit days carried in.
+    const RECRUIT_LEAD_DAYS = 4;
+    const shiftDate = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+    const lookbackStart = shiftDate(monthStart, -RECRUIT_LEAD_DAYS);
+    const coverageRows = await env.DB.prepare(`
+      SELECT torn_user_id, faction_id, snapshot_date
+      FROM personal_stats_snapshots
+      WHERE snapshot_date >= ? AND snapshot_date <= ?
+      GROUP BY torn_user_id, faction_id, snapshot_date
+      ORDER BY torn_user_id, snapshot_date
+    `).bind(lookbackStart, monthEnd).all();
+    const registryByUser = {};
+    for (const r of (coverageRows.results || [])) (registryByUser[r.torn_user_id] ??= []).push({ date: r.snapshot_date, faction_id: r.faction_id });
+
+    const coveredCache = {};
+    function coveredDaysFor(tornUserId) {
+      if (tornUserId in coveredCache) return coveredCache[tornUserId];
+      const entries = registryByUser[tornUserId];
+      if (!entries || !entries.some(e => e.date >= monthStart)) return (coveredCache[tornUserId] = null);
+
+      const covered = new Set();
+      let runStart = null;
+      let prev = null;
+      const addRunDay = (d) => {
+        if (runStart != null && d >= monthStart && d <= monthEnd && d >= shiftDate(runStart, RECRUIT_LEAD_DAYS)) covered.add(d);
+      };
+      for (const e of entries) {
+        if (prev == null) {
+          // The very first lookback day can't be shown to be a run start (we
+          // can't see the day before it) — assume it continues an earlier run.
+          runStart = e.date === lookbackStart ? shiftDate(e.date, -RECRUIT_LEAD_DAYS) : e.date;
+        } else {
+          const gap = Math.round((Date.parse(e.date + 'T00:00:00Z') - Date.parse(prev.date + 'T00:00:00Z')) / 86400000);
+          const sameFaction = e.faction_id === prev.faction_id;
+          if (gap === 2 && sameFaction) {
+            addRunDay(shiftDate(prev.date, 1)); // one missed cron day inside a run — bridge it
+          } else if (gap !== 1 || !sameFaction) {
+            runStart = e.date; // absence or transfer — new run, recruit clock restarts
+          }
+        }
+        addRunDay(e.date);
+        prev = e;
+      }
+      return (coveredCache[tornUserId] = covered);
+    }
+
     // Earliest post-month snapshot per (member, faction) — used only to find
     // *when* a member returned to their current real faction, if that faction
     // doesn't match where their in-month membership history left off. No
@@ -1068,12 +1133,30 @@ export async function generateEnergyWarningReport(request, env) {
       // Tracked-days uses startedMidMonth (not isBrandNewMember) — a
       // transfer's average should still be scoped to their actual days in
       // THIS faction, not diluted across the full month they weren't here for.
+      //
+      // Preferred source is the registry coverage above: the number of days the
+      // member was actually registered in one of our factions, which also
+      // handles someone who LEFT and REJOINED (they have prior history so
+      // aren't "new", but weren't here for the gap). Falls back to the
+      // energy-based start date only when there's no registry data at all.
+      const covered = coveredDaysFor(r.torn_user_id);
+      // Registered this month but never past their recruit period (joined,
+      // rejoined or transferred in right at month end) — nothing countable to
+      // judge yet, so they aren't a warning candidate.
+      if (covered && covered.size === 0) continue;
       let trackedDays = daysInMonth;
-      if (startedMidMonth && r.start_date) {
+      if (covered && covered.size > 0) {
+        trackedDays = Math.max(1, covered.size);
+      } else if (startedMidMonth && r.start_date) {
         const startTs = Date.parse(r.start_date + 'T00:00:00Z');
         const endTs   = Date.parse(monthEnd + 'T00:00:00Z');
         trackedDays = Math.max(1, Math.round((endTs - startTs) / 86400000) + 1);
       }
+      const reportWindowDays = daysBetweenInclusive(monthStart, monthEnd);
+      // Present for a member who wasn't in the faction the whole window but
+      // isn't a brand-new recruit (rejoined, or transferred in) — lets the UI
+      // explain why their day count is short.
+      const partialMembership = covered && trackedDays < reportWindowDays && !isBrandNewMember;
 
       // Exemptions: an "entire month" exemption (Exemptions tab's Entire
       // Month mode sets date_start/date_end to exactly the calendar month's
@@ -1095,12 +1178,23 @@ export async function generateEnergyWarningReport(request, env) {
           // computing the overlap — a mid-month joiner's exemption from
           // earlier in the month (before they even joined) has no days to
           // actually remove.
-          const trackedStart = (startedMidMonth && r.start_date) ? r.start_date : monthStart;
+          const trackedStart = (!covered && startedMidMonth && r.start_date) ? r.start_date : monthStart;
           const overlapStart = exemption.date_start > trackedStart ? exemption.date_start : trackedStart;
           const overlapEnd   = exemption.date_end < monthEnd ? exemption.date_end : monthEnd;
 
+          // With registry coverage, only days the member was actually in the
+          // faction count as excludable — an exemption over days they weren't
+          // here (before joining / while away) has nothing to remove.
+          let excludedDays = 0;
           if (overlapStart <= overlapEnd) {
-            const excludedDays   = daysBetweenInclusive(overlapStart, overlapEnd);
+            if (covered) {
+              for (const d of covered) if (d >= overlapStart && d <= overlapEnd) excludedDays++;
+            } else {
+              excludedDays = daysBetweenInclusive(overlapStart, overlapEnd);
+            }
+          }
+
+          if (excludedDays > 0) {
             const energyRemoved  = await energyGrowthInRange(env, r.torn_user_id, FACTION_IDS, overlapStart, overlapEnd);
             const hitsRemoved    = includeAttacks ? await attackHitsInRange(env, r.torn_user_id, FACTION_IDS, overlapStart, overlapEnd) : 0;
 
@@ -1166,6 +1260,15 @@ export async function generateEnergyWarningReport(request, env) {
         start_date:       r.start_date,
         end_date:         r.end_date,
         joined_mid_month: isBrandNewMember,
+        // Not brand new, but wasn't registered in the faction for the whole
+        // report window (left and rejoined, or transferred in) — tracked_days
+        // is already scoped to the days they were here.
+        partial_membership: partialMembership
+          ? (() => {
+              const sorted = [...covered].sort();
+              return { tracked_days: trackedDays, window_days: reportWindowDays, first_date: sorted[0], last_date: sorted[sorted.length - 1] };
+            })()
+          : null,
         tracked_days:     effectiveTrackedDays,
         avg_per_day:      effectiveAvgPerDay,
         overdoses:        overdoses[r.torn_user_id] ?? 0,
