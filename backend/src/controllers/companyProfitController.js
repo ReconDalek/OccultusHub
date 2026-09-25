@@ -331,6 +331,44 @@ export async function getCompanyBreakdown(request, env, user) {
   }
 }
 
+// GET /api/leadership/accounting/companies/:id/ytd-trend?year=YYYY
+// Running (cumulative) profit total for one company across a whole calendar
+// year, one point per day it has a snapshot — the YTD line on Company
+// Analytics. Defaults to the current year; capped at yesterday when the
+// requested year is the current one (today's row can't exist yet).
+export async function getCompanyYtdTrend(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const companyId = parseInt(url.pathname.match(/\/companies\/(\d+)\/ytd-trend/)?.[1], 10);
+    if (!companyId) return errorResponse('Invalid company id', 400);
+
+    const now = new Date();
+    const year = parseInt(url.searchParams.get('year'), 10) || now.getUTCFullYear();
+    const yearStart = `${year}-01-01`;
+    const isCurrentYear = year === now.getUTCFullYear();
+    const yearEnd = isCurrentYear
+      ? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      : `${year}-12-31`;
+
+    const { results } = await env.DB.prepare(
+      `SELECT snapshot_date, daily_profit
+       FROM company_profit_snapshots
+       WHERE company_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
+       ORDER BY snapshot_date ASC`
+    ).bind(companyId, yearStart, yearEnd).all();
+
+    let running = 0;
+    const days = (results || []).map(r => {
+      running += r.daily_profit;
+      return { date: r.snapshot_date, profit: r.daily_profit, ytd_profit: running };
+    });
+
+    return jsonResponse({ company_id: companyId, year, year_start: yearStart, year_end: yearEnd, days });
+  } catch (e) {
+    return errorResponse('Failed to fetch company YTD trend: ' + e.message, 500);
+  }
+}
+
 // GET /api/leadership/accounting/companies/history?year=YYYY&month=M(1-12)&faction_id=X
 // Per-company aggregate for one specific calendar month (not "this month" —
 // any past month, selected by the Prev Month / historic-month picker) plus

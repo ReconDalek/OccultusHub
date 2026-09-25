@@ -37,7 +37,7 @@ const inputStyle = {
 // ─── Generic small SVG chart — one or two series, line or bar, shared axis/
 // tooltip plumbing. Self-contained (no charting library in this project). ────
 
-const CW = 720, CH = 220
+const CW = 900, CH = 320
 const CPAD = { top: 16, right: 16, bottom: 28, left: 56 }
 const CIW = CW - CPAD.left - CPAD.right
 const CIH = CH - CPAD.top - CPAD.bottom
@@ -171,10 +171,12 @@ export default function CompanyAnalyticsTab({ factionId }) {
   const [companySearch, setCompanySearch] = useState('')
   const [profitDays, setProfitDays] = useState([])
   const [stockDays, setStockDays] = useState([])
+  const [ytdDays, setYtdDays] = useState([])
   const [stockItemName, setStockItemName] = useState(null)
   const [loadingList, setLoadingList] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [error, setError] = useState(null)
+  const [activeChart, setActiveChart] = useState('profit')
 
   // Company list for the selected month (also carries the month-scoped totals
   // used in the summary tiles) — same endpoint CompanySubTab's history mode uses.
@@ -197,17 +199,20 @@ export default function CompanyAnalyticsTab({ factionId }) {
   useEffect(() => { loadCompanyList() }, [loadCompanyList])
 
   useEffect(() => {
-    if (!companyId) { setProfitDays([]); setStockDays([]); return }
+    if (!companyId) { setProfitDays([]); setStockDays([]); setYtdDays([]); return }
     setLoadingDetail(true)
     const params = new URLSearchParams({ year: String(selectedMonth.year), month: String(selectedMonth.month) })
+    const ytdParams = new URLSearchParams({ year: String(selectedMonth.year) })
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/accounting/companies/${companyId}/breakdown?${params}`, { headers: { Authorization: token() } }).then(r => r.json()),
       fetch(`${API_BASE_URL}/api/leadership/accounting/companies/${companyId}/stock-breakdown?${params}`, { headers: { Authorization: token() } }).then(r => r.json()),
+      fetch(`${API_BASE_URL}/api/leadership/accounting/companies/${companyId}/ytd-trend?${ytdParams}`, { headers: { Authorization: token() } }).then(r => r.json()),
     ])
-      .then(([profitJson, stockJson]) => {
+      .then(([profitJson, stockJson, ytdJson]) => {
         setProfitDays(profitJson.days || [])
         setStockDays(stockJson.days || [])
         setStockItemName(stockJson.item_name ?? null)
+        setYtdDays(ytdJson.days || [])
         setError(null)
       })
       .catch(e => setError(e.message))
@@ -230,7 +235,52 @@ export default function CompanyAnalyticsTab({ factionId }) {
   }, [profitDays, stockDays])
 
   const dates = merged.map(d => d.date)
+  // Table reads most-recent-first; charts need chronological order to draw
+  // left-to-right, so this is a display-only reversal of the same rows.
+  const mergedForTable = useMemo(() => [...merged].reverse(), [merged])
   const latestStock = [...stockDays].reverse().find(d => d.in_stock != null) || null
+  const ytdDates = ytdDays.map(d => d.date)
+
+  const chartDefs = useMemo(() => [
+    {
+      key: 'profit', label: 'Daily Profit', title: 'Daily Profit',
+      dates, type: 'bar', valueFmt: fmtMoney,
+      series: [{ label: 'Profit', color: '#4ade80', values: merged.map(d => d.profit ?? null) }],
+    },
+    {
+      key: 'stock', label: 'Stock Level', title: 'Stock Level',
+      dates, type: 'line', valueFmt: fmtUnits,
+      series: [{ label: 'In Stock', color: '#60a5fa', values: merged.map(d => d.in_stock ?? null) }],
+    },
+    {
+      key: 'generated', label: 'Generated vs Sold', title: 'Generated vs Sold',
+      dates, type: 'bar', valueFmt: fmtUnits,
+      series: [
+        { label: 'Generated', color: '#4ade80', values: merged.map(d => d.generated ?? null) },
+        { label: 'Sold', color: '#f87171', values: merged.map(d => d.sold_amount ?? null) },
+      ],
+    },
+    {
+      key: 'income', label: 'Income vs Expenses', title: 'Income vs Wages + Advert',
+      dates, type: 'line', valueFmt: fmtMoney,
+      series: [
+        { label: 'Income', color: '#4ade80', values: merged.map(d => d.income ?? null) },
+        { label: 'Wages+Advert', color: '#f87171', values: merged.map(d => (d.wages != null && d.advert != null) ? d.wages + d.advert : null) },
+      ],
+    },
+    {
+      key: 'mtd', label: 'MTD Profit Trend', title: 'Month-to-Date Profit Trend',
+      dates, type: 'line', valueFmt: fmtMoney,
+      series: [{ label: 'MTD Profit', color: '#a78bfa', values: merged.map(d => d.month_profit ?? null) }],
+    },
+    {
+      key: 'ytd', label: 'YTD Profit Trend', title: 'Year-to-Date Profit Trend',
+      dates: ytdDates, type: 'line', valueFmt: fmtMoney,
+      series: [{ label: 'YTD Profit', color: '#60a5fa', values: ytdDays.map(d => d.ytd_profit ?? null) }],
+    },
+  ], [merged, dates, ytdDays, ytdDates])
+
+  const activeDef = chartDefs.find(d => d.key === activeChart) || chartDefs[0]
 
   return (
     <div>
@@ -315,41 +365,31 @@ export default function CompanyAnalyticsTab({ factionId }) {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Loading trends…</p>
               ) : (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-                    <MiniChart
-                      title="Daily Profit"
-                      dates={dates}
-                      type="bar"
-                      valueFmt={fmtMoney}
-                      series={[{ label: 'Profit', color: '#4ade80', values: merged.map(d => d.profit ?? null) }]}
-                    />
-                    <MiniChart
-                      title="Stock Level"
-                      dates={dates}
-                      type="line"
-                      valueFmt={fmtUnits}
-                      series={[{ label: 'In Stock', color: '#60a5fa', values: merged.map(d => d.in_stock ?? null) }]}
-                    />
-                    <MiniChart
-                      title="Generated vs Sold"
-                      dates={dates}
-                      type="bar"
-                      valueFmt={fmtUnits}
-                      series={[
-                        { label: 'Generated', color: '#4ade80', values: merged.map(d => d.generated ?? null) },
-                        { label: 'Sold', color: '#f87171', values: merged.map(d => d.sold_amount ?? null) },
-                      ]}
-                    />
-                    <MiniChart
-                      title="Income vs Wages + Advert"
-                      dates={dates}
-                      type="line"
-                      valueFmt={fmtMoney}
-                      series={[
-                        { label: 'Income', color: '#4ade80', values: merged.map(d => d.income ?? null) },
-                        { label: 'Wages+Advert', color: '#f87171', values: merged.map(d => (d.wages != null && d.advert != null) ? d.wages + d.advert : null) },
-                      ]}
-                    />
+                  {/* One chart shown at a time, full-size — a grid of six tiny
+                      charts was unreadable. Toggle pills switch between them
+                      without ever loading more than one onto the page. */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    {chartDefs.map(def => {
+                      const active = activeChart === def.key
+                      return (
+                        <button key={def.key} onClick={() => setActiveChart(def.key)}
+                          style={{
+                            padding: '6px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                            border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                            background: active ? 'rgba(167,139,250,0.15)' : 'transparent',
+                            color: active ? '#f4f4f5' : 'var(--text-secondary)',
+                          }}
+                        >
+                          {def.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '20px' }}>
+                    {activeDef && (
+                      <MiniChart title={activeDef.title} dates={activeDef.dates} type={activeDef.type} valueFmt={activeDef.valueFmt} series={activeDef.series} />
+                    )}
                   </div>
 
                   {/* Day-by-day table */}
@@ -360,9 +400,9 @@ export default function CompanyAnalyticsTab({ factionId }) {
                           <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
                         ))}
                       </div>
-                      {merged.length === 0 ? (
+                      {mergedForTable.length === 0 ? (
                         <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '12px' }}>No tracked days this month.</p>
-                      ) : merged.map((d, i) => (
+                      ) : mergedForTable.map((d, i) => (
                         <div key={d.date} style={{
                           display: 'grid', gridTemplateColumns: '70px 1fr 1fr 1fr 1fr 90px 90px 90px', gap: '8px', padding: '7px 12px', borderRadius: '6px',
                           background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',

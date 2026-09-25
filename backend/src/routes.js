@@ -804,6 +804,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/accounting\/companies\/\d+\/stock-breakdown$/) && method === 'GET') {
       return companyProfitController.getCompanyStockBreakdown(request, env, user);
     }
+    if (pathname.match(/^\/api\/leadership\/accounting\/companies\/\d+\/ytd-trend$/) && method === 'GET') {
+      return companyProfitController.getCompanyYtdTrend(request, env, user);
+    }
 
     // Armory cache + minimums (read-only for inventory highlights)
     if (pathname === '/api/leadership/armory' && method === 'GET') {
