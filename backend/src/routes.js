@@ -669,6 +669,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/payout$/) && method === 'POST') {
       return warController.saveWarPayout(request, env);
     }
+    if (pathname.match(/^\/api\/leadership\/war\/\d+\/score-cap$/) && method === 'POST') {
+      return warController.setWarScoreCap(request, env);
+    }
     if (pathname.match(/^\/api\/leadership\/war\/\d+\/save-hits$/) && method === 'POST') {
       return warController.saveWarHits(request, env, user);
     }

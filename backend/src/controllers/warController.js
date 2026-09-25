@@ -163,6 +163,44 @@ function categoriseAttack(attack, ourFactionId, opponentFactionId) {
   return null;
 }
 
+// ── Score cap (termed wars) ────────────────────────────────────────────────
+// Some wars are "termed" — leadership agrees a target score with the
+// opponent (e.g. "first to 11000") rather than fighting Torn's real end
+// condition, and people inevitably keep hitting past it. score_cap on
+// ranked_wars marks that target; everything below finds the moment OUR
+// SIDE's cumulative war_attack respect first reached it, and treats war_attack
+// hits after that moment as if they didn't happen for stats/payout purposes —
+// the attack rows themselves are never deleted, and every other kind of data
+// (defends, armory, OD/energy tracking, outside hits) still runs to the real
+// war end, per the request.
+//
+// pairs: [{ts, respectGain}] for war_attack rows only, ORDERED ASCENDING by ts.
+// Returns the ts of the attack that first reaches/crosses the cap (inclusive —
+// the hit that gets you TO the target counts, only what comes after doesn't),
+// or null if there's no cap or the cap hasn't been reached yet.
+function computeScoreCapCutoffTs(pairs, scoreCap) {
+  if (!scoreCap) return null;
+  let cumulative = 0;
+  for (const p of pairs) {
+    cumulative += p.respectGain || 0;
+    if (cumulative >= scoreCap) return p.ts;
+  }
+  return null;
+}
+
+async function getWarScoreCapCutoff(env, warId) {
+  const row = await env.DB.prepare(`SELECT score_cap FROM ranked_wars WHERE id=?`).bind(warId).first();
+  const scoreCap = row?.score_cap ?? null;
+  if (!scoreCap) return { scoreCap: null, cutoffTs: null };
+
+  const { results } = await env.DB.prepare(
+    `SELECT started_at AS ts, respect_gain AS respectGain FROM war_attacks
+     WHERE ranked_war_id=? AND attack_type='war_attack' ORDER BY started_at ASC, id ASC`
+  ).bind(warId).all();
+  const cutoffTs = computeScoreCapCutoffTs(results || [], scoreCap);
+  return { scoreCap, cutoffTs };
+}
+
 // ── Aggregate member stats from war_attacks (shared SQL) ─────────────────────
 // attackerStats excludes both 'war_defend' (attacker_id = enemy who hit us) and
 // 'outside_defend' (attacker_id = a random outsider, not enemy or ours, who hit
@@ -171,6 +209,12 @@ function categoriseAttack(attack, ourFactionId, opponentFactionId) {
 // letting outside attackers show up as zero-stat ghost rows in Member Stats.
 
 async function buildMemberStats(env, warId) {
+  const { scoreCap, cutoffTs } = await getWarScoreCapCutoff(env, warId);
+  // Appended to any WHERE clause that already aggregates war_attack rows —
+  // a no-op when there's no cap (the `? IS NOT NULL` short-circuits it), so
+  // capped and uncapped wars share the exact same query shape.
+  const CAP_FILTER = `AND NOT (attack_type='war_attack' AND ? IS NOT NULL AND started_at > ?)`;
+
   const { results: attackerStats } = await env.DB.prepare(
     `SELECT
        attacker_id, attacker_name,
@@ -186,9 +230,9 @@ async function buildMemberStats(env, warId) {
        COUNT(CASE WHEN attack_type='friendly_hit'      THEN 1 END)                                                       AS friendly_hits,
        ROUND(SUM(CASE WHEN attack_type='war_attack' AND chain_count IN (10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000) THEN respect_gain ELSE 0 END), 2) AS bonus_respect,
        COUNT(CASE WHEN attack_type IN ('war_attack','outside_attack','assist') THEN 1 END) * 25                          AS energy_used
-     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0 AND attack_type NOT IN ('war_defend','outside_defend')
+     FROM war_attacks WHERE ranked_war_id=? AND attacker_id>0 AND attack_type NOT IN ('war_defend','outside_defend') ${CAP_FILTER}
      GROUP BY attacker_id, attacker_name ORDER BY war_hits DESC`
-  ).bind(warId).all();
+  ).bind(warId, cutoffTs, cutoffTs).all();
 
   const { results: defendStats } = await env.DB.prepare(
     `SELECT
@@ -239,12 +283,32 @@ async function buildMemberStats(env, warId) {
                    AND result NOT IN ('Escape','Lost','Stalemate')
                    AND is_interrupted=0 THEN respect_gain ELSE 0 END)
        , 2)                                                                                       AS total_net_respect
-     FROM war_attacks WHERE ranked_war_id=?`
-  ).bind(warId).first();
+     FROM war_attacks WHERE ranked_war_id=? ${CAP_FILTER}`
+  ).bind(warId, cutoffTs, cutoffTs).first();
 
   const rows = await enrichEnergyAndOD(env, warId, attackerStats || []);
 
-  return { attackerStats: rows, defendStats: defendStats || [], totals: totals || {} };
+  // Transparency for the UI — how much this cap is actually holding back, so
+  // leadership can see it's doing something (or that the war hasn't hit the
+  // agreed target yet, in which case cutoffTs is null and nothing's excluded).
+  let scoreCapInfo = null;
+  if (scoreCap) {
+    const excluded = cutoffTs
+      ? await env.DB.prepare(
+          `SELECT COUNT(*) AS n, COALESCE(SUM(respect_gain), 0) AS respect
+           FROM war_attacks WHERE ranked_war_id=? AND attack_type='war_attack' AND started_at > ?`
+        ).bind(warId, cutoffTs).first()
+      : { n: 0, respect: 0 };
+    scoreCapInfo = {
+      score_cap: scoreCap,
+      cutoff_ts: cutoffTs,
+      reached: cutoffTs != null,
+      excluded_attacks: excluded?.n ?? 0,
+      excluded_respect: excluded?.respect ?? 0,
+    };
+  }
+
+  return { attackerStats: rows, defendStats: defendStats || [], totals: totals || {}, scoreCapInfo };
 }
 
 // ── Shared: attach Energy In (Xanax) and OD (overdose delta) to attacker rows ─
@@ -993,8 +1057,8 @@ export async function getWarDetails(request, env) {
 
       if ((attackCount?.n ?? 0) > 0) {
         // Live data from war_attacks
-        const { attackerStats, defendStats, totals } = await buildMemberStats(env, warId);
-        return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false });
+        const { attackerStats, defendStats, totals, scoreCapInfo } = await buildMemberStats(env, warId);
+        return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false, scoreCapInfo });
       }
     }
 
@@ -1371,6 +1435,26 @@ export async function getWarPayout(request, env) {
   }
 }
 
+// ── POST /api/leadership/war/:id/score-cap ───────────────────────────────────
+// Sets/clears the termed-war score target. body: { score_cap: number|null }
+
+export async function setWarScoreCap(request, env) {
+  try {
+    const id = parseInt(request.url.match(/\/war\/(\d+)\/score-cap/)?.[1], 10);
+    if (!id) return errorResponse('Invalid war id', 400);
+    const { score_cap } = await request.json();
+    const value = (score_cap === null || score_cap === undefined || score_cap === '') ? null : parseInt(score_cap, 10);
+    if (value != null && (!Number.isFinite(value) || value <= 0)) {
+      return errorResponse('score_cap must be a positive number, or null to clear it', 400);
+    }
+    await env.DB.prepare(`UPDATE ranked_wars SET score_cap=? WHERE id=?`).bind(value, id).run();
+    return jsonResponse({ ok: true, score_cap: value });
+  } catch (err) {
+    console.error('setWarScoreCap error:', err);
+    return errorResponse('Failed to set score cap', 500);
+  }
+}
+
 // ── POST /api/leadership/war/:id/payout ──────────────────────────────────────
 
 export async function saveWarPayout(request, env) {
@@ -1716,7 +1800,34 @@ async function fetchAttacksInRange(keyPool, factionId, opponentFactionId, startA
 
 const CHAIN_BONUS_COUNTS = new Set([10,25,50,100,250,500,1000,2500,5000,10000,25000,50000,100000]);
 
-function aggregateVerifiedAttacks(attacks) {
+function aggregateVerifiedAttacks(attacks, scoreCap = null) {
+  // Same termed-war score cap as buildMemberStats, applied to the freshly
+  // re-fetched Torn data instead of our stored war_attacks — excludes
+  // war_attack entries past the moment cumulative respect first reached the
+  // target, everything else (defends, outside hits, assists) is untouched.
+  let workingAttacks = attacks;
+  let scoreCapInfo = null;
+  if (scoreCap) {
+    const warAttackPairs = attacks
+      .filter(a => a.attack_type === 'war_attack')
+      .slice()
+      .sort((a, b) => a.started - b.started)
+      .map(a => ({ ts: a.started, respectGain: a.respect_gain ?? 0 }));
+    const cutoffTs = computeScoreCapCutoffTs(warAttackPairs, scoreCap);
+    if (cutoffTs != null) {
+      const excludedRows = attacks.filter(a => a.attack_type === 'war_attack' && a.started > cutoffTs);
+      workingAttacks = attacks.filter(a => !(a.attack_type === 'war_attack' && a.started > cutoffTs));
+      scoreCapInfo = {
+        score_cap: scoreCap, cutoff_ts: cutoffTs, reached: true,
+        excluded_attacks: excludedRows.length,
+        excluded_respect: excludedRows.reduce((s, a) => s + (a.respect_gain ?? 0), 0),
+      };
+    } else {
+      scoreCapInfo = { score_cap: scoreCap, cutoff_ts: null, reached: false, excluded_attacks: 0, excluded_respect: 0 };
+    }
+  }
+  attacks = workingAttacks;
+
   const aMap = {}; // attacker stats keyed by id
   const dMap = {}; // defender stats keyed by id
 
@@ -1817,6 +1928,7 @@ function aggregateVerifiedAttacks(attacks) {
       total_respect_lost:   Math.round(total_respect_lost   * 100) / 100,
       total_net_respect:    Math.round((total_respect_gained - total_respect_lost) * 100) / 100,
     },
+    scoreCapInfo,
   };
 }
 
@@ -1830,7 +1942,7 @@ export async function verifyWarData(request, env) {
     if (!warId) return errorResponse('Invalid war ID', 400);
 
     const war = await env.DB.prepare(
-      `SELECT faction_id, opponent_faction_id, started_at, ended_at FROM ranked_wars WHERE id=?`
+      `SELECT faction_id, opponent_faction_id, started_at, ended_at, score_cap FROM ranked_wars WHERE id=?`
     ).bind(warId).first();
     if (!war) return errorResponse('War not found', 404);
 
@@ -1855,7 +1967,7 @@ export async function verifyWarData(request, env) {
         meta: { warId, factionId: war.faction_id, ...attacksError, pagesFetched: attacksPages, keysUsed: [...attacksKeys.values()] } }).catch(() => {});
     }
 
-    const stats = aggregateVerifiedAttacks(attacks);
+    const stats = aggregateVerifiedAttacks(attacks, war.score_cap ?? null);
     stats.attackerStats = await enrichEnergyAndOD(env, warId, stats.attackerStats);
 
     // Record of every leadership key actually exercised this run — requested
