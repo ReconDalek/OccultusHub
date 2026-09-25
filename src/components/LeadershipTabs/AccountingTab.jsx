@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../../config/api'
 import InvestmentsSubTab from './AccountingSubTabs/InvestmentsSubTab'
 import StocksSubTab from './AccountingSubTabs/StocksSubTab'
 import CompanySubTab from './AccountingSubTabs/CompanySubTab'
+import CompanyAnalyticsTab from './AccountingSubTabs/CompanyAnalyticsTab'
 
 const FACTION_OPTIONS = [
   { id: null,  label: 'All Factions' },
@@ -18,6 +19,7 @@ const SUB_TABS = [
   { id: 'investments', label: 'Investments' },
   { id: 'stocks',      label: 'Stocks' },
   { id: 'companies',   label: 'Companies' },
+  { id: 'company-analytics', label: 'Company Analytics' },
 ]
 
 export default function AccountingTab() {
@@ -101,6 +103,7 @@ export default function AccountingTab() {
       {activeSubTab === 'investments' && <InvestmentsSubTab factionId={factionId} />}
       {activeSubTab === 'stocks'      && <StocksSubTab factionId={factionId} />}
       {activeSubTab === 'companies'   && <CompanySubTab factionId={factionId} />}
+      {activeSubTab === 'company-analytics' && <CompanyAnalyticsTab factionId={factionId} />}
     </div>
   )
 }
@@ -592,7 +595,7 @@ function CompanyStockCard({ onNavigate }) {
               : null
           const badgeColor = c.suggestion === 'low' ? '#f87171' : c.suggestion === 'high' ? '#fbbf24' : null
           return (
-            <div key={c.company_id} onClick={() => onNavigate?.('companies')} style={{
+            <div key={c.company_id} onClick={() => onNavigate?.('company-analytics')} style={{
               display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', cursor: onNavigate ? 'pointer' : 'default',
               padding: '10px 14px', borderRadius: '8px',
               background: suggestionText ? `${badgeColor}0d` : 'rgba(255,255,255,0.02)',
