@@ -174,8 +174,14 @@ export async function getFactionMembers(request, env) {
          COALESCE(wh.total_war_payout,       0)                    AS total_war_payout,
          ROUND(COALESCE(wh.total_war_units,  0), 1)                AS total_war_units,
          COALESCE(cx.total_custom_hits,      0)                    AS total_custom_hits,
+         -- Rank credit uses rank_hits — the member's actual successful attack
+         -- count, capped ONLY if leadership set an ATTACK cap for that war's
+         -- payout, never a respect cap or a respect-based payout figure.
+         -- units/payout_amount stay money-only and never feed rank.
+         -- total_war_units/total_war_payout are kept above for the
+         -- payout-history display, just not summed into total_hits.
          COALESCE(ch.total_chain_hits, 0)
-           + ROUND(COALESCE(wh.total_war_units, 0), 0)
+           + COALESCE(wh.total_rank_hits, 0)
            + COALESCE(cx.total_custom_hits, 0)                     AS total_hits
        FROM faction_members fm
        LEFT JOIN (
@@ -187,11 +193,12 @@ export async function getFactionMembers(request, env) {
        ) ch ON ch.torn_user_id = fm.torn_user_id
        LEFT JOIN (
          SELECT torn_user_id,
-                SUM(war_hits)      AS total_war_hits,
-                SUM(outside_hits)  AS total_war_outside_hits,
-                SUM(assists)       AS total_war_assists,
-                SUM(payout_amount) AS total_war_payout,
-                SUM(units)         AS total_war_units
+                SUM(war_hits)                     AS total_war_hits,
+                SUM(outside_hits)                 AS total_war_outside_hits,
+                SUM(assists)                      AS total_war_assists,
+                SUM(payout_amount)                AS total_war_payout,
+                SUM(units)                        AS total_war_units,
+                SUM(COALESCE(rank_hits, war_hits)) AS total_rank_hits
          FROM war_hits
          GROUP BY torn_user_id
        ) wh ON wh.torn_user_id = fm.torn_user_id

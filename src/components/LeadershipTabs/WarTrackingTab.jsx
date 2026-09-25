@@ -405,6 +405,13 @@ function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendly
   const useRespect = capEnabled && capType === 'respect'
   const cap        = capEnabled && capValue > 0 ? capValue : Infinity
 
+  // rankHits is what actually feeds a member's rank (see memberController.js
+  // getFactionMembers) — their real successful war attack count, capped ONLY
+  // when leadership set an ATTACK cap for payout. A respect cap or a
+  // respect-based payout must never touch rank credit, regardless of how the
+  // war was paid out — money and rank are deliberately decoupled here.
+  const rankCap = (capEnabled && capType === 'attacks' && capValue > 0) ? capValue : Infinity
+
   return attackerStats
     .filter(r => (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.friendly_hits || 0) + (r.war_respect_gained || 0) > 0)
     .map(r => {
@@ -415,8 +422,9 @@ function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendly
         + (r.outside_attacks || 0) * outsidePct  / 100
         + (r.assists         || 0) * assistPct   / 100
         + (r.friendly_hits   || 0) * (friendlyPct ?? 0) / 100
-      const units = Math.min(rawUnits, cap)
-      return { ...r, rawUnits, units }
+      const units    = Math.min(rawUnits, cap)
+      const rankHits = Math.min(r.war_hits || 0, rankCap)
+      return { ...r, rawUnits, units, rankHits }
     })
     .filter(r => r.units > 0)
 }
@@ -583,6 +591,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
           respect_gained: r.war_respect_gained || 0,
           payout_amount:  r.payout,
           units:          r.units,
+          rank_hits:      r.rankHits,
           respect_lost:   def.respect_lost_defending || 0,
           war_attempts:   r.war_attacks   || 0,
           war_losses:     r.war_losses    || 0,
@@ -1527,6 +1536,72 @@ function WarEconomicsTab({ warId, hitsSaved }) {
   )
 }
 
+// ─── Score cap (termed wars) ────────────────────────────────────────────────
+// Some wars are agreed to a target score with the opponent rather than fought
+// to Torn's real end condition. Setting a cap here excludes war_attack hits
+// (and their respect) past the moment our side's cumulative score first
+// reached it, from Member Stats/Payout only — defends, armory, OD tracking,
+// outside hits still run to the real war end.
+
+function ScoreCapControl({ warId, war, scoreCapInfo, onSaved }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(String(war.score_cap ?? ''))
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    try {
+      await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/score-cap`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score_cap: value === '' ? null : Number(value) }),
+      })
+      setEditing(false)
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        {war.score_cap ? (
+          <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontSize: '12px' }}>
+            Termed war — score cap {war.score_cap.toLocaleString()}
+            {scoreCapInfo == null
+              ? ' · applied to this war’s verified data'
+              : scoreCapInfo.reached
+                ? ` · excluding ${scoreCapInfo.excluded_attacks} attack${scoreCapInfo.excluded_attacks !== 1 ? 's' : ''} (${Math.round(scoreCapInfo.excluded_respect).toLocaleString()} respect) past the cap`
+                : ' · not reached yet'}
+          </span>
+        ) : null}
+        <button onClick={() => { setValue(String(war.score_cap ?? '')); setEditing(true) }}
+          style={{ padding: '5px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: "var(--text-secondary)", cursor: 'pointer', fontSize: '11px' }}>
+          {war.score_cap ? 'Edit score cap' : 'Set score cap (termed war)'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <label style={{ color: "var(--text-secondary)", fontSize: '12px' }}>Score cap</label>
+      <input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. 11000"
+        style={{ width: '120px', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)', color: '#f4f4f5', fontSize: '12px' }} />
+      <button onClick={save} disabled={saving}
+        style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: 'rgba(74,222,128,0.2)', color: '#4ade80', cursor: 'pointer', fontSize: '12px' }}>
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      <button onClick={() => setEditing(false)}
+        style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: "var(--text-secondary)", cursor: 'pointer', fontSize: '12px' }}>
+        Cancel
+      </button>
+      <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>Blank clears it. Only affects war_attack hits/respect in stats and payout — everything else still tracks to the real war end.</span>
+    </div>
+  )
+}
+
 // ─── Expanded war detail ──────────────────────────────────────────────────────
 
 function WarDetail({ warId, onPayoutSaved }) {
@@ -1574,6 +1649,8 @@ function WarDetail({ warId, onPayoutSaved }) {
 
   return (
     <div>
+      <ScoreCapControl warId={warId} war={war} scoreCapInfo={data.scoreCapInfo} onSaved={() => setReloadKey(k => k + 1)} />
+
       {/* Summary stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: '8px', marginBottom: '16px' }}>
         <Stat label="War Hits"      value={fmt(summary.total_war_hits)}       accent />

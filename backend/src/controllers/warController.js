@@ -1496,14 +1496,14 @@ export async function saveWarHits(request, env, user) {
       if (!m.torn_user_id) continue;
       await env.DB.prepare(
         `INSERT INTO war_hits
-           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by,
+           (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, rank_hits, saved_by,
             respect_lost, war_attempts, war_losses, defends_won, defends_lost, avg_fair_fight)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
            username=excluded.username, war_hits=excluded.war_hits,
            outside_hits=excluded.outside_hits, assists=excluded.assists,
            respect_gained=excluded.respect_gained, payout_amount=excluded.payout_amount,
-           units=excluded.units, saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP,
+           units=excluded.units, rank_hits=excluded.rank_hits, saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP,
            respect_lost=excluded.respect_lost, war_attempts=excluded.war_attempts,
            war_losses=excluded.war_losses, defends_won=excluded.defends_won,
            defends_lost=excluded.defends_lost, avg_fair_fight=excluded.avg_fair_fight`
@@ -1511,6 +1511,10 @@ export async function saveWarHits(request, env, user) {
         id, war.faction_id, m.torn_user_id, m.username ?? null,
         m.war_hits ?? 0, m.outside_hits ?? 0, m.assists ?? 0,
         m.respect_gained ?? 0, m.payout_amount ?? 0, m.units ?? 0,
+        // rank_hits: the member's actual attack count, capped only by an
+        // attack cap if one was set — never by respect. Falls back to
+        // war_hits (uncapped) if the frontend didn't send one.
+        m.rank_hits ?? (m.war_hits ?? 0),
         user.userId,
         m.respect_lost ?? 0, m.war_attempts ?? (m.war_hits ?? 0), m.war_losses ?? 0,
         m.defends_won ?? 0, m.defends_lost ?? 0, m.avg_fair_fight ?? 0
@@ -1594,12 +1598,12 @@ export async function createManualWar(request, env, user) {
       warHitsStmts.push(
         env.DB.prepare(
           `INSERT INTO war_hits
-             (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, saved_by, war_attempts)
-           VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?)
+             (ranked_war_id, faction_id, torn_user_id, username, war_hits, outside_hits, assists, respect_gained, payout_amount, units, rank_hits, saved_by, war_attempts)
+           VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?, ?)
            ON CONFLICT(ranked_war_id, torn_user_id) DO UPDATE SET
-             username=excluded.username, war_hits=excluded.war_hits, units=excluded.units,
+             username=excluded.username, war_hits=excluded.war_hits, units=excluded.units, rank_hits=excluded.rank_hits,
              saved_by=excluded.saved_by, saved_at=CURRENT_TIMESTAMP, war_attempts=excluded.war_attempts`
-        ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, user.userId, m.war_hits)
+        ).bind(warId, faction_id, tornId, username, m.war_hits, m.war_hits, m.war_hits, user.userId, m.war_hits)
       );
 
       if (username) {
