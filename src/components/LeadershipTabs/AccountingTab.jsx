@@ -613,7 +613,9 @@ function InvestmentCard({ summaries, shownIds, isCurrentMonth = true, monthLabel
 }
 
 function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue = 0, summary, isCurrentMonth = true, monthLabel = 'this month' }) {
-  const [collapsed, setCollapsed] = useState(false)
+  // Loads collapsed — an "Overview" page shouldn't open with every faction's
+  // full detail already expanded; click a card to see its breakdown.
+  const [collapsed, setCollapsed] = useState(true)
   const basic = faction.basic || {}
   const balanceFaction = faction.balance?.faction || {}
   const balanceMembers = faction.balance?.members || []

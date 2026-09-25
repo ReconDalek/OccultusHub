@@ -601,6 +601,9 @@ function CompanyStockCard() {
                 {c.item_name && <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>{c.item_name}</span>}
               </div>
               <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{c.in_stock.toLocaleString()} in stock</span>
+              {c.price != null && (
+                <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(c.price)} each</span>
+              )}
               {c.generated_today != null && (
                 <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>+{c.generated_today.toLocaleString()} generated {c.snapshot_date}</span>
               )}
