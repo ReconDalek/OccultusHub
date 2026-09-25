@@ -480,6 +480,142 @@ function OverviewSubTab({ factionId, onNavigate }) {
           })()}
         </div>
       )}
+
+      <CompanyStockCard onNavigate={onNavigate} />
+    </div>
+  )
+}
+
+const token = () => localStorage.getItem('occultusSession')
+
+// ─── Company Stock card — current stock level per tracked company (primary
+// item — the one with the highest sold_worth, almost always the only one)
+// plus a staffing suggestion when stock is low/high or trending that way.
+// Self-contained: its own fetch, own card, doesn't touch the networth/expense
+// math above. ──────────────────────────────────────────────────────────────
+
+function CompanyStockCard({ onNavigate }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [editingThresholds, setEditingThresholds] = useState(false)
+  const [thresholdForm, setThresholdForm] = useState({ low: '', high: '' })
+  const [saving, setSaving] = useState(false)
+
+  function load() {
+    setLoading(true)
+    fetch(`${API_BASE_URL}/api/leadership/accounting/companies/stock-overview`, { headers: { Authorization: token() } })
+      .then(res => res.json())
+      .then(json => { setData(json); setError(null) })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  function startEditThresholds() {
+    setThresholdForm({ low: String(data?.low ?? ''), high: String(data?.high ?? '') })
+    setEditingThresholds(true)
+  }
+
+  async function saveThresholds() {
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/accounting/companies/stock-thresholds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token() },
+        body: JSON.stringify({ low: Number(thresholdForm.low), high: Number(thresholdForm.high) }),
+      })
+      const json = await res.json()
+      if (json.error) { setError(json.error); return }
+      setEditingThresholds(false)
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading && !data) return null
+  if (error && !data) return null
+  if (data && data.companies.length === 0) return null
+
+  return (
+    <div style={{
+      marginTop: '20px', padding: '20px', borderRadius: '14px',
+      background: "var(--panel-bg, rgba(255,255,255,0.03))", border: '1px solid rgba(255,255,255,0.08)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+        <div>
+          <h3 style={{ color: '#f4f4f5', fontSize: '15px', fontWeight: '600', margin: 0, marginBottom: '2px' }}>Company Stock</h3>
+          <p style={{ color: "var(--text-faint)", fontSize: '11px', margin: 0 }}>
+            Current stock level per company, with a staffing suggestion when it's running low or overflowing.
+          </p>
+        </div>
+        {data && !editingThresholds && (
+          <button onClick={startEditThresholds}
+            style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            Thresholds: {data.low.toLocaleString()} – {data.high.toLocaleString()}
+          </button>
+        )}
+      </div>
+
+      {editingThresholds && (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px', padding: '10px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)' }}>
+          <label style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Low</label>
+          <input type="number" value={thresholdForm.low} onChange={e => setThresholdForm(f => ({ ...f, low: e.target.value }))}
+            style={{ width: '90px', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)', color: '#f4f4f5', fontSize: '12px' }} />
+          <label style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>High</label>
+          <input type="number" value={thresholdForm.high} onChange={e => setThresholdForm(f => ({ ...f, high: e.target.value }))}
+            style={{ width: '90px', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.06)', color: '#f4f4f5', fontSize: '12px' }} />
+          <button onClick={saveThresholds} disabled={saving}
+            style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', background: 'rgba(74,222,128,0.2)', color: '#4ade80', cursor: 'pointer', fontSize: '12px' }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={() => setEditingThresholds(false)}
+            style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px' }}>
+            Cancel
+          </button>
+          <span style={{ color: 'var(--text-faint)', fontSize: '11px' }}>Applies to all companies — not per-company.</span>
+        </div>
+      )}
+
+      {error && <p style={{ color: '#f87171', fontSize: '12px', margin: '0 0 10px' }}>{error}</p>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {data?.companies.map(c => {
+          const suggestionText = c.suggestion === 'low'
+            ? 'Stock low — consider moving a Sales Executive to Mill Operator'
+            : c.suggestion === 'high'
+              ? 'Stock overflowing — consider moving a Mill Operator to Sales Executive'
+              : null
+          const badgeColor = c.suggestion === 'low' ? '#f87171' : c.suggestion === 'high' ? '#fbbf24' : null
+          return (
+            <div key={c.company_id} onClick={() => onNavigate?.('companies')} style={{
+              display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', cursor: onNavigate ? 'pointer' : 'default',
+              padding: '10px 14px', borderRadius: '8px',
+              background: suggestionText ? `${badgeColor}0d` : 'rgba(255,255,255,0.02)',
+              border: `1px solid ${suggestionText ? `${badgeColor}40` : 'rgba(255,255,255,0.06)'}`,
+            }}>
+              <div style={{ minWidth: '160px' }}>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{c.name}</span>
+                {c.item_name && <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>{c.item_name}</span>}
+              </div>
+              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{c.in_stock.toLocaleString()} in stock</span>
+              {c.generated_today != null && (
+                <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>+{c.generated_today.toLocaleString()} generated {c.snapshot_date}</span>
+              )}
+              <span style={{ color: 'var(--text-faint)', fontSize: '11px' }}>
+                trend {c.trend_per_day >= 0 ? '+' : ''}{c.trend_per_day.toLocaleString()}/day
+              </span>
+              {suggestionText && (
+                <span style={{ color: badgeColor, fontSize: '11px', fontWeight: '600' }}>⚠ {suggestionText}</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

@@ -72,7 +72,7 @@ export async function fetchAndCacheCompanyProfits(env) {
 
     try {
       const data = await fetchWithRetry(
-        `https://api.torn.com/v2/company?selections=profile,employees&id=${row.company_id}&cat=main`,
+        `https://api.torn.com/v2/company?selections=profile,employees,stock&id=${row.company_id}&cat=main`,
         { Authorization: `ApiKey ${apiKey}` }
       );
 
@@ -115,6 +115,33 @@ export async function fetchAndCacheCompanyProfits(env) {
            (company_id, snapshot_date, daily_income, daily_wages, daily_advert, daily_profit, faction_cut)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).bind(row.company_id, yesterday, dailyIncome, dailyWages, dailyAdvert, dailyProfit, factionCut).run();
+
+      // Daily per-item stock snapshot — one row per (company, item, day).
+      // `generated` needs yesterday's in_stock for the SAME item as a baseline;
+      // an item newly appearing (first day tracked, or the company switched
+      // products) has none, so generated stays NULL rather than a misleading
+      // number derived against a different item's stock level.
+      for (const item of (data.stock || [])) {
+        const prevRow = await env.DB.prepare(
+          `SELECT in_stock FROM company_stock_snapshots
+           WHERE company_id = ? AND item_id = ? AND snapshot_date < ?
+           ORDER BY snapshot_date DESC LIMIT 1`
+        ).bind(row.company_id, item.id, yesterday).first();
+
+        const generated = prevRow
+          ? (item.sold_amount ?? 0) + ((item.in_stock ?? 0) - prevRow.in_stock)
+          : null;
+
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO company_stock_snapshots
+             (company_id, item_id, item_name, snapshot_date, price, in_stock, on_order, sold_amount, sold_worth, generated)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          row.company_id, item.id, item.name ?? null, yesterday,
+          item.price ?? null, item.in_stock ?? 0, item.on_order ?? 0,
+          item.sold_amount ?? 0, item.sold_worth ?? 0, generated
+        ).run();
+      }
 
       // Also refresh company_cache with the richer director-key data
       await env.DB.prepare(
@@ -404,6 +431,199 @@ export async function setCompanyMonthPaid(request, env, user) {
     return jsonResponse({ success: true });
   } catch (e) {
     return errorResponse('Failed to update company month paid status: ' + e.message, 500);
+  }
+}
+
+const DEFAULT_STOCK_LOW_THRESHOLD  = 1000;
+const DEFAULT_STOCK_HIGH_THRESHOLD = 9000;
+const STOCK_TREND_DAYS = 5; // trailing days of in_stock deltas averaged for the next-day projection
+
+async function getStockThresholds(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT key, value FROM system_settings WHERE key IN ('company_stock_low_threshold', 'company_stock_high_threshold')`
+  ).all();
+  const map = {};
+  for (const r of (results || [])) map[r.key] = r.value;
+  return {
+    low:  Number(map.company_stock_low_threshold)  || DEFAULT_STOCK_LOW_THRESHOLD,
+    high: Number(map.company_stock_high_threshold) || DEFAULT_STOCK_HIGH_THRESHOLD,
+  };
+}
+
+// GET /api/leadership/accounting/companies/stock-thresholds
+export async function getStockThresholdSettings(request, env, user) {
+  try {
+    return jsonResponse(await getStockThresholds(env));
+  } catch (e) {
+    return errorResponse('Failed to fetch stock thresholds: ' + e.message, 500);
+  }
+}
+
+// POST /api/leadership/accounting/companies/stock-thresholds  body: { low, high }
+export async function setStockThresholdSettings(request, env, user) {
+  try {
+    const { low, high } = await request.json();
+    if (low == null || high == null || Number(low) <= 0 || Number(high) <= Number(low)) {
+      return errorResponse('low and high are required, and high must be greater than low', 400);
+    }
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE system_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'company_stock_low_threshold'`).bind(String(Math.round(Number(low)))),
+      env.DB.prepare(`UPDATE system_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'company_stock_high_threshold'`).bind(String(Math.round(Number(high)))),
+    ]);
+    return jsonResponse({ success: true, low: Math.round(Number(low)), high: Math.round(Number(high)) });
+  } catch (e) {
+    return errorResponse('Failed to update stock thresholds: ' + e.message, 500);
+  }
+}
+
+// GET /api/leadership/accounting/companies/stock-overview
+// Current stock level + a staffing suggestion per tracked company, for the
+// Accounting > Overview stock card. One "primary" item per company (the one
+// with the highest sold_worth on its latest snapshot — almost always the
+// company's only stock item, but some company types carry more than one).
+export async function getCompanyStockOverview(request, env, user) {
+  try {
+    const thresholds = await getStockThresholds(env);
+
+    const { results: primaryRows } = await env.DB.prepare(`
+      WITH latest AS (
+        SELECT company_id, item_id, MAX(snapshot_date) AS max_date
+        FROM company_stock_snapshots
+        GROUP BY company_id, item_id
+      ),
+      latest_rows AS (
+        SELECT s.*
+        FROM company_stock_snapshots s
+        JOIN latest l ON l.company_id = s.company_id AND l.item_id = s.item_id AND l.max_date = s.snapshot_date
+      ),
+      ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY sold_worth DESC, item_id ASC) AS rn
+        FROM latest_rows
+      )
+      SELECT company_id, item_id, item_name, snapshot_date, price, in_stock, on_order, sold_amount, sold_worth, generated
+      FROM ranked WHERE rn = 1
+    `).all();
+
+    if (!primaryRows || !primaryRows.length) {
+      return jsonResponse({ ...thresholds, companies: [] });
+    }
+
+    // Trailing in_stock history per (company, item) for the trend projection —
+    // one query for everyone rather than one per company.
+    const pairsWhere = primaryRows.map(() => `(company_id = ? AND item_id = ?)`).join(' OR ');
+    const pairsBind  = primaryRows.flatMap(r => [r.company_id, r.item_id]);
+    const { results: histRows } = await env.DB.prepare(`
+      SELECT company_id, item_id, snapshot_date, in_stock
+      FROM company_stock_snapshots
+      WHERE (${pairsWhere})
+      ORDER BY company_id, item_id, snapshot_date DESC
+    `).bind(...pairsBind).all();
+
+    const historyByKey = {};
+    for (const r of (histRows || [])) {
+      const key = `${r.company_id}|${r.item_id}`;
+      (historyByKey[key] ??= []).push(r);
+    }
+
+    const companyIds = primaryRows.map(r => r.company_id);
+    const namePh = companyIds.map(() => '?').join(',');
+    const { results: nameRows } = await env.DB.prepare(
+      `SELECT company_id, name FROM company_profit_cache WHERE company_id IN (${namePh})`
+    ).bind(...companyIds).all();
+    const nameByCompany = {};
+    for (const r of (nameRows || [])) nameByCompany[r.company_id] = r.name;
+
+    const companies = primaryRows.map(r => {
+      const key = `${r.company_id}|${r.item_id}`;
+      // Most-recent-first; take up to STOCK_TREND_DAYS+1 rows to get up to
+      // STOCK_TREND_DAYS day-over-day deltas.
+      const history = (historyByKey[key] || []).slice(0, STOCK_TREND_DAYS + 1);
+      const deltas = [];
+      for (let i = 0; i < history.length - 1; i++) deltas.push(history[i].in_stock - history[i + 1].in_stock);
+      const trend = deltas.length ? deltas.reduce((s, d) => s + d, 0) / deltas.length : 0;
+      const projectedNext = Math.round(r.in_stock + trend);
+
+      let suggestion = null;
+      if (r.in_stock <= thresholds.low || (trend < 0 && projectedNext <= thresholds.low)) {
+        suggestion = 'low'; // recommend Sales Executive -> Mill Operator (need more production)
+      } else if (r.in_stock >= thresholds.high || (trend > 0 && projectedNext >= thresholds.high)) {
+        suggestion = 'high'; // recommend Mill Operator -> Sales Executive (need more selling)
+      }
+
+      return {
+        company_id: r.company_id,
+        name: nameByCompany[r.company_id] ?? `Company ${r.company_id}`,
+        item_name: r.item_name,
+        price: r.price,
+        in_stock: r.in_stock,
+        on_order: r.on_order,
+        sold_amount: r.sold_amount,
+        generated_today: r.generated,
+        trend_per_day: Math.round(trend),
+        projected_next_day: projectedNext,
+        snapshot_date: r.snapshot_date,
+        suggestion,
+      };
+    });
+
+    return jsonResponse({ ...thresholds, companies });
+  } catch (e) {
+    return errorResponse('Failed to fetch company stock overview: ' + e.message, 500);
+  }
+}
+
+// GET /api/leadership/accounting/companies/:id/stock-breakdown?year=YYYY&month=M(1-12)
+// Day-by-day stock history for one company's primary item across one month —
+// same shape/use as getCompanyBreakdown, for a trend view per company.
+export async function getCompanyStockBreakdown(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const companyId = parseInt(url.pathname.match(/\/companies\/(\d+)\/stock-breakdown/)?.[1], 10);
+    if (!companyId) return errorResponse('Invalid company id', 400);
+
+    const now = new Date();
+    const year  = parseInt(url.searchParams.get('year'), 10)  || now.getUTCFullYear();
+    const month = parseInt(url.searchParams.get('month'), 10) || (now.getUTCMonth() + 1);
+    if (month < 1 || month > 12) return errorResponse('month must be 1-12', 400);
+
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const isCurrentMonth = year === now.getUTCFullYear() && month === (now.getUTCMonth() + 1);
+    const monthEnd = isCurrentMonth
+      ? new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      : `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+    // Same "primary item" pick as the overview — whichever item had the
+    // highest sold_worth on its latest snapshot.
+    const primaryItem = await env.DB.prepare(`
+      SELECT item_id, item_name FROM company_stock_snapshots
+      WHERE company_id = ? ORDER BY snapshot_date DESC, sold_worth DESC LIMIT 1
+    `).bind(companyId).first();
+
+    if (!primaryItem) {
+      return jsonResponse({ company_id: companyId, item_name: null, year, month, month_start: monthStart, month_end: monthEnd, days: [] });
+    }
+
+    const { results: rows } = await env.DB.prepare(`
+      SELECT snapshot_date, price, in_stock, on_order, sold_amount, sold_worth, generated
+      FROM company_stock_snapshots
+      WHERE company_id = ? AND item_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
+      ORDER BY snapshot_date ASC
+    `).bind(companyId, primaryItem.item_id, monthStart, monthEnd).all();
+
+    const days = (rows || []).map(r => ({
+      date: r.snapshot_date,
+      price: r.price,
+      in_stock: r.in_stock,
+      on_order: r.on_order,
+      sold_amount: r.sold_amount,
+      sold_worth: r.sold_worth,
+      generated: r.generated,
+    }));
+
+    return jsonResponse({ company_id: companyId, item_name: primaryItem.item_name, year, month, month_start: monthStart, month_end: monthEnd, days });
+  } catch (e) {
+    return errorResponse('Failed to fetch company stock breakdown: ' + e.message, 500);
   }
 }
 
