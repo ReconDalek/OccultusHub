@@ -1032,6 +1032,21 @@ export async function getWarsArchive(request, env) {
 // ── GET /api/leadership/war/:id ───────────────────────────────────────────────
 // Falls back to summary_json when raw attack rows have been purged.
 
+// Everyone in the faction for this war, for the payout list (incl. members who
+// never attacked). Prefers the war-start roster captured in war_warning_checks;
+// falls back to the faction's current active members if that was never captured.
+async function getWarRoster(env, warId, factionId) {
+  const { results: checked } = await env.DB.prepare(
+    `SELECT torn_user_id, username FROM war_warning_checks WHERE ranked_war_id=?`
+  ).bind(warId).all();
+  if (checked?.length) return checked;
+  if (!factionId) return [];
+  const { results: current } = await env.DB.prepare(
+    `SELECT torn_user_id, username FROM faction_members WHERE faction_id=? AND is_active=1`
+  ).bind(factionId).all();
+  return current || [];
+}
+
 export async function getWarDetails(request, env) {
   try {
     const match = request.url.match(/\/war\/(\d+)(?:$|\?|\/)/);
@@ -1046,6 +1061,8 @@ export async function getWarDetails(request, env) {
     ).bind(warId).first();
     if (!war) return errorResponse('War not found', 404);
 
+    const roster = await getWarRoster(env, warId, war.faction_id);
+
     // Once leadership has applied Verify Data, summary_json is authoritative —
     // skip live recomputation from war_attacks even if raw rows still exist
     // (they always do pre-payout, which is exactly when Verify gets used).
@@ -1058,17 +1075,17 @@ export async function getWarDetails(request, env) {
       if ((attackCount?.n ?? 0) > 0) {
         // Live data from war_attacks
         const { attackerStats, defendStats, totals, scoreCapInfo } = await buildMemberStats(env, warId);
-        return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false, scoreCapInfo });
+        return jsonResponse({ war, summary: totals, attackerStats, defendStats, fromSummary: false, scoreCapInfo, roster });
       }
     }
 
     // Archived / verified data from summary_json
     if (war.summary_json) {
       const archived = JSON.parse(war.summary_json);
-      return jsonResponse({ war, summary: archived.totals || {}, attackerStats: archived.attackerStats || [], defendStats: archived.defendStats || [], fromSummary: true });
+      return jsonResponse({ war, summary: archived.totals || {}, attackerStats: archived.attackerStats || [], defendStats: archived.defendStats || [], fromSummary: true, roster });
     }
 
-    return jsonResponse({ war, summary: {}, attackerStats: [], defendStats: [], fromSummary: false });
+    return jsonResponse({ war, summary: {}, attackerStats: [], defendStats: [], fromSummary: false, roster });
   } catch (err) {
     console.error('getWarDetails error:', err);
     return errorResponse('Failed to fetch war details', 500);
@@ -1159,7 +1176,10 @@ export async function computeWarEconomics(env, warId) {
   const settings       = war.payout_json ? (JSON.parse(war.payout_json).settings || {}) : {};
   const totalAmount    = parseFloat(settings.totalAmount) || 0;
   const factionSharePct = settings.factionShare ?? 10;
-  const factionProfit  = Math.round(totalAmount * factionSharePct / 100 * 100) / 100;
+  // retainedAmount: even-split shares of excluded members — they aren't
+  // redistributed to other members, so that money stays with the faction.
+  const retainedAmount = settings.splitMode === 'even' ? (parseFloat(settings.retainedAmount) || 0) : 0;
+  const factionProfit  = Math.round((totalAmount * factionSharePct / 100 + retainedAmount) * 100) / 100;
 
   // Real bounty spend assigned to this war (see bountyController.js) — replaces
   // the earlier manual placeholder now that actual bounty tracking exists.

@@ -400,33 +400,42 @@ function formatMoneyDisplay(raw) {
   return Number(raw).toLocaleString('en-US')
 }
 
-function computePayouts(attackerStats, { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue, includeBonusRespect }) {
+const hasWarActivity = (r) =>
+  (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.friendly_hits || 0) + (parseFloat(r.war_respect_gained) || 0) > 0
+
+// Returns a row for EVERY member passed in — members who don't qualify just
+// get units=0 (listed as "No pay") instead of being dropped.
+// splitMode 'even' ignores all attack/respect parameters: every non-excluded
+// member gets exactly one share.
+function computePayouts(attackerStats, { splitMode, excluded, warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue, includeBonusRespect }) {
+  const even = splitMode === 'even'
   // When cap is off, always use attack-based formula regardless of capType
-  const useRespect = capEnabled && capType === 'respect'
-  const cap        = capEnabled && capValue > 0 ? capValue : Infinity
+  const useRespect = !even && capEnabled && capType === 'respect'
+  const cap        = !even && capEnabled && capValue > 0 ? capValue : Infinity
 
   // rankHits is what actually feeds a member's rank (see memberController.js
   // getFactionMembers) — their real successful war attack count, capped ONLY
   // when leadership set an ATTACK cap for payout. A respect cap or a
   // respect-based payout must never touch rank credit, regardless of how the
   // war was paid out — money and rank are deliberately decoupled here.
-  const rankCap = (capEnabled && capType === 'attacks' && capValue > 0) ? capValue : Infinity
+  const rankCap = (!even && capEnabled && capType === 'attacks' && capValue > 0) ? capValue : Infinity
+  const excludedSet = new Set(excluded || [])
 
-  return attackerStats
-    .filter(r => (r.war_hits || 0) + (r.outside_attacks || 0) + (r.assists || 0) + (r.friendly_hits || 0) + (r.war_respect_gained || 0) > 0)
-    .map(r => {
-      const respectForPayout = (parseFloat(r.war_respect_gained) || 0) - (includeBonusRespect ? 0 : (parseFloat(r.bonus_respect) || 0))
-      const rawUnits = useRespect
+  return attackerStats.map(r => {
+    const isExcluded = even && excludedSet.has(r.attacker_id)
+    const respectForPayout = (parseFloat(r.war_respect_gained) || 0) - (includeBonusRespect ? 0 : (parseFloat(r.bonus_respect) || 0))
+    const rawUnits = even
+      ? 1
+      : useRespect
         ? respectForPayout
         : (r.war_hits        || 0) * warPct      / 100
         + (r.outside_attacks || 0) * outsidePct  / 100
         + (r.assists         || 0) * assistPct   / 100
         + (r.friendly_hits   || 0) * (friendlyPct ?? 0) / 100
-      const units    = Math.min(rawUnits, cap)
-      const rankHits = Math.min(r.war_hits || 0, rankCap)
-      return { ...r, rawUnits, units, rankHits }
-    })
-    .filter(r => r.units > 0)
+    const units    = isExcluded ? 0 : Math.max(0, Math.min(rawUnits, cap))
+    const rankHits = Math.min(r.war_hits || 0, rankCap)
+    return { ...r, rawUnits, units, rankHits, isExcluded }
+  })
 }
 
 function EditAttacksModal({ row, onSave, onClose }) {
@@ -476,7 +485,9 @@ function EditAttacksModal({ row, onSave, onClose }) {
   )
 }
 
-function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved, onPayoutSaved, payoutVerified, payoutProcessedBy, payoutProcessedAt }) {
+function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHitsSaved, onPayoutSaved, payoutVerified, payoutProcessedBy, payoutProcessedAt }) {
+  const [splitMode,   setSplitMode]   = useState('weighted') // 'weighted' | 'even'
+  const [excluded,    setExcluded]    = useState([])         // attacker_ids left out of an even split
   const [warPct,      setWarPct]      = useState(100)
   const [outsidePct,  setOutsidePct]  = useState(0)
   const [assistPct,   setAssistPct]   = useState(0)
@@ -510,6 +521,8 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
           setFactionShare(p.settings.factionShare ?? 10); setCapEnabled(p.settings.capEnabled ?? false)
           setCapType(p.settings.capType ?? 'attacks'); setCapValue(p.settings.capValue ?? '')
           setIncludeBonusRespect(p.settings.includeBonusRespect ?? false)
+          setSplitMode(p.settings.splitMode ?? 'weighted')
+          setExcluded(p.settings.excluded ?? [])
         }
         if (p.paid)      setPaidSet(new Set(Object.keys(p.paid).map(Number)))
         if (p.overrides) setOverrides(p.overrides)
@@ -518,23 +531,50 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
     return () => controller.abort()
   }, [warId])
 
-  // Merge overrides into attackerStats before computing payouts
+  // Merge overrides into attackerStats, then append every other faction member
+  // in the war (roster) with zeroed stats so the list covers the whole faction
   const mergedStats = attackerStats.map(r => {
     const ov = overrides[r.attacker_id]
     return ov ? { ...r, ...ov } : r
   })
+  const seenIds = new Set(mergedStats.map(r => r.attacker_id))
+  const rosterOnly = (roster || [])
+    .filter(m => m.torn_user_id && !seenIds.has(m.torn_user_id))
+    .sort((a, b) => (a.username || '').localeCompare(b.username || ''))
+    .map(m => {
+      const ov = overrides[m.torn_user_id]
+      const base = { attacker_id: m.torn_user_id, attacker_name: m.username, war_hits: 0, outside_attacks: 0, assists: 0, friendly_hits: 0, war_respect_gained: 0, bonus_respect: 0 }
+      return ov ? { ...base, ...ov } : base
+    })
+  const allStats = [...mergedStats, ...rosterOnly]
 
-  const settings = { warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare, includeBonusRespect }
-  const rows         = computePayouts(mergedStats, settings)
+  const isEven   = splitMode === 'even'
+  const settings = { splitMode, excluded, warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare, includeBonusRespect }
+  const rows         = computePayouts(allStats, settings)
   const totalUnits   = rows.reduce((s, r) => s + r.units, 0)
   const amount       = parseFloat(totalAmount) || 0
   const available    = amount * (1 - factionShare / 100)
   const factionCut   = amount - available
-  const perUnit      = totalUnits > 0 ? available / totalUnits : 0
+  // Even split: the pot is divided by EVERY listed member, excluded or not —
+  // an excluded member's share stays with the faction instead of being
+  // redistributed to everyone else.
+  const perUnit      = isEven
+    ? (rows.length > 0 ? available / rows.length : 0)
+    : (totalUnits > 0 ? available / totalUnits : 0)
   rows.forEach(r => { r.payout = Math.floor(r.units * perUnit) })
-  const totalRemaining = rows.reduce((s, r) => s + (!paidSet.has(r.attacker_id) ? r.payout : 0), 0)
-  const allPaid        = rows.length > 0 && rows.every(r => paidSet.has(r.attacker_id))
-  const useRespect     = capEnabled && capType === 'respect'
+  const excludedCount  = isEven ? rows.filter(r => r.isExcluded).length : 0
+  const retainedAmount = Math.floor(excludedCount * perUnit)
+  settings.retainedAmount = retainedAmount
+  const payRows        = rows.filter(r => r.payout > 0)
+  const totalRemaining = payRows.reduce((s, r) => s + (!paidSet.has(r.attacker_id) ? r.payout : 0), 0)
+  const allPaid        = payRows.length > 0 && payRows.every(r => paidSet.has(r.attacker_id))
+  const paidCount      = payRows.filter(r => paidSet.has(r.attacker_id)).length
+  const useRespect     = !isEven && capEnabled && capType === 'respect'
+
+  const toggleExcluded = (id) => {
+    if (hitsSaved) return
+    setExcluded(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
 
   const togglePaid = (id) => {
     if (hitsSaved) return  // locked after saving to rankings
@@ -554,7 +594,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
   const saveDraft = async () => {
     setSaving(true)
     try {
-      const paid = {}; rows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
+      const paid = {}; payRows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
       await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
         method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ payout: { settings, paid, overrides }, is_paid: allPaid }),
@@ -570,7 +610,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
     if (!allPaid || hitsSaved) return
     setRankSaving(true)
     try {
-      const paid = {}; rows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
+      const paid = {}; payRows.forEach(r => { if (paidSet.has(r.attacker_id)) paid[r.attacker_id] = r.payout })
       // First persist payout + is_paid + overrides
       await fetch(`${API_BASE_URL}/api/leadership/war/${warId}/payout`, {
         method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -580,7 +620,10 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
       // lost, defends won/lost) since attackerStats alone doesn't carry them
       const defendById = {}
       for (const d of defendStats || []) defendById[d.defender_id] = d
-      const members = rows.map(r => {
+      // Weighted: same members as always (those who earned units). Even split:
+      // everyone paid, plus excluded members who still attacked so they keep
+      // their rank credit. Zero-activity, zero-pay members aren't written.
+      const members = rows.filter(r => r.units > 0 || (isEven && hasWarActivity(r))).map(r => {
         const def = defendById[r.attacker_id] || {}
         return {
           torn_user_id:   r.attacker_id,
@@ -643,12 +686,32 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '16px', marginBottom: '16px', opacity: hitsSaved ? 0.6 : 1, pointerEvents: hitsSaved ? 'none' : 'auto' }}>
         <p style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px 0' }}>Payout Settings</p>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
-          <PctToggle label="War Hits"        value={warPct}      onChange={setWarPct}      disabled={useRespect} />
-          <PctToggle label="Chain / Outside" value={outsidePct}  onChange={setOutsidePct}  disabled={useRespect} />
-          <PctToggle label="Assists"         value={assistPct}   onChange={setAssistPct}   disabled={useRespect} />
-          <PctToggle label="Friendly Hits"   value={friendlyPct} onChange={setFriendlyPct} disabled={useRespect} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {[['weighted', 'By Activity'], ['even', 'Even Split']].map(([m, label]) => (
+              <button key={m} onClick={() => setSplitMode(m)} style={{
+                padding: '5px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer',
+                border: `1px solid ${splitMode === m ? 'rgba(179,18,63,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                background: splitMode === m ? 'rgba(179,18,63,0.15)' : 'transparent',
+                color: splitMode === m ? '#f4f4f5' : "var(--text-muted)",
+              }}>{label}</button>
+            ))}
+          </div>
+          <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>
+            {isEven
+              ? 'Pot after faction cut is split equally across every listed member. Excluded members’ shares go to the faction, not to other members.'
+              : 'Paid by attack/respect units. Members who don’t qualify are listed as No pay.'}
+          </span>
         </div>
+
+        {!isEven && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+            <PctToggle label="War Hits"        value={warPct}      onChange={setWarPct}      disabled={useRespect} />
+            <PctToggle label="Chain / Outside" value={outsidePct}  onChange={setOutsidePct}  disabled={useRespect} />
+            <PctToggle label="Assists"         value={assistPct}   onChange={setAssistPct}   disabled={useRespect} />
+            <PctToggle label="Friendly Hits"   value={friendlyPct} onChange={setFriendlyPct} disabled={useRespect} />
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
           <div>
@@ -662,7 +725,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        {!isEven && <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <button onClick={() => { setCapEnabled(e => !e) }} style={{
             padding: '5px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
             border: `1px solid ${capEnabled ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}`,
@@ -694,13 +757,16 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
               }}>{includeBonusRespect ? '✓ Bonus Respect Included' : 'Bonus Respect Excluded'}</button>
             )}
           </>}
-        </div>
+        </div>}
 
         {amount > 0 && (
           <div style={{ marginTop: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
             {[['Faction cut', `$${factionCut.toLocaleString('en-GB')}`, '#f4f4f5'],
               ['Available',   `$${available.toLocaleString('en-GB')}`,  '#22c55e'],
-              ['Per unit',    `$${Math.floor(perUnit).toLocaleString('en-GB')}`, '#f4f4f5'],
+              [isEven ? 'Per member' : 'Per unit', `$${Math.floor(perUnit).toLocaleString('en-GB')}`, '#f4f4f5'],
+              ...(isEven && excludedCount > 0
+                ? [[`Excluded → faction (${excludedCount})`, `$${retainedAmount.toLocaleString('en-GB')}`, '#f59e0b']]
+                : []),
               ['Remaining',   `$${totalRemaining.toLocaleString('en-GB')}`, totalRemaining > 0 ? '#eab308' : '#22c55e'],
             ].map(([l, v, c]) => (
               <span key={l} style={{ fontSize: '11px', color: "var(--text-secondary)" }}>{l}: <strong style={{ color: c }}>{v}</strong></span>
@@ -711,7 +777,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
 
       {/* ── Member table ── */}
       {rows.length === 0 ? (
-        <p style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No members with qualifying attacks — adjust percentages above.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: '12px', textAlign: 'center', padding: '20px 0' }}>No faction members found for this war.</p>
       ) : (
         <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
@@ -732,11 +798,12 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
             </thead>
             <tbody>
               {rows.map(r => {
-                const paid       = paidSet.has(r.attacker_id)
+                const noPay      = r.payout <= 0
+                const paid       = !noPay && paidSet.has(r.attacker_id)
                 const hasOverride = !!overrides[r.attacker_id]
                 return (
                   <tr key={r.attacker_id}
-                    style={{ opacity: paid ? 0.5 : 1 }}
+                    style={{ opacity: paid || noPay ? 0.5 : 1 }}
                     onMouseEnter={e => { if (!paid) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
@@ -757,6 +824,16 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
                                 background: 'transparent', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171',
                               }}>×</button>
                             )}
+                            {isEven && (
+                              <button onClick={() => toggleExcluded(r.attacker_id)}
+                                title={r.isExcluded ? 'Include in the even split' : 'Exclude from the even split — their share goes to the faction'}
+                                style={{
+                                  padding: '1px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', lineHeight: 1.2,
+                                  background: r.isExcluded ? 'rgba(245,158,11,0.12)' : 'transparent',
+                                  border: `1px solid ${r.isExcluded ? 'rgba(245,158,11,0.45)' : 'rgba(255,255,255,0.1)'}`,
+                                  color: r.isExcluded ? '#f59e0b' : "var(--text-faint)",
+                                }}>{r.isExcluded ? 'Include' : 'Exclude'}</button>
+                            )}
                           </span>
                         )}
                       </span>
@@ -767,12 +844,14 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
                     <td style={{ ...td(), color: (r.friendly_hits || 0) > 0 ? '#fb923c' : "var(--text-faint)" }}>{r.friendly_hits || 0}</td>
                     <td style={{ ...td(), color: '#22c55e' }}>{((parseFloat(r.war_respect_gained) || 0) - (parseFloat(r.bonus_respect) || 0)).toFixed(2)}</td>
                     <td style={{ ...td(), color: (parseFloat(r.bonus_respect) || 0) > 0 ? '#f59e0b' : "var(--text-faint)" }}>{(parseFloat(r.bonus_respect) || 0).toFixed(2)}</td>
-                    <td style={{ ...td(), color: '#f4f4f5', fontWeight: '600' }}>{r.units.toFixed(useRespect ? 2 : 1)}</td>
-                    <td style={{ ...td(), color: '#22c55e', fontWeight: '700', fontSize: '13px' }}>
+                    <td style={{ ...td(), color: '#f4f4f5', fontWeight: '600' }}>{r.units.toFixed(isEven ? 0 : useRespect ? 2 : 1)}</td>
+                    <td style={{ ...td(), color: noPay ? "var(--text-faint)" : '#22c55e', fontWeight: '700', fontSize: '13px' }}>
                       ${r.payout.toLocaleString('en-GB')}
                     </td>
                     <td style={{ ...td('center') }}>
-                      {paid || hitsSaved ? (
+                      {noPay ? (
+                        <span style={{ fontSize: '10px', color: r.isExcluded ? '#f59e0b' : "var(--text-faint)", padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', whiteSpace: 'nowrap' }}>{r.isExcluded ? 'Excluded' : 'No pay'}</span>
+                      ) : paid || hitsSaved ? (
                         <span style={{ fontSize: '10px', color: "var(--text-faint)", padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>Paid</span>
                       ) : (
                         <a href={`https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${r.attacker_id}&money=${r.payout}`}
@@ -783,6 +862,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
                       )}
                     </td>
                     <td style={{ ...td('center') }}>
+                      {noPay ? <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>—</span> : (
                       <button onClick={() => togglePaid(r.attacker_id)} disabled={hitsSaved} style={{
                         width: '22px', height: '22px', borderRadius: '6px',
                         cursor: hitsSaved ? 'default' : 'pointer',
@@ -790,6 +870,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
                         background: paid ? 'rgba(34,197,94,0.2)' : 'transparent',
                         color: paid ? '#4ade80' : "var(--text-faint)", fontSize: '13px', lineHeight: 1,
                       }}>{paid ? '✓' : ''}</button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -798,9 +879,9 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
             <tfoot>
               <tr>
                 <td colSpan="7" style={{ padding: '10px', fontSize: '11px', color: "var(--text-secondary)", borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                  {paidSet.size} of {rows.length} paid
+                  {paidCount} of {payRows.length} paid · {rows.length - payRows.length} no pay
                 </td>
-                <td style={{ padding: '10px', fontSize: '12px', fontWeight: '700', color: '#f4f4f5', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totalUnits.toFixed(1)}</td>
+                <td style={{ padding: '10px', fontSize: '12px', fontWeight: '700', color: '#f4f4f5', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>{totalUnits.toFixed(isEven ? 0 : 1)}</td>
                 <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#22c55e', textAlign: 'right', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                   ${rows.reduce((s, r) => s + r.payout, 0).toLocaleString('en-GB')}
                 </td>
@@ -828,7 +909,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, initialHitsSaved,
             color: allPaid ? '#4ade80' : "var(--text-faint)", fontWeight: '600',
             opacity: rankSaving ? 0.6 : 1,
           }}>
-            {rankSaving ? 'Saving…' : allPaid ? '✓ Save to Rankings' : `Save to Rankings (${paidSet.size}/${rows.length} paid)`}
+            {rankSaving ? 'Saving…' : allPaid ? '✓ Save to Rankings' : `Save to Rankings (${paidCount}/${payRows.length} paid)`}
           </button>
 
           {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('✓') ? '#4ade80' : '#f87171' }}>{saveMsg}</span>}
@@ -1694,7 +1775,7 @@ function WarDetail({ warId, onPayoutSaved }) {
         />
       )}
       {activeSection === 'payout' && (
-        <PayoutCalculator warId={warId} attackerStats={attackerStats} defendStats={defendStats} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved}
+        <PayoutCalculator warId={warId} attackerStats={attackerStats} defendStats={defendStats} roster={data.roster} initialHitsSaved={!!war?.hits_saved} onPayoutSaved={onPayoutSaved}
           payoutVerified={!!war?.payout_verified} payoutProcessedBy={war?.payout_processed_by_username} payoutProcessedAt={war?.payout_processed_at} />
       )}
       {activeSection === 'economics' && (
