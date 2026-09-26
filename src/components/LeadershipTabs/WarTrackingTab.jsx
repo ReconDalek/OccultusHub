@@ -620,10 +620,9 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
       // lost, defends won/lost) since attackerStats alone doesn't carry them
       const defendById = {}
       for (const d of defendStats || []) defendById[d.defender_id] = d
-      // Weighted: same members as always (those who earned units). Even split:
-      // everyone paid, plus excluded members who still attacked so they keep
-      // their rank credit. Zero-activity, zero-pay members aren't written.
-      const members = rows.filter(r => r.units > 0 || (isEven && hasWarActivity(r))).map(r => {
+      // Everyone who attacked (paid, unpaid or excluded — pay never affects
+      // rank credit) plus anyone paid. Zero-activity, zero-pay members aren't written.
+      const members = rows.filter(r => r.units > 0 || hasWarActivity(r)).map(r => {
         const def = defendById[r.attacker_id] || {}
         return {
           torn_user_id:   r.attacker_id,
