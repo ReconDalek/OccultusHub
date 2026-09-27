@@ -1176,10 +1176,13 @@ export async function computeWarEconomics(env, warId) {
   const settings       = war.payout_json ? (JSON.parse(war.payout_json).settings || {}) : {};
   const totalAmount    = parseFloat(settings.totalAmount) || 0;
   const factionSharePct = settings.factionShare ?? 10;
-  // retainedAmount: even-split shares of excluded members — they aren't
-  // redistributed to other members, so that money stays with the faction.
-  const retainedAmount = settings.splitMode === 'even' ? (parseFloat(settings.retainedAmount) || 0) : 0;
-  const factionProfit  = Math.round((totalAmount * factionSharePct / 100 + retainedAmount) * 100) / 100;
+  // retainedAmount: member pay that was never paid out and so stays with the
+  // faction (excluded members' even-split shares when not redistributed, plus
+  // per-member rounding remainders). Computed by the payout calculator.
+  // faction_profit stays the TOTAL (cut + retained) so net_profit math is unchanged.
+  const shareProfit    = Math.round(totalAmount * factionSharePct / 100 * 100) / 100;
+  const retainedProfit = Math.round((parseFloat(settings.retainedAmount) || 0) * 100) / 100;
+  const factionProfit  = Math.round((shareProfit + retainedProfit) * 100) / 100;
 
   // Real bounty spend assigned to this war (see bountyController.js) — replaces
   // the earlier manual placeholder now that actual bounty tracking exists.
@@ -1247,6 +1250,8 @@ export async function computeWarEconomics(env, warId) {
 
   return {
     faction_profit: factionProfit,
+    share_profit: shareProfit,
+    retained_profit: retainedProfit,
     armory_expense: armoryExpense,
     armory_breakdown: armoryBreakdown,
     bounty_expense: bountyExpense,

@@ -488,6 +488,7 @@ function EditAttacksModal({ row, onSave, onClose }) {
 function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHitsSaved, onPayoutSaved, payoutVerified, payoutProcessedBy, payoutProcessedAt }) {
   const [splitMode,   setSplitMode]   = useState('weighted') // 'weighted' | 'even'
   const [excluded,    setExcluded]    = useState([])         // attacker_ids left out of an even split
+  const [excludedTo,  setExcludedTo]  = useState('faction')  // excluded shares: 'faction' keeps them, 'members' redistributes
   const [warPct,      setWarPct]      = useState(100)
   const [outsidePct,  setOutsidePct]  = useState(0)
   const [assistPct,   setAssistPct]   = useState(0)
@@ -523,6 +524,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
           setIncludeBonusRespect(p.settings.includeBonusRespect ?? false)
           setSplitMode(p.settings.splitMode ?? 'weighted')
           setExcluded(p.settings.excluded ?? [])
+          setExcludedTo(p.settings.excludedTo ?? 'faction')
         }
         if (p.paid)      setPaidSet(new Set(Object.keys(p.paid).map(Number)))
         if (p.overrides) setOverrides(p.overrides)
@@ -549,21 +551,27 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
   const allStats = [...mergedStats, ...rosterOnly]
 
   const isEven   = splitMode === 'even'
-  const settings = { splitMode, excluded, warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare, includeBonusRespect }
+  const settings = { splitMode, excluded, excludedTo, warPct, outsidePct, assistPct, friendlyPct, capEnabled, capType, capValue: parseFloat(capValue) || 0, totalAmount, factionShare, includeBonusRespect }
   const rows         = computePayouts(allStats, settings)
   const totalUnits   = rows.reduce((s, r) => s + r.units, 0)
   const amount       = parseFloat(totalAmount) || 0
   const available    = amount * (1 - factionShare / 100)
   const factionCut   = amount - available
-  // Even split: the pot is divided by EVERY listed member, excluded or not —
-  // an excluded member's share stays with the faction instead of being
-  // redistributed to everyone else.
+  // Even split: excludedTo 'faction' divides the pot by EVERY listed member,
+  // so an excluded member's share stays with the faction; 'members' divides
+  // it only among included members, so their shares get redistributed.
+  const excludedCount  = isEven ? rows.filter(r => r.isExcluded).length : 0
+  const evenDivisor    = excludedTo === 'members' ? rows.length - excludedCount : rows.length
   const perUnit      = isEven
-    ? (rows.length > 0 ? available / rows.length : 0)
+    ? (evenDivisor > 0 ? available / evenDivisor : 0)
     : (totalUnits > 0 ? available / totalUnits : 0)
   rows.forEach(r => { r.payout = Math.floor(r.units * perUnit) })
-  const excludedCount  = isEven ? rows.filter(r => r.isExcluded).length : 0
-  const retainedAmount = Math.floor(excludedCount * perUnit)
+  const totalPayout    = rows.reduce((s, r) => s + r.payout, 0)
+  // Everything in the member pot that isn't paid out stays with the faction —
+  // excluded shares (when kept) plus per-member rounding remainders. Saved in
+  // settings so War Economics / Accounting count it alongside the faction cut.
+  const retainedAmount = amount > 0 ? Math.max(0, Math.round((available - totalPayout) * 100) / 100) : 0
+  const excludedRetained = isEven && excludedTo !== 'members' ? Math.floor(excludedCount * perUnit) : 0
   settings.retainedAmount = retainedAmount
   const payRows        = rows.filter(r => r.payout > 0)
   const totalRemaining = payRows.reduce((s, r) => s + (!paidSet.has(r.attacker_id) ? r.payout : 0), 0)
@@ -698,10 +706,28 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
           </div>
           <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>
             {isEven
-              ? 'Pot after faction cut is split equally across every listed member. Excluded members’ shares go to the faction, not to other members.'
+              ? (excludedTo === 'members'
+                  ? 'Pot after faction cut is split equally across included members. Excluded members’ shares are redistributed to everyone else.'
+                  : 'Pot after faction cut is split equally across every listed member. Excluded members’ shares go to the faction, not to other members.')
               : 'Paid by attack/respect units. Members who don’t qualify are listed as No pay.'}
           </span>
         </div>
+
+        {isEven && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            <span style={{ color: "var(--text-secondary)", fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Excluded pay goes to</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[['faction', 'Faction'], ['members', 'Split to Members']].map(([m, label]) => (
+                <button key={m} onClick={() => setExcludedTo(m)} style={{
+                  padding: '5px 12px', borderRadius: '8px', fontSize: '11px', cursor: 'pointer',
+                  border: `1px solid ${excludedTo === m ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                  background: excludedTo === m ? 'rgba(245,158,11,0.12)' : 'transparent',
+                  color: excludedTo === m ? '#f4f4f5' : "var(--text-muted)",
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {!isEven && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
@@ -763,8 +789,11 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
             {[['Faction cut', `$${factionCut.toLocaleString('en-GB')}`, '#f4f4f5'],
               ['Available',   `$${available.toLocaleString('en-GB')}`,  '#22c55e'],
               [isEven ? 'Per member' : 'Per unit', `$${Math.floor(perUnit).toLocaleString('en-GB')}`, '#f4f4f5'],
-              ...(isEven && excludedCount > 0
-                ? [[`Excluded → faction (${excludedCount})`, `$${retainedAmount.toLocaleString('en-GB')}`, '#f59e0b']]
+              ...(excludedRetained > 0
+                ? [[`Excluded → faction (${excludedCount})`, `$${excludedRetained.toLocaleString('en-GB')}`, '#f59e0b']]
+                : []),
+              ...(retainedAmount > 0
+                ? [['Unpaid → faction total', `$${retainedAmount.toLocaleString('en-GB')}`, '#f59e0b']]
                 : []),
               ['Remaining',   `$${totalRemaining.toLocaleString('en-GB')}`, totalRemaining > 0 ? '#eab308' : '#22c55e'],
             ].map(([l, v, c]) => (
@@ -825,7 +854,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
                             )}
                             {isEven && (
                               <button onClick={() => toggleExcluded(r.attacker_id)}
-                                title={r.isExcluded ? 'Include in the even split' : 'Exclude from the even split — their share goes to the faction'}
+                                title={r.isExcluded ? 'Include in the even split' : (excludedTo === 'members' ? 'Exclude from the even split — their share is split among the other members' : 'Exclude from the even split — their share goes to the faction')}
                                 style={{
                                   padding: '1px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', lineHeight: 1.2,
                                   background: r.isExcluded ? 'rgba(245,158,11,0.12)' : 'transparent',
@@ -1458,10 +1487,17 @@ function WarEconomicsTab({ warId, hitsSaved }) {
       )}
 
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+        {/* share_profit/retained_profit are absent on wars frozen before they existed — faction_profit is the total either way */}
         <div style={rowStyle}>
           <span style={labelStyle}>Faction Share of Payout</span>
-          <span style={{ fontSize: '14px', fontWeight: '600', color: '#4ade80' }}>{fmtMoney(data.faction_profit)}</span>
+          <span style={{ fontSize: '14px', fontWeight: '600', color: '#4ade80' }}>{fmtMoney(data.share_profit ?? data.faction_profit)}</span>
         </div>
+        {(data.retained_profit ?? 0) > 0 && (
+          <div style={rowStyle}>
+            <span style={labelStyle} title="Member pay that was never paid out (excluded members' shares kept by the faction, plus rounding remainders)">Unpaid Member Pay (kept)</span>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: '#4ade80' }}>+{fmtMoney(data.retained_profit)}</span>
+          </div>
+        )}
         <div style={{ ...rowStyle, background: 'rgba(248,113,113,0.03)', flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={labelStyle}>

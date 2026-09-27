@@ -361,6 +361,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
             const companyMonthly   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.companies?.monthly_income   ?? 0), 0)
             const warMonthly       = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.monthly_income        ?? 0), 0)
             const warCount         = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.count                 ?? 0), 0)
+            const warRetained      = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.wars?.retained_income       ?? 0), 0)
             const ocMonthly        = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.oc?.monthly_income          ?? 0), 0)
             const totalRankPerks   = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.rank_perks?.monthly_cost   ?? 0), 0)
             const totalOdInsurance = displayFactions.reduce((s, f) => s + (summaries[f.basic?.id]?.expenses?.od_insurance?.monthly_cost ?? 0), 0)
@@ -452,6 +453,7 @@ function OverviewSubTab({ factionId, onNavigate }) {
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>Wars ({warCount}): </span>
                       <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmt(warMonthly)}/mo</span>
+                      {warRetained > 0 && <span style={{ color: "var(--text-faint)" }}> (incl. {fmt(warRetained)} unpaid member pay)</span>}
                     </div>
                     <div style={{ fontSize: '12px' }}>
                       <span style={{ color: "var(--text-muted)" }}>Organized Crime: </span>
@@ -638,6 +640,7 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
   // live in the separate Investments card below)
   const warMonthly     = summary?.wars?.monthly_income ?? 0
   const warCount       = summary?.wars?.count ?? 0
+  const warRetained    = summary?.wars?.retained_income ?? 0
   const ocMonthly       = summary?.oc?.monthly_income ?? 0
   const ocConfigured    = summary?.oc?.configured ?? false
   const ocPaidCrimes    = summary?.oc?.paid_crimes ?? 0
@@ -713,7 +716,8 @@ function FactionNetworthCard({ faction, settings, armoryValue = 0, racketValue =
     },
     {
       label: 'Wars',
-      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out ${monthLabel} — faction's cut of the payout`,
+      sub: `${warCount} war${warCount !== 1 ? 's' : ''} paid out ${monthLabel} — faction's cut of the payout`
+        + (warRetained > 0 ? ` (incl. ${fmt(warRetained)} unpaid member pay kept)` : ''),
       value: warMonthly,
     },
     {

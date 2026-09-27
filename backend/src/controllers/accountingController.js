@@ -431,11 +431,14 @@ async function computeAccountingSummaryData(env, factionId, monthBounds) {
     // MTD war income by whatever was actually spent running the war.
     const warIds = (warIdRows.results || []).map(r => r.id);
     let warIncome = 0;
+    let warRetained = 0; // unpaid member pay kept by the faction — already inside warIncome
     for (const id of warIds) {
       const econ = await computeWarEconomics(env, id);
       warIncome += econ?.net_profit ?? 0;
+      warRetained += econ?.retained_profit ?? 0;
     }
     warIncome = Math.round(warIncome * 100) / 100;
+    warRetained = Math.round(warRetained * 100) / 100;
     const warCount = warIds.length;
 
     // Bank investments have no actual-payout log (unlike stocks below), so
@@ -564,6 +567,7 @@ async function computeAccountingSummaryData(env, factionId, monthBounds) {
     wars: {
       count: warCount,
       monthly_income: warIncome,
+      retained_income: warRetained,
     },
     oc: ocProfit,
     expenses: {
