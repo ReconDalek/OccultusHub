@@ -831,23 +831,52 @@ export async function trackActiveWars(env, trigger = 'cron') {
       const armoryKeyUser = armoryKeyObj?.username ?? apiKeyObj?.username ?? 'unknown';
       const armoryKeyType = armoryKeyObj ? 'leadership' : 'fallback';
       try {
-        const armoryData = await fetchWithRetry(
-          `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&from=${armoryFrom}&cat=armoryAction&comment=OccHub`,
-          { Authorization: `ApiKey ${armoryKey}` }
-        );
-        const armoryItems = armoryData.news || [];
-        let dupArmory = 0;
-        for (const item of armoryItems) {
-          if (item.timestamp > armoryEndCap) continue;
-          const parsed = parseArmoryEntry(item.text);
-          if (!parsed) continue;
-          const { meta } = await env.DB.prepare(
-            `INSERT OR IGNORE INTO war_armory_usage (ranked_war_id, faction_id, torn_news_id, torn_user_id, username, item_name, used_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
-          ).bind(warId, factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
-          if (meta?.changes > 0) newArmory++; else dupArmory++;
+        // Paginated newest → oldest, following the API's own `prev` cursor
+        // (same as fetchAndStoreAttacks). A routine 10-min poll stops after
+        // page 1 because it reaches already-logged news; a backlog (missed
+        // polls, or a war wrongly marked completed — war 189, 2026-10-01) keeps
+        // paging back to armoryFrom instead of silently keeping only the
+        // newest 100 actions. Stops on: a page containing already-logged
+        // items (caught up — only once armory_backfilled, see its migration),
+        // no more pages / items, the window start, or MAX_ARMORY_PAGES.
+        const MAX_ARMORY_PAGES = 40; // 4,000 armory actions per poll
+        const backfilled = !!war.armory_backfilled;
+        let reachedStart = false, caughtUp = false;
+        const baseUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&from=${armoryFrom}&cat=armoryAction&comment=OccHub`;
+        let nextUrl = baseUrl;
+        let fetched = 0, pages = 0, dupArmory = 0;
+        while (nextUrl && pages < MAX_ARMORY_PAGES) {
+          const armoryData = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${armoryKey}` });
+          const armoryItems = armoryData.news || [];
+          pages++;
+          fetched += armoryItems.length;
+          if (!armoryItems.length) { reachedStart = true; break; }
+          let pageDup = 0;
+          for (const item of armoryItems) {
+            if (item.timestamp > armoryEndCap) continue;
+            const parsed = parseArmoryEntry(item.text);
+            if (!parsed) continue;
+            const { meta } = await env.DB.prepare(
+              `INSERT OR IGNORE INTO war_armory_usage (ranked_war_id, faction_id, torn_news_id, torn_user_id, username, item_name, used_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(warId, factionId, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
+            if (meta?.changes > 0) newArmory++; else { dupArmory++; pageDup++; }
+          }
+          if (pageDup > 0 && backfilled) { caughtUp = true; break; } // caught up with already-logged news
+          const oldestTs = armoryItems[armoryItems.length - 1].timestamp;
+          if (oldestTs <= armoryFrom) { reachedStart = true; break; } // reached the window start
+          const prevUrl = armoryData._metadata?.links?.prev;
+          if (!prevUrl) { reachedStart = true; break; }             // no older pages
+          const prevTo  = new URL(prevUrl).searchParams.get('to') ?? oldestTs;
+          nextUrl = `${baseUrl}&to=${prevTo}`;
         }
-        armoryMeta = { fetched: armoryItems.length, newArmory, dupArmory, keyUser: armoryKeyUser, keyType: armoryKeyType };
+        if (!reachedStart && !caughtUp && pages >= MAX_ARMORY_PAGES) {
+          await logWarn(env, { category: 'war_cron', event: 'war_armory_page_cap', message: `War ${warId}: armory backfill hit ${MAX_ARMORY_PAGES}-page cap before reaching the window start — retries next poll`, meta: { warId, factionId, fetched } }).catch(() => {});
+        }
+        if (!backfilled && reachedStart) {
+          await env.DB.prepare(`UPDATE ranked_wars SET armory_backfilled=1 WHERE id=?`).bind(warId).run();
+        }
+        armoryMeta = { fetched, pages, newArmory, dupArmory, keyUser: armoryKeyUser, keyType: armoryKeyType };
       } catch (e) {
         console.error(`trackActiveWars: war ${warId} armory fetch failed (key: ${armoryKeyUser} [${armoryKeyType}]): ${e.message}`);
         await logError(env, { category: 'war_cron', event: 'war_poll_error', message: `War ${warId} armory fetch failed (key: ${armoryKeyUser} [${armoryKeyType}]): ${e.message}`, meta: { warId, factionId, keyUser: armoryKeyUser, keyType: armoryKeyType } }).catch(() => {});
@@ -864,8 +893,8 @@ export async function trackActiveWars(env, trigger = 'cron') {
       await logInfo(env, {
         category: 'war_cron',
         event: 'war_poll',
-        message: `[${trigger}] War ${warId} (${factionId} vs ${opponentId}, ${currentWar?.status ?? status}): +${newAttacks} attacks, +${newArmory} new armory (${armoryMeta?.dupArmory ?? 0} already logged, ${armoryMeta?.fetched ?? 0} fetched) via ${armoryKeyUser} [${armoryKeyType}]`,
-        meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, trigger, newAttacks, newArmory, dupArmory: armoryMeta?.dupArmory ?? 0, armoryFetched: armoryMeta?.fetched ?? 0, keyUser: armoryKeyUser, keyType: armoryKeyType },
+        message: `[${trigger}] War ${warId} (${factionId} vs ${opponentId}, ${currentWar?.status ?? status}): +${newAttacks} attacks, +${newArmory} new armory (${armoryMeta?.dupArmory ?? 0} already logged, ${armoryMeta?.fetched ?? 0} fetched over ${armoryMeta?.pages ?? 0} page(s)) via ${armoryKeyUser} [${armoryKeyType}]`,
+        meta: { warId, factionId, opponentId, status: currentWar?.status ?? status, trigger, newAttacks, newArmory, dupArmory: armoryMeta?.dupArmory ?? 0, armoryFetched: armoryMeta?.fetched ?? 0, armoryPages: armoryMeta?.pages ?? 0, keyUser: armoryKeyUser, keyType: armoryKeyType },
       }).catch(() => {});
 
       // War-warning snapshot: capture each member's revive setting + last_action
