@@ -539,7 +539,9 @@ async function captureWarEndChecks(env, warId, factionId) {
 
 // ── Fetch live scores from rankedwars API and update DB ───────────────────────
 
-async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
+// notBefore: earliest plausible start of THIS war (see warNewsFloor). Older
+// ranked wars against the same opponent (rematches) must never match.
+async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey, notBefore = 0) {
   let data;
   try {
     data = await fetchWithRetry(
@@ -551,6 +553,7 @@ async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey) {
   for (const rw of data.rankedwars || []) {
     const ids = rw.factions.map((f) => f.id);
     if (!ids.includes(factionId) || !ids.includes(opponentId)) continue;
+    if ((rw.start || 0) < notBefore) continue; // an earlier war vs the same opponent
 
     const ourFac = rw.factions.find((f) => f.id === factionId);
     const oppFac = rw.factions.find((f) => f.id === opponentId);
@@ -688,6 +691,16 @@ export async function trackActiveWars(env, trigger = 'cron') {
     const createdAtUnix = created_at
       ? Math.floor(new Date(created_at.replace(' ', 'T') + 'Z').getTime() / 1000)
       : null;
+    // Earliest timestamp any news/rankedwars entry for THIS war can have.
+    // Rematches vs a past opponent leave old "has begun"/"defeated" posts (and
+    // old rankedwars entries) that otherwise match on faction IDs alone — found
+    // live 2026-10-01: war 189 (33097 vs Violent Resolution, scheduled
+    // 2026-10-01) was "ended" days early by a 2025-08-03 defeat post from a
+    // previous war vs the same faction, and stamped with another war's rewards.
+    // "has begun" posts land seconds after scheduled_start, so allow 5 min slack.
+    const newsFloor = scheduled_start
+      ? scheduled_start - 300
+      : (createdAtUnix ?? now) - 7 * 24 * 3600;
     try {
       const apiKeyObj = await getStaffApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
       if (!apiKey) {
@@ -700,7 +713,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
       // ── 1. Fetch live scores from rankedwars API ────────────────────────────
       // For active wars: updates scores OR detects war end
       if (status === 'active') {
-        const scoreResult = await fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey);
+        const scoreResult = await fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey, newsFloor);
 
         if (scoreResult?.ended) {
           const result       = scoreResult.winner === factionId ? 'won' : 'lost';
@@ -732,7 +745,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
           `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
           { Authorization: `ApiKey ${apiKey}` }
         );
-        newsItems = newsData.news || [];
+        newsItems = (newsData.news || []).filter((n) => n.timestamp >= newsFloor);
       } catch (e) {
         console.warn(`trackActiveWars: war ${warId} news fetch failed: ${e.message}`);
       }
