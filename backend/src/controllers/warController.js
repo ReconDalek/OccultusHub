@@ -316,7 +316,8 @@ async function buildMemberStats(env, warId) {
 // (verifyWarData) so both produce the same attackerStats shape.
 
 async function enrichEnergyAndOD(env, warId, rows) {
-  if (!rows.length) return rows;
+  // NOTE: no early return on empty rows — members with armory activity but
+  // no attacks yet still get a row (see "Armory-only members" below).
 
   // Faction owning this war — armory_deposits is faction-wide (not war-scoped
   // like war_armory_usage), so we scope it ourselves below using the same
@@ -327,13 +328,17 @@ async function enrichEnergyAndOD(env, warId, rows) {
 
   // ── Energy In: Xanax used during this war (stacking + war period) ──────────
   const { results: xanaxRows } = await env.DB.prepare(
-    `SELECT torn_user_id, COUNT(*) AS xanax_count
+    `SELECT torn_user_id, MAX(username) AS username, COUNT(*) AS xanax_count
      FROM war_armory_usage
      WHERE ranked_war_id=? AND item_name='Xanax' AND (action_type IS NULL OR action_type != 'loaned')
      GROUP BY torn_user_id`
   ).bind(warId).all();
   const xanaxMap = {};
-  for (const x of xanaxRows || []) xanaxMap[x.torn_user_id] = x.xanax_count;
+  const armoryNames = {}; // torn_user_id → username, for members with Xanax activity
+  for (const x of xanaxRows || []) {
+    xanaxMap[x.torn_user_id] = x.xanax_count;
+    armoryNames[x.torn_user_id] = x.username;
+  }
 
   // Same data, bucketed by day — feeds suppressSameDayOverdoseXanax below.
   const { results: xanaxDayRows } = await env.DB.prepare(
@@ -365,14 +370,36 @@ async function enrichEnergyAndOD(env, warId, rows) {
   const repaidToTs   = warRow?.ended_at ? warRow.ended_at + POST_WAR_DEPOSIT_GRACE_SECONDS : Math.floor(Date.now() / 1000);
   if (factionId && repaidFromTs) {
     const { results: repaidRows } = await env.DB.prepare(
-      `SELECT torn_user_id, SUM(quantity) AS total_deposited
+      `SELECT torn_user_id, MAX(username) AS username, SUM(quantity) AS total_deposited
        FROM armory_deposits
        WHERE faction_id=? AND item_name='Xanax' AND quantity < ?
          AND deposited_at >= ? AND deposited_at <= ?
        GROUP BY torn_user_id`
     ).bind(factionId, BULK_DEPOSIT_THRESHOLD, repaidFromTs, repaidToTs).all();
-    for (const r of repaidRows || []) repaidMap[r.torn_user_id] = r.total_deposited;
+    for (const r of repaidRows || []) {
+      repaidMap[r.torn_user_id] = r.total_deposited;
+      armoryNames[r.torn_user_id] ??= r.username;
+    }
   }
+
+  // ── Armory-only members: used or repaid Xanax but made no attacks (yet) ──
+  // Without a row here they had no attacker row at all, and the frontend's
+  // defender-only fallback row hardcodes energy to 0 — found live 2026-10-02
+  // (war 189, Emmy84: Xanax used, only ever defended → Energy In showed 0).
+  const presentIds = new Set(rows.map((r) => r.attacker_id));
+  for (const [uid, name] of Object.entries(armoryNames)) {
+    const id = Number(uid);
+    if (presentIds.has(id)) continue;
+    rows.push({
+      attacker_id: id, attacker_name: name,
+      war_attacks: 0, war_hits: 0, war_losses: 0, war_interrupted: 0,
+      war_respect_gained: 0, avg_fair_fight: null,
+      outside_attacks: 0, outside_respect: 0, assists: 0, friendly_hits: 0,
+      bonus_respect: 0, energy_used: 0,
+    });
+    presentIds.add(id);
+  }
+  if (!rows.length) return rows;
 
   const odMap = {};
   if (periodRow?.min_ts) {
