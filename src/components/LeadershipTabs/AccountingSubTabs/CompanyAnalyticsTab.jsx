@@ -28,6 +28,21 @@ function fmtShortDate(d) {
   return `${parseInt(m, 10)}/${parseInt(day, 10)}`
 }
 
+function fmtSigned(n) {
+  if (n == null || isNaN(n)) return '—'
+  return `${n > 0 ? '+' : ''}${Math.round(n).toLocaleString()}`
+}
+function signedColor(n) {
+  if (n == null || n === 0) return 'var(--text-secondary)'
+  return n > 0 ? '#4ade80' : '#f87171'
+}
+
+const TABLE_COLS = '70px 1fr 1fr 1fr 1fr 90px 90px 90px 90px 100px'
+const COLUMN_TITLES = {
+  Difference: 'Day-over-day stock change (generated − sold)',
+  Trend: 'Stock trend as of this day — average daily stock change over the last 5 days (same as the Stock Alerts trend)',
+}
+
 const labelStyle = { color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }
 const inputStyle = {
   padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
@@ -394,17 +409,17 @@ export default function CompanyAnalyticsTab({ factionId }) {
 
                   {/* Day-by-day table */}
                   <div className="table-scroll">
-                    <div style={{ minWidth: '760px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 1fr 1fr 1fr 90px 90px 90px', gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
-                        {['Date', 'Income', 'Wages', 'Advert', 'Profit', 'Stock', 'Sold', 'Generated'].map(h => (
-                          <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+                    <div style={{ minWidth: '940px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: '8px', padding: '6px 12px', marginBottom: '4px' }}>
+                        {['Date', 'Income', 'Wages', 'Advert', 'Profit', 'Stock', 'Sold', 'Generated', 'Difference', 'Trend'].map(h => (
+                          <span key={h} title={COLUMN_TITLES[h]} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
                         ))}
                       </div>
                       {mergedForTable.length === 0 ? (
                         <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '12px' }}>No tracked days this month.</p>
                       ) : mergedForTable.map((d, i) => (
                         <div key={d.date} style={{
-                          display: 'grid', gridTemplateColumns: '70px 1fr 1fr 1fr 1fr 90px 90px 90px', gap: '8px', padding: '7px 12px', borderRadius: '6px',
+                          display: 'grid', gridTemplateColumns: TABLE_COLS, gap: '8px', padding: '7px 12px', borderRadius: '6px',
                           background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
                         }}>
                           <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>{fmtShortDate(d.date)}</span>
@@ -415,6 +430,8 @@ export default function CompanyAnalyticsTab({ factionId }) {
                           <span style={{ color: '#60a5fa', fontSize: '12px' }}>{d.in_stock != null ? fmtUnits(d.in_stock) : '—'}</span>
                           <span style={{ color: '#f87171', fontSize: '12px' }}>{d.sold_amount != null ? fmtUnits(d.sold_amount) : '—'}</span>
                           <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{d.generated != null ? fmtUnits(d.generated) : '—'}</span>
+                          <span style={{ color: signedColor(d.difference), fontSize: '12px' }}>{fmtSigned(d.difference)}</span>
+                          <span style={{ color: signedColor(d.stock_trend), fontSize: '12px', fontWeight: '600' }}>{d.stock_trend != null ? `${fmtSigned(d.stock_trend)}/day` : '—'}</span>
                         </div>
                       ))}
                     </div>

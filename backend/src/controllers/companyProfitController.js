@@ -642,22 +642,45 @@ export async function getCompanyStockBreakdown(request, env, user) {
       return jsonResponse({ company_id: companyId, item_name: null, year, month, month_start: monthStart, month_end: monthEnd, days: [] });
     }
 
+    // Fetch a lookback before monthStart so the first days of the month still
+    // get a full STOCK_TREND_DAYS trend window (+1 row for the first delta).
+    const lookbackStart = new Date(Date.parse(`${monthStart}T00:00:00Z`) - (STOCK_TREND_DAYS + 3) * 86400000).toISOString().slice(0, 10);
     const { results: rows } = await env.DB.prepare(`
       SELECT snapshot_date, price, in_stock, on_order, sold_amount, sold_worth, generated
       FROM company_stock_snapshots
       WHERE company_id = ? AND item_id = ? AND snapshot_date >= ? AND snapshot_date <= ?
       ORDER BY snapshot_date ASC
-    `).bind(companyId, primaryItem.item_id, monthStart, monthEnd).all();
+    `).bind(companyId, primaryItem.item_id, lookbackStart, monthEnd).all();
 
-    const days = (rows || []).map(r => ({
-      date: r.snapshot_date,
-      price: r.price,
-      in_stock: r.in_stock,
-      on_order: r.on_order,
-      sold_amount: r.sold_amount,
-      sold_worth: r.sold_worth,
-      generated: r.generated,
-    }));
+    // difference: day-over-day in_stock change — exactly what the Stock Alerts
+    // trend averages (equals generated − sold when no stock is ordered in);
+    // falls back to generated − sold when there's no previous snapshot.
+    // stock_trend: that day's view of the Stock Alerts trend — mean of this
+    // row's difference and the previous STOCK_TREND_DAYS−1 rows' differences.
+    const all = rows || [];
+    const diffs = all.map((r, i) => {
+      const prev = all[i - 1];
+      if (prev && r.in_stock != null && prev.in_stock != null) return r.in_stock - prev.in_stock;
+      if (r.generated != null && r.sold_amount != null) return r.generated - r.sold_amount;
+      return null;
+    });
+
+    const days = [];
+    all.forEach((r, i) => {
+      if (r.snapshot_date < monthStart) return;
+      const window = diffs.slice(Math.max(0, i - STOCK_TREND_DAYS + 1), i + 1).filter(d => d != null);
+      days.push({
+        date: r.snapshot_date,
+        price: r.price,
+        in_stock: r.in_stock,
+        on_order: r.on_order,
+        sold_amount: r.sold_amount,
+        sold_worth: r.sold_worth,
+        generated: r.generated,
+        difference: diffs[i],
+        stock_trend: window.length ? Math.round(window.reduce((s, d) => s + d, 0) / window.length) : null,
+      });
+    });
 
     return jsonResponse({ company_id: companyId, item_name: primaryItem.item_name, year, month, month_start: monthStart, month_end: monthEnd, days });
   } catch (e) {
