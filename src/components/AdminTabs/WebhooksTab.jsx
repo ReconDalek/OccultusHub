@@ -118,13 +118,14 @@ const EVENT_META = {
       '{mention}',
     ].join('\n'),
     rowVars: [
+      ['{member}',         "Discord @mention of the director if their Discord ID is known, otherwise their bold Torn name"],
       ['{member_mention}', "Discord @mention of the director (blank if their Discord isn't linked)"],
       ['{member_name}',    'Torn username of the director'],
       ['{amount}',         'Faction cut owed (formatted, e.g. $26.3M)'],
       ['{companies}',      'Their companies, e.g. "Occult Oils, Dark Lens"'],
       ['{faction_name}',   "Director's faction"],
     ],
-    defaultRowTemplate: '{member_mention}**{member_name}** — {amount} ({companies})',
+    defaultRowTemplate: '{member} — {amount} ({companies})',
   },
 
   armory_low: {

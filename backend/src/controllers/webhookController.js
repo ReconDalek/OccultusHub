@@ -463,7 +463,9 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
 
 const COMPANY_CUT_LABEL = '30%';
 const COMPANY_ROWS_PER_MESSAGE = 10; // V2 caps a message at 40 components; 5 fixed + 3 per row
-const DEFAULT_COMPANY_ROW_TEMPLATE = '{member_mention}**{member_name}** — {amount} ({companies})';
+// {member}: the Discord ping when we have their ID (Discord already renders it
+// as their name), otherwise their bold Torn name — never both.
+const DEFAULT_COMPANY_ROW_TEMPLATE = '{member} — {amount} ({companies})';
 const IS_COMPONENTS_V2 = 1 << 15;
 
 function companyPayLink(tornUserId, amount) {
@@ -523,6 +525,7 @@ async function buildCompanyMonthlyData(env, now = new Date()) {
 
 function companyRowText(rowTemplate, m) {
   return applyTemplate(rowTemplate, {
+    member:         m.discord_id ? `<@${m.discord_id}>` : `**${m.name}**`,
     member_mention: m.discord_id ? `<@${m.discord_id}> ` : '',
     member_name:    m.name,
     amount:         fmtMoney(m.total),
