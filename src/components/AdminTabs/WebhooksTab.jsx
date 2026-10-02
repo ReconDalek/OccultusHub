@@ -95,6 +95,38 @@ const EVENT_META = {
     defaultRowTemplate: '• {member_mention}**{member_name}** — {amount} ({stocks})',
   },
 
+  company_monthly: {
+    label:    'Company Monthly Payouts',
+    icon:     '🏢',
+    schedule: '1st of each month at 02:00 UTC — covers the month that just ended',
+    description: "Sends one Discord message on the 1st listing what each company director owes the faction: the 30% faction cut of last month's company profit, grouped per director. Companies already marked collected for that month are left out. Each member gets a Pay button (a Torn link with a negative amount, so it takes the money from their faction balance). Sent as a Discord Components V2 message; if Discord rejects that, it falls back to plain text with Pay links. Sent once per month — duplicate protection is built in.",
+    vars: [
+      ['{mention}',      'Discord @mention from the configured user ID above'],
+      ['{month}',        'Month being reported (e.g. "September")'],
+      ['{year}',         'Year of that month'],
+      ['{cut_pct}',      'Faction cut percentage ("30%")'],
+      ['{payout_list}',  'Member rows, each with its own Pay button — text before this becomes the header, text after it the footer'],
+      ['{total}',        'Grand total across all members (formatted)'],
+    ],
+    defaultTemplate: [
+      '🏢 **Monthly Company Payouts — {month} {year}**',
+      "The following members owe the faction's {cut_pct} company cut for this month:",
+      '',
+      '{payout_list}',
+      '',
+      '💰 **Total expected: {total}**',
+      '{mention}',
+    ].join('\n'),
+    rowVars: [
+      ['{member_mention}', "Discord @mention of the director (blank if their Discord isn't linked)"],
+      ['{member_name}',    'Torn username of the director'],
+      ['{amount}',         'Faction cut owed (formatted, e.g. $26.3M)'],
+      ['{companies}',      'Their companies, e.g. "Occult Oils, Dark Lens"'],
+      ['{faction_name}',   "Director's faction"],
+    ],
+    defaultRowTemplate: '{member_mention}**{member_name}** — {amount} ({companies})',
+  },
+
   armory_low: {
     label:    'Armory Low Stock Alerts',
     icon:     '🛡️',
@@ -142,9 +174,19 @@ function renderDiscordMarkdown(text) {
 }
 
 function renderInline(text) {
-  // Render **bold** inline. Split on ** pairs.
-  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  // Render **bold** inline and [label](<url>) masked links (shown as the
+  // link button they become in Components V2 messages). Split on both.
+  const parts = text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(<?[^)>]+>?\))/)
   return parts.map((part, i) => {
+    const link = part.match(/^\[([^\]]+)\]\(<?([^)>]+)>?\)$/)
+    if (link) {
+      return (
+        <a key={i} href={link[2]} target="_blank" rel="noreferrer" title={link[2]}
+          style={{ display: 'inline-block', marginLeft: '4px', padding: '1px 8px', borderRadius: '4px', background: '#4e5058', color: '#f2f3f5', fontSize: '12px', textDecoration: 'none' }}>
+          {link[1]}
+        </a>
+      )
+    }
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i} style={{ color: '#f2f3f5' }}>{part.slice(2, -2)}</strong>
     }
@@ -543,7 +585,7 @@ function WebhookCard({ config, onSaved }) {
                 </button>
               )}
 
-              {/* Payout row template — stock_monthly only */}
+              {/* Payout row template — stock_monthly / company_monthly */}
               {meta.defaultRowTemplate && (
                 <div style={{ marginTop: '16px' }}>
                   <label style={{ color: "var(--text-secondary)", fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
@@ -734,7 +776,7 @@ export default function WebhooksTab() {
 
   if (loading) return <p style={{ color: "var(--text-secondary)" }}>Loading webhook configs…</p>
 
-  const ordered = ['investment_tci', 'investment_ended', 'stock_monthly', 'armory_low']
+  const ordered = ['investment_tci', 'investment_ended', 'stock_monthly', 'company_monthly', 'armory_low']
   const sorted  = ordered.map(t => configs.find(c => c.event_type === t)).filter(Boolean)
 
   return (

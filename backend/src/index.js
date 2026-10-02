@@ -72,13 +72,13 @@ export default {
       return;
     }
 
-    // "0 2 1 * *" — 1st of month 02:00 UTC: stock monthly payout summary +
+    // "0 2 1 * *" — 1st of month 02:00 UTC: stock + company monthly payout summaries +
     // freeze last month's Accounting summary (armory/OD/OC pricing drifts
     // against item_prices_cache's current price if recomputed later, so this
     // captures each faction's figures while they're still fresh)
     if (event.cron === '0 2 1 * *') {
       try {
-        const { sendStockMonthlyPayouts } = await import('./controllers/webhookController.js');
+        const { sendStockMonthlyPayouts, sendCompanyMonthlyPayouts } = await import('./controllers/webhookController.js');
         const { snapshotAccountingMonth } = await import('./controllers/accountingController.js');
         const now = new Date();
         const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
@@ -86,6 +86,9 @@ export default {
           sendStockMonthlyPayouts(env)
             .then(r => console.log('[cron] stock monthly payouts:', JSON.stringify(r)))
             .catch(e => console.error('[cron] stock monthly payouts failed:', e))
+            .then(() => sendCompanyMonthlyPayouts(env))
+            .then(r => console.log('[cron] company monthly payouts:', JSON.stringify(r)))
+            .catch(e => console.error('[cron] company monthly payouts failed:', e))
             .then(() => snapshotAccountingMonth(env, prev.getUTCFullYear(), prev.getUTCMonth() + 1))
             .then(r => console.log('[cron] accounting month snapshot:', JSON.stringify(r)))
             .catch(e => console.error('[cron] accounting month snapshot failed:', e))

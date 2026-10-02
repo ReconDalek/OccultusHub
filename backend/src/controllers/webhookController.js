@@ -47,6 +47,16 @@ const DEFAULT_TEMPLATES = {
     '💰 **Total expected: {total}**',
   ].join('\n'),
 
+  company_monthly: [
+    '🏢 **Monthly Company Payouts — {month} {year}**',
+    'The following members owe the faction\'s {cut_pct} company cut for this month:',
+    '',
+    '{payout_list}',
+    '',
+    '💰 **Total expected: {total}**',
+    '{mention}',
+  ].join('\n'),
+
   armory_low: [
     '🛡️ **Armory Low Stock Alert**',
     '',
@@ -127,24 +137,38 @@ async function retargetWebhookChannel(env, webhookUrl, channelId) {
 //              execute param only accepts threads under the webhook's own
 //              current channel. threadId is the actual forum post/thread.
 async function sendDiscordMessage(env, webhookUrl, content, target = {}) {
+  await sendDiscordPayload(env, webhookUrl, { content }, target);
+}
+
+// Lower-level send: posts any message body (plain content, or a Components V2
+// payload). withComponents adds Discord's required ?with_components=true —
+// without it, a non-application-owned webhook (one created in Channel Settings
+// → Integrations, which is all of ours) silently drops components. Such
+// webhooks may only send NON-interactive components, i.e. link buttons
+// (style 5) — fine here, they just open a URL. skipRetarget avoids re-PATCHing
+// the webhook's channel for the 2nd+ message of a multi-message send.
+async function sendDiscordPayload(env, webhookUrl, payload, target = {}, { withComponents = false, skipRetarget = false } = {}) {
   const { targetMode = 'channel', channelId, threadId } = target;
 
-  if (channelId) {
+  if (channelId && !skipRetarget) {
     await retargetWebhookChannel(env, webhookUrl, channelId);
   }
 
-  const url = (targetMode === 'thread' && threadId)
-    ? `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}thread_id=${threadId}`
-    : webhookUrl;
+  const params = [];
+  if (targetMode === 'thread' && threadId) params.push(`thread_id=${threadId}`);
+  if (withComponents) params.push('with_components=true');
+  const url = params.length ? `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}${params.join('&')}` : webhookUrl;
 
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, username: 'OccultusHub' }),
+    body: JSON.stringify({ username: 'OccultusHub', ...payload }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Discord returned ${res.status}: ${text.slice(0, 200)}`);
+    const err = new Error(`Discord returned ${res.status}: ${text.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
 }
 
@@ -423,6 +447,201 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
     if (!testMode) await setStatus(env, 'stock_monthly', `Error: ${e.message}`);
     return { sent: false, error: e.message };
   }
+}
+
+// ── Company Monthly Payouts ───────────────────────────────────────────────────
+// Company equivalent of stock_monthly: on the 1st, lists what each company
+// director owes the faction — the 30% faction cut (company_profit_snapshots.
+// faction_cut, summed) of the month that just ENDED, grouped per director,
+// skipping companies already marked collected for that month (company_payouts).
+// Each member row carries a Torn "add money" link with a NEGATIVE amount, which
+// takes the money from the member's faction balance into the faction.
+//
+// Sent as a Discord Components V2 message: a Container of Sections, each with
+// the member's text and a link-button accessory. Falls back to a plain-text
+// message with masked links if Discord rejects the components payload.
+
+const COMPANY_CUT_LABEL = '30%';
+const COMPANY_ROWS_PER_MESSAGE = 10; // V2 caps a message at 40 components; 5 fixed + 3 per row
+const DEFAULT_COMPANY_ROW_TEMPLATE = '{member_mention}**{member_name}** — {amount} ({companies})';
+const IS_COMPONENTS_V2 = 1 << 15;
+
+function companyPayLink(tornUserId, amount) {
+  return `https://www.torn.com/factions.php?step=your#/tab=controls&addMoneyTo=${tornUserId}&money=-${Math.round(amount)}`;
+}
+
+// Reports the month BEFORE `now` (run on the 1st → the month that just ended).
+async function buildCompanyMonthlyData(env, now = new Date()) {
+  const prev  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const year  = prev.getUTCFullYear();
+  const month = prev.getUTCMonth() + 1;
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+  const monthEnd   = `${year}-${String(month).padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+
+  const { results } = await env.DB.prepare(`
+    SELECT c.company_id, c.name, c.director_id, c.director_name, c.faction_id,
+           SUM(s.faction_cut) AS cut,
+           -- Linked Discord account first, then any Discord ID leadership typed
+           -- onto that member's stock/investment records.
+           COALESCE(
+             (SELECT dl.discord_id FROM users u JOIN discord_links dl ON dl.user_id = u.id
+               WHERE u.torn_user_id = c.director_id LIMIT 1),
+             (SELECT discord_id FROM accounting_stocks
+               WHERE torn_user_id = c.director_id AND discord_id IS NOT NULL AND discord_id != '' LIMIT 1),
+             (SELECT discord_id FROM accounting_investments
+               WHERE torn_user_id = c.director_id AND discord_id IS NOT NULL AND discord_id != '' LIMIT 1)
+           ) AS discord_id
+    FROM company_profit_cache c
+    JOIN company_profit_snapshots s ON s.company_id = c.company_id
+     AND s.snapshot_date >= ? AND s.snapshot_date <= ?
+    LEFT JOIN company_payouts p ON p.company_id = c.company_id AND p.year = ? AND p.month = ?
+    WHERE c.director_id > 0 AND COALESCE(p.paid, 0) = 0
+    GROUP BY c.company_id
+    HAVING cut > 0
+    ORDER BY c.name ASC
+  `).bind(monthStart, monthEnd, year, month).all();
+
+  const byDirector = {};
+  for (const r of results || []) {
+    const m = (byDirector[r.director_id] ??= {
+      torn_user_id: r.director_id,
+      name:         r.director_name ?? `User ${r.director_id}`,
+      discord_id:   r.discord_id,
+      faction_id:   r.faction_id,
+      total:        0,
+      companies:    [],
+    });
+    m.total += r.cut || 0;
+    m.companies.push(r.name);
+  }
+  const members = Object.values(byDirector)
+    .map(m => ({ ...m, total: Math.round(m.total) }))
+    .sort((a, b) => b.total - a.total);
+  const grandTotal = members.reduce((s, m) => s + m.total, 0);
+  return { year, month, monthKey: `${year}-${String(month).padStart(2, '0')}`, members, grandTotal };
+}
+
+function companyRowText(rowTemplate, m) {
+  return applyTemplate(rowTemplate, {
+    member_mention: m.discord_id ? `<@${m.discord_id}> ` : '',
+    member_name:    m.name,
+    amount:         fmtMoney(m.total),
+    companies:      m.companies.join(', '),
+    faction_name:   FACTION_NAMES[m.faction_id] ?? `Faction ${m.faction_id}`,
+  });
+}
+
+// Splits the message template around {payout_list} so the text before it
+// becomes the header and the text after it the footer of the V2 container.
+function companyMessageParts(cfg, data) {
+  const template = cfg.message_template || DEFAULT_TEMPLATES.company_monthly;
+  const vars = {
+    mention: cfg.mention_user_id ? `<@${cfg.mention_user_id}>` : '',
+    month:   MONTH_NAMES[data.month - 1],
+    year:    data.year,
+    total:   fmtMoney(data.grandTotal),
+    cut_pct: COMPANY_CUT_LABEL,
+  };
+  const [before, after = ''] = template.split('{payout_list}');
+  return {
+    header: applyTemplate(before, vars).trim(),
+    footer: applyTemplate(after, vars).trim(),
+    full:   (rows) => applyTemplate(template, { ...vars, payout_list: rows }),
+  };
+}
+
+// One or more Components V2 payloads — header on the first, footer on the last.
+function buildCompanyV2Payloads(cfg, data, { testMode = false } = {}) {
+  const { header, footer } = companyMessageParts(cfg, data);
+  const rowTemplate = cfg.payout_row_template || DEFAULT_COMPANY_ROW_TEMPLATE;
+  const chunks = [];
+  for (let i = 0; i < data.members.length; i += COMPANY_ROWS_PER_MESSAGE) chunks.push(data.members.slice(i, i + COMPANY_ROWS_PER_MESSAGE));
+
+  return chunks.map((chunk, ci) => {
+    const inner = [];
+    if (ci === 0) {
+      if (testMode) inner.push({ type: 10, content: '-# 🧪 TEST MESSAGE — not recorded, dedup skipped' });
+      if (header) inner.push({ type: 10, content: header });
+      inner.push({ type: 14, divider: true, spacing: 1 });
+    }
+    for (const m of chunk) {
+      inner.push({
+        type: 9,
+        components: [{ type: 10, content: companyRowText(rowTemplate, m) }],
+        accessory: { type: 2, style: 5, label: `Pay ${fmtMoney(m.total)}`.slice(0, 80), url: companyPayLink(m.torn_user_id, m.total) },
+      });
+    }
+    if (ci === chunks.length - 1 && footer) {
+      inner.push({ type: 14, divider: true, spacing: 1 });
+      inner.push({ type: 10, content: footer });
+    }
+    return {
+      flags: IS_COMPONENTS_V2,
+      allowed_mentions: { parse: ['users'] },
+      components: [{ type: 17, accent_color: 0xa78bfa, components: inner }],
+    };
+  });
+}
+
+// Plain-text equivalent (fallback + admin preview) — masked pay links per row.
+function buildCompanyTextContent(cfg, data, { testMode = false } = {}) {
+  const rowTemplate = cfg.payout_row_template || DEFAULT_COMPANY_ROW_TEMPLATE;
+  const rows = data.members
+    .map(m => `> • ${companyRowText(rowTemplate, m)} · [Pay ↗](<${companyPayLink(m.torn_user_id, m.total)}>)`)
+    .join('\n');
+  const body = companyMessageParts(cfg, data).full(rows);
+  return testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
+}
+
+export async function sendCompanyMonthlyPayouts(env, { testMode = false } = {}) {
+  const cfg = await getConfig(env, 'company_monthly');
+  if (!cfg?.webhook_url) return { sent: false, reason: 'no webhook configured' };
+  if (!testMode && !cfg.enabled) return { sent: false, reason: 'disabled' };
+
+  const data = await buildCompanyMonthlyData(env);
+  const eventKey = `company_monthly_${data.monthKey}`;
+
+  if (!testMode && await alreadySent(env, 'company_monthly', eventKey)) {
+    return { sent: false, reason: `already sent for ${data.monthKey}` };
+  }
+  if (!data.members.length) {
+    if (!testMode) await setStatus(env, 'company_monthly', `Nothing owed for ${data.monthKey} (no uncollected company cut)`);
+    return { sent: false, reason: 'nothing owed' };
+  }
+
+  const target = targetFromConfig(cfg);
+  let mode = 'components';
+  try {
+    const payloads = buildCompanyV2Payloads(cfg, data, { testMode });
+    for (let i = 0; i < payloads.length; i++) {
+      await sendDiscordPayload(env, cfg.webhook_url, payloads[i], target, { withComponents: true, skipRetarget: i > 0 });
+    }
+  } catch (e) {
+    // Discord rejected the V2 payload (4xx) — post the plain-text version
+    // instead so the reminder still goes out. Anything else is a real failure.
+    if (!(e.status >= 400 && e.status < 500)) {
+      console.error('[webhook:company_monthly] Failed:', e.message);
+      if (!testMode) await setStatus(env, 'company_monthly', `Error: ${e.message}`);
+      return { sent: false, error: e.message };
+    }
+    console.warn('[webhook:company_monthly] components rejected, falling back to text:', e.message);
+    mode = 'text';
+    try {
+      await sendDiscordMessage(env, cfg.webhook_url, buildCompanyTextContent(cfg, data, { testMode }), target);
+    } catch (e2) {
+      console.error('[webhook:company_monthly] Text fallback failed:', e2.message);
+      if (!testMode) await setStatus(env, 'company_monthly', `Error: ${e2.message}`);
+      return { sent: false, error: e2.message };
+    }
+  }
+
+  if (!testMode) {
+    await markSent(env, 'company_monthly', eventKey);
+    const status = `Sent for ${data.monthKey} — ${data.members.length} members, ${fmtMoney(data.grandTotal)} total${mode === 'text' ? ' (text fallback)' : ''}`;
+    await setStatus(env, 'company_monthly', status);
+    console.log(`[webhook:company_monthly] ${status}`);
+  }
+  return { sent: true, members: data.members.length, total: data.grandTotal, mode };
 }
 
 // ── Armory Low Stock ──────────────────────────────────────────────────────────
@@ -711,6 +930,18 @@ export async function previewWebhook(request, env, user) {
         messages.push({ label: `${MONTH_NAMES[now.getUTCMonth()]} ${now.getUTCFullYear()} — ${members.length} members`, content });
       }
 
+    } else if (eventType === 'company_monthly') {
+      const data = await buildCompanyMonthlyData(env);
+      if (!data.members.length) {
+        messages.push({ label: 'Nothing owed', content: `No uncollected company cut for ${MONTH_NAMES[data.month - 1]} ${data.year}.` });
+      } else {
+        // Text rendering of the V2 message — each "[Pay ↗](<url>)" is a link button in Discord.
+        messages.push({
+          label: `${MONTH_NAMES[data.month - 1]} ${data.year} — ${data.members.length} members (Pay links render as buttons in Discord)`,
+          content: buildCompanyTextContent(cfg, data),
+        });
+      }
+
     } else if (eventType === 'armory_low') {
       const { results: minimums } = await env.DB.prepare(
         `SELECT item_id, item_name, category, min_33097, min_9171, min_9728 FROM armory_minimums`
@@ -772,6 +1003,7 @@ export async function triggerWebhook(request, env, user) {
       case 'investment_tci':   return jsonResponse(await sendInvestmentTciAlerts(env));
       case 'investment_ended': return jsonResponse(await sendInvestmentEndedAlerts(env));
       case 'stock_monthly':    return jsonResponse(await sendStockMonthlyPayouts(env));
+      case 'company_monthly':  return jsonResponse(await sendCompanyMonthlyPayouts(env));
       case 'armory_low':       return jsonResponse(await sendArmoryLowStockAlerts(env));
       default: return errorResponse(`Unknown event type: ${eventType}`, 400);
     }
@@ -819,6 +1051,16 @@ export async function sendTestMessage(request, env, user) {
             targetFromConfig(cfg)
           );
           result = { sent: true, note: 'no stocks; sent connection notice' };
+        }
+        break;
+      case 'company_monthly':
+        result = await sendCompanyMonthlyPayouts(env, { testMode: true });
+        if (!result.sent && !result.error) {
+          await sendDiscordMessage(env, cfg.webhook_url,
+            `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo uncollected company cut for last month, but the webhook is connected.`,
+            targetFromConfig(cfg)
+          );
+          result = { sent: true, note: 'nothing owed; sent connection notice' };
         }
         break;
       case 'armory_low':
