@@ -90,8 +90,10 @@ function ColumnHeaders() {
 // ─── Member row ───────────────────────────────────────────────────────────────
 
 function MemberRow({ member, showFaction }) {
-  const warUnits  = Math.round(member.total_war_units || 0)
-  const totalHits = (member.total_chain_hits || 0) + warUnits + (member.total_custom_hits || 0)
+  // War part = actual war attacks (rank_hits), never payout units/respect —
+  // the backend's total_hits already sums it (see memberTotal below).
+  const totalHits = memberTotal(member)
+  const warUnits  = totalHits - (member.total_chain_hits || 0) - (member.total_custom_hits || 0)
   const derived   = getDerivedRank(totalHits)
   const tier      = getRankTier(derived)
   const mismatch  = isMismatch(member.faction_position, derived)
@@ -246,8 +248,13 @@ function RankSection({ tier, members, showFaction }) {
 
 // ─── Summary stats bar ────────────────────────────────────────────────────────
 
+// Rank total comes from the backend (memberController.getFactionMembers):
+// chain hits + war rank_hits (actual successful attacks, capped only by an
+// ATTACK payout cap) + custom hits. Previously this summed total_war_units —
+// the payout units, i.e. respect on respect-paid wars — so the page kept
+// showing respect-derived ranks after the 2026-09-25 backend fix.
 function memberTotal(m) {
-  return (m.total_chain_hits || 0) + Math.round(m.total_war_units || 0) + (m.total_custom_hits || 0)
+  return m.total_hits ?? 0
 }
 
 function SummaryBar({ members }) {
