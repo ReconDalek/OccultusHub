@@ -216,10 +216,11 @@ export async function sendInvestmentTciAlerts(env, { testMode = false } = {}) {
   const { results: investments } = await env.DB.prepare(`
     SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
            i.amount, i.end_date, i.tci_purchased,
-           u.username AS member_name,
+           COALESCE(u.username, fm.username) AS member_name,
            CAST(julianday(i.end_date) - julianday('now') AS INTEGER) AS days_left
     FROM accounting_investments i
     LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+    LEFT JOIN faction_members fm ON fm.torn_user_id = i.torn_user_id
     WHERE i.is_active = 1 AND i.tci_purchased = 0
       AND julianday(i.end_date) - julianday('now') BETWEEN 1 AND 10
     ORDER BY i.end_date ASC
@@ -299,9 +300,10 @@ export async function sendInvestmentEndedAlerts(env, { testMode = false } = {}) 
   const { results: investments } = await env.DB.prepare(`
     SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
            i.amount, i.rate, i.member_profit_pct, i.end_date,
-           u.username AS member_name
+           COALESCE(u.username, fm.username) AS member_name
     FROM accounting_investments i
     LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+    LEFT JOIN faction_members fm ON fm.torn_user_id = i.torn_user_id
     WHERE i.is_active = 1 AND date(i.end_date) <= date('now')
     ORDER BY i.end_date ASC
   `).all();
@@ -377,11 +379,12 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
   const { results: stocks } = await env.DB.prepare(`
     SELECT s.torn_user_id, s.discord_id, s.stock_acronym, s.tier,
            s.payout_frequency, s.member_keeps_amount,
-           u.username AS member_name
+           COALESCE(u.username, fm.username) AS member_name
     FROM accounting_stocks s
     LEFT JOIN users u ON u.torn_user_id = s.torn_user_id
+    LEFT JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id
     WHERE s.is_active = 1
-    ORDER BY u.username ASC, s.stock_acronym ASC
+    ORDER BY member_name ASC, s.stock_acronym ASC
   `).all();
 
   if (!stocks.length) {
@@ -823,10 +826,11 @@ export async function previewWebhook(request, env, user) {
       const { results: investments } = await env.DB.prepare(`
         SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
                i.amount, i.end_date, i.tci_purchased,
-               u.username AS member_name,
+               COALESCE(u.username, fm.username) AS member_name,
                CAST(julianday(i.end_date) - julianday('now') AS INTEGER) AS days_left
         FROM accounting_investments i
         LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+        LEFT JOIN faction_members fm ON fm.torn_user_id = i.torn_user_id
         WHERE i.is_active = 1 AND i.tci_purchased = 0
           AND julianday(i.end_date) - julianday('now') BETWEEN 1 AND 10
         ORDER BY i.end_date ASC
@@ -866,9 +870,10 @@ export async function previewWebhook(request, env, user) {
       const { results: investments } = await env.DB.prepare(`
         SELECT i.id, i.torn_user_id, i.discord_id, i.faction_id,
                i.amount, i.rate, i.member_profit_pct, i.end_date,
-               u.username AS member_name
+               COALESCE(u.username, fm.username) AS member_name
         FROM accounting_investments i
         LEFT JOIN users u ON u.torn_user_id = i.torn_user_id
+        LEFT JOIN faction_members fm ON fm.torn_user_id = i.torn_user_id
         WHERE i.is_active = 1 AND date(i.end_date) <= date('now')
         ORDER BY i.end_date ASC
       `).all();
@@ -902,11 +907,12 @@ export async function previewWebhook(request, env, user) {
       const { results: stocks } = await env.DB.prepare(`
         SELECT s.torn_user_id, s.discord_id, s.stock_acronym, s.tier,
                s.payout_frequency, s.member_keeps_amount,
-               u.username AS member_name
+               COALESCE(u.username, fm.username) AS member_name
         FROM accounting_stocks s
         LEFT JOIN users u ON u.torn_user_id = s.torn_user_id
+        LEFT JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id
         WHERE s.is_active = 1
-        ORDER BY u.username ASC, s.stock_acronym ASC
+        ORDER BY member_name ASC, s.stock_acronym ASC
       `).all();
 
       if (!stocks.length) {
