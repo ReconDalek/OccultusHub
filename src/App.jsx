@@ -36,6 +36,7 @@ import Binding        from './pages/Binding'
 import Pact           from './pages/Pact'
 import Stocks         from './pages/Stocks'
 import Stats          from './pages/Stats'
+import Activity       from './pages/Activity'
 import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding', '/pact'] // active gameplay routes — suppress easter egg overlays
@@ -273,6 +274,17 @@ function AppRoutes() {
           <Layout>
             <ProtectedRoute requiredLevel="member">
               <Stats />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/activity"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="leadership">
+              <Activity />
             </ProtectedRoute>
           </Layout>
         }

@@ -65,6 +65,10 @@ export default {
             .then(() => fetchAndCacheFactionCrimes(env))
             .then(r => console.log(`[cron] OC crimes: ${r.fetched}/3 factions, ${r.crimesUpserted} crimes upserted`))
             .catch(e => console.error('[cron] OC crimes fetch failed:', e))
+            .then(() => import('./controllers/factionActivityController.js'))
+            .then(({ pruneFactionActivity }) => pruneFactionActivity(env))
+            .then(r => console.log('[cron] faction activity prune:', JSON.stringify(r)))
+            .catch(e => console.error('[cron] faction activity prune failed:', e))
         );
       } catch (e) {
         console.error('[cron] daily snapshot handler error:', e);
@@ -152,14 +156,22 @@ export default {
       return;
     }
 
-    // "*/5 * * * *" — stock list cache refresh every 5 minutes
+    // "*/5 * * * *" — stock list cache refresh every 5 minutes + faction
+    // activity sampling (each tracked faction once per 30-min slot, spread
+    // across the slot's runs — see factionActivityController.js)
     if (event.cron === '*/5 * * * *') {
       try {
         const { fetchAndCacheStockList } = await import('./services/stocksService.js');
+        const { sampleFactionActivity } = await import('./controllers/factionActivityController.js');
         ctx.waitUntil(
           fetchAndCacheStockList(env)
             .then(r => console.log(`[cron] stock list cached: ${r.count} stocks`))
             .catch(e => console.error('[cron] stock list cache failed:', e))
+        );
+        ctx.waitUntil(
+          sampleFactionActivity(env)
+            .then(r => { if (r.due) console.log('[cron] faction activity:', JSON.stringify(r)); })
+            .catch(e => console.error('[cron] faction activity sampling failed:', e))
         );
       } catch (e) {
         console.error('[cron] stock list handler error:', e);

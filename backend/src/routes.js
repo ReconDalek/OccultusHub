@@ -38,6 +38,7 @@ import * as leaderboardController from './controllers/leaderboardController.js';
 import * as memberProfileController from './controllers/memberProfileController.js';
 import * as progressionController from './controllers/progressionController.js';
 import * as spotifyController from './controllers/spotifyController.js';
+import * as factionActivityController from './controllers/factionActivityController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -596,6 +597,26 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/warnings/generate/war' && method === 'GET') {
       return warController.generateWarWarningReport(request, env);
+    }
+
+    // ── Faction activity tracker ──
+    if (pathname === '/api/leadership/activity/factions' && method === 'GET') {
+      return factionActivityController.listActivityFactions(request, env);
+    }
+    if (pathname === '/api/leadership/activity/factions' && method === 'POST') {
+      return factionActivityController.addActivityFactions(request, env, user);
+    }
+    if (pathname === '/api/leadership/activity/factions/remove' && method === 'POST') {
+      return factionActivityController.removeActivityFactions(request, env);
+    }
+    if (/^\/api\/leadership\/activity\/factions\/\d+$/.test(pathname) && method === 'PATCH') {
+      return factionActivityController.updateActivityFaction(request, env);
+    }
+    if (pathname === '/api/leadership/activity/data' && method === 'GET') {
+      return factionActivityController.getActivityData(request, env);
+    }
+    if (pathname === '/api/leadership/activity/wars' && method === 'GET') {
+      return factionActivityController.getActivityWars(request, env);
     }
 
     // Member warning exemptions

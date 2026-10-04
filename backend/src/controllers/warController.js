@@ -641,6 +641,11 @@ export async function checkWarMatches(env, trigger = 'cron') {
              VALUES (?, ?, ?, 'matched', ?, CURRENT_TIMESTAMP)`
           ).bind(factionId, opponentId, opponentName, scheduledStart).run();
           results.push({ factionId, opponentId, opponentName, scheduledStart, action: 'created' });
+          // Start tracking the opponent's activity (Activity page → War view).
+          // Best effort — never allowed to break war-match handling.
+          await import('./factionActivityController.js')
+            .then(({ trackWarOpponent }) => trackWarOpponent(env, opponentId, opponentName, scheduledStart))
+            .catch(e => console.error(`checkWarMatches: activity tracking for ${opponentId} failed: ${e.message}`));
           console.log(`checkWarMatches: faction ${factionId} vs ${opponentId} scheduled ${new Date(scheduledStart * 1000).toISOString()}`);
           await logInfo(env, { category: 'war_cron', event: 'war_matched', message: `Faction ${factionId} matched vs ${opponentName} (${opponentId}), starts ${new Date(scheduledStart * 1000).toISOString()}`, meta: { factionId, opponentId, opponentName, scheduledStart } }).catch(() => {});
 
