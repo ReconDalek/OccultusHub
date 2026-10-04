@@ -2355,6 +2355,9 @@ export async function generateWarWarningReport(request, env) {
       .map((s) => parseInt(s, 10))
       .filter((f) => FACTION_IDS.includes(f));
     if (!factions.length) return errorResponse('At least one valid faction is required', 400);
+    // Members who DID log in but were active for less than this many minutes
+    // across the war are flagged alongside the no-login ones. 0 = off.
+    const minActiveMinutes = Math.max(0, parseInt(url.searchParams.get('min_active_minutes'), 10) || 0);
 
     const monthStart  = `${year}-${String(month).padStart(2, '0')}-01`;
     const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -2422,12 +2425,51 @@ export async function generateWarWarningReport(request, env) {
         exemptionByUser[r.torn_user_id] ??= { type: r.exemption_type, date_start: r.date_start, date_end: r.date_end, reason: r.reason };
       }
 
+      // ── Active time across the war, from Torn's cumulative other.activity.time
+      // (seconds active) in personal_stats_snapshots. A snapshot dated D holds
+      // the state at the END of D (taken 01:00 UTC on D+1), so: end-of-day
+      // before the war started → end of the day it ended. Whole calendar days,
+      // so it slightly OVER-states time active in the war itself — errs towards
+      // fewer false flags. null when either snapshot is missing (e.g. the
+      // end-of-war snapshot isn't taken yet) — never flagged on a null.
+      const baselineDate = new Date(Date.parse(`${warStartDate}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+      const windowDays   = Math.round((Date.parse(`${warEndDate}T00:00:00Z`) - Date.parse(`${warStartDate}T00:00:00Z`)) / 86400000) + 1;
+      const activeMinutesById = {};
+      {
+        // Members scoped via a subquery on this war's roster, not an IN (?,?,…)
+        // list — D1 caps bound parameters at 100 and a roster can be ~100.
+        const roster = `SELECT torn_user_id FROM war_warning_checks WHERE ranked_war_id = ?`;
+        const [baseRows, endRows] = await Promise.all([
+          env.DB.prepare(`
+            SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.other.activity.time') AS INTEGER) AS t
+            FROM personal_stats_snapshots p
+            JOIN (SELECT torn_user_id, MAX(snapshot_date) d FROM personal_stats_snapshots
+                  WHERE torn_user_id IN (${roster}) AND snapshot_date <= ? GROUP BY torn_user_id) b
+              ON b.torn_user_id = p.torn_user_id AND b.d = p.snapshot_date
+          `).bind(war.id, baselineDate).all(),
+          env.DB.prepare(`
+            SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.other.activity.time') AS INTEGER) AS t
+            FROM personal_stats_snapshots p
+            JOIN (SELECT torn_user_id, MIN(snapshot_date) d FROM personal_stats_snapshots
+                  WHERE torn_user_id IN (${roster}) AND snapshot_date >= ? GROUP BY torn_user_id) e
+              ON e.torn_user_id = p.torn_user_id AND e.d = p.snapshot_date
+          `).bind(war.id, warEndDate).all(),
+        ]);
+        const base = {};
+        for (const r of (baseRows.results || [])) base[r.torn_user_id] = r.t;
+        for (const r of (endRows.results || [])) {
+          if (r.t == null || base[r.torn_user_id] == null) continue;
+          activeMinutesById[r.torn_user_id] = Math.max(0, Math.round((r.t - base[r.torn_user_id]) / 60));
+        }
+      }
+
       const enrich = (row, reason) => ({
         torn_user_id: row.torn_user_id,
         username: row.username,
         faction_id: row.current_faction_id ?? null,
         level: row.level ?? null,
         reason,
+        active_minutes: activeMinutesById[row.torn_user_id] ?? null,
         revive_setting: row.revive_setting_at_start ?? null,
         last_action_at_start: row.last_action_at_start ?? null,
         last_action_at_end: row.last_action_at_end ?? null,
@@ -2445,9 +2487,19 @@ export async function generateWarWarningReport(request, env) {
         .map((r) => enrich(r, 'Revives set to "Everyone" at war start'))
         .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
 
+      // No login at all, or — when a threshold is set — logged in but active
+      // for less than minActiveMinutes across the war.
       const noLogin = active
-        .filter((r) => r.end_captured_at != null && r.logged_in_during_war === 0)
-        .map((r) => enrich(r, 'No login recorded during the war'))
+        .filter((r) => r.end_captured_at != null)
+        .map((r) => {
+          if (r.logged_in_during_war === 0) return enrich(r, 'No login recorded during the war');
+          const mins = activeMinutesById[r.torn_user_id];
+          if (minActiveMinutes > 0 && mins != null && mins < minActiveMinutes) {
+            return enrich(r, `Only ${mins} min active during the war (under ${minActiveMinutes} min)`);
+          }
+          return null;
+        })
+        .filter(Boolean)
         .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
 
       wars.push({
@@ -2458,6 +2510,8 @@ export async function generateWarWarningReport(request, env) {
         ended_at: war.ended_at ?? null,
         result: war.result ?? null,
         end_checks_done: checkRows.some((r) => r.end_captured_at != null),
+        activity_window_days: windowDays,
+        activity_data_ready: Object.keys(activeMinutesById).length > 0,
         revives_on: revivesOn,
         no_login: noLogin,
       });
@@ -2467,6 +2521,7 @@ export async function generateWarWarningReport(request, env) {
       year, month,
       month_start: monthStart, month_end: monthEnd,
       factions,
+      min_active_minutes: minActiveMinutes,
       no_data_wars: noDataWars,
       wars,
     });

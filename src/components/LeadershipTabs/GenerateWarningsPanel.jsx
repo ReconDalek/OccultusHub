@@ -1358,7 +1358,8 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
   )
 }
 
-function WarCard({ war, reportedIds, excludedMap, onReport, onToggleExclude }) {
+function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleExclude }) {
+  const loginLabel = minActive > 0 ? `No login / under ${minActive} min active during the war` : 'No login during the war'
   return (
     <div style={{ marginBottom: '20px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -1382,15 +1383,27 @@ function WarCard({ war, reportedIds, excludedMap, onReport, onToggleExclude }) {
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }} />
 
       {war.end_checks_done ? (
-        <WarFlagList
-          label="No login during the war"
-          members={war.no_login}
-          reportedIds={reportedIds}
-          excludedMap={excludedMap}
-          onReport={(m) => onReport({ member: m, war, reason: 'No login recorded during the war' })}
-          onToggleExclude={onToggleExclude}
-          detailFor={(m) => m.last_action_at_end ? `Last seen ${fmtWarDate(m.last_action_at_end)}` : 'No recent login'}
-        />
+        <>
+          <WarFlagList
+            label={loginLabel}
+            members={war.no_login}
+            reportedIds={reportedIds}
+            excludedMap={excludedMap}
+            onReport={(m) => onReport({ member: m, war, reason: m.reason || 'No login recorded during the war' })}
+            onToggleExclude={onToggleExclude}
+            detailFor={(m) => {
+              const seen = m.last_action_at_end ? `Last seen ${fmtWarDate(m.last_action_at_end)}` : 'No recent login'
+              return m.active_minutes != null
+                ? `${m.active_minutes} min active over ${war.activity_window_days} day${war.activity_window_days !== 1 ? 's' : ''} · ${seen}`
+                : seen
+            }}
+          />
+          {minActive > 0 && !war.activity_data_ready && (
+            <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '0 16px 10px' }}>
+              Active-time data isn't available for this war yet (it needs the daily stats snapshot from the day after the war ended) — only no-login members are shown.
+            </p>
+          )}
+        </>
       ) : (
         <div style={{ padding: '10px 16px' }}>
           <p style={{ color: 'var(--text-faint)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px' }}>No login during the war</p>
@@ -1414,6 +1427,9 @@ function WarGenerator({ onWarningSaved }) {
   const [reportedIds, setReportedIds] = useState(new Set())
   const [excludedMap, setExcludedMap] = useState(new Map())
   const [reportingItem, setReportingItem] = useState(null) // { member, war, reason }
+  // Also flag members who logged in but were active under this many minutes
+  // across the war (Torn's activity time from the daily stats snapshots). 0 = off.
+  const [minActive, setMinActive] = useState(30)
 
   function toggleFaction(id) {
     setSelectedFactions(prev => {
@@ -1434,6 +1450,7 @@ function WarGenerator({ onWarningSaved }) {
       year: String(year),
       month: String(month),
       factions: selectedFactions.join(','),
+      min_active_minutes: String(minActive || 0),
     })
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/warnings/generate/war?${params}`, { headers: { Authorization: token() } })
@@ -1452,7 +1469,7 @@ function WarGenerator({ onWarningSaved }) {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [selectedMonth, selectedFactions])
+  }, [selectedMonth, selectedFactions, minActive])
 
   function handleToggleExclude(m) {
     const year  = selectedMonth.year
@@ -1512,6 +1529,15 @@ function WarGenerator({ onWarningSaved }) {
           </div>
         </div>
 
+        <div>
+          <label style={labelStyle} title="Also flag members who logged in but were active in Torn for less than this many minutes across the war (from Torn's activity time in the daily stats snapshots). 0 turns this off.">
+            Min. active (min)
+          </label>
+          <input type="number" min="0" step="5" value={minActive}
+            onChange={e => setMinActive(Math.max(0, parseInt(e.target.value, 10) || 0))}
+            style={{ ...inputStyle, width: '110px' }} />
+        </div>
+
         <div style={{ alignSelf: 'flex-end' }}>
           <button onClick={generate} disabled={loading}
             style={{
@@ -1560,6 +1586,7 @@ function WarGenerator({ onWarningSaved }) {
             <WarCard
               key={war.ranked_war_id}
               war={war}
+              minActive={data.min_active_minutes ?? 0}
               reportedIds={reportedIds}
               excludedMap={excludedMap}
               onReport={setReportingItem}
