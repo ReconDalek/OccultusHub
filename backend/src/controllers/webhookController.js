@@ -136,8 +136,46 @@ async function retargetWebhookChannel(env, webhookUrl, channelId) {
 //              be retargeted there first, since Discord's ?thread_id=
 //              execute param only accepts threads under the webhook's own
 //              current channel. threadId is the actual forum post/thread.
-async function sendDiscordMessage(env, webhookUrl, content, target = {}) {
-  await sendDiscordPayload(env, webhookUrl, { content }, target);
+// Every templated webhook goes through here. Sends the rendered text as a
+// Discord Components V2 message — one Container (left accent bar), with each
+// blank-line-separated paragraph of the template as its own Text Display and a
+// divider between them — so templates stay plain editable markdown while the
+// post gets the cleaner V2 layout. A 4xx on the V2 send (Discord rejecting the
+// payload) falls back to the plain-text message; { plain: true } skips V2.
+const ACCENT = {
+  tci:     0xf59e0b,
+  late:    0xef4444,
+  ended:   0x4ade80,
+  stock:   0x60a5fa,
+  company: 0xa78bfa,
+  armory:  0xef4444,
+  notice:  0x71717a,
+};
+
+function textToV2Payload(content, accent) {
+  const blocks = content.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  const inner = [];
+  blocks.forEach((b, i) => {
+    if (i > 0) inner.push({ type: 14, divider: true, spacing: 1 });
+    inner.push({ type: 10, content: b });
+  });
+  return {
+    flags: IS_COMPONENTS_V2,
+    allowed_mentions: { parse: ['users'] },
+    components: [{ type: 17, ...(accent != null ? { accent_color: accent } : {}), components: inner }],
+  };
+}
+
+async function sendDiscordMessage(env, webhookUrl, content, target = {}, { accent = null, plain = false } = {}) {
+  if (plain) return sendDiscordPayload(env, webhookUrl, { content }, target);
+  try {
+    await sendDiscordPayload(env, webhookUrl, textToV2Payload(content, accent), target, { withComponents: true });
+  } catch (e) {
+    if (!(e.status >= 400 && e.status < 500)) throw e;
+    console.warn('[webhook] V2 message rejected, falling back to plain text:', e.message);
+    // Webhook already retargeted by the attempt above — don't PATCH it again.
+    await sendDiscordPayload(env, webhookUrl, { content }, target, { skipRetarget: true });
+  }
 }
 
 // Lower-level send: posts any message body (plain content, or a Components V2
@@ -263,7 +301,7 @@ export async function sendInvestmentTciAlerts(env, { testMode = false } = {}) {
     const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
     try {
-      await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg));
+      await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg), { accent: isLate ? ACCENT.late : ACCENT.tci });
       if (!testMode) await markSent(env, 'investment_tci', eventKey);
       sent++;
       if (testMode) break; // only send first match in test mode
@@ -340,7 +378,7 @@ export async function sendInvestmentEndedAlerts(env, { testMode = false } = {}) 
     const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
     try {
-      await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg));
+      await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg), { accent: ACCENT.ended });
       if (!testMode) await markSent(env, 'investment_ended', eventKey);
       sent++;
       if (testMode) break; // only send first match in test mode
@@ -437,7 +475,7 @@ export async function sendStockMonthlyPayouts(env, { testMode = false } = {}) {
   const finalContent = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${content}` : content;
 
   try {
-    await sendDiscordMessage(env, cfg.webhook_url, finalContent, targetFromConfig(cfg));
+    await sendDiscordMessage(env, cfg.webhook_url, finalContent, targetFromConfig(cfg), { accent: ACCENT.stock });
     if (!testMode) {
       await markSent(env, 'stock_monthly', eventKey);
       const status = `Sent for ${monthKey} — ${members.length} members, ${fmtMoney(grandTotal)} total`;
@@ -584,7 +622,7 @@ function buildCompanyV2Payloads(cfg, data, { testMode = false } = {}) {
     return {
       flags: IS_COMPONENTS_V2,
       allowed_mentions: { parse: ['users'] },
-      components: [{ type: 17, accent_color: 0xa78bfa, components: inner }],
+      components: [{ type: 17, accent_color: ACCENT.company, components: inner }],
     };
   });
 }
@@ -633,7 +671,7 @@ export async function sendCompanyMonthlyPayouts(env, { testMode = false } = {}) 
     console.warn('[webhook:company_monthly] components rejected, falling back to text:', e.message);
     mode = 'text';
     try {
-      await sendDiscordMessage(env, cfg.webhook_url, buildCompanyTextContent(cfg, data, { testMode }), target);
+      await sendDiscordMessage(env, cfg.webhook_url, buildCompanyTextContent(cfg, data, { testMode }), target, { plain: true });
     } catch (e2) {
       console.error('[webhook:company_monthly] Text fallback failed:', e2.message);
       if (!testMode) await setStatus(env, 'company_monthly', `Error: ${e2.message}`);
@@ -739,7 +777,7 @@ export async function sendArmoryLowStockAlerts(env, { testMode = false } = {}) {
   const content = testMode ? `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\n${body}` : body;
 
   try {
-    await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg));
+    await sendDiscordMessage(env, cfg.webhook_url, content, targetFromConfig(cfg), { accent: ACCENT.armory });
     if (!testMode) {
       await markSent(env, 'armory_low', eventKey);
       const status = `Sent — ${factionSections.length} faction section${factionSections.length !== 1 ? 's' : ''}`;
@@ -1037,7 +1075,7 @@ export async function sendTestMessage(request, env, user) {
           // No qualifying investments — send a fallback notice
           await sendDiscordMessage(env, cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active investments found within the 1–10 day window, but the webhook is connected.`,
-            targetFromConfig(cfg)
+            targetFromConfig(cfg), { accent: ACCENT.notice }
           );
           result = { sent: 1, note: 'no qualifying investments; sent connection notice' };
         }
@@ -1047,7 +1085,7 @@ export async function sendTestMessage(request, env, user) {
         if (result.sent === 0 && !result.error) {
           await sendDiscordMessage(env, cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo matured investments found, but the webhook is connected.`,
-            targetFromConfig(cfg)
+            targetFromConfig(cfg), { accent: ACCENT.notice }
           );
           result = { sent: 1, note: 'no matured investments; sent connection notice' };
         }
@@ -1057,7 +1095,7 @@ export async function sendTestMessage(request, env, user) {
         if (!result.sent && !result.error) {
           await sendDiscordMessage(env, cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo active stock investments tracked, but the webhook is connected.`,
-            targetFromConfig(cfg)
+            targetFromConfig(cfg), { accent: ACCENT.notice }
           );
           result = { sent: true, note: 'no stocks; sent connection notice' };
         }
@@ -1067,7 +1105,7 @@ export async function sendTestMessage(request, env, user) {
         if (!result.sent && !result.error) {
           await sendDiscordMessage(env, cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo uncollected company cut for last month, but the webhook is connected.`,
-            targetFromConfig(cfg)
+            targetFromConfig(cfg), { accent: ACCENT.notice }
           );
           result = { sent: true, note: 'nothing owed; sent connection notice' };
         }
@@ -1077,7 +1115,7 @@ export async function sendTestMessage(request, env, user) {
         if (result.sent === 0 && !result.error) {
           await sendDiscordMessage(env, cfg.webhook_url,
             `-# 🧪 TEST MESSAGE — not recorded, dedup skipped\nNo low-stock items found (or no minimums configured), but the webhook is connected.`,
-            targetFromConfig(cfg)
+            targetFromConfig(cfg), { accent: ACCENT.notice }
           );
           result = { sent: 1, note: 'no low stock; sent connection notice' };
         }
