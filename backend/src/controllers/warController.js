@@ -2463,8 +2463,52 @@ export async function generateWarWarningReport(request, env) {
         }
       }
 
+      // ── War hits + net respect per member, for this war. Paid-out wars have
+      // them in war_hits (written at Save to Rankings, raw attacks purged);
+      // otherwise the stored summary_json from war end (score cap already
+      // applied there). Net = war respect gained − respect lost defending,
+      // same as Member Stats. Members with no row simply did nothing → 0.
+      const perfById = {};
+      let perfReady = false;
+      {
+        const w = await env.DB.prepare(`SELECT hits_saved, summary_json FROM ranked_wars WHERE id=?`).bind(war.id).first();
+        if (w?.hits_saved) {
+          const { results: hr } = await env.DB.prepare(
+            `SELECT torn_user_id, war_hits, respect_gained, respect_lost FROM war_hits WHERE ranked_war_id=?`
+          ).bind(war.id).all();
+          for (const r of (hr || [])) perfById[r.torn_user_id] = { war_hits: r.war_hits || 0, net_respect: (r.respect_gained || 0) - (r.respect_lost || 0) };
+          // war_hits only has rows for members who attacked or were paid — a
+          // member who only got hit has none, so take their respect lost from
+          // the summary's defendStats (kept after payout) instead of showing 0.
+          if (w.summary_json) {
+            try {
+              for (const d of (JSON.parse(w.summary_json).defendStats || [])) {
+                if (perfById[d.defender_id]) continue;
+                perfById[d.defender_id] = { war_hits: 0, net_respect: -(parseFloat(d.respect_lost_defending) || 0) };
+              }
+            } catch { /* malformed summary — war_hits rows still stand */ }
+          }
+          perfReady = true;
+        } else if (w?.summary_json) {
+          try {
+            const sj = JSON.parse(w.summary_json);
+            for (const a of (sj.attackerStats || [])) {
+              perfById[a.attacker_id] = { war_hits: a.war_hits || 0, net_respect: parseFloat(a.war_respect_gained) || 0 };
+            }
+            for (const d of (sj.defendStats || [])) {
+              const p = (perfById[d.defender_id] ??= { war_hits: 0, net_respect: 0 });
+              p.net_respect -= parseFloat(d.respect_lost_defending) || 0;
+            }
+            perfReady = true;
+          } catch { /* malformed summary — leave perf unknown */ }
+        }
+      }
+      const perfFor = (id) => perfReady ? (perfById[id] ?? { war_hits: 0, net_respect: 0 }) : null;
+
       const enrich = (row, reason) => ({
         torn_user_id: row.torn_user_id,
+        war_hits: perfFor(row.torn_user_id)?.war_hits ?? null,
+        net_respect: perfFor(row.torn_user_id) ? Math.round(perfFor(row.torn_user_id).net_respect * 100) / 100 : null,
         username: row.username,
         faction_id: row.current_faction_id ?? null,
         level: row.level ?? null,
@@ -2512,6 +2556,7 @@ export async function generateWarWarningReport(request, env) {
         end_checks_done: checkRows.some((r) => r.end_captured_at != null),
         activity_window_days: windowDays,
         activity_data_ready: Object.keys(activeMinutesById).length > 0,
+        performance_data_ready: perfReady,
         revives_on: revivesOn,
         no_login: noLogin,
       });

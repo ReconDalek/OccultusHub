@@ -1242,10 +1242,13 @@ function fmtWarDate(epochSeconds) {
 // One flagged-member list (revives-on or no-login) within a war card. Members
 // are already filtered server-side; this only splits out anyone with a logged
 // exemption into a plain note, matching ChainCard's convention.
-function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onToggleExclude, detailFor }) {
+// extraCols: optional [{ label, width, render(m) }] columns shown between
+// Detail and the action buttons (the no-login list uses them for war hits /
+// net respect).
+function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onToggleExclude, detailFor, extraCols = [] }) {
   const candidates = members.filter(m => !m.exemption)
   const exempted   = members.filter(m => m.exemption)
-  const colTemplate = '1fr 200px 150px'
+  const colTemplate = ['1fr', '200px', ...extraCols.map(c => c.width), '150px'].join(' ')
 
   if (members.length === 0) {
     return (
@@ -1264,9 +1267,9 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
 
       {candidates.length > 0 && (
         <div className="table-scroll">
-          <div style={{ minWidth: '520px' }}>
+          <div style={{ minWidth: `${520 + extraCols.length * 90}px` }}>
             <div style={{ display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '4px 10px', marginBottom: '2px' }}>
-              {['Member', 'Detail', ''].map(h => (
+              {['Member', 'Detail', ...extraCols.map(c => c.label), ''].map(h => (
                 <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
               ))}
             </div>
@@ -1299,6 +1302,7 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
                     </span>
                   </div>
                   <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{detailFor(m)}</span>
+                  {extraCols.map(c => <span key={c.label} style={{ fontSize: '12px' }}>{c.render(m)}</span>)}
                   <div style={{ display: 'flex', gap: '6px' }}>
                     {reported ? (
                       <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
@@ -1360,6 +1364,18 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
 
 function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleExclude }) {
   const loginLabel = minActive > 0 ? `No login / under ${minActive} min active during the war` : 'No login during the war'
+  // War hits + net respect alongside each flagged member, so it's clear at a
+  // glance whether a low-activity flag is worth a warning.
+  const perfCols = war.performance_data_ready ? [
+    { label: 'War Hits', width: '80px', render: (m) => (
+      <span style={{ color: m.war_hits > 0 ? '#22c55e' : 'var(--text-muted)', fontWeight: '600' }}>{m.war_hits ?? '—'}</span>
+    ) },
+    { label: 'Net Respect', width: '100px', render: (m) => m.net_respect == null ? '—' : (
+      <span style={{ color: m.net_respect > 0 ? '#22c55e' : m.net_respect < 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: '600' }}>
+        {m.net_respect > 0 ? '+' : ''}{m.net_respect.toFixed(2)}
+      </span>
+    ) },
+  ] : []
   return (
     <div style={{ marginBottom: '20px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -1391,6 +1407,7 @@ function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleE
             excludedMap={excludedMap}
             onReport={(m) => onReport({ member: m, war, reason: m.reason || 'No login recorded during the war' })}
             onToggleExclude={onToggleExclude}
+            extraCols={perfCols}
             detailFor={(m) => {
               const seen = m.last_action_at_end ? `Last seen ${fmtWarDate(m.last_action_at_end)}` : 'No recent login'
               return m.active_minutes != null
