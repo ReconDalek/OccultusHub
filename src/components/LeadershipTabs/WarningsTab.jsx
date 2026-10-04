@@ -19,21 +19,45 @@ const token = () => localStorage.getItem('occultusSession')
 
 // War warnings have no numeric target/achieved — just a reason, which the
 // Generate > War flow also writes into the comment. Keep these strings in sync
-// with the reason strings generateWarWarningReport attaches to each flagged row.
+// with the reason strings generateWarWarningReport (warController.js) attaches
+// to each flagged row.
 const WAR_WARNING_REASONS = [
-  'Revives not turned off at war start',
-  'No login during the war',
+  'Revives set to "Everyone" at war start',
+  'No login recorded during the war',
+  'Low activity during the war',
 ]
+
+// Wording older warnings were saved with (the manual dropdown used to differ
+// from Generate) — recognised and mapped onto the current reason.
+const LEGACY_WAR_REASONS = {
+  'Revives not turned off at war start': 'Revives set to "Everyone" at war start',
+  'No login during the war':             'No login recorded during the war',
+}
+
+// Generate's low-activity reason carries the member's minutes, so it can't be
+// a fixed option — matched by pattern and kept verbatim as its own option.
+const LOW_ACTIVITY_REASON_RE = /^Only \d+ min active during the war \(under \d+ min\)/
 
 // A War warning's comment is `reason` or `reason — free note`. Split it back
 // out so the edit modal can show the reason dropdown + note separately.
 function splitWarComment(comment) {
   const c = comment || ''
-  for (const r of WAR_WARNING_REASONS) {
-    if (c === r) return { reason: r, note: '' }
-    if (c.startsWith(r + ' — ')) return { reason: r, note: c.slice(r.length + 3) }
+  const split = (r, mapped = r) => {
+    if (c === r) return { reason: mapped, note: '' }
+    if (c.startsWith(r + ' — ')) return { reason: mapped, note: c.slice(r.length + 3) }
+    return null
   }
+  for (const r of WAR_WARNING_REASONS) { const m = split(r); if (m) return m }
+  for (const [old, cur] of Object.entries(LEGACY_WAR_REASONS)) { const m = split(old, cur); if (m) return m }
+  const low = c.match(LOW_ACTIVITY_REASON_RE)
+  if (low) { const m = split(low[0]); if (m) return m }
   return { reason: WAR_WARNING_REASONS[0], note: c }
+}
+
+// Dropdown options for a warning — the fixed reasons, plus its own verbatim
+// reason (e.g. a generated "Only 6 min active…") when that isn't one of them.
+function warReasonOptions(current) {
+  return current && !WAR_WARNING_REASONS.includes(current) ? [current, ...WAR_WARNING_REASONS] : WAR_WARNING_REASONS
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -577,7 +601,7 @@ function EditWarningModal({ warning: w, onClose, onSaved }) {
               <label style={labelStyle}>Reason *</label>
               <select style={inputStyle} value={form.war_reason}
                 onChange={e => setForm(f => ({ ...f, war_reason: e.target.value }))}>
-                {WAR_WARNING_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                {warReasonOptions(warParts.reason).map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
           )}
