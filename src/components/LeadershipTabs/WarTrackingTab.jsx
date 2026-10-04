@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
+import WarActivityTab from '../Activity/WarActivityTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1755,6 +1756,7 @@ function WarDetail({ warId, onPayoutSaved }) {
     { value: 'armory',    label: `Armory (${(armory?.length ?? 0) + (deposits?.length ?? 0)} entries)` },
     { value: 'economics', label: 'Economics' },
     { value: 'debug',     label: '🔍 Attack Log' },
+    { value: 'activity',  label: '📊 Activity' },
     ...(isCompleted 
     ? [
         { value: 'verify', label: '✔ Verify Data' },
@@ -1801,6 +1803,7 @@ function WarDetail({ warId, onPayoutSaved }) {
       {activeSection === 'stats'  && <MemberStatsTable attackerStats={attackerStats} defendStats={defendStats} />}
       {activeSection === 'armory' && <ArmoryTable armory={armory} deposits={deposits} />}
       {activeSection === 'debug'  && <AttackLogTab warId={warId} />}
+      {activeSection === 'activity' && <WarActivityTab war={war} />}
       {activeSection === 'verify' && (
         <VerifyDataTab
           warId={warId}
