@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.3.1
+// @version      1.4.0
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -41,7 +41,11 @@
     const PANEL_BASE_HEIGHT = 500;
     const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13 };
     const COUNCIL_ROLES = ["council", "archon", "leader", "co-leader"];
+    // Fallbacks only — the real base quantity, item and per-rank / per-member
+    // coefficients now come from occultusHub (Leadership → Ranks → Rank
+    // Rewards) via /api/leadership/xanax. Used only if the server doesn't send them.
     const BASE_XANAX = 5;
+    const DEFAULT_ITEM = { item_id: 206, item_name: "Xanax", armory_tab: "drugs" };
     const RANK_MODIFIERS = {
         "harbinger": 1.8,
         "doomsayer": 1.6,
@@ -612,6 +616,12 @@ transform: translateY(3px);
     const listContainer = document.getElementById("occ-member-list");
     listContainer.innerHTML = "";
 
+    // Reward config from the site (base quantity, item, rank coefficients).
+    const settings = { ...DEFAULT_ITEM, base_quantity: BASE_XANAX, ...(res.data.settings || {}) };
+    const rankCoef = {};
+    (res.data.ranks || []).forEach(r => { rankCoef[r.rank_name.toLowerCase()] = r.coefficient; });
+    const itemName = settings.item_name;
+
     // --- Build faction → rank → members map ---
     // Grouped by derived_rank (earned via hits — see xanaxController.js),
     // not the member's real Torn faction_position, so council/archon/
@@ -657,24 +667,29 @@ transform: translateY(3px);
             if (!membersInRank || membersInRank.length === 0) return;
 
             const rankKey = targetRank.toLowerCase();
-            const mod = RANK_MODIFIERS[rankKey] ?? 1.0;
-            const calcQty = Math.floor(BASE_XANAX * mod);
+            const mod = rankCoef[rankKey] ?? RANK_MODIFIERS[rankKey] ?? 1.0;
+            const rankQty = Math.floor(settings.base_quantity * mod + 1e-9);
 
             const header = document.createElement("div");
             header.className = "occ-rank-header";
-            header.innerHTML = `<span>${targetRank}S</span><span class="occ-rank-info">x${mod.toFixed(1)} (${calcQty} Xanax)</span>`;
+            header.innerHTML = `<span>${targetRank}S</span><span class="occ-rank-info">x${mod.toFixed(1)} (${rankQty} ${itemName})</span>`;
             factionBody.appendChild(header);
 
             membersInRank.forEach(m => {
                 const userId = m.torn_user_id;
                 const name = m.username;
+                // Per-member quantity from the site (rank coefficient + any
+                // energy bonus); falls back to the rank's own amount.
+                const calcQty = Number.isFinite(m.quantity) ? m.quantity : rankQty;
+                const bonus = m.energy_bonus || 0;
 
                 const rowWrapper = document.createElement("div");
                 rowWrapper.className = "member-row";
 
                 const btn = document.createElement("button");
                 btn.className = "member-btn";
-                btn.textContent = name;
+                btn.textContent = bonus ? `${name} ⚡+${bonus} → ${calcQty}` : name;
+                if (bonus) btn.title = `Energy bonus: averaged ${m.avg_energy}/day last month (≥ ${m.energy_bonus_threshold}) — x${Number(m.coefficient).toFixed(2)} = ${calcQty} ${itemName}`;
 
                 const checkBtn = document.createElement("button");
                 checkBtn.className = "check-btn";
@@ -694,9 +709,9 @@ transform: translateY(3px);
 
                 btn.onclick = () => {
                     if (calcQty <= 0) { setStatus("Rank qty is 0", true); return; }
-                    const task = { name: name, id: userId, qty: calcQty, expiry: Date.now() + 60000 };
+                    const task = { name: name, id: userId, qty: calcQty, itemId: settings.item_id, expiry: Date.now() + 60000 };
                     sessionStorage.setItem("pending_xanax_task", JSON.stringify(task));
-                    window.location.href = "https://www.torn.com/factions.php?step=your&type=1#/tab=armoury&start=0&sub=drugs";
+                    window.location.href = `https://www.torn.com/factions.php?step=your&type=1#/tab=armoury&start=0&sub=${settings.armory_tab}`;
                 };
 
                 checkBtn.onclick = async () => {
@@ -1124,7 +1139,8 @@ transform: translateY(3px);
             return;
         }
 
-        const xanaxRow = document.querySelector('li [data-itemid="206"]')?.closest('li');
+        const itemId = task.itemId || DEFAULT_ITEM.item_id;
+        const xanaxRow = document.querySelector(`li [data-itemid="${itemId}"]`)?.closest('li');
         if (!xanaxRow || !xanaxRow.querySelector('a[data-role="give"]')) return;
 
         isFilling = true;
@@ -1177,7 +1193,7 @@ transform: translateY(3px);
         addFactionOperationsButton();
         addSettingsOperationsEntry();
 
-        if (window.location.href.includes("sub=drugs") && sessionStorage.getItem("pending_xanax_task")) {
+        if (window.location.href.includes("tab=armoury") && sessionStorage.getItem("pending_xanax_task")) {
             autoFillXanax();
         }
     }, 300);
@@ -1192,7 +1208,7 @@ transform: translateY(3px);
         addFactionOperationsButton();
         addSettingsOperationsEntry();
 
-        if (window.location.href.includes("sub=drugs") && sessionStorage.getItem("pending_xanax_task")) {
+        if (window.location.href.includes("tab=armoury") && sessionStorage.getItem("pending_xanax_task")) {
             autoFillXanax();
         }
     });
@@ -1205,7 +1221,7 @@ transform: translateY(3px);
 
         observer.observe(document.body, { childList: true, subtree: true });
 
-        if (window.location.href.includes("sub=drugs") && sessionStorage.getItem("pending_xanax_task")) {
+        if (window.location.href.includes("tab=armoury") && sessionStorage.getItem("pending_xanax_task")) {
             autoFillXanax();
         }
     }
