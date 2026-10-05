@@ -106,14 +106,28 @@ async function resolveTargetFaction(env, username) {
 
 // Auto-assigns to whatever war was active for that faction at placement time —
 // left null (unassigned) if none match, so leadership can assign it manually.
+// Bounties placed this long before a war's start belong to that war — they're
+// pre-war bounties on the upcoming opponent (seen live: placed 17:56 for an
+// 18:00 start).
+const PRE_WAR_BOUNTY_WINDOW = 6 * 3600;
+
 async function findMatchingWar(env, factionId, placedAt) {
   if (!factionId) return null;
+  // Manual historic wars have no ended_at, so they used to read as "still
+  // running" and soak up every bounty placed between real wars — excluded.
+  // A war with no ended_at only counts while it's actually matched/active.
+  // Prefer the war in progress; otherwise the one starting soonest after the
+  // bounty, within the pre-war window.
   const row = await env.DB.prepare(
     `SELECT id FROM ranked_wars
-     WHERE faction_id=? AND started_at IS NOT NULL AND started_at<=?
-       AND (ended_at IS NULL OR ended_at>=?)
-     ORDER BY started_at DESC LIMIT 1`
-  ).bind(factionId, placedAt, placedAt).first();
+     WHERE faction_id = ? AND status != 'manual'
+       AND COALESCE(started_at, scheduled_start) IS NOT NULL
+       AND COALESCE(started_at, scheduled_start) - ? <= ?
+       AND (ended_at >= ? OR (ended_at IS NULL AND status IN ('matched', 'active')))
+     ORDER BY CASE WHEN COALESCE(started_at, scheduled_start) <= ? THEN 0 ELSE 1 END,
+              ABS(COALESCE(started_at, scheduled_start) - ?) ASC
+     LIMIT 1`
+  ).bind(factionId, PRE_WAR_BOUNTY_WINDOW, placedAt, placedAt, placedAt, placedAt).first();
   return row?.id ?? null;
 }
 
