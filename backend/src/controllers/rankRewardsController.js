@@ -120,7 +120,9 @@ export async function computeRankRewards(env, { year, month, factionId = null, c
       LEFT JOIN (
         SELECT wh.torn_user_id, SUM(COALESCE(wh.rank_hits, wh.war_hits)) AS total_rank_hits
         FROM war_hits wh JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
-        WHERE rw.ended_at < ? GROUP BY wh.torn_user_id
+        -- Manually entered historic wars have no ended_at — fall back to their
+        -- start, otherwise every manual war's hits were silently dropped.
+        WHERE COALESCE(rw.ended_at, rw.started_at, rw.scheduled_start) < ? GROUP BY wh.torn_user_id
       ) wh ON wh.torn_user_id = fm.torn_user_id
       LEFT JOIN (
         SELECT torn_user_id, SUM(hits) AS total_custom_hits FROM custom_hits GROUP BY torn_user_id
