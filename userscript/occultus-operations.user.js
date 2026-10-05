@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.3.0
+// @version      1.3.1
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -35,6 +35,11 @@
     const FACTION_STORAGE = "occultus_faction_data";
     const FACTION_LABELS = { 33097: "Occ1", 9728: "Occ2", 9171: "Occ3" };
     const FACTION_ORDER = [33097, 9728, 9171];
+    const PANEL_PREFS_STORAGE = "occultus_panel_prefs";
+    const PANEL_BASE_TOP = 60;
+    const PANEL_BASE_WIDTH = 260;
+    const PANEL_BASE_HEIGHT = 500;
+    const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13 };
     const COUNCIL_ROLES = ["council", "archon", "leader", "co-leader"];
     const BASE_XANAX = 5;
     const RANK_MODIFIERS = {
@@ -61,11 +66,15 @@
 #occ-launcher:hover { background: #007ea0 !important; }
 #occ-launcher:hover img { transform: rotate(360deg); }
 
-#occ-panel { position: fixed; width: 260px; background: rgba(15,15,15,0.95); color: #fff; border-radius: 8px; padding: 10px; font-family: Arial; font-size: 13px; z-index: 10000000; box-shadow: 0 0 12px black; display: none; left: 50% !important; transform: translateX(-50%); }
-#occ-header { position: relative; display: flex; justify-content: center; align-items: center; font-weight: bold; margin-bottom: 10px; padding: 0 20px; }
-#occ-close { position: absolute; right: 0; top: -1; cursor: pointer; color: #ff6b6b; font-size: 16px; }
+#occ-panel { --occ-font-base: 13px; position: fixed; width: 260px; max-height: 500px; overflow-y: auto; overflow-x: hidden; background: rgba(15,15,15,0.95); color: #fff; border-radius: 8px; padding: 10px; font-family: Arial; font-size: var(--occ-font-base); z-index: 10000000; box-shadow: 0 0 12px black; display: none; left: 50%; transform: translateX(-50%); box-sizing: border-box; transition: none !important; }
+#occ-panel::-webkit-scrollbar { width: 4px; }
+#occ-panel::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
 
-#occ-panel button { width: 100%; margin-top: 4px; padding: 8px; background: #5865F2; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s; }
+#occ-resize-outline { position: fixed; display: none; box-sizing: border-box; border: 2px dashed #00ff9c; border-radius: 8px; background: rgba(0,255,156,0.06); pointer-events: none; z-index: 10000001; transition: none !important; }
+#occ-header { position: relative; display: flex; justify-content: center; align-items: center; font-weight: bold; margin-bottom: 10px; padding: 0 20px; }
+#occ-close { position: absolute; right: 0; top: -1; cursor: pointer; color: #ff6b6b; font-size: calc(var(--occ-font-base) + 3px); }
+
+#occ-panel button { width: 100%; margin-top: 4px; padding: 8px; background: #5865F2; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s; font-size: var(--occ-font-base); }
 #occ-panel button.nav-btn { margin-top: 12px !important; }
 #occ-panel button:hover { background: #4752c4; }
 #occ-panel button.green-btn { background: #43b581; }
@@ -74,30 +83,30 @@
 #occ-panel button.red-btn:hover { background: #e55a5a; }
 #occ-panel button:disabled { background: #444 !important; cursor: not-allowed; opacity: 0.7; }
 
-#occ-status { margin-top: 8px; font-size: 11px; color: #00ff9c; text-align: center; }
-#occ-settings { position: absolute; bottom: 6px; right: 9px; font-size: 18px; color: #bbb; cursor: pointer; user-select: none; }
+#occ-status { margin-top: 8px; font-size: calc(var(--occ-font-base) - 2px); color: #00ff9c; text-align: center; }
+#occ-settings { position: absolute; bottom: 6px; right: 9px; font-size: calc(var(--occ-font-base) + 5px); color: #bbb; cursor: pointer; user-select: none; }
 
-#occ-member-list { max-height: 400px; overflow-y: auto; overflow-x: hidden !important; margin-top: 5px; padding-right: 0 10px }
-#occ-member-list::-webkit-scrollbar { width: 4px; }
-#occ-member-list::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
-#occ-member-list button { margin: 4px 0 0 5px !important; width: calc(100% - 5px) !important; font-size: 12px; padding: 6px; }
-.occ-rank-header { background: #222; color: #00ff9c; padding: 6px 10px; margin-top: 10px; font-weight: bold; font-size: 10px; border-left: 3px solid #00ff9c; display: flex !important; justify-content: space-between !important; align-items: center !important; box-sizing: border-box; width: calc(100% - 5px); }
+#occ-member-list { margin-top: 5px; padding-right: 0 10px }
+#occ-member-list button { margin: 4px 0 0 5px !important; width: calc(100% - 5px) !important; font-size: calc(var(--occ-font-base) - 1px); padding: 6px; }
+.occ-rank-header { background: #222; color: #00ff9c; padding: 6px 10px; margin-top: 10px; font-weight: bold; font-size: calc(var(--occ-font-base) - 3px); border-left: 3px solid #00ff9c; display: flex !important; justify-content: space-between !important; align-items: center !important; box-sizing: border-box; width: calc(100% - 5px); }
 .occ-rank-info { color: #888; font-weight: normal; flex-shrink: 0; margin-left: auto; text-align: right; }
 
 .member-row { display: flex; gap: 4px; align-items: stretch; margin-top: 4px; width: 100%; }
-.member-btn { flex: 1 1 auto; margin: 0 !important; font-size: 12px; padding: 6px; text-align: center; }
-.check-btn { flex: 0 0 30px; margin: 0 !important; background: #3ca374; cursor: pointer; font-size: 16px; padding: 6px; display: flex; align-items: center; justify-content: center; }
+.member-btn { flex: 1 1 auto; margin: 0 !important; font-size: calc(var(--occ-font-base) - 1px); padding: 6px; text-align: center; }
+.check-btn { flex: 0 0 30px; margin: 0 !important; background: #3ca374; cursor: pointer; font-size: calc(var(--occ-font-base) + 3px); padding: 6px; display: flex; align-items: center; justify-content: center; }
 .status-complete .member-btn { opacity: 0.3 !important; cursor: not-allowed !important; pointer-events: none; }
 .status-complete .check-btn { background: #222 !important; opacity: 0.5; pointer-events: none; }
 .status-warned .member-btn { background: #8b2e2e !important; color: #ccc !important; cursor: not-allowed !important; pointer-events: none; opacity: 0.8; }
 .status-warned .check-btn { background: #5a1a1a !important; pointer-events: none; }
+.status-visitor .member-btn { background: #2e3f5a !important; color: #9db8d8 !important; cursor: not-allowed !important; pointer-events: none; opacity: 0.8; }
+.status-visitor .check-btn { background: #1a2740 !important; pointer-events: none; }
 
 #occ-xan-footer { padding: 10px; border-top: 1px solid #333; margin-top: 10px; }
 
-#occ-warn-list { max-height: 400px; overflow-y: auto; overflow-x: hidden !important; margin-top: 5px; padding-right: 5px; }
+#occ-warn-list { margin-top: 5px; padding-right: 5px; }
 .warn-item { background: #1a1a1a; border: 1px solid #333; padding: 8px; border-radius: 4px; margin-top: 6px; }
-.warn-name { color: #ff6b6b; font-weight: bold; font-size: 13px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px; }
-.warn-line { font-size: 11px; color: #bbb; display: flex; justify-content: space-between; }
+.warn-name { color: #ff6b6b; font-weight: bold; font-size: var(--occ-font-base); border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px; }
+.warn-line { font-size: calc(var(--occ-font-base) - 2px); color: #bbb; display: flex; justify-content: space-between; }
 .warn-val { color: #fff; font-weight: bold; }
 
 #occ-faction-btn .occ-inline-icon {
@@ -142,7 +151,7 @@ transform: translateY(3px);
     padding: 8px 10px;
     margin-top: 8px;
     font-weight: bold;
-    font-size: 11px;
+    font-size: calc(var(--occ-font-base) - 2px);
     border-left: 3px solid #c084fc;
     cursor: pointer;
     display: flex;
@@ -154,10 +163,16 @@ transform: translateY(3px);
     box-sizing: border-box;
 }
 .occ-faction-header:hover { background: #252540; }
-.occ-faction-header .faction-arrow { transition: transform 0.2s; font-size: 10px; }
+.occ-faction-header .faction-arrow { transition: transform 0.2s; font-size: calc(var(--occ-font-base) - 3px); }
 .occ-faction-header.open .faction-arrow { transform: rotate(90deg); }
 .occ-faction-body { display: none; }
 .occ-faction-body.open { display: block; }
+
+.occ-slider-group { margin-top: 12px; }
+.occ-slider-group label { display: flex; justify-content: space-between; font-size: calc(var(--occ-font-base) - 2px); color: #bbb; margin-bottom: 4px; }
+.occ-slider-group label span { color: #00ff9c; font-weight: bold; }
+.occ-slider-group input[type="range"] { width: 100%; accent-color: #5865F2; cursor: pointer; }
+#occ-settings-page .nav-btn { margin-top: 16px !important; }
 
 `;
     document.head.appendChild(style);
@@ -202,11 +217,40 @@ transform: translateY(3px);
 </div>
 
 <div id="occ-settings-page" style="display:none;">
+    <div class="occ-slider-group">
+        <label>Width <span id="occ-width-val">100%</span></label>
+        <input type="range" id="occ-width-slider" min="50" max="300" step="5" value="100">
+    </div>
+    <div class="occ-slider-group">
+        <label>Height <span id="occ-height-val">100%</span></label>
+        <input type="range" id="occ-height-slider" min="50" max="300" step="5" value="100">
+    </div>
+    <div class="occ-slider-group">
+        <label>Horizontal Position <span id="occ-x-val">0</span></label>
+        <input type="range" id="occ-x-slider" min="-200" max="200" step="5" value="0">
+    </div>
+    <div class="occ-slider-group">
+        <label>Vertical Position <span id="occ-y-val">0</span></label>
+        <input type="range" id="occ-y-slider" min="-50" max="400" step="5" value="0">
+    </div>
+    <div class="occ-slider-group">
+        <label>Font Size <span id="occ-font-val">13px</span></label>
+        <input type="range" id="occ-font-slider" min="10" max="20" step="1" value="13">
+    </div>
+    <button id="occ-reset-layout" class="red-btn">Reset Size/Position</button>
     <button id="occ-update-api">Update API Key</button>
     <button id="occ-save-settings" class="green-btn nav-btn">Save</button>
 </div>
 `;
         document.body.appendChild(panel);
+
+        // Sibling of the panel (not a child) so it isn't clipped by the
+        // panel's own overflow:auto when the target size exceeds it.
+        if (!document.getElementById("occ-resize-outline")) {
+            const outline = document.createElement("div");
+            outline.id = "occ-resize-outline";
+            document.body.appendChild(outline);
+        }
 
         document.getElementById("occ-close").onclick = closePanel;
         document.getElementById("occ-assist").onclick = assistAttack;
@@ -220,6 +264,153 @@ transform: translateY(3px);
         document.getElementById("occ-update-api").onclick = manualUpdateKey;
         document.getElementById("occ-warnings-btn").onclick = fetchAndShowWarnings;
         document.getElementById("occ-warn-back").onclick = openCouncil;
+        document.getElementById("occ-reset-layout").onclick = resetPanelPrefs;
+
+        const widthSlider = document.getElementById("occ-width-slider");
+        const heightSlider = document.getElementById("occ-height-slider");
+        const xSlider = document.getElementById("occ-x-slider");
+        const ySlider = document.getElementById("occ-y-slider");
+        const fontSlider = document.getElementById("occ-font-slider");
+
+        widthSlider.oninput = (e) => { updateLivePanelPref("widthScale", parseInt(e.target.value, 10)); showResizeOutline(); };
+        heightSlider.oninput = (e) => { updateLivePanelPref("heightScale", parseInt(e.target.value, 10)); showResizeOutline(); };
+        xSlider.oninput = (e) => updateLivePanelPref("offsetX", parseInt(e.target.value, 10));
+        ySlider.oninput = (e) => updateLivePanelPref("offsetY", parseInt(e.target.value, 10));
+        fontSlider.oninput = (e) => updateLivePanelPref("fontSize", parseInt(e.target.value, 10));
+
+        // Persist to storage only once the user lets go of the slider.
+        [widthSlider, heightSlider, xSlider, ySlider, fontSlider].forEach(slider => {
+            slider.onchange = persistPanelPrefs;
+        });
+        widthSlider.addEventListener("change", hideResizeOutline);
+        heightSlider.addEventListener("change", hideResizeOutline);
+    }
+
+    /**********************************************************
+     * PANEL LAYOUT PREFS (size + position, remembered per-device)
+     **********************************************************/
+
+    // Kept in memory so dragging a slider only touches localStorage once
+    // (on release) instead of on every 'input' tick — JSON parsing +
+    // synchronous localStorage writes dozens of times a second during a
+    // drag is what was causing the position/size jank.
+    let panelPrefs = loadStoredPanelPrefs();
+
+    function loadStoredPanelPrefs() {
+        try {
+            const stored = JSON.parse(SafeStore.get(PANEL_PREFS_STORAGE));
+            if (stored) return { ...DEFAULT_PANEL_PREFS, ...stored };
+        } catch (e) { /* fall through to defaults */ }
+        return { ...DEFAULT_PANEL_PREFS };
+    }
+
+    function persistPanelPrefs() {
+        SafeStore.set(PANEL_PREFS_STORAGE, JSON.stringify(panelPrefs));
+    }
+
+    // Clamps the target size to the viewport (minus a small margin) so an
+    // oversized panel can never itself force scrolling/overflow of the page.
+    function panelTargetBox(prefs) {
+        const idealWidth = Math.round(PANEL_BASE_WIDTH * prefs.widthScale / 100);
+        const idealHeight = Math.round(PANEL_BASE_HEIGHT * prefs.heightScale / 100);
+        return {
+            width: Math.min(idealWidth, window.innerWidth - 20),
+            height: Math.min(idealHeight, window.innerHeight - 20)
+        };
+    }
+
+    // Plain pixel left/top clamped so the box can never sit past any edge
+    // of the window, however far the position sliders are pushed.
+    function panelClampedPosition(prefs, box) {
+        const left = Math.max(0, Math.min((window.innerWidth - box.width) / 2 + prefs.offsetX, window.innerWidth - box.width));
+        const top = Math.max(0, Math.min(PANEL_BASE_TOP + prefs.offsetY, window.innerHeight - box.height));
+        return { left, top };
+    }
+
+    function applyPanelPrefs() {
+        const panel = document.getElementById("occ-panel");
+        if (!panel) return;
+        const box = panelTargetBox(panelPrefs);
+        const pos = panelClampedPosition(panelPrefs, box);
+
+        // Plain pixel left/top — no transform involved, which is what was
+        // causing the horizontal jitter (translateX(-50%) recalculating
+        // against the box's own width on every tick during a drag).
+        panel.style.top = `${pos.top}px`;
+        panel.style.left = `${pos.left}px`;
+        panel.style.transform = "none";
+
+        // Size changes the panel's actual box (width + scrollable max-height)
+        // rather than a CSS scale, so content reflows/scrolls instead of stretching.
+        panel.style.width = `${box.width}px`;
+        panel.style.maxHeight = `${box.height}px`;
+
+        // Font size is a base value — elements with a larger/smaller size than
+        // the base keep their fixed calc() offset from it, so relative hierarchy
+        // (e.g. a heading 2px bigger than body text) is preserved as it scales.
+        panel.style.setProperty("--occ-font-base", `${panelPrefs.fontSize}px`);
+    }
+
+    // Live preview while dragging: updates the in-memory value + the panel's
+    // own styles only. No localStorage I/O here — see persistPanelPrefs().
+    function updateLivePanelPref(key, value) {
+        panelPrefs[key] = value;
+        applyPanelPrefs();
+
+        const labelIds = { widthScale: "occ-width-val", heightScale: "occ-height-val", offsetX: "occ-x-val", offsetY: "occ-y-val", fontSize: "occ-font-val" };
+        const labelEl = document.getElementById(labelIds[key]);
+        if (!labelEl) return;
+        if (key === "widthScale" || key === "heightScale") labelEl.textContent = `${value}%`;
+        else if (key === "fontSize") labelEl.textContent = `${value}px`;
+        else labelEl.textContent = value;
+    }
+
+    function syncPanelPrefSliders() {
+        panelPrefs = loadStoredPanelPrefs();
+        document.getElementById("occ-width-slider").value = panelPrefs.widthScale;
+        document.getElementById("occ-width-val").textContent = `${panelPrefs.widthScale}%`;
+        document.getElementById("occ-height-slider").value = panelPrefs.heightScale;
+        document.getElementById("occ-height-val").textContent = `${panelPrefs.heightScale}%`;
+        document.getElementById("occ-x-slider").value = panelPrefs.offsetX;
+        document.getElementById("occ-x-val").textContent = panelPrefs.offsetX;
+        document.getElementById("occ-y-slider").value = panelPrefs.offsetY;
+        document.getElementById("occ-y-val").textContent = panelPrefs.offsetY;
+        document.getElementById("occ-font-slider").value = panelPrefs.fontSize;
+        document.getElementById("occ-font-val").textContent = `${panelPrefs.fontSize}px`;
+    }
+
+    function resetPanelPrefs() {
+        panelPrefs = { ...DEFAULT_PANEL_PREFS };
+        persistPanelPrefs();
+        applyPanelPrefs();
+        syncPanelPrefSliders();
+        hideResizeOutline();
+        setStatus("Layout reset to default");
+    }
+
+    /**********************************************************
+     * RESIZE OUTLINE (visual "max size" preview while dragging
+     * the width/height sliders — the settings page itself is short,
+     * so without this there's no visible feedback that anything moved)
+     **********************************************************/
+
+    function showResizeOutline() {
+        const outline = document.getElementById("occ-resize-outline");
+        if (!outline) return;
+        const box = panelTargetBox(panelPrefs);
+        const pos = panelClampedPosition(panelPrefs, box);
+
+        outline.style.top = `${pos.top}px`;
+        outline.style.left = `${pos.left}px`;
+        outline.style.transform = "none";
+        outline.style.width = `${box.width}px`;
+        outline.style.height = `${box.height}px`;
+        outline.style.display = "block";
+    }
+
+    function hideResizeOutline() {
+        const outline = document.getElementById("occ-resize-outline");
+        if (outline) outline.style.display = "none";
     }
 
     function showMainPage() {
@@ -238,6 +429,7 @@ transform: translateY(3px);
         hideAllPages();
         document.getElementById("occ-settings-page").style.display = "block";
         document.getElementById("occ-title").textContent = "Settings";
+        syncPanelPrefSliders();
     }
 
     function hideAllPages() {
@@ -493,11 +685,16 @@ transform: translateY(3px);
                 } else if (m.is_warned) {
                     rowWrapper.classList.add("status-warned");
                     checkBtn.innerHTML = "⚠";
+                } else if (m.faction_position === "Socius") {
+                    // Visiting member — their chain hits still earn them a rank here,
+                    // but they aren't an actual faction member, so skip distribution.
+                    rowWrapper.classList.add("status-visitor");
+                    checkBtn.innerHTML = "👁";
                 }
 
                 btn.onclick = () => {
                     if (calcQty <= 0) { setStatus("Rank qty is 0", true); return; }
-                    const task = { name: name, qty: calcQty, expiry: Date.now() + 60000 };
+                    const task = { name: name, id: userId, qty: calcQty, expiry: Date.now() + 60000 };
                     sessionStorage.setItem("pending_xanax_task", JSON.stringify(task));
                     window.location.href = "https://www.torn.com/factions.php?step=your&type=1#/tab=armoury&start=0&sub=drugs";
                 };
@@ -698,7 +895,7 @@ transform: translateY(3px);
             return;
         }
         setStatus("Ready");
-        panel.style.top = `60px`;
+        applyPanelPrefs();
         showMainPage();
         panel.style.display = "block";
         await checkCouncilStatus();
@@ -947,7 +1144,7 @@ transform: translateY(3px);
 
             const nameInput = xanaxRow.querySelector('.give-cont .ac-search');
             if (nameInput) {
-                nameInput.value = task.name;
+                nameInput.value = task.id ? `${task.name} [${task.id}]` : task.name;
                 nameInput.focus();
                 nameInput.dispatchEvent(new Event('input', { bubbles: true }));
                 setTimeout(() => {
