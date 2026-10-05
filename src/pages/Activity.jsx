@@ -87,7 +87,7 @@ export default function Activity() {
       <div style={{ marginBottom: 16 }}>
         <h1 className="font-cinzel" style={{ margin: 0, fontSize: 'clamp(20px, 5vw, 24px)', fontWeight: 700, letterSpacing: '1px' }}>Faction Activity</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '6px 0 0' }}>
-          When members are active, sampled every 30 minutes. Times are TCT (UTC).
+          Member activity, sampled every 30 minutes. Times in TCT.
         </p>
       </div>
 
@@ -170,7 +170,7 @@ function WarsPanel({ nameOf, onOpen }) {
   return (
     <div style={card}>
       <h3 style={sectionTitle}>Ranked wars</h3>
-      <p style={sectionSub}>Opponents are tracked automatically from the moment a war is matched. <strong>Pre-war pattern</strong> compares the 28 days before the war (only what's been tracked — usually from match day, more if the faction was already on the list); <strong>During war</strong> shows both factions hour by hour since the war started.</p>
+      <p style={sectionSub}>Opponents are tracked from the day a war is matched. <strong>Pre-war pattern</strong> covers the 28 days before the war, <strong>During war</strong> covers the war itself.</p>
       {!wars.length && <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No recent or upcoming wars.</p>}
       <div style={{ display: 'grid', gap: 8 }}>
         {wars.map(w => {

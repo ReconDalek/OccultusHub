@@ -75,7 +75,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
       {noData && (
         <div style={{ ...card, borderColor: 'rgba(251,191,36,0.3)' }}>
           <p style={{ margin: 0, fontSize: 13, color: '#fbbf24' }}>
-            No activity recorded for {nameA} in this period{dataA.faction?.first_day ? ` — tracking started ${fmtDay(dataA.faction.first_day, { day: 'numeric', month: 'short', year: 'numeric' })}` : ' yet — it\'s sampled every 30 minutes from when it was added'}.
+            No activity for {nameA} in this period.{dataA.faction?.first_day ? ` Tracking started ${fmtDay(dataA.faction.first_day, { day: 'numeric', month: 'short', year: 'numeric' })}.` : ' Data appears within 30 minutes of a faction being added.'}
           </p>
         </div>
       )}
@@ -84,7 +84,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
       {!noData && (dataB ? (
         <div style={card}>
           <h3 style={sectionTitle}>Head to head</h3>
-          <p style={sectionSub}>Averages across every tracked {res === 'half' ? 'half hour' : 'hour'} in the period.</p>
+          <p style={sectionSub}>Averages over the period.</p>
           <CompareTable rows={[
             ['Avg active', fmtPct(sumA?.avgActive), fmtPct(sumB?.avgActive), (sumA?.avgActive ?? 0) - (sumB?.avgActive ?? 0)],
             ['Peak', sumA ? `${sumA.peak.label} · ${fmtPct(sumA.peak.pct)}` : '—', sumB ? `${sumB.peak.label} · ${fmtPct(sumB.peak.pct)}` : '—', null],
@@ -108,14 +108,14 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
         <>
           <div style={card}>
             <h3 style={sectionTitle}>Advantage: {nameA} vs {nameB}</h3>
-            <p style={sectionSub}>Difference in {value === 'count' ? 'members' : 'share of members'} {metricWord}. Purple = {nameA} ahead, copper = {nameB} ahead.</p>
+            <p style={sectionSub}>Purple: {nameA} has more {metricWord}. Copper: {nameB} does.</p>
             <Heatmap grid={diffGrid} rowLabels={rowLabels} rowFullLabels={rowFullLabels} colLabels={colLabels} colFullLabels={colFullLabels}
               scale="div" format={(v) => (value === 'count' ? `${v > 0 ? '+' : ''}${Math.round(v * 10) / 10}` : `${v > 0 ? '+' : ''}${Math.round(v * 100)}`)}
               legend={{ pos: `${nameA} ahead`, neg: `${nameB} ahead` }} highlightRows={highlightRows} />
           </div>
           <div style={card}>
             <h3 style={sectionTitle}>By hour of day</h3>
-            <p style={sectionSub}>Average share active at each time across the period.</p>
+            <p style={sectionSub}>Average % active by time of day.</p>
             <ProfileLines res={res} series={[
               { label: nameA, color: COLOR_A, values: breakdownA.map(v => (v ? v.active : null)) },
               { label: nameB, color: COLOR_B, values: (breakdownB || []).map(v => (v ? v.active : null)) },
@@ -129,12 +129,12 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
         <>
           <div style={card}>
             <h3 style={sectionTitle}>{nameA} — {fmtDay(days[0], { weekday: 'long', day: 'numeric', month: 'short' })}</h3>
-            <p style={sectionSub}>Share of members active, idle and offline at each time.</p>
+            <p style={sectionSub}>Active, idle and offline by hour.</p>
             <HourlyBars breakdown={breakdownA} res={res} />
           </div>
           <div style={card}>
             <h3 style={sectionTitle}>Who was on</h3>
-            <p style={sectionSub}>Every member, every {res === 'half' ? 'half hour' : 'hour'} of the day.</p>
+            <p style={sectionSub}>Each member through the day.</p>
             <StateLegend />
             <div style={{ marginTop: 8 }}>
               <StateGrid res={res} nCols={nb}
@@ -165,7 +165,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
           {!dataB && (
             <div style={card}>
               <h3 style={sectionTitle}>By hour of day</h3>
-              <p style={sectionSub}>Average share of members active, idle and offline at each time across the period.</p>
+              <p style={sectionSub}>Average active, idle and offline by time of day.</p>
               <HourlyBars breakdown={breakdownA} res={res} />
             </div>
           )}

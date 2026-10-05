@@ -49,7 +49,7 @@ export default function ManagePanel({ factions, onChanged, onView }) {
     setAdding(true)
     try {
       const r = await apiSend('/api/leadership/activity/factions', 'POST', { text })
-      flash('ok', `Added ${r.added} new${r.reactivated ? `, re-enabled ${r.reactivated}` : ''}${r.already ? `, ${r.already} already tracked` : ''}. Names fill in on the first sample (within 30 min).`)
+      flash('ok', `Added ${r.added}${r.reactivated ? `, re-enabled ${r.reactivated}` : ''}${r.already ? `, ${r.already} already tracked` : ''}. Names appear after the first sample.`)
       setText('')
       onChanged()
     } catch (e) { flash('err', e.message) }
@@ -64,7 +64,7 @@ export default function ManagePanel({ factions, onChanged, onView }) {
   async function removeSelected() {
     const ids = [...selected]
     if (!ids.length) return
-    if (!window.confirm(`Stop tracking ${ids.length} faction${ids.length !== 1 ? 's' : ''} and delete their stored activity? This can't be undone.`)) return
+    if (!window.confirm(`Remove ${ids.length} faction${ids.length !== 1 ? 's' : ''} and delete their data? This can't be undone.`)) return
     setBusy(true)
     try {
       const r = await apiSend('/api/leadership/activity/factions/remove', 'POST', { faction_ids: ids })
@@ -83,7 +83,7 @@ export default function ManagePanel({ factions, onChanged, onView }) {
     <div>
       <div style={card}>
         <h3 style={sectionTitle}>Add factions</h3>
-        <p style={sectionSub}>Paste faction IDs or Torn faction links — one per line, or separated by commas/spaces. Hundreds at once is fine. Each faction is sampled every 30 minutes from then on; Torn has no history, so data starts from when it's added.</p>
+        <p style={sectionSub}>Paste faction IDs or links, any separator. Data starts from when a faction is added.</p>
         <textarea value={text} onChange={e => setText(e.target.value)} rows={4}
           placeholder={'12345\n23456, 34567\nhttps://www.torn.com/factions.php?step=profile&ID=45678'}
           style={{ width: '100%', boxSizing: 'border-box', padding: 10, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', color: '#f4f4f5', fontFamily: 'monospace', fontSize: 13, resize: 'vertical' }} />
@@ -95,7 +95,7 @@ export default function ManagePanel({ factions, onChanged, onView }) {
 
       <div style={card}>
         <h3 style={sectionTitle}>Tracked factions</h3>
-        <p style={sectionSub}>{counts.active} of {counts.total} being sampled{counts.errors ? ` · ${counts.errors} with errors` : ''}. War opponents are added automatically when matched and stop 14 days after the war starts. Factions Torn reports as invalid are paused after 3 failed samples.</p>
+        <p style={sectionSub}>{counts.active} of {counts.total} active{counts.errors ? ` · ${counts.errors} with errors` : ''}. War opponents are added when matched and removed 14 days after the war starts. Invalid factions pause after 3 failed samples.</p>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, tag or ID…" style={{ ...input, flex: '1 1 180px' }} />

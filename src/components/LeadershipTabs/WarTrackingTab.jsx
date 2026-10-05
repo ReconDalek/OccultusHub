@@ -708,9 +708,9 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
           <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>
             {isEven
               ? (excludedTo === 'members'
-                  ? 'Pot after faction cut is split equally across included members. Excluded members’ shares are redistributed to everyone else.'
-                  : 'Pot after faction cut is split equally across every listed member. Excluded members’ shares go to the faction, not to other members.')
-              : 'Paid by attack/respect units. Members who don’t qualify are listed as No pay.'}
+                  ? 'Split equally after the faction cut. Excluded shares go to the other members.'
+                  : 'Split equally after the faction cut. Excluded shares go to the faction.')
+              : 'Paid by attacks or respect. Members who don’t qualify show as No pay.'}
           </span>
         </div>
 
@@ -855,7 +855,7 @@ function PayoutCalculator({ warId, attackerStats, defendStats, roster, initialHi
                             )}
                             {isEven && (
                               <button onClick={() => toggleExcluded(r.attacker_id)}
-                                title={r.isExcluded ? 'Include in the even split' : (excludedTo === 'members' ? 'Exclude from the even split — their share is split among the other members' : 'Exclude from the even split — their share goes to the faction')}
+                                title={r.isExcluded ? 'Include in the even split' : (excludedTo === 'members' ? 'Exclude: their share goes to the other members' : 'Exclude: their share goes to the faction')}
                                 style={{
                                   padding: '1px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', lineHeight: 1.2,
                                   background: r.isExcluded ? 'rgba(245,158,11,0.12)' : 'transparent',
@@ -1495,7 +1495,7 @@ function WarEconomicsTab({ warId, hitsSaved }) {
         </div>
         {(data.retained_profit ?? 0) > 0 && (
           <div style={rowStyle}>
-            <span style={labelStyle} title="Member pay that was never paid out (excluded members' shares kept by the faction, plus rounding remainders)">Unpaid Member Pay (kept)</span>
+            <span style={labelStyle} title="Pay not given out: excluded shares plus rounding">Unpaid Member Pay (kept)</span>
             <span style={{ fontSize: '14px', fontWeight: '600', color: '#4ade80' }}>+{fmtMoney(data.retained_profit)}</span>
           </div>
         )}

@@ -1417,7 +1417,7 @@ function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleE
           />
           {minActive > 0 && !war.activity_data_ready && (
             <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '0 16px 10px' }}>
-              Active-time data isn't available for this war yet (it needs the daily stats snapshot from the day after the war ended) — only no-login members are shown.
+              Active time isn't available until the day after the war ends. Showing no-login members only.
             </p>
           )}
         </>
@@ -1547,7 +1547,7 @@ function WarGenerator({ onWarningSaved }) {
         </div>
 
         <div>
-          <label style={labelStyle} title="Also flag members who logged in but were active in Torn for less than this many minutes across the war (from Torn's activity time in the daily stats snapshots). 0 turns this off.">
+          <label style={labelStyle} title="Also flag members active for less than this many minutes during the war. 0 turns it off.">
             Min. active (min)
           </label>
           <input type="number" min="0" step="5" value={minActive}

@@ -96,10 +96,10 @@ export default function WarActivityTab({ war }) {
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 0' }}>
           {fmtDay(range.from, { day: 'numeric', month: 'short' })} – {fmtDay(range.to, { day: 'numeric', month: 'short' })}
-          {isWarView ? ` · from ${new Date(startTs * 1000).toISOString().slice(11, 16)} TCT on the start day` : ''}
+          {isWarView ? ` · from ${new Date(startTs * 1000).toISOString().slice(11, 16)} TCT` : ''}
           {isWarView && live ? ' · refreshes every 5 min' : ''}
           {lastSample ? ` · last sample ${timeAgo(new Date(lastSample * 1000).toISOString())}` : ''}
-          {' · '}full views on the <a href="/activity" style={{ color: '#a78bfa' }}>Activity page</a>
+          {' · '}<a href="/activity" style={{ color: '#a78bfa' }}>Activity page</a>
         </p>
       </div>
 
@@ -109,10 +109,10 @@ export default function WarActivityTab({ war }) {
       {oppNoData && (
         <div style={{ ...card, borderColor: 'rgba(251,191,36,0.3)' }}>
           <p style={{ margin: 0, fontSize: 13, color: '#fbbf24' }}>
-            No activity recorded for {oppName} in this period
+            No activity for {oppName} in this period.
             {rawB.faction?.first_day
-              ? ` — tracking started ${fmtDay(rawB.faction.first_day, { day: 'numeric', month: 'short' })}, so earlier days have no data.`
-              : rawB.faction?.is_active ? ' yet — they\'re sampled every 30 minutes from when the war was matched.' : ' — they aren\'t being tracked (add them on the Activity page → Manage).'}
+              ? ` Tracking started ${fmtDay(rawB.faction.first_day, { day: 'numeric', month: 'short' })}.`
+              : rawB.faction?.is_active ? ' Data appears within 30 minutes of the match.' : ' Not tracked. Add them under Activity → Manage.'}
           </p>
         </div>
       )}

@@ -36,7 +36,7 @@ export default function MemberPanel({ members, days, res }) {
   return (
     <div style={card}>
       <h3 style={sectionTitle}>Members</h3>
-      <p style={sectionSub}>Share of tracked hours each member was active in this period, and when they're usually on (TCT). {isMobile ? 'Tap' : 'Click'} a member for their full breakdown.</p>
+      <p style={sectionSub}>% of hours active and usual times online. {isMobile ? 'Tap' : 'Click'} a member for details.</p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members…" style={{ ...input, flex: '1 1 160px' }} />
@@ -172,7 +172,7 @@ function MemberDetail({ member, raw, days, res, onClose }) {
 
         <div style={card}>
           <h3 style={sectionTitle}>Weekly pattern</h3>
-          <p style={sectionSub}>Share of days they were active at each time (TCT).</p>
+          <p style={sectionSub}>% of days active at each time.</p>
           <Heatmap grid={pattern} rowLabels={WEEKDAYS} colLabels={Array.from({ length: nb }, (_, b) => (res === 'half' ? (b % 4 === 0 ? String(b / 2) : '') : String(b)))}
             colFullLabels={Array.from({ length: nb }, (_, b) => bucketLabel(b, res))} format={fmtPct} />
         </div>
@@ -184,7 +184,7 @@ function MemberDetail({ member, raw, days, res, onClose }) {
 
         <div style={card}>
           <h3 style={sectionTitle}>Day by day</h3>
-          <p style={sectionSub}>Every tracked {res === 'half' ? 'half hour' : 'hour'} — purple active, yellow idle, grey offline.</p>
+          <p style={sectionSub}>Purple active, yellow idle, grey offline.</p>
           {timeline.length ? (
             <StateGrid rows={timeline} nCols={nb} res={res} labelWidth={96}
               colLabel={(i, full) => (full ? bucketLabel(i, res) : (res === 'half' ? (i % 4 === 0 ? String(i / 2) : '') : (i % 3 === 0 ? String(i) : '')))} />

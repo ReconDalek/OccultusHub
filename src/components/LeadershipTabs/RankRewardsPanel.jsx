@@ -63,8 +63,8 @@ export default function RankRewardsPanel() {
   return (
     <div style={{ marginTop: 12 }}>
       <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '0 0 14px' }}>
-        The monthly rank reward the Operations userscript gives out: <strong style={{ color: '#f4f4f5' }}>base × (rank coefficient + bonuses)</strong>, rounded down.
-        Rank is earned from hits banked before the month started; warnings and energy are judged on the previous month. The userscript reads everything here — no script edits needed when values change.
+        Monthly reward = <strong style={{ color: '#f4f4f5' }}>base × (rank coefficient + bonuses)</strong>, rounded down.
+        Rank uses hits up to the start of the month; warnings and energy use the previous month. The userscript picks up changes automatically.
       </p>
       {msg && <p style={{ fontSize: 12, color: msg.isErr ? '#f87171' : '#4ade80', margin: '0 0 10px' }}>{msg.m}</p>}
 
@@ -88,12 +88,12 @@ function SettingsCard({ settings, onSave }) {
   return (
     <div style={card}>
       <h3 style={h3}>Base reward</h3>
-      <p style={sub}>What's given at x1.0. Change the item here if the reward ever moves away from Xanax — the userscript fills the give form for whatever item ID is set.</p>
+      <p style={sub}>Amount given at x1.0, and which item.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <div><label style={label}>Base quantity</label><input type="number" min="0" value={f.base_quantity} onChange={e => setF({ ...f, base_quantity: e.target.value })} style={input} /></div>
         <div><label style={label}>Item name</label><input value={f.item_name} onChange={e => setF({ ...f, item_name: e.target.value })} style={input} /></div>
         <div><label style={label}>Torn item ID</label><input type="number" min="1" value={f.item_id} onChange={e => setF({ ...f, item_id: e.target.value })} style={input} /></div>
-        <div><label style={label} title="Faction armoury sub-tab the userscript opens to give the item (drugs, medical, boosters, temporary…)">Armoury tab</label><input value={f.armory_tab} onChange={e => setF({ ...f, armory_tab: e.target.value })} style={input} /></div>
+        <div><label style={label} title="Armoury tab the userscript opens to give the item">Armoury tab</label><input value={f.armory_tab} onChange={e => setF({ ...f, armory_tab: e.target.value })} style={input} /></div>
       </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
         <button disabled={!dirty} onClick={() => onSave(f)} style={btn(true, !dirty)}>Save base reward</button>
@@ -111,7 +111,7 @@ function RanksCard({ ranks, base, item, onSave }) {
   return (
     <div style={card}>
       <h3 style={h3}>Rank coefficients</h3>
-      <p style={sub}>Multiplier per earned rank. 0 = no reward for that rank (energy bonuses don't apply either).</p>
+      <p style={sub}>Multiplier per rank. 0 means no reward, including bonuses.</p>
       <div style={{ display: 'grid', gap: 6 }}>
         {ranks.map(r => {
           const v = Number(vals[r.rank_name])
@@ -144,8 +144,8 @@ function BonusesCard({ config, onAdd, onUpdate, onDelete }) {
     <div style={card}>
       <h3 style={h3}>Energy bonuses</h3>
       <p style={sub}>
-        Extra coefficient for members whose <strong>average daily energy last month</strong> (gym + attacks, the same figure as Warnings → Generate → Energy) reached a threshold.
-        Only the <strong>highest</strong> threshold a member reaches applies — set each tier's increment to the full bonus for that tier (e.g. 1,000 → +0.2, 1,400 → +0.4).
+        Added to the rank coefficient based on last month's average daily energy (gym + attacks, as in energy warnings).
+        Thresholds don't stack: the highest one reached <strong>overrides</strong> the lower ones.
       </p>
 
       {energy.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No energy thresholds yet.</p>}
@@ -254,8 +254,7 @@ function MemberList() {
         <div>
           <h3 style={h3}>Member list</h3>
           <p style={{ ...sub, marginBottom: 8 }}>
-            Exactly what the userscript shows for {MONTHS[ym.month - 1]} {ym.year}
-            {data?.energy_month ? ` — energy from ${MONTHS[data.energy_month.month - 1]}` : ''}.
+            As shown in the userscript for {MONTHS[ym.month - 1]}{data?.energy_month ? `, using ${MONTHS[data.energy_month.month - 1]} energy` : ''}.
           </p>
         </div>
         <select value={`${ym.year}-${ym.month}`} onChange={e => { const [y, m] = e.target.value.split('-').map(Number); setYm({ year: y, month: m }) }} style={{ ...input, width: 'auto' }}>
@@ -276,7 +275,7 @@ function MemberList() {
             <Tile l="Blocked (warned)" v={totals.warned} c="#f87171" />
           </div>
           <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={showAcolytes} onChange={() => setShowAcolytes(v => !v)} /> Also show Acolytes (not in the userscript — no reward)
+            <input type="checkbox" checked={showAcolytes} onChange={() => setShowAcolytes(v => !v)} /> Show Acolytes (no reward)
           </label>
 
           {FACTIONS.map(f => {

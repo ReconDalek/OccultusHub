@@ -98,14 +98,14 @@ const EVENT_META = {
   company_monthly: {
     label:    'Company Monthly Payouts',
     icon:     '🏢',
-    schedule: '1st of each month at 02:00 UTC — covers the month that just ended',
-    description: "Sends one Discord message on the 1st listing what each company director owes the faction: the 30% faction cut of last month's company profit, grouped per director. Companies already marked collected for that month are left out. Each member gets a Pay button (a Torn link with a negative amount, so it takes the money from their faction balance). Sent as a Discord Components V2 message; if Discord rejects that, it falls back to plain text with Pay links. Sent once per month — duplicate protection is built in.",
+    schedule: '1st of each month at 02:00 UTC (previous month)',
+    description: "Posts what each company director owes the faction (30% of last month's company profit), with a Pay button per member. Companies marked collected are skipped. Sends once per month.",
     vars: [
       ['{mention}',      'Discord @mention from the configured user ID above'],
       ['{month}',        'Month being reported (e.g. "September")'],
       ['{year}',         'Year of that month'],
       ['{cut_pct}',      'Faction cut percentage ("30%")'],
-      ['{payout_list}',  'Member rows, each with its own Pay button — text before this becomes the header, text after it the footer'],
+      ['{payout_list}',  'Member rows with Pay buttons (text above it is the header, below it the footer)'],
       ['{total}',        'Grand total across all members (formatted)'],
     ],
     defaultTemplate: [
@@ -118,7 +118,7 @@ const EVENT_META = {
       '{mention}',
     ].join('\n'),
     rowVars: [
-      ['{member}',         "Discord @mention of the director if their Discord ID is known, otherwise their bold Torn name"],
+      ['{member}',         "Director's @mention, or their name if no Discord is linked"],
       ['{member_mention}', "Discord @mention of the director (blank if their Discord isn't linked)"],
       ['{member_name}',    'Torn username of the director'],
       ['{amount}',         'Faction cut owed (formatted, e.g. $26.3M)'],
