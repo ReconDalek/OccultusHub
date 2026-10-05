@@ -1,37 +1,8 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-
-const FACTION_IDS = [33097, 9728, 9171];
-
-// Mirrors src/components/LeadershipTabs/MemberRanksTab.jsx RANK_TIERS —
-// rank is always computed from stored hits, never from faction_position
-// (the Torn-synced position can go stale between 12h syncs).
-const RANK_TIERS = [
-  { name: 'Harbinger', min: 15000 },
-  { name: 'Doomsayer', min: 5000 },
-  { name: 'Sentinel',  min: 2500 },
-  { name: 'Arcanist',  min: 1000 },
-  { name: 'Adept',     min: 500 },
-  { name: 'Acolyte',   min: 0 },
-];
-
-function getDerivedRank(totalHits) {
-  for (const tier of RANK_TIERS) {
-    if (totalHits >= tier.min) return tier.name;
-  }
-  return 'Acolyte';
-}
-
-// Monthly rank perk formula: base xanax × rank coefficient. Acolyte has no
-// coefficient — below Adept, no perk. Coefficients are a straight multiplier
-// on top of a shared base, not a lookup table of flat amounts.
-const BASE_XANAX = 5;
-const RANK_COEFFICIENTS = {
-  Adept:     1,
-  Arcanist:  1.2,
-  Sentinel:  1.4,
-  Doomsayer: 1.6,
-  Harbinger: 1.8,
-};
+// Rank tiers, base quantity, rank coefficients and energy bonuses now live in
+// rankRewardsController (leadership-managed config) — this controller keeps
+// serving the Occultus Operations userscript's endpoints on top of it.
+import { FACTION_IDS, getDerivedRank, computeRankRewards } from './rankRewardsController.js';
 
 function currentUtcMonth() {
   const now = new Date();
@@ -52,7 +23,7 @@ async function getEligibleMembers(env, factionId, asOfTs) {
     SELECT
       fm.torn_user_id,
       COALESCE(ch.total_chain_hits, 0)
-        + ROUND(COALESCE(wh.total_war_units, 0), 0)
+        + COALESCE(wh.total_rank_hits, 0)
         + COALESCE(cx.total_custom_hits, 0) AS total_hits
     FROM faction_members fm
     LEFT JOIN (
@@ -60,7 +31,8 @@ async function getEligibleMembers(env, factionId, asOfTs) {
       FROM chain_hits WHERE start_at < ? GROUP BY torn_user_id
     ) ch ON ch.torn_user_id = fm.torn_user_id
     LEFT JOIN (
-      SELECT wh.torn_user_id, SUM(wh.units) AS total_war_units
+      -- Actual war attacks (rank_hits), never payout units/respect — same as the Ranks page.
+      SELECT wh.torn_user_id, SUM(COALESCE(wh.rank_hits, wh.war_hits)) AS total_rank_hits
       FROM war_hits wh
       JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
       WHERE rw.ended_at < ? GROUP BY wh.torn_user_id
@@ -84,19 +56,24 @@ async function getXanaxUnitPrice(env) {
   return priceRow?.effective_price ?? 0;
 }
 
-// Computes this month's expected rank-perk xanax cost for one faction —
-// used by accountingController's Rank Perks expense line.
+// Computes this month's expected rank-perk cost for one faction — used by
+// accountingController's Rank Perks expense line. Uses the leadership-managed
+// rank reward config (base × rank coefficient + energy bonus), counting only
+// members who'd actually receive it (not warned, not Socius visitors).
+// Priced at the configured item's price (falls back to Xanax's).
 export async function getFactionRankPerkExpense(env, factionId) {
-  const eligible = await getEligibleMembers(env, factionId);
+  const r = await computeRankRewards(env, { factionId });
+  const receiving = r.members.filter(m => m.quantity > 0 && !m.is_warned && !m.is_visitor);
+  const totalXanax = receiving.reduce((s, m) => s + m.quantity, 0);
 
-  let totalXanax = 0;
-  for (const m of eligible) totalXanax += BASE_XANAX * RANK_COEFFICIENTS[m.rank];
-
-  const unitPrice = await getXanaxUnitPrice(env);
+  const itemName = r.settings?.item_name || 'Xanax';
+  const priceRow = await env.DB.prepare(`SELECT effective_price FROM item_prices_cache WHERE name = ?`).bind(itemName).first();
+  const unitPrice = priceRow?.effective_price ?? await getXanaxUnitPrice(env);
 
   return {
-    eligible_members: eligible.length,
+    eligible_members: receiving.length,
     total_xanax: totalXanax,
+    item_name: itemName,
     unit_price: unitPrice,
     monthly_cost: Math.round(totalXanax * unitPrice),
     configured: true,
@@ -173,13 +150,14 @@ export async function getFactionODInsuranceExpense(env, factionId, monthStartTs,
   };
 }
 
-function previousMonth(year, month) {
-  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
-}
-
 // GET /api/leadership/xanax?faction_id=&year=&month=
-// Returns active target-rank members (all 3 allied factions by default) with
-// this month's distribution status and whether a prior-period warning blocks them.
+// Serves the Occultus Operations userscript's Monthly Xanax list: active
+// members ranked Adept+ by earned hits, with this month's distribution status,
+// whether a prior-month warning blocks them, and — from the rank reward config
+// (rankRewardsController) — their coefficient, energy bonus and the exact
+// quantity to give. Top-level settings carry the base quantity, item ID/name
+// and armoury tab. Older script versions that only read derived_rank /
+// is_complete / is_warned keep working (those fields are unchanged).
 export async function getDistributions(request, env) {
   try {
     const url = new URL(request.url);
@@ -188,72 +166,18 @@ export async function getDistributions(request, env) {
     if (factionIdParam && !FACTION_IDS.includes(factionId)) {
       return errorResponse('Invalid faction_id', 400);
     }
+    const year = parseInt(url.searchParams.get('year'), 10) || undefined;
+    const month = parseInt(url.searchParams.get('month'), 10) || undefined;
 
-    const nowMonth = currentUtcMonth();
-    const targetYear = parseInt(url.searchParams.get('year'), 10) || nowMonth.year;
-    const targetMonth = parseInt(url.searchParams.get('month'), 10) || nowMonth.month;
-    const prev = previousMonth(targetYear, targetMonth);
+    const r = await computeRankRewards(env, { year, month, factionId });
+    const members = r.members.filter(m => m.derived_rank !== 'Acolyte');
 
-    // Only hits banked before the target month started count toward the
-    // rank used for that month's eligibility — chain/war activity still
-    // happening this month shouldn't let someone qualify mid-month.
-    const monthStart = Math.floor(Date.UTC(targetYear, targetMonth - 1, 1) / 1000);
-
-    const factionClause = factionId ? 'fm.faction_id = ?' : `fm.faction_id IN (${FACTION_IDS.join(',')})`;
-
-    // Same total_hits computation as memberController.getFactionMembers —
-    // pre-aggregate each hits table before joining to avoid Cartesian inflation.
-    const query = `
-      SELECT
-        fm.torn_user_id, fm.username, fm.faction_id, fm.faction_position, fm.level,
-        COALESCE(ch.total_chain_hits, 0)
-          + ROUND(COALESCE(wh.total_war_units, 0), 0)
-          + COALESCE(cx.total_custom_hits, 0)                    AS total_hits,
-        xd.quantity AS given_quantity, xd.given_by_username, xd.given_at,
-        CASE WHEN xd.id IS NOT NULL THEN 1 ELSE 0 END AS is_complete,
-        CASE WHEN EXISTS (
-          SELECT 1 FROM member_warnings w
-          WHERE w.torn_user_id = fm.torn_user_id
-            AND w.period_year = ? AND w.period_month = ?
-        ) THEN 1 ELSE 0 END AS is_warned
-      FROM faction_members fm
-      LEFT JOIN (
-        SELECT torn_user_id, SUM(total_attacks) AS total_chain_hits
-        FROM chain_hits
-        WHERE start_at < ?
-        GROUP BY torn_user_id
-      ) ch ON ch.torn_user_id = fm.torn_user_id
-      LEFT JOIN (
-        SELECT wh.torn_user_id, SUM(wh.units) AS total_war_units
-        FROM war_hits wh
-        JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
-        WHERE rw.ended_at < ?
-        GROUP BY wh.torn_user_id
-      ) wh ON wh.torn_user_id = fm.torn_user_id
-      LEFT JOIN (
-        SELECT torn_user_id, SUM(hits) AS total_custom_hits
-        FROM custom_hits GROUP BY torn_user_id
-      ) cx ON cx.torn_user_id = fm.torn_user_id
-      LEFT JOIN xanax_distributions xd
-        ON xd.torn_user_id = fm.torn_user_id
-       AND xd.distribution_year = ? AND xd.distribution_month = ?
-      WHERE fm.is_active = 1
-        AND ${factionClause}
-      ORDER BY total_hits DESC, fm.username ASC
-    `;
-
-    const binds = [prev.year, prev.month, monthStart, monthStart, targetYear, targetMonth];
-    if (factionId) binds.push(factionId);
-
-    const { results } = await env.DB.prepare(query).bind(...binds).all();
-
-    // Rank comes purely from earned hits, not faction_position — drop
-    // anyone who lands on Acolyte — no perk tier.
-    const members = (results || [])
-      .map(m => ({ ...m, derived_rank: getDerivedRank(m.total_hits) }))
-      .filter(m => m.derived_rank !== 'Acolyte');
-
-    return jsonResponse({ members, year: targetYear, month: targetMonth });
+    return jsonResponse({
+      members, year: r.year, month: r.month,
+      settings: r.settings,
+      ranks: r.ranks,
+      energy_month: r.energy_month,
+    });
   } catch (err) {
     console.error('getDistributions error:', err);
     return errorResponse('Failed to fetch xanax distributions', 500);

@@ -39,6 +39,7 @@ import * as memberProfileController from './controllers/memberProfileController.
 import * as progressionController from './controllers/progressionController.js';
 import * as spotifyController from './controllers/spotifyController.js';
 import * as factionActivityController from './controllers/factionActivityController.js';
+import * as rankRewardsController from './controllers/rankRewardsController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -597,6 +598,29 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/warnings/generate/war' && method === 'GET') {
       return warController.generateWarWarningReport(request, env);
+    }
+
+    // ── Rank rewards (monthly rank perk config + member list) ──
+    if (pathname === '/api/leadership/rank-rewards/config' && method === 'GET') {
+      return rankRewardsController.getRewardConfig(request, env);
+    }
+    if (pathname === '/api/leadership/rank-rewards/settings' && method === 'PUT') {
+      return rankRewardsController.updateRewardSettings(request, env, user);
+    }
+    if (pathname === '/api/leadership/rank-rewards/ranks' && method === 'PUT') {
+      return rankRewardsController.updateRewardRanks(request, env);
+    }
+    if (pathname === '/api/leadership/rank-rewards/bonuses' && method === 'POST') {
+      return rankRewardsController.addRewardBonus(request, env, user);
+    }
+    if (/^\/api\/leadership\/rank-rewards\/bonuses\/\d+$/.test(pathname) && method === 'PATCH') {
+      return rankRewardsController.updateRewardBonus(request, env);
+    }
+    if (/^\/api\/leadership\/rank-rewards\/bonuses\/\d+$/.test(pathname) && method === 'DELETE') {
+      return rankRewardsController.deleteRewardBonus(request, env);
+    }
+    if (pathname === '/api/leadership/rank-rewards/members' && method === 'GET') {
+      return rankRewardsController.getRewardMembers(request, env);
     }
 
     // ── Faction activity tracker ──

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import RankRewardsPanel from './RankRewardsPanel'
 import { API_BASE_URL } from '../../config/api'
 import ProfileCard from '../ProfileCard'
 
@@ -634,12 +635,14 @@ export default function MemberRanksTab() {
   const [reloadKey,   setReloadKey]   = useState(0)
 
   const mismatchOnly = activeTab === 'mismatches'
+  const rewardsTab   = activeTab === 'rewards'
   const factionTab   = mismatchOnly ? 'all' : activeTab
 
   const tabs = [
     { value: 'all',        label: 'All Factions' },
     ...FACTIONS.map((f) => ({ value: String(f.id), label: f.name })),
     { value: 'mismatches', label: '⚠ Mismatches' },
+    { value: 'rewards',    label: '🎁 Rank Rewards' },
   ]
 
   return (
@@ -704,9 +707,11 @@ export default function MemberRanksTab() {
       <SubTabs options={tabs} active={activeTab} onChange={setActiveTab} />
 
       {/* Panel — keyed so switching tabs OR saving remounts and re-fetches */}
-      {factionTab === 'all'
-        ? <AllFactionsPanel key={`all-${reloadKey}`} mismatchOnly={mismatchOnly} />
-        : <FactionPanel key={`${factionTab}-${reloadKey}`} factionId={Number(factionTab)} mismatchOnly={mismatchOnly} />
+      {rewardsTab
+        ? <RankRewardsPanel />
+        : factionTab === 'all'
+          ? <AllFactionsPanel key={`all-${reloadKey}`} mismatchOnly={mismatchOnly} />
+          : <FactionPanel key={`${factionTab}-${reloadKey}`} factionId={Number(factionTab)} mismatchOnly={mismatchOnly} />
       }
     </div>
   )
