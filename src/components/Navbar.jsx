@@ -38,7 +38,7 @@ function buildNavLinks(user, pages) {
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
     if (pages.companies) links.push({ label: 'Companies', to: '/companies' })
   }
-  if (user?.isLeader) links.push({ label: 'Activity', to: '/activity' })
+  if (user?.isFactionMember || user?.isLeader) links.push({ label: 'Activity', to: '/activity' })
   return links
 }
 

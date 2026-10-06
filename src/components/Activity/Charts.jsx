@@ -33,7 +33,7 @@ function Dot({ c }) { return <span style={{ display: 'inline-block', width: 9, h
 
 // Stacked active / idle / offline share per bucket. Vertical columns on
 // desktop; horizontal rows on phones (24–48 columns don't fit a 375px screen).
-export function HourlyBars({ breakdown, res }) {
+export function HourlyBars({ breakdown, res, off = 0 }) {
   const isMobile = useIsMobile()
   const [sel, setSel] = useState(null)
   const n = breakdown.length
@@ -46,7 +46,7 @@ export function HourlyBars({ breakdown, res }) {
   ] : []
 
   const info = sel != null && breakdown[sel]
-    ? <>{bucketLabel(sel, res)} — <strong style={{ color: ACTIVE }}>{fmtPct(breakdown[sel].active)} active</strong> (≈{Math.round(breakdown[sel].activeCount)} members) · <span style={{ color: IDLE }}>{fmtPct(breakdown[sel].idle)} idle</span> · {fmtPct(breakdown[sel].offline)} offline</>
+    ? <>{bucketLabel(sel, res, off)} — <strong style={{ color: ACTIVE }}>{fmtPct(breakdown[sel].active)} active</strong> (≈{Math.round(breakdown[sel].activeCount)} members) · <span style={{ color: IDLE }}>{fmtPct(breakdown[sel].idle)} idle</span> · {fmtPct(breakdown[sel].offline)} offline</>
     : <span style={{ color: 'var(--text-faint)' }}>{isMobile ? 'Tap' : 'Click'} a bar for details.</span>
 
   if (isMobile) {
@@ -59,7 +59,7 @@ export function HourlyBars({ breakdown, res }) {
               display: 'grid', gridTemplateColumns: '38px 1fr 34px', alignItems: 'center', gap: 6,
               background: sel === b ? 'rgba(251,191,36,0.08)' : 'transparent', border: 'none', padding: 0, cursor: 'pointer',
             }}>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>{bucketLabel(b, res)}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>{bucketLabel(b, res, off)}</span>
               <div style={{ display: 'flex', height: res === 'half' ? 8 : 12, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,0.03)' }}>
                 {segs(v).map(s => <div key={s.k} style={{ width: `${s.pct * 100}%`, background: s.c }} />)}
               </div>
@@ -77,7 +77,7 @@ export function HourlyBars({ breakdown, res }) {
       <StateLegend />
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: n > 24 ? 2 : 4, alignItems: 'end', height: 180, marginTop: 10 }}>
         {breakdown.map((v, b) => (
-          <button key={b} onClick={() => setSel(sel === b ? null : b)} title={v ? `${bucketLabel(b, res)} · ${fmtPct(v.active)} active` : 'no data'} style={{
+          <button key={b} onClick={() => setSel(sel === b ? null : b)} title={v ? `${bucketLabel(b, res, off)} · ${fmtPct(v.active)} active` : 'no data'} style={{
             height: '100%', display: 'flex', flexDirection: 'column-reverse', padding: 0, cursor: 'pointer', borderRadius: 3, overflow: 'hidden',
             border: sel === b ? '2px solid #fbbf24' : '1px solid transparent', background: v ? 'transparent' : 'repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 3px, transparent 3px 6px)',
           }}>
@@ -90,7 +90,7 @@ export function HourlyBars({ breakdown, res }) {
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: n > 24 ? 2 : 4, marginTop: 4 }}>
-        {breakdown.map((_, b) => <span key={b} style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center' }}>{bucketShortLabel(b, res)}</span>)}
+        {breakdown.map((_, b) => <span key={b} style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center' }}>{bucketShortLabel(b, res, off)}</span>)}
       </div>
       <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '10px 0 0' }}>{info}</p>
     </div>
@@ -98,7 +98,7 @@ export function HourlyBars({ breakdown, res }) {
 }
 
 // Hour-of-day profile lines — one series per faction (active %).
-export function ProfileLines({ series, res }) {
+export function ProfileLines({ series, res, off = 0 }) {
   const n = Math.max(...series.map(s => s.values.length), 0)
   if (!n) return null
   const W = 640, H = 200, P = { l: 34, r: 10, t: 10, b: 22 }
@@ -121,7 +121,7 @@ export function ProfileLines({ series, res }) {
           </g>
         ))}
         {Array.from({ length: n }, (_, i) => i).filter(i => i % xStep === 0).map(i => (
-          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="10" fill="#71717a">{bucketLabel(i, res)}</text>
+          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="10" fill="#71717a">{bucketLabel(i, res, off)}</text>
         ))}
         {series.map(s => {
           const pts = s.values.map((v, i) => (v == null ? null : `${x(i)},${y(v)}`)).filter(Boolean).join(' ')

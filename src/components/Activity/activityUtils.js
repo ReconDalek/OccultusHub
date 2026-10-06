@@ -91,13 +91,59 @@ export function periodLabel(type, anchor) {
   return `${fmtDay(from, { day: 'numeric', month: 'short' })} – ${fmtDay(to, { day: 'numeric', month: 'short' })}`
 }
 
+// ── Rolling windows ──────────────────────────────────────────────────────────
+const SLOT = 1800
+
+// Blank (→ '.') every 30-min slot outside [fromTs, toTs) so a view only counts
+// its own hours. fromTs/toTs should sit on slot boundaries.
+export function clipToWindow(data, fromTs, toTs) {
+  if (!data) return data
+  const members = {}
+  for (const [id, m] of Object.entries(data.members || {})) {
+    const d = {}
+    for (const [day, str] of Object.entries(m.d)) {
+      const dayStart = Date.parse(`${day}T00:00:00Z`) / 1000
+      let out = ''
+      for (let i = 0; i < str.length; i++) {
+        const s = dayStart + i * SLOT
+        out += (s + SLOT <= fromTs || (toTs && s >= toTs)) ? '.' : str[i]
+      }
+      d[day] = out
+    }
+    members[id] = { ...m, d }
+  }
+  return { ...data, members }
+}
+
+// Re-cut the 48 slots starting at startTs (on the hour) into one pseudo-day
+// keyed `key`, so a 24-hour window crossing midnight reads as one day.
+export function rollDay(data, startTs, key) {
+  if (!data) return data
+  const members = {}
+  for (const [id, m] of Object.entries(data.members || {})) {
+    let out = '', any = false
+    for (let k = 0; k < 48; k++) {
+      const ts = startTs + k * SLOT
+      const day = tsToDay(ts)
+      const c = m.d[day]?.[Math.floor((ts - Date.parse(`${day}T00:00:00Z`) / 1000) / SLOT)] || '.'
+      if (c !== '.') any = true
+      out += c
+    }
+    if (any) members[id] = { ...m, d: { [key]: out } }
+  }
+  return { ...data, members }
+}
+
 // ── Buckets: 'hour' (24/day) or 'half' (48/day) ──────────────────────────────
 export const bucketsPerDay = (res) => (res === 'half' ? 48 : 24)
-export function bucketLabel(b, res) {
+// off: buckets to shift by, for views that start mid-day (rolling 24 hours).
+export function bucketLabel(b, res, off = 0) {
+  b = (b + off) % bucketsPerDay(res)
   const mins = res === 'half' ? b * 30 : b * 60
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
 }
-export function bucketShortLabel(b, res) {
+export function bucketShortLabel(b, res, off = 0) {
+  b = (b + off) % bucketsPerDay(res)
   return res === 'half' ? (b % 2 === 0 ? String(b / 2) : '') : String(b)
 }
 // State of one member in one bucket from their 48-char day string.
@@ -189,7 +235,7 @@ export function hourlyBreakdown(cells, days, res) {
   })
 }
 
-export function summarize(breakdown, res) {
+export function summarize(breakdown, res, off = 0) {
   const valid = breakdown.map((v, b) => ({ v, b })).filter(x => x.v)
   if (!valid.length) return null
   const avg = valid.reduce((s, x) => s + x.v.active, 0) / valid.length
@@ -197,8 +243,8 @@ export function summarize(breakdown, res) {
   const low  = valid.reduce((p, x) => (x.v.active < p.v.active ? x : p))
   return {
     avgActive: avg,
-    peak: { label: bucketLabel(peak.b, res), pct: peak.v.active, count: peak.v.activeCount },
-    low:  { label: bucketLabel(low.b, res),  pct: low.v.active,  count: low.v.activeCount },
+    peak: { label: bucketLabel(peak.b, res, off), pct: peak.v.active, count: peak.v.activeCount },
+    low:  { label: bucketLabel(low.b, res, off),  pct: low.v.active,  count: low.v.activeCount },
   }
 }
 

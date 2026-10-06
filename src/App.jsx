@@ -283,7 +283,7 @@ function AppRoutes() {
         path="/activity"
         element={
           <Layout>
-            <ProtectedRoute requiredLevel="leadership">
+            <ProtectedRoute requiredLevel="member">
               <Activity />
             </ProtectedRoute>
           </Layout>

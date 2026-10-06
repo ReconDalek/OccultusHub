@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { todayStr, addDays, daysBetween, tsToDay, fmtDay } from './activityUtils'
+import { todayStr, addDays, daysBetween, tsToDay, fmtDay, clipToWindow } from './activityUtils'
 import { ExplorerBody, useActivityData, Segmented } from './ExplorerBody'
 import { card } from './Charts'
 import { timeAgo } from '../../lib/dates'
@@ -12,29 +12,7 @@ import { timeAgo } from '../../lib/dates'
 //     hours of the start day are blanked) to its end, refreshing every 5
 //     minutes while the war is active.
 const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
-const SLOT = 1800
 const REFRESH_MS = 5 * 60000
-
-// Blank (→ '.') every 30-min slot outside [fromTs, toTs) so the war view only
-// counts the war's own hours. Wars start on the hour, so this aligns exactly.
-function clipToWindow(data, fromTs, toTs) {
-  if (!data) return data
-  const members = {}
-  for (const [id, m] of Object.entries(data.members || {})) {
-    const d = {}
-    for (const [day, str] of Object.entries(m.d)) {
-      const dayStart = Date.parse(`${day}T00:00:00Z`) / 1000
-      let out = ''
-      for (let i = 0; i < str.length; i++) {
-        const s = dayStart + i * SLOT
-        out += (s + SLOT <= fromTs || (toTs && s >= toTs)) ? '.' : str[i]
-      }
-      d[day] = out
-    }
-    members[id] = { ...m, d }
-  }
-  return { ...data, members }
-}
 
 export default function WarActivityTab({ war }) {
   const startTs = war.started_at || null

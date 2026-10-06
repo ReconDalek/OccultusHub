@@ -487,6 +487,16 @@ export async function handleRequest(request, env, ctx) {
     return cipherController.submitAnswer(request, env, user);
   }
 
+  // Faction activity viewing is open to all faction members; managing the
+  // tracked list and the Wars view stay leadership-only (below).
+  if ((pathname === '/api/leadership/activity/factions' || pathname === '/api/leadership/activity/data') && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!user.isFactionMember && !(await requireLeadership(user, env))) return errorResponse('Faction member access required', 403);
+    return pathname.endsWith('/data')
+      ? factionActivityController.getActivityData(request, env)
+      : factionActivityController.listActivityFactions(request, env);
+  }
+
   // Leadership-gated endpoints
   if (pathname.startsWith('/api/leadership/')) {
     if (!user) return errorResponse('Authentication required', 401);
@@ -624,9 +634,6 @@ export async function handleRequest(request, env, ctx) {
     }
 
     // ── Faction activity tracker ──
-    if (pathname === '/api/leadership/activity/factions' && method === 'GET') {
-      return factionActivityController.listActivityFactions(request, env);
-    }
     if (pathname === '/api/leadership/activity/factions' && method === 'POST') {
       return factionActivityController.addActivityFactions(request, env, user);
     }
@@ -635,9 +642,6 @@ export async function handleRequest(request, env, ctx) {
     }
     if (/^\/api\/leadership\/activity\/factions\/\d+$/.test(pathname) && method === 'PATCH') {
       return factionActivityController.updateActivityFaction(request, env);
-    }
-    if (pathname === '/api/leadership/activity/data' && method === 'GET') {
-      return factionActivityController.getActivityData(request, env);
     }
     if (pathname === '/api/leadership/activity/wars' && method === 'GET') {
       return factionActivityController.getActivityWars(request, env);

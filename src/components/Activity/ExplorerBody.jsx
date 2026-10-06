@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   WEEKDAYS, apiGet, todayStr, fmtDay, bucketsPerDay, bucketLabel, bucketShortLabel, bucketState,
-  aggregateCells, calendarGrid, weekdayGrid, hourlyBreakdown, summarize, fmtPct, fmtVal, useIsMobile,
+  aggregateCells, calendarGrid, weekdayGrid, hourlyBreakdown, summarize, fmtPct, fmtVal, useIsMobile, rollDay,
 } from './activityUtils'
 import Heatmap from './Heatmap'
 import { HourlyBars, ProfileLines, StateGrid, StatTile, StateLegend, card, sectionTitle, sectionSub } from './Charts'
@@ -35,9 +35,20 @@ export function useActivityData(factionId, from, to, tick = 0) {
 }
 
 // ── Explorer body ────────────────────────────────────────────────────────────
-export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, value, layout, isDay, highlightDay, membersOf, setMembersOf, loadingB }) {
+// rolling: { startTs } — a 24-hour window crossing midnight, shown as one day
+// starting at startTs (data already clipped to the window). Members still use
+// the real days so their usual hours stay correct.
+const ROLL = 'rolling'
+export function ExplorerBody({ dataA: rawA, dataB: rawB, nameA, nameB, days: rawDays, res, metric, value, layout, isDay: rawIsDay, rolling, highlightDay, membersOf, setMembersOf, loadingB }) {
   const isMobile = useIsMobile()
   const nb = bucketsPerDay(res)
+  const rollStart = rolling?.startTs
+  const dataA = useMemo(() => (rollStart ? rollDay(rawA, rollStart, ROLL) : rawA), [rawA, rollStart])
+  const dataB = useMemo(() => (rollStart && rawB ? rollDay(rawB, rollStart, ROLL) : rawB), [rawB, rollStart])
+  const days = useMemo(() => (rollStart ? [ROLL] : rawDays), [rollStart, rawDays])
+  const isDay = rollStart ? true : rawIsDay
+  const off = rollStart ? new Date(rollStart * 1000).getUTCHours() * (res === 'half' ? 2 : 1) : 0
+  const sh = (i) => (i + off) % nb
   const cellsA = useMemo(() => aggregateCells(dataA.members, days, res), [dataA, days, res])
   const cellsB = useMemo(() => (dataB ? aggregateCells(dataB.members, days, res) : null), [dataB, days, res])
 
@@ -47,16 +58,16 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
 
   const breakdownA = useMemo(() => hourlyBreakdown(cellsA, days, res), [cellsA, days, res])
   const breakdownB = useMemo(() => (cellsB ? hourlyBreakdown(cellsB, days, res) : null), [cellsB, days, res])
-  const sumA = summarize(breakdownA, res)
-  const sumB = breakdownB ? summarize(breakdownB, res) : null
+  const sumA = summarize(breakdownA, res, off)
+  const sumB = breakdownB ? summarize(breakdownB, res, off) : null
 
   const isCal = layout === 'calendar' || isDay
-  const rowLabels = isCal
+  const rowLabels = rollStart ? ['24h'] : isCal
     ? days.map(d => (isMobile ? fmtDay(d, { day: 'numeric' }) : fmtDay(d, { weekday: 'short', day: 'numeric', month: 'short' })))
     : WEEKDAYS
-  const rowFullLabels = isCal ? days.map(d => fmtDay(d, { weekday: 'long', day: 'numeric', month: 'short' })) : ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays']
-  const colLabels = Array.from({ length: nb }, (_, b) => (isMobile ? bucketLabel(b, res) : bucketShortLabel(b, res)))
-  const colFullLabels = Array.from({ length: nb }, (_, b) => bucketLabel(b, res))
+  const rowFullLabels = rollStart ? ['Last 24 hours'] : isCal ? days.map(d => fmtDay(d, { weekday: 'long', day: 'numeric', month: 'short' })) : ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays']
+  const colLabels = Array.from({ length: nb }, (_, b) => (isMobile ? bucketLabel(b, res, off) : bucketShortLabel(b, res, off)))
+  const colFullLabels = Array.from({ length: nb }, (_, b) => bucketLabel(b, res, off))
   const highlightRows = isCal && highlightDay ? [days.indexOf(highlightDay)].filter(i => i >= 0) : []
   const fmt = (v) => fmtVal(v, value)
   const metricWord = metric === 'present' ? 'active or idle' : 'active'
@@ -66,7 +77,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
   }
 
   const tracked = Object.keys(dataA.members || {}).length
-  const noData = !dataA.days_with_data?.length
+  const noData = !rawA.days_with_data?.length
 
   const diffGrid = useMemo(() => (gridB ? gridA.map((row, r) => row.map((v, c) => (v == null || gridB[r]?.[c] == null ? null : v - gridB[r][c]))) : null), [gridA, gridB])
 
@@ -116,7 +127,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
           <div style={card}>
             <h3 style={sectionTitle}>By hour of day</h3>
             <p style={sectionSub}>Average % active by time of day.</p>
-            <ProfileLines res={res} series={[
+            <ProfileLines res={res} off={off} series={[
               { label: nameA, color: COLOR_A, values: breakdownA.map(v => (v ? v.active : null)) },
               { label: nameB, color: COLOR_B, values: (breakdownB || []).map(v => (v ? v.active : null)) },
             ]} />
@@ -128,9 +139,9 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
       {!noData && (isDay && !dataB ? (
         <>
           <div style={card}>
-            <h3 style={sectionTitle}>{nameA} — {fmtDay(days[0], { weekday: 'long', day: 'numeric', month: 'short' })}</h3>
+            <h3 style={sectionTitle}>{nameA} — {rollStart ? 'last 24 hours' : fmtDay(days[0], { weekday: 'long', day: 'numeric', month: 'short' })}</h3>
             <p style={sectionSub}>Active, idle and offline by hour.</p>
-            <HourlyBars breakdown={breakdownA} res={res} />
+            <HourlyBars breakdown={breakdownA} res={res} off={off} />
           </div>
           <div style={card}>
             <h3 style={sectionTitle}>Who was on</h3>
@@ -142,7 +153,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
                   key: id, label: m.n,
                   states: Array.from({ length: nb }, (_, b) => bucketState(m.d[days[0]], b, res)),
                 })).sort((a, b) => b.states.filter(s => s === '2').length - a.states.filter(s => s === '2').length)}
-                colLabel={(i, full) => (full ? bucketLabel(i, res) : (res === 'half' ? (i % 4 === 0 ? String(i / 2) : '') : (i % 3 === 0 ? String(i) : '')))} />
+                colLabel={(i, full) => (full ? bucketLabel(i, res, off) : (res === 'half' ? (sh(i) % 4 === 0 ? String(sh(i) / 2) : '') : (sh(i) % 3 === 0 ? String(sh(i)) : '')))} />
             </div>
           </div>
         </>
@@ -179,7 +190,7 @@ export function ExplorerBody({ dataA, dataB, nameA, nameB, days, res, metric, va
               <Segmented options={[{ k: 'A', label: `${nameA} members` }, { k: 'B', label: `${nameB} members` }]} value={membersOf} onChange={setMembersOf} />
             </div>
           )}
-          <MemberPanel members={(dataB && membersOf === 'B' ? dataB : dataA).members} days={days} res={res} />
+          <MemberPanel members={(rawB && membersOf === 'B' ? rawB : rawA).members} days={rawDays} res={res} />
         </>
       )}
     </>

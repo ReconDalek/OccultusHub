@@ -361,15 +361,19 @@ export async function removeActivityFactions(request, env) {
 export async function getActivityData(request, env) {
   try {
     const url = new URL(request.url);
-    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+    // faction_id=own merges all our factions into one view.
+    const combined = url.searchParams.get('faction_id') === 'own';
+    const factionId = combined ? null : parseInt(url.searchParams.get('faction_id'), 10);
     const from = url.searchParams.get('from');
     const to   = url.searchParams.get('to');
-    if (!factionId) return errorResponse('faction_id required', 400);
+    if (!combined && !factionId) return errorResponse('faction_id required', 400);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(to || '')) {
       return errorResponse('from and to (YYYY-MM-DD) required', 400);
     }
     const span = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 + 1;
     if (!(span >= 1) || span > MAX_RANGE_DAYS) return errorResponse(`Range must be 1–${MAX_RANGE_DAYS} days`, 400);
+
+    if (combined) return jsonResponse(await combinedActivityData(env, from, to));
 
     const faction = await env.DB.prepare(
       `SELECT faction_id, name, tag, members, source, is_active, last_sampled_at,
@@ -401,6 +405,48 @@ export async function getActivityData(request, env) {
   } catch (e) {
     return errorResponse('Failed to load activity data: ' + e.message, 500);
   }
+}
+
+// All our factions as one: members merged across factions (a member who moved
+// mid-day keeps the stronger state per slot, same as sample merging).
+async function combinedActivityData(env, from, to) {
+  const ph = OWN_FACTIONS.map(() => '?').join(',');
+  const { results: fr } = await env.DB.prepare(
+    `SELECT faction_id, last_sampled_at,
+            (SELECT MIN(day) FROM activity_days d WHERE d.faction_id = f.faction_id) AS first_day
+     FROM activity_factions f WHERE faction_id IN (${ph})`
+  ).bind(...OWN_FACTIONS).all();
+  const { results } = await env.DB.prepare(
+    `SELECT day, data FROM activity_days WHERE faction_id IN (${ph}) AND day >= ? AND day <= ? ORDER BY day ASC`
+  ).bind(...OWN_FACTIONS, from, to).all();
+
+  const members = {};
+  const days = new Set();
+  for (const r of (results || [])) {
+    let data = {};
+    try { data = JSON.parse(r.data); } catch { continue; }
+    days.add(r.day);
+    for (const [id, [name, slots]] of Object.entries(data)) {
+      const m = (members[id] ??= { n: name, d: {} });
+      m.n = name || m.n;
+      const prev = m.d[r.day];
+      if (!prev) { m.d[r.day] = slots; continue; }
+      let out = '';
+      for (let i = 0; i < slots.length; i++) out += (slots[i] > (prev[i] || '.') ? slots[i] : (prev[i] || '.'));
+      m.d[r.day] = out;
+    }
+  }
+  const firstDays = (fr || []).map(f => f.first_day).filter(Boolean).sort();
+  return {
+    faction: {
+      faction_id: 'own', name: 'All our factions', source: 'own', is_active: 1,
+      first_day: firstDays[0] || null,
+      last_sampled_at: Math.max(0, ...(fr || []).map(f => f.last_sampled_at || 0)) || null,
+    },
+    from, to,
+    days_with_data: [...days].sort(),
+    members,
+  };
 }
 
 // GET /api/leadership/activity/wars — our recent/upcoming ranked wars, for the

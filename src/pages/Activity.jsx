@@ -2,26 +2,36 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   OWN_FACTIONS, WEEKDAYS, apiGet, todayStr, addDays, daysBetween, fmtDay, tsToDay,
   periodRange, shiftAnchor, periodLabel, bucketsPerDay, bucketLabel, bucketShortLabel, bucketState,
-  aggregateCells, calendarGrid, weekdayGrid, hourlyBreakdown, summarize, fmtPct, fmtVal, useIsMobile,
+  aggregateCells, calendarGrid, weekdayGrid, hourlyBreakdown, summarize, fmtPct, fmtVal, useIsMobile, clipToWindow,
 } from '../components/Activity/activityUtils'
+import { useSession } from '../hooks/useSession'
 import { card, sectionTitle, sectionSub } from '../components/Activity/Charts'
 import { ExplorerBody, useActivityData, Segmented } from '../components/Activity/ExplorerBody'
 import ManagePanel from '../components/Activity/ManagePanel'
 
 const TABS = [
   { k: 'explorer', label: 'Explorer' },
-  { k: 'wars', label: 'Wars' },
-  { k: 'manage', label: 'Manage' },
+  { k: 'wars', label: 'Wars', leader: true },
+  { k: 'manage', label: 'Manage', leader: true },
 ]
 const PERIODS = [
   { k: 'day', label: 'Day' },
+  { k: '24h', label: 'Last 24h' },
   { k: 'week', label: 'Week' },
+  { k: '7d', label: 'Last 7 days' },
   { k: 'month', label: 'Month' },
   { k: '28d', label: '28 days' },
 ]
+// Rolling periods end at the current hour instead of a day boundary.
+const ROLLING = { '24h': 86400, '7d': 7 * 86400 }
+const REFRESH_MS = 5 * 60000
+const COMBINED = 'own'
 
 export default function Activity() {
   const isMobile = useIsMobile()
+  const { user } = useSession()
+  const isLeader = !!(user?.isLeader || user?.isAdmin)
+  const tabs = TABS.filter(t => !t.leader || isLeader)
   const [tab, setTab] = useState('explorer')
   const [factions, setFactions] = useState([])
   const [factionsErr, setFactionsErr] = useState(null)
@@ -45,20 +55,35 @@ export default function Activity() {
   }, [])
   useEffect(() => { loadFactions() }, [loadFactions])
 
+  // Rolling periods: the window ends at the top of the current hour and moves
+  // forward every 5 minutes (samples land every 30).
+  const rollSecs = !custom && ROLLING[periodType]
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!rollSecs) return
+    const t = setInterval(() => setTick(x => x + 1), REFRESH_MS)
+    return () => clearInterval(t)
+  }, [rollSecs])
+  const rollStart = useMemo(() => (rollSecs ? Math.ceil(Date.now() / 3600000) * 3600 - rollSecs : null), [rollSecs, tick]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const range = useMemo(() => {
-    const r = custom ? { from: custom.from, to: custom.to } : periodRange(periodType, anchor)
     const today = todayStr()
+    if (rollStart) return { from: tsToDay(rollStart), to: today }
+    const r = custom ? { from: custom.from, to: custom.to } : periodRange(periodType, anchor)
     return { from: r.from, to: r.to > today ? today : r.to, fullTo: r.to }
-  }, [custom, periodType, anchor])
+  }, [custom, periodType, anchor, rollStart])
   const days = useMemo(() => (range.from <= range.to ? daysBetween(range.from, range.to) : []), [range])
   const isDay = days.length === 1
-  const effLayout = layout || (custom ? 'calendar' : periodType === 'week' ? 'calendar' : 'pattern')
+  const effLayout = layout || (custom ? 'calendar' : (periodType === 'week' || periodType === '7d') ? 'calendar' : 'pattern')
 
-  const { data: dataA, loading: loadingA, error: errA } = useActivityData(factionA, range.from, range.to)
-  const { data: dataB, loading: loadingB, error: errB } = useActivityData(factionB, range.from, range.to)
+  const { data: rawA, loading: loadingA, error: errA } = useActivityData(factionA, range.from, range.to, tick)
+  const { data: rawB, loading: loadingB, error: errB } = useActivityData(factionB, range.from, range.to, tick)
+  const dataA = useMemo(() => (rollStart ? clipToWindow(rawA, rollStart, null) : rawA), [rawA, rollStart])
+  const dataB = useMemo(() => (rollStart ? clipToWindow(rawB, rollStart, null) : rawB), [rawB, rollStart])
 
   const nameOf = useCallback((id) => {
     if (!id) return ''
+    if (id === COMBINED) return 'All our factions'
     const f = factions.find(x => x.faction_id === id)
     return f?.name || OWN_FACTIONS.find(o => o.id === id)?.name || `Faction ${id}`
   }, [factions])
@@ -92,7 +117,7 @@ export default function Activity() {
       </div>
 
       <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 16, overflowX: 'auto' }}>
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button key={t.k} onClick={() => setTab(t.k)} style={{
             padding: '10px 18px', background: 'transparent', border: 'none', whiteSpace: 'nowrap',
             borderBottom: tab === t.k ? '2px solid #b3123f' : '2px solid transparent',
@@ -103,15 +128,15 @@ export default function Activity() {
 
       {factionsErr && <p style={{ color: '#f87171', fontSize: 13 }}>{factionsErr}</p>}
 
-      {tab === 'manage' && <ManagePanel factions={factions} onChanged={loadFactions} onView={viewFaction} />}
-      {tab === 'wars' && <WarsPanel nameOf={nameOf} onOpen={openWar} />}
+      {tab === 'manage' && isLeader && <ManagePanel factions={factions} onChanged={loadFactions} onView={viewFaction} />}
+      {tab === 'wars' && isLeader && <WarsPanel nameOf={nameOf} onOpen={openWar} />}
 
       {tab === 'explorer' && (
         <>
           {/* ── Controls ── */}
           <div style={card}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-              <FactionSelect label="Faction" factions={factions} value={factionA} onChange={v => setFactionA(v)} />
+              <FactionSelect label="Faction" factions={factions} value={factionA} onChange={v => setFactionA(v)} allowCombined />
               <FactionSelect label="Compare with" factions={factions} value={factionB} onChange={setFactionB} allowNone exclude={factionA} />
             </div>
 
@@ -125,12 +150,18 @@ export default function Activity() {
             ) : (
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
                 <Segmented options={PERIODS} value={periodType} onChange={k => { setPeriodType(k); setLayout(null) }} />
+                {rollStart ? (
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)', flex: '1 1 240px' }}>
+                    {fmtDay(tsToDay(rollStart), { weekday: 'short', day: 'numeric', month: 'short' })} {new Date(rollStart * 1000).toISOString().slice(11, 16)} TCT – now
+                  </span>
+                ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 240px' }}>
                   <button onClick={() => setAnchor(a => shiftAnchor(periodType, a, -1))} style={navBtn} aria-label="Previous">‹</button>
                   <span style={{ fontSize: 13, color: '#f4f4f5', flex: 1, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{periodLabel(periodType, anchor)}</span>
                   <button onClick={() => setAnchor(a => shiftAnchor(periodType, a, 1))} disabled={periodRange(periodType, anchor).to >= todayStr()} style={{ ...navBtn, opacity: periodRange(periodType, anchor).to >= todayStr() ? 0.3 : 1 }} aria-label="Next">›</button>
                   <input type="date" value={anchor} max={todayStr()} onChange={e => e.target.value && setAnchor(e.target.value)} style={{ ...inputS, width: 140, padding: '6px 8px' }} />
                 </div>
+                )}
               </div>
             )}
 
@@ -138,7 +169,7 @@ export default function Activity() {
               <Segmented options={[{ k: 'hour', label: 'Hourly' }, { k: 'half', label: '30 min' }]} value={res} onChange={setRes} />
               <Segmented options={[{ k: 'active', label: 'Active' }, { k: 'present', label: 'Active + idle' }]} value={metric} onChange={setMetric} />
               <Segmented options={[{ k: 'pct', label: '%' }, { k: 'count', label: 'Members' }]} value={value} onChange={setValue} />
-              {!isDay && <Segmented options={[{ k: 'pattern', label: 'By weekday' }, { k: 'calendar', label: 'By date' }]} value={effLayout} onChange={setLayout} />}
+              {!isDay && periodType !== '24h' && <Segmented options={[{ k: 'pattern', label: 'By weekday' }, { k: 'calendar', label: 'By date' }]} value={effLayout} onChange={setLayout} />}
             </div>
           </div>
 
@@ -150,6 +181,7 @@ export default function Activity() {
               dataA={dataA} dataB={factionB ? dataB : null}
               nameA={nameOf(factionA)} nameB={nameOf(factionB)}
               days={days} res={res} metric={metric} value={value} layout={effLayout} isDay={isDay}
+              rolling={periodType === '24h' && rollStart ? { startTs: rollStart } : null}
               highlightDay={custom?.highlightDay} membersOf={membersOf} setMembersOf={setMembersOf}
               loadingB={factionB && loadingB}
             />
@@ -200,7 +232,7 @@ function WarsPanel({ nameOf, onOpen }) {
 }
 
 // Native <select> (best on phones) with a filter box for long lists.
-function FactionSelect({ label, factions, value, onChange, allowNone, exclude }) {
+function FactionSelect({ label, factions, value, onChange, allowNone, exclude, allowCombined }) {
   const [q, setQ] = useState('')
   const usable = factions.filter(f => f.faction_id !== exclude && (f.days_stored > 0 || f.is_active))
   const matches = (f) => !q || `${f.name || ''} ${f.tag || ''} ${f.faction_id}`.toLowerCase().includes(q.toLowerCase())
@@ -214,12 +246,12 @@ function FactionSelect({ label, factions, value, onChange, allowNone, exclude })
       <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</label>
       <div style={{ display: 'flex', gap: 6 }}>
         {showFilter && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Filter…" style={{ ...inputS, width: 90, flex: '0 0 auto' }} />}
-        <select value={value ?? ''} onChange={e => onChange(e.target.value ? Number(e.target.value) : null)} style={{ ...inputS, flex: 1, minWidth: 0 }}>
+        <select value={value ?? ''} onChange={e => onChange(e.target.value === COMBINED ? COMBINED : e.target.value ? Number(e.target.value) : null)} style={{ ...inputS, flex: 1, minWidth: 0 }}>
           {allowNone && <option value="">— none —</option>}
-          {own.length > 0 && <optgroup label="Our factions">{own.map(opt)}</optgroup>}
+          {own.length > 0 && <optgroup label="Our factions">{allowCombined && <option value={COMBINED}>All our factions</option>}{own.map(opt)}</optgroup>}
           {war.length > 0 && <optgroup label="War opponents">{war.map(opt)}</optgroup>}
           {others.length > 0 && <optgroup label={`Tracked (${others.length})`}>{others.map(opt)}</optgroup>}
-          {value && !usable.some(f => f.faction_id === value) && <option value={value}>Faction {value}</option>}
+          {value && value !== COMBINED && !usable.some(f => f.faction_id === value) && <option value={value}>Faction {value}</option>}
         </select>
       </div>
     </div>
