@@ -238,6 +238,10 @@ function tornProfileUrl(tornUserId) {
 
 function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
   const [copied, setCopied] = useState(false)
+  // Target and Variance only appear when this report has a target. Otherwise the
+  // table is just Member + the achieved value.
+  const showTarget = rows.some(r => r.target != null)
+  const gridCols = showTarget ? '1fr 90px 90px 80px' : '1fr 110px'
 
   function handleCopy() {
     const lines = [title]
@@ -246,7 +250,11 @@ function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
     for (const r of rows) {
       const name = r.tornUserId ? `[${r.username}](${tornProfileUrl(r.tornUserId)})` : r.username
       const kickNote = r.atKickThreshold ? ` · ⚠ KICK THRESHOLD (${r.kickCount}/3)` : ''
-      lines.push(`${name} — Target: ${r.target ?? '—'} · ${achievedLabel}: ${fmt(r.achieved)} · Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}${kickNote}`)
+      const details = []
+      if (showTarget) details.push(`Target: ${r.target ?? '—'}`)
+      details.push(`${achievedLabel}: ${fmt(r.achieved)}`)
+      if (showTarget) details.push(`Variance: ${r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}`)
+      lines.push(`${name} — ${details.join(' · ')}${kickNote}`)
     }
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
       setCopied(true)
@@ -280,16 +288,16 @@ function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
         ) : (
           <div style={{ overflowY: 'auto', flex: 1 }}>
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px', gap: '8px', padding: '4px 10px 8px',
+              display: 'grid', gridTemplateColumns: gridCols, gap: '8px', padding: '4px 10px 8px',
               borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '4px',
             }}>
-              {['Member', 'Target', achievedLabel, 'Variance'].map(h => (
+              {(showTarget ? ['Member', 'Target', achievedLabel, 'Variance'] : ['Member', achievedLabel]).map(h => (
                 <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
               ))}
             </div>
             {rows.map((r, i) => (
               <div key={r.id ?? i} style={{
-                display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px', gap: '8px', padding: '7px 10px',
+                display: 'grid', gridTemplateColumns: gridCols, gap: '8px', padding: '7px 10px',
                 borderRadius: '6px', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
               }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px' }}>
@@ -300,11 +308,13 @@ function SummaryModal({ title, subtitle, achievedLabel, rows, onClose }) {
                     </span>
                   )}
                 </span>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{r.target ?? '—'}</span>
+                {showTarget && <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{r.target ?? '—'}</span>}
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{fmt(r.achieved)}</span>
-                <span style={{ fontSize: '13px', color: r.variance == null ? 'var(--text-faint)' : (r.variance < 0 ? '#f87171' : '#4ade80') }}>
-                  {r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}
-                </span>
+                {showTarget && (
+                  <span style={{ fontSize: '13px', color: r.variance == null ? 'var(--text-faint)' : (r.variance < 0 ? '#f87171' : '#4ade80') }}>
+                    {r.variance == null ? '—' : `${r.variance >= 0 ? '+' : ''}${fmt(r.variance)}`}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -1746,15 +1756,16 @@ function OCGenerator({ onWarningSaved }) {
   const minI = Math.max(0, parseInt(minInstances, 10) || 0)
   const visibleRows = rows ? rows.filter(m => m.days >= minD && m.instance_count >= minI) : null
 
-  // Excused members drop out of the copy-paste summary entirely.
+  // Excused members drop out of the copy-paste summary entirely. Target is the
+  // min days setting (when set); achieved is days out in the month.
   const summaryRows = visibleRows
     ? visibleRows.filter(m => m.instance_count > 0 && !excludedMap.has(m.torn_user_id)).map(m => ({
         id: `${m.faction_id}:${m.torn_user_id}`,
         tornUserId: m.torn_user_id,
         username: m.username,
-        target: null,
-        achieved: m.instance_count,
-        variance: null,
+        target: minD > 0 ? minD : null,
+        achieved: m.days,
+        variance: minD > 0 ? m.days - minD : null,
         atKickThreshold: m.at_kick_threshold,
         kickCount: m.kick_count_6mo,
       }))
@@ -1918,7 +1929,7 @@ function OCGenerator({ onWarningSaved }) {
         <SummaryModal
           title={`OC Warnings — ${periodLabel}`}
           subtitle={summarySubtitle}
-          achievedLabel="Instances"
+          achievedLabel="Days"
           rows={summaryRows}
           onClose={() => setSummaryOpen(false)}
         />
