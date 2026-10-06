@@ -6,12 +6,13 @@ import ExemptionsTab from './ExemptionsTab'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
 const FACTION_IDS_ALL = [33097, 9728, 9171]
-const WARNING_TYPES = ['Energy', 'Chain', 'War', 'Other']
+const WARNING_TYPES = ['Energy', 'Chain', 'War', 'OC', 'Other']
 
 const TYPE_LABELS = {
   Energy: { target: 'Target Avg/Day', achieved: 'Achieved Avg/Day' },
   Chain:  { target: 'Target Hits',    achieved: 'Hits Achieved' },
   War:    { target: 'Target',         achieved: 'Achieved' },
+  OC:     { target: 'Target',         achieved: 'Instances' },
   Other:  { target: 'Target',         achieved: 'Achieved' },
 }
 
@@ -126,6 +127,7 @@ function typeColor(t) {
     case 'Energy': return { bg: 'rgba(251,191,36,0.15)',  color: '#fbbf24' }
     case 'Chain':  return { bg: 'rgba(179,18,63,0.15)',   color: '#ff2f6d' }
     case 'War':    return { bg: 'rgba(96,165,250,0.15)',  color: '#60a5fa' }
+    case 'OC':     return { bg: 'rgba(52,211,153,0.15)',  color: '#34d399' }
     default:       return { bg: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)' }
   }
 }
@@ -886,7 +888,7 @@ export default function WarningsTab() {
   const [periodFilter,     setPeriodFilter]      = useState('all')
   const [factionFilter,    setFactionFilter]     = useState(FACTION_IDS_ALL)
   const [issuedFilter,     setIssuedFilter]      = useState('all') // 'all' | 'issued' | 'reported'
-  const [typeFilter,       setTypeFilter]        = useState(WARNING_TYPES) // ['Energy','Chain','War','Other']
+  const [typeFilter,       setTypeFilter]        = useState(WARNING_TYPES) // ['Energy','Chain','War','OC','Other']
 
   useEffect(() => {
     Promise.all([fetchWarnings(), fetchMembers()])
@@ -941,7 +943,7 @@ export default function WarningsTab() {
   // A warning's warning_type is 'Energy'/'Chain'/'War' or an arbitrary custom
   // string (the "Other" free-text type) — bucket anything unrecognised as 'Other'.
   function warningBucket(w) {
-    return ['Energy', 'Chain', 'War'].includes(w.warning_type) ? w.warning_type : 'Other'
+    return ['Energy', 'Chain', 'War', 'OC'].includes(w.warning_type) ? w.warning_type : 'Other'
   }
 
   // Every unique period actually logged on a warning (e.g. "July 2026"), most

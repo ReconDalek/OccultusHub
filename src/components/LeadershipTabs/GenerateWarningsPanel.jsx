@@ -3,7 +3,7 @@ import { API_BASE_URL } from '../../config/api'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
 const FACTION_IDS   = [33097, 9728, 9171]
-const REPORT_TYPES  = ['Energy', 'Chain', 'War']
+const REPORT_TYPES  = ['Energy', 'Chain', 'War', 'OC']
 
 const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -96,6 +96,7 @@ function TypeSelector({ reportType, setReportType }) {
 const WARN_MODAL_LABELS = {
   Energy: { target: 'Target Avg/Day', achieved: 'Achieved Avg/Day' },
   Chain:  { target: 'Target Hits',    achieved: 'Hits Achieved' },
+  OC:     { target: 'Target',         achieved: 'Instances' },
 }
 
 function ReportModal({ member, warningType, achieved, reason, periodLabel, periodMonth, periodYear, target, onClose, onSaved }) {
@@ -109,7 +110,9 @@ function ReportModal({ member, warningType, achieved, reason, periodLabel, perio
   const [dateIssued, setDateIssued]       = useState('')
   const [targetValue, setTargetValue]     = useState(target ?? '')
   const [achievedValue, setAchievedValue] = useState(isWar ? '' : achieved)
-  const [comment, setComment]             = useState(isWar && reason ? reason : '')
+  // War and OC warnings aren't a target-vs-achieved number — seed the comment
+  // with the generated reason instead.
+  const [comment, setComment]             = useState((isWar || warningType === 'OC') && reason ? reason : '')
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState(null)
 
@@ -1635,6 +1638,290 @@ function WarGenerator({ onWarningSaved }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
+// ─── OC generator — members with >24h outside any OC, per month ─────────────
+// Same data as Leadership > Organized Crime > Inactivity. The warning count is
+// instances (one per unbroken stretch out, counted in the month its 24h mark
+// falls in). Daily detections and days out are shown for context.
+
+const ocCardStyle = {
+  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: '12px', padding: '12px 14px', marginBottom: '10px',
+}
+
+function fmtOcDate(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+function fmtOcHours(hours) {
+  const total = Math.round(hours)
+  const days = Math.floor(total / 24)
+  const rem = total % 24
+  return days ? `${days}d ${rem}h` : `${rem}h`
+}
+
+function ocReason(m) {
+  const n = m.instance_count
+  return `OC inactivity: ${n} stretch${n === 1 ? '' : 'es'} over 24h out of an OC, ${m.days_out}d out total`
+}
+
+function ocPillStyle(active) {
+  return {
+    padding: '5px 14px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer',
+    fontWeight: active ? '600' : '400',
+    border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
+    background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
+    color: active ? '#f4f4f5' : 'var(--text-secondary)',
+  }
+}
+
+function OCGenerator({ onWarningSaved }) {
+  const now = new Date()
+  const months = buildMonthOptions()
+
+  const [selectedMonth, setSelectedMonth]       = useState(() => previousMonth(now))
+  const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
+  const [graceDays, setGraceDays]               = useState(2)
+
+  const [rows, setRows]       = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState(null)
+  const [reportedIds, setReportedIds] = useState(new Set())
+  const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
+  const [reportingMember, setReportingMember] = useState(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [expanded, setExpanded] = useState({})
+
+  function toggleFaction(id) {
+    setSelectedFactions(prev => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev
+        return prev.filter(f => f !== id)
+      }
+      return [...prev, id]
+    })
+  }
+
+  const year  = selectedMonth.year
+  const month = selectedMonth.month + 1
+  const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
+
+  const generate = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    const monthParam = `${year}-${String(month).padStart(2, '0')}`
+    Promise.all([
+      Promise.all(selectedFactions.map(fid => {
+        const params = new URLSearchParams({ faction_id: String(fid), month: monthParam, grace_days: String(graceDays) })
+        return fetch(`${API_BASE_URL}/api/leadership/oc/inactivity?${params}`, { headers: { Authorization: token() } })
+          .then(res => res.json().then(json => {
+            if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+            return json
+          }))
+          .then(json => json.members.map(m => ({ ...m, faction_id: fid })))
+      })),
+      fetchWarningExclusions('OC', year, month),
+    ])
+      .then(([memberLists, exclusionsMap]) => {
+        const list = memberLists.flat().sort((a, b) => b.instance_count - a.instance_count || b.detection_count - a.detection_count)
+        setRows(list)
+        // Already-warned = a real member_warnings row for this month's OC type.
+        setReportedIds(new Set(list.filter(m => m.already_warned).map(m => m.torn_user_id)))
+        setExcludedMap(exclusionsMap)
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [year, month, selectedFactions, graceDays])
+
+  function handleToggleExclude(m) {
+    const existingId = excludedMap.get(m.torn_user_id)
+    if (existingId) {
+      setExcludedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      removeWarningExclusion(existingId).catch(() => {})
+    } else {
+      addWarningExclusion('OC', year, month, m.torn_user_id, m.username)
+        .then(id => setExcludedMap(prev => new Map(prev).set(m.torn_user_id, id)))
+        .catch(() => {})
+    }
+  }
+
+  // Excused members drop out of the copy-paste summary entirely.
+  const summaryRows = rows
+    ? rows.filter(m => m.instance_count > 0 && !excludedMap.has(m.torn_user_id)).map(m => ({
+        id: `${m.faction_id}:${m.torn_user_id}`,
+        tornUserId: m.torn_user_id,
+        username: m.username,
+        target: null,
+        achieved: m.instance_count,
+        variance: null,
+        atKickThreshold: m.at_kick_threshold,
+        kickCount: m.kick_count_6mo,
+      }))
+    : []
+  const summarySubtitle = selectedFactions.map(id => FACTION_LABEL[id]).join(', ')
+
+  return (
+    <div>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 14px', maxWidth: '640px' }}>
+        Members not in any OC for more than 24 hours, after their 3-day recruit period and a{' '}
+        {graceDays}-day leeway. Each stretch out counts once, in the month it passes 24 hours.
+      </p>
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '18px', alignItems: 'flex-end' }}>
+        <div>
+          <label style={labelStyle}>Month</label>
+          <select
+            value={`${selectedMonth.year}-${selectedMonth.month}`}
+            onChange={e => {
+              const [y, mo] = e.target.value.split('-').map(Number)
+              setSelectedMonth({ year: y, month: mo })
+            }}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            {months.map(m => (
+              <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                {MONTHS_FULL[m.month]} {m.year}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Factions</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {FACTION_IDS.map(id => (
+              <button key={id} onClick={() => toggleFaction(id)} style={ocPillStyle(selectedFactions.includes(id))}>
+                {FACTION_LABEL[id]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Leeway after recruit</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {[1, 2].map(g => (
+              <button key={g} onClick={() => setGraceDays(g)} style={ocPillStyle(graceDays === g)}>
+                {g} day{g === 1 ? '' : 's'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={generate}
+          disabled={loading || selectedFactions.length === 0}
+          style={{
+            padding: '9px 20px', borderRadius: '8px', fontWeight: '600', fontSize: '13px',
+            cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1,
+            background: 'linear-gradient(135deg, #b3123f, #7f0d2c)', color: '#fff', border: 'none',
+          }}
+        >
+          {loading ? 'Generating…' : 'Generate Report'}
+        </button>
+        {rows && (
+          <button onClick={() => setSummaryOpen(true)} style={{ ...ocPillStyle(false), padding: '9px 16px' }}>
+            Summary
+          </button>
+        )}
+      </div>
+
+      {error && <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>}
+      {!rows && !loading && !error && (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Set your parameters and click Generate Report.</p>
+      )}
+      {rows && rows.length === 0 && (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+          Nobody went more than 24h outside an OC in {periodLabel}.
+        </p>
+      )}
+
+      {rows && rows.map(m => {
+        const excused = excludedMap.has(m.torn_user_id)
+        const warned = reportedIds.has(m.torn_user_id)
+        const key = `${m.faction_id}:${m.torn_user_id}`
+        return (
+          <div key={key} style={{ ...ocCardStyle, opacity: excused ? 0.5 : 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <a href={`https://www.torn.com/profiles.php?XID=${m.torn_user_id}`} target="_blank" rel="noopener noreferrer"
+                  style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', textDecoration: 'none' }}>
+                  {m.username || `#${m.torn_user_id}`}
+                </a>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', marginLeft: '8px' }}>{FACTION_LABEL[m.faction_id]}</span>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '2px' }}>
+                  {m.instance_count} instance{m.instance_count === 1 ? '' : 's'} · {m.days_out}d out · {m.detection_count} daily detection{m.detection_count === 1 ? '' : 's'}
+                  {m.instance_count === 0 && <span style={{ color: 'var(--text-faint)' }}> · continuing from an earlier month</span>}
+                </div>
+                {m.at_kick_threshold && (
+                  <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '11px', fontWeight: '700', color: '#f87171', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
+                    ⚠ KICK THRESHOLD ({m.kick_count_6mo}/3)
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button onClick={() => handleToggleExclude(m)} style={{ ...ocPillStyle(excused), fontSize: '11px' }}>
+                  {excused ? 'Excused' : 'Excuse'}
+                </button>
+                <button
+                  onClick={() => !warned && setReportingMember(m)}
+                  disabled={warned}
+                  style={{ ...ocPillStyle(warned), fontSize: '11px', cursor: warned ? 'default' : 'pointer' }}
+                >
+                  {warned ? '✓ Warned' : 'Warn'}
+                </button>
+              </div>
+            </div>
+
+            <button onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
+              style={{ background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '11px', padding: '8px 0 0', cursor: 'pointer' }}>
+              {expanded[key] ? 'Hide stretches ▲' : `Show stretches (${m.instances.length}) ▼`}
+            </button>
+            {expanded[key] && m.instances.map((inst, i) => {
+              const endText = inst.end_reason === 'ongoing' ? 'Still out'
+                : inst.end_reason === 'left' ? 'Left the faction'
+                : `Joined an OC ${fmtOcDate(inst.ended_at)}`
+              return (
+                <div key={i} style={{ borderLeft: '2px solid rgba(179,18,63,0.5)', padding: '4px 10px', marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  <div style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmtOcHours(inst.hours_out)} out</div>
+                  <div>Out since {fmtOcDate(inst.out_since)} · 24h mark {fmtOcDate(inst.detected_at)}</div>
+                  <div>{endText} · {inst.detection_count} daily detection{inst.detection_count === 1 ? '' : 's'}{inst.counted_this_month === false ? ' · counted in an earlier month' : ''}</div>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+
+      {reportingMember && (
+        <ReportModal
+          member={reportingMember}
+          warningType="OC"
+          achieved={reportingMember.instance_count}
+          reason={ocReason(reportingMember)}
+          periodLabel={periodLabel}
+          periodMonth={month}
+          periodYear={year}
+          onClose={() => setReportingMember(null)}
+          onSaved={() => {
+            setReportedIds(prev => new Set(prev).add(reportingMember.torn_user_id))
+            setReportingMember(null)
+            onWarningSaved?.()
+          }}
+        />
+      )}
+
+      {summaryOpen && (
+        <SummaryModal
+          title={`OC Warnings — ${periodLabel}`}
+          subtitle={summarySubtitle}
+          achievedLabel="Instances"
+          rows={summaryRows}
+          onClose={() => setSummaryOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function GenerateWarningsPanel({ onWarningSaved }) {
   const [reportType, setReportType] = useState('Energy')
 
@@ -1644,6 +1931,7 @@ export default function GenerateWarningsPanel({ onWarningSaved }) {
       {reportType === 'Energy' && <EnergyGenerator onWarningSaved={onWarningSaved} />}
       {reportType === 'Chain' && <ChainGenerator onWarningSaved={onWarningSaved} />}
       {reportType === 'War' && <WarGenerator onWarningSaved={onWarningSaved} />}
+      {reportType === 'OC' && <OCGenerator onWarningSaved={onWarningSaved} />}
     </div>
   )
 }

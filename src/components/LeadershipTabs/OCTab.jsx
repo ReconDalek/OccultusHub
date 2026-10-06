@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { API_BASE_URL } from '../../config/api'
+import OCInactivityView from './OCInactivityView'
 
 const FACTIONS = [
   { id: 33097, label: 'Occultus' },
@@ -1122,11 +1123,13 @@ export default function OCTab() {
       <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '20px' }}>
         <button onClick={() => setView('crimes')} style={subTabStyle('crimes')}>Crimes</button>
         <button onClick={() => setView('builder')} style={subTabStyle('builder')}>Team Builder</button>
+        <button onClick={() => setView('inactivity')} style={subTabStyle('inactivity')}>Inactivity</button>
         <button onClick={() => setView('config')} style={subTabStyle('config')}>Config</button>
       </div>
 
       {view === 'crimes'  && <CrimesListView factionId={factionId} />}
       {view === 'builder' && <TeamBuilder factionId={factionId} />}
+      {view === 'inactivity' && <OCInactivityView factionId={factionId} />}
       {view === 'config'  && <OCConfigTab />}
     </div>
     </CprCurvesContext.Provider>

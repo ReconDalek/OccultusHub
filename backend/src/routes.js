@@ -32,6 +32,7 @@ import * as exemptionsController from './controllers/exemptionsController.js';
 import * as warningExclusionsController from './controllers/warningExclusionsController.js';
 import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
+import * as ocInactivityController from './controllers/ocInactivityController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
 import * as leaderboardController from './controllers/leaderboardController.js';
@@ -898,6 +899,12 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/oc/weights' && method === 'POST') {
       return ocController.updatePositionWeightsConfig(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/inactivity' && method === 'GET') {
+      return ocInactivityController.getInactivity(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/inactivity/member' && method === 'GET') {
+      return ocInactivityController.getMemberInactivity(request, env, user);
     }
 
     // Activity tracking
