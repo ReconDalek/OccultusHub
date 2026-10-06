@@ -1675,6 +1675,8 @@ function OCGenerator({ onWarningSaved }) {
   const [selectedMonth, setSelectedMonth]       = useState(() => previousMonth(now))
   const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
   const [graceDays, setGraceDays]               = useState(2)
+  const [minDays, setMinDays]                   = useState('')
+  const [minInstances, setMinInstances]         = useState('')
 
   const [rows, setRows]       = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1738,9 +1740,15 @@ function OCGenerator({ onWarningSaved }) {
     }
   }
 
+  // Min days / min instances hide members from the list and the summary. Client-side,
+  // so changing them doesn't refetch.
+  const minD = Math.max(0, parseInt(minDays, 10) || 0)
+  const minI = Math.max(0, parseInt(minInstances, 10) || 0)
+  const visibleRows = rows ? rows.filter(m => m.days >= minD && m.instance_count >= minI) : null
+
   // Excused members drop out of the copy-paste summary entirely.
-  const summaryRows = rows
-    ? rows.filter(m => m.instance_count > 0 && !excludedMap.has(m.torn_user_id)).map(m => ({
+  const summaryRows = visibleRows
+    ? visibleRows.filter(m => m.instance_count > 0 && !excludedMap.has(m.torn_user_id)).map(m => ({
         id: `${m.faction_id}:${m.torn_user_id}`,
         tornUserId: m.torn_user_id,
         username: m.username,
@@ -1798,6 +1806,16 @@ function OCGenerator({ onWarningSaved }) {
             ))}
           </div>
         </div>
+        <div>
+          <label style={labelStyle}>Min days</label>
+          <input type="number" min="1" placeholder="Any" value={minDays} onChange={e => setMinDays(e.target.value)}
+            style={{ ...inputStyle, maxWidth: '90px' }} />
+        </div>
+        <div>
+          <label style={labelStyle}>Min instances</label>
+          <input type="number" min="1" placeholder="Any" value={minInstances} onChange={e => setMinInstances(e.target.value)}
+            style={{ ...inputStyle, maxWidth: '110px' }} />
+        </div>
         <button
           onClick={generate}
           disabled={loading || selectedFactions.length === 0}
@@ -1809,7 +1827,7 @@ function OCGenerator({ onWarningSaved }) {
         >
           {loading ? 'Generating…' : 'Generate Report'}
         </button>
-        {rows && (
+        {visibleRows && (
           <button onClick={() => setSummaryOpen(true)} style={{ ...ocPillStyle(false), padding: '9px 16px' }}>
             Summary
           </button>
@@ -1825,8 +1843,11 @@ function OCGenerator({ onWarningSaved }) {
           Nobody went more than 24h outside an OC in {periodLabel}.
         </p>
       )}
+      {rows && rows.length > 0 && visibleRows.length === 0 && (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No one meets the filter.</p>
+      )}
 
-      {rows && rows.map(m => {
+      {visibleRows && visibleRows.map(m => {
         const excused = excludedMap.has(m.torn_user_id)
         const warned = reportedIds.has(m.torn_user_id)
         const key = `${m.faction_id}:${m.torn_user_id}`

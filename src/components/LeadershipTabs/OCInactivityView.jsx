@@ -100,25 +100,38 @@ function MemberCard({ m, expanded, onToggle, onOpen }) {
   )
 }
 
-function OverviewPanel({ data, loading, error, onOpenMember }) {
+function OverviewPanel({ data, loading, error, minDays, minInstances, onOpenMember }) {
   const [expanded, setExpanded] = useState({})
 
   if (loading && !data) return <p style={{ color: 'var(--text-faint)', fontSize: '13px' }}>Loading…</p>
   if (error) return <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>
   if (!data) return null
 
+  // Min-days filter is client-side: members under the threshold are hidden and
+  // the tiles are recalculated from what's left.
+  const min = Math.max(0, parseInt(minDays, 10) || 0)
+  const minI = Math.max(0, parseInt(minInstances, 10) || 0)
+  const members = data.members.filter(m => m.days >= min && m.instance_count >= minI)
+  const totals = members.reduce((acc, m) => ({
+    members: acc.members + 1,
+    instances: acc.instances + m.instance_count,
+    days: acc.days + m.days,
+  }), { members: 0, instances: 0, days: 0 })
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-        <Tile label="Members" value={data.totals.members} />
-        <Tile label="Instances" value={data.totals.instances} />
-        <Tile label="Days" value={data.totals.days} />
+        <Tile label="Members" value={totals.members} />
+        <Tile label="Instances" value={totals.instances} />
+        <Tile label="Days" value={totals.days} />
       </div>
 
-      {data.members.length === 0 ? (
-        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No one in this period.</p>
+      {members.length === 0 ? (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+          {min > 0 || minI > 0 ? 'No one meets the filter.' : 'No one in this period.'}
+        </p>
       ) : (
-        data.members.map(m => (
+        members.map(m => (
           <MemberCard
             key={m.torn_user_id}
             m={m}
@@ -198,6 +211,8 @@ export default function OCInactivityView({ factionId }) {
   const [rangeFrom, setRangeFrom] = useState(firstOfMonth)
   const [rangeTo, setRangeTo] = useState(todayKey)
   const [graceDays, setGraceDays] = useState(2)
+  const [minDays, setMinDays] = useState('')
+  const [minInstances, setMinInstances] = useState('')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -262,6 +277,18 @@ export default function OCInactivityView({ factionId }) {
         )}
 
         <div>
+          <label style={labelStyle}>Min days</label>
+          <input type="number" min="1" placeholder="Any" value={minDays} onChange={e => setMinDays(e.target.value)}
+            style={{ ...inputStyle, maxWidth: '90px' }} />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Min instances</label>
+          <input type="number" min="1" placeholder="Any" value={minInstances} onChange={e => setMinInstances(e.target.value)}
+            style={{ ...inputStyle, maxWidth: '110px' }} />
+        </div>
+
+        <div>
           <label style={labelStyle}>Leeway</label>
           <div style={{ display: 'flex', gap: '6px' }}>
             {GRACE_OPTIONS.map(g => (
@@ -290,7 +317,7 @@ export default function OCInactivityView({ factionId }) {
       </div>
 
       {view === 'overview' && (
-        <OverviewPanel data={data} loading={loading} error={error} onOpenMember={openMember} />
+        <OverviewPanel data={data} loading={loading} error={error} minDays={minDays} minInstances={minInstances} onOpenMember={openMember} />
       )}
       {view === 'member' && (
         <MemberPanel

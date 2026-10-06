@@ -145,9 +145,10 @@ async function computeInstances(env, graceDays, nowMs) {
         const length = gap.end - gap.start;
         if (length <= THRESHOLD_MS) continue;
 
-        // One day per full 24h of the stretch, starting at the first 24h mark.
+        // A day counts once a full 24h has passed: the first at 24h, the second only
+        // after 48h (strictly over), and so on. Rounds down, never up.
         const detections = [];
-        for (let t = gap.start + THRESHOLD_MS; t <= gap.end; t += THRESHOLD_MS) detections.push(t);
+        for (let t = gap.start + THRESHOLD_MS; t < gap.end; t += THRESHOLD_MS) detections.push(t);
 
         instances.push({
           torn_user_id: tornUserId,
