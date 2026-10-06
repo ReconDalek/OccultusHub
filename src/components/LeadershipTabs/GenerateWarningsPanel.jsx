@@ -1638,31 +1638,24 @@ function WarGenerator({ onWarningSaved }) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-// ─── OC generator — members with >24h outside any OC, per month ─────────────
+// ─── OC generator — members out of any OC for more than 24h, per month ──────
 // Same data as Leadership > Organized Crime > Inactivity. The warning count is
-// instances (one per unbroken stretch out, counted in the month its 24h mark
-// falls in). Daily detections and days out are shown for context.
+// instances. Days are the days out within the month.
 
 const ocCardStyle = {
   background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
   borderRadius: '12px', padding: '12px 14px', marginBottom: '10px',
 }
 
-function fmtOcDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
-}
-
-function fmtOcHours(hours) {
-  const total = Math.round(hours)
-  const days = Math.floor(total / 24)
-  const rem = total % 24
-  return days ? `${days}d ${rem}h` : `${rem}h`
+// "12 Sep" for a YYYY-MM-DD key
+function fmtOcDay(key) {
+  if (!key) return '—'
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
 function ocReason(m) {
   const n = m.instance_count
-  return `OC inactivity: ${n} stretch${n === 1 ? '' : 'es'} over 24h out of an OC, ${m.days_out}d out total`
+  return `OC inactivity: ${n} instance${n === 1 ? '' : 's'}, ${m.days} day${m.days === 1 ? '' : 's'} out`
 }
 
 function ocPillStyle(active) {
@@ -1723,7 +1716,7 @@ function OCGenerator({ onWarningSaved }) {
       fetchWarningExclusions('OC', year, month),
     ])
       .then(([memberLists, exclusionsMap]) => {
-        const list = memberLists.flat().sort((a, b) => b.instance_count - a.instance_count || b.detection_count - a.detection_count)
+        const list = memberLists.flat().sort((a, b) => b.instance_count - a.instance_count || b.days - a.days)
         setRows(list)
         // Already-warned = a real member_warnings row for this month's OC type.
         setReportedIds(new Set(list.filter(m => m.already_warned).map(m => m.torn_user_id)))
@@ -1762,9 +1755,8 @@ function OCGenerator({ onWarningSaved }) {
 
   return (
     <div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 14px', maxWidth: '640px' }}>
-        Members not in any OC for more than 24 hours, after their 3-day recruit period and a{' '}
-        {graceDays}-day leeway. Each stretch out counts once, in the month it passes 24 hours.
+      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 14px' }}>
+        24h+ outside any OC, after recruit and a {graceDays}-day leeway.
       </p>
 
       {/* Controls */}
@@ -1848,8 +1840,7 @@ function OCGenerator({ onWarningSaved }) {
                 </a>
                 <span style={{ color: 'var(--text-secondary)', fontSize: '12px', marginLeft: '8px' }}>{FACTION_LABEL[m.faction_id]}</span>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '2px' }}>
-                  {m.instance_count} instance{m.instance_count === 1 ? '' : 's'} · {m.days_out}d out · {m.detection_count} daily detection{m.detection_count === 1 ? '' : 's'}
-                  {m.instance_count === 0 && <span style={{ color: 'var(--text-faint)' }}> · continuing from an earlier month</span>}
+                  {m.instance_count} instance{m.instance_count === 1 ? '' : 's'} · {m.days} day{m.days === 1 ? '' : 's'}
                 </div>
                 {m.at_kick_threshold && (
                   <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '11px', fontWeight: '700', color: '#f87171', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '6px', padding: '2px 8px' }}>
@@ -1873,20 +1864,13 @@ function OCGenerator({ onWarningSaved }) {
 
             <button onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
               style={{ background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: '11px', padding: '8px 0 0', cursor: 'pointer' }}>
-              {expanded[key] ? 'Hide stretches ▲' : `Show stretches (${m.instances.length}) ▼`}
+              {expanded[key] ? 'Hide' : 'Show instances'}
             </button>
-            {expanded[key] && m.instances.map((inst, i) => {
-              const endText = inst.end_reason === 'ongoing' ? 'Still out'
-                : inst.end_reason === 'left' ? 'Left the faction'
-                : `Joined an OC ${fmtOcDate(inst.ended_at)}`
-              return (
-                <div key={i} style={{ borderLeft: '2px solid rgba(179,18,63,0.5)', padding: '4px 10px', marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  <div style={{ color: '#f4f4f5', fontWeight: '600' }}>{fmtOcHours(inst.hours_out)} out</div>
-                  <div>Out since {fmtOcDate(inst.out_since)} · 24h mark {fmtOcDate(inst.detected_at)}</div>
-                  <div>{endText} · {inst.detection_count} daily detection{inst.detection_count === 1 ? '' : 's'}{inst.counted_this_month === false ? ' · counted in an earlier month' : ''}</div>
-                </div>
-              )
-            })}
+            {expanded[key] && m.instances.map((inst, i) => (
+              <div key={i} style={{ borderLeft: '2px solid rgba(179,18,63,0.5)', padding: '4px 10px', marginTop: '6px', fontSize: '12px', color: '#f4f4f5' }}>
+                {fmtOcDay(inst.from)} → {fmtOcDay(inst.to)} · {inst.days} day{inst.days === 1 ? '' : 's'}
+              </div>
+            ))}
           </div>
         )
       })}
