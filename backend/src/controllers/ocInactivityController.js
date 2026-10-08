@@ -395,3 +395,26 @@ export async function getMemberInactivityForBot(request, env) {
   if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
   return getMemberInactivity(request, env, null);
 }
+
+// ── GET /api/discord/oc-inactivity/resolve?name= — bot-facing, shared-secret auth ─
+// Looks up a torn_user_id by username, for /oc_stats when the target isn't a
+// Discord member (so there's no nickname to pull a Torn ID from).
+export async function resolveMemberForBot(request, env) {
+  if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+  try {
+    const url = new URL(request.url);
+    const name = (url.searchParams.get('name') || '').trim();
+    if (!name) return errorResponse('name is required', 400);
+
+    const { results } = await env.DB.prepare(
+      `SELECT torn_user_id, username, faction_id, is_active FROM faction_members
+       WHERE LOWER(username) = LOWER(?) ORDER BY is_active DESC LIMIT 1`
+    ).bind(name).all();
+
+    if (!results.length) return jsonResponse({ found: false });
+    return jsonResponse({ found: true, ...results[0] });
+  } catch (e) {
+    console.error('resolveMemberForBot error:', e);
+    return errorResponse('Failed to resolve member: ' + e.message, 500);
+  }
+}

@@ -948,6 +948,9 @@ export async function handleRequest(request, env, ctx) {
   if (pathname === '/api/discord/oc-inactivity/member' && method === 'GET') {
     return ocInactivityController.getMemberInactivityForBot(request, env);
   }
+  if (pathname === '/api/discord/oc-inactivity/resolve' && method === 'GET') {
+    return ocInactivityController.resolveMemberForBot(request, env);
+  }
 
   if (pathname.startsWith('/api/discord/')) {
     if (!user) return errorResponse('Authentication required', 401);
