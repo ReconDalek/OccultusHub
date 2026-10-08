@@ -181,6 +181,11 @@ function MemberPanel({ graceDays, memberId, onSelect, roster }) {
                 style={{ color: '#a78bfa', fontSize: '12px', marginLeft: '10px', textDecoration: 'none', fontWeight: '400' }}>Torn profile</a>
             </div>
 
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+              <Tile label="This month" value={`${data.this_month.instances} · ${data.this_month.days}d`} />
+              <Tile label="Total" value={`${data.totals.instances} · ${data.totals.days}d`} />
+            </div>
+
             {data.monthly.length === 0 && <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>None.</p>}
             {data.monthly.map(m => (
               <div key={m.month} style={cardStyle}>

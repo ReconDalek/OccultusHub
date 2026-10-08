@@ -939,6 +939,16 @@ export async function handleRequest(request, env, ctx) {
     return bountyController.handleBountyWebhook(request, env);
   }
 
+  // OC inactivity — read-only, called by the (external) Discord bot instead of
+  // it keeping its own separate out-of-OC detection logic. Shared-secret auth,
+  // same response shape as the leadership endpoints.
+  if (pathname === '/api/discord/oc-inactivity' && method === 'GET') {
+    return ocInactivityController.getInactivityForBot(request, env);
+  }
+  if (pathname === '/api/discord/oc-inactivity/member' && method === 'GET') {
+    return ocInactivityController.getMemberInactivityForBot(request, env);
+  }
+
   if (pathname.startsWith('/api/discord/')) {
     if (!user) return errorResponse('Authentication required', 401);
 

@@ -355,11 +355,19 @@ export async function getMemberInactivity(request, env, user) {
       .filter(Boolean)
       .sort((a, b) => (a.from < b.from ? 1 : -1));
 
+    // This month + all-time total, precomputed so a caller (the website's member
+    // panel, or the Discord bot) doesn't need to re-derive them from monthly/instances.
+    const thisMonthKey = monthOf(nowMs);
+    const thisMonth = monthly.find(m => m.month === thisMonthKey) ?? { month: thisMonthKey, instances: 0, days: 0 };
+    const totals = { instances: instanceList.length, days: instanceList.reduce((sum, i) => sum + i.days, 0) };
+
     return jsonResponse({
       torn_user_id: tornUserId,
       username: mine[0]?.username ?? null,
       grace_days: graceDays,
       membership_start: membershipStart,
+      this_month: thisMonth,
+      totals,
       monthly,
       instances: instanceList,
     });
@@ -367,4 +375,23 @@ export async function getMemberInactivity(request, env, user) {
     console.error('getMemberInactivity error:', e);
     return errorResponse('Failed to load member OC inactivity: ' + e.message, 500);
   }
+}
+
+// ── GET /api/discord/oc-inactivity & /member — bot-facing, shared-secret auth ─
+// Not inside /api/leadership/ (no user JWT available to the bot). Same response
+// shape as the leadership endpoints above — lets the Discord bot read live,
+// 24h+ inactivity data instead of keeping its own separate detection logic.
+function checkBotSecret(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  return !!env.OC_BOT_SECRET && auth === `Bearer ${env.OC_BOT_SECRET}`;
+}
+
+export async function getInactivityForBot(request, env) {
+  if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+  return getInactivity(request, env, null);
+}
+
+export async function getMemberInactivityForBot(request, env) {
+  if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+  return getMemberInactivity(request, env, null);
 }
