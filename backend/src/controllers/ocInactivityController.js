@@ -41,15 +41,23 @@ function parseGraceDays(url) {
 }
 
 // Consecutive registry days in the same faction form one membership run. A
-// faction change or a gap of 2+ missing days starts a new run (recruit restarts).
-// A single missed cron day inside a run is bridged.
+// faction change starts a new run (recruit restarts). A short gap of missing
+// registry days is bridged rather than treated as leaving and rejoining — a
+// member's daily personalstats fetch can fail for a few days (e.g. a brief API
+// hiccup) without them actually leaving the faction. Confirmed on real data
+// (2026-10-08, member sil3nt/1884318): 5 days missing from this member's own
+// registry while every other member in the same faction had full coverage on
+// those dates, and an independent source (energy_snapshots) showed them
+// present the whole time. Only a gap longer than this is treated as a real
+// departure, which restarts recruit.
+const MAX_BRIDGED_GAP_DAYS = 4; // date difference; bridges up to 3 consecutive missing days
 function buildRuns(rows, { earliestDate, latestDate, nowMs }) {
   const runs = [];
   let prev = null;
   for (const row of rows) {
     if (prev && prev.snapshot_date === row.snapshot_date) continue;
     const gapDays = prev ? Math.round((utcDayMs(row.snapshot_date) - utcDayMs(prev.snapshot_date)) / DAY_MS) : null;
-    const continues = prev && prev.faction_id === row.faction_id && (gapDays === 1 || gapDays === 2);
+    const continues = prev && prev.faction_id === row.faction_id && gapDays >= 1 && gapDays <= MAX_BRIDGED_GAP_DAYS;
     if (continues) runs[runs.length - 1].last = row.snapshot_date;
     else runs.push({ faction_id: row.faction_id, start: row.snapshot_date, last: row.snapshot_date });
     prev = row;
