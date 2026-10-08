@@ -381,7 +381,7 @@ export async function getMemberInactivity(request, env, user) {
 // Not inside /api/leadership/ (no user JWT available to the bot). Same response
 // shape as the leadership endpoints above — lets the Discord bot read live,
 // 24h+ inactivity data instead of keeping its own separate detection logic.
-function checkBotSecret(request, env) {
+export function checkBotSecret(request, env) {
   const auth = request.headers.get('Authorization') || '';
   return !!env.OC_BOT_SECRET && auth === `Bearer ${env.OC_BOT_SECRET}`;
 }

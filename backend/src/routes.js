@@ -33,6 +33,7 @@ import * as warningExclusionsController from './controllers/warningExclusionsCon
 import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
 import * as ocInactivityController from './controllers/ocInactivityController.js';
+import * as odReimbursementController from './controllers/odReimbursementController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
 import * as leaderboardController from './controllers/leaderboardController.js';
@@ -950,6 +951,23 @@ export async function handleRequest(request, env, ctx) {
   }
   if (pathname === '/api/discord/oc-inactivity/resolve' && method === 'GET') {
     return ocInactivityController.resolveMemberForBot(request, env);
+  }
+
+  // OD reimbursement tracking — bot-facing, shared-secret auth (same as OC inactivity).
+  if (pathname === '/api/discord/od-reimbursements/check' && method === 'GET') {
+    return odReimbursementController.checkEligibilityForBot(request, env);
+  }
+  if (pathname === '/api/discord/od-reimbursements/pending' && method === 'GET') {
+    return odReimbursementController.getPendingForBot(request, env);
+  }
+  if (pathname === '/api/discord/od-reimbursements/complete' && method === 'POST') {
+    return odReimbursementController.completeForBot(request, env);
+  }
+  if (pathname === '/api/discord/od-reimbursements/reject' && method === 'POST') {
+    return odReimbursementController.rejectForBot(request, env);
+  }
+  if (pathname === '/api/discord/od-reimbursements' && method === 'POST') {
+    return odReimbursementController.createReimbursementForBot(request, env);
   }
 
   if (pathname.startsWith('/api/discord/')) {

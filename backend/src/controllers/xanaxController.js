@@ -15,7 +15,7 @@ function currentUtcMonth() {
 // `asOfTs` lets callers ask "who was eligible as of month X" (OD Insurance
 // looking at a past month) instead of always the live current month — an
 // omitted asOfTs keeps the original current-month behavior.
-async function getEligibleMembers(env, factionId, asOfTs) {
+export async function getEligibleMembers(env, factionId, asOfTs) {
   const now = new Date();
   const monthStart = asOfTs ?? Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
 
@@ -85,72 +85,38 @@ export async function getFactionRankPerkExpense(env, factionId) {
   };
 }
 
-// Computes one month's OD Insurance xanax cost for one faction: +1 xanax
-// replacement per overdose logged that month, for Adept+ members only.
-// Overdose count comes from personal_stats_snapshots ($.drugs.overdoses),
-// delta from the first snapshot in the month to the last. `monthStartTs`/
-// `monthEndTs` (unix seconds) let accountingController ask about a past
-// month instead of always the live current one — both default to the
-// current calendar month when omitted, preserving prior behavior.
+// Computes one month's OD Insurance cost for one faction from REAL completed
+// reimbursements (od_reimbursements, status='completed', priced at
+// unit_price_at_completion — frozen at the time, not re-priced later). This
+// replaced a personal-stats-based guess (every overdose assumed reimbursed,
+// at today's price) that didn't account for members never claiming, or
+// overdoses on faction-supplied items, which aren't reimbursed. Months
+// before this tracking existed will show $0 here — there's no real record
+// for them, and that's preferred over a guess. `monthStartTs`/`monthEndTs`
+// (unix seconds) default to the current calendar month.
 export async function getFactionODInsuranceExpense(env, factionId, monthStartTs, monthEndTs) {
   const now = new Date();
   const defaultStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
   const start = monthStartTs ?? defaultStart;
   const end   = monthEndTs   ?? Math.floor(now.getTime() / 1000);
 
-  // Eligibility (Adept+) is judged as of the START of the target month —
-  // matches "hits banked before this month started" for a historical month too.
-  const eligible = await getEligibleMembers(env, factionId, start);
-  const unitPrice = await getXanaxUnitPrice(env);
+  const { results } = await env.DB.prepare(`
+    SELECT torn_user_id, quantity, unit_price_at_completion
+    FROM od_reimbursements
+    WHERE faction_id = ? AND status = 'completed' AND completed_at >= ? AND completed_at < ?
+  `).bind(factionId, start, end).all();
 
-  if (!eligible.length) {
-    return { eligible_members: 0, members_with_overdoses: 0, total_overdoses: 0, unit_price: unitPrice, monthly_cost: 0, configured: true };
-  }
-
-  const monthStartDate = new Date(start * 1000).toISOString().slice(0, 10);
-  const todayDate      = new Date(end * 1000).toISOString().slice(0, 10);
-  const ids = eligible.map(m => m.torn_user_id);
-  const placeholders = ids.map(() => '?').join(',');
-
-  const [startRows, endRows] = await Promise.all([
-    env.DB.prepare(`
-      SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
-      FROM personal_stats_snapshots p
-      INNER JOIN (
-        SELECT torn_user_id, MIN(snapshot_date) AS min_date
-        FROM personal_stats_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ? AND torn_user_id IN (${placeholders})
-        GROUP BY torn_user_id
-      ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
-    `).bind(monthStartDate, todayDate, ...ids).all(),
-    env.DB.prepare(`
-      SELECT p.torn_user_id, CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS val
-      FROM personal_stats_snapshots p
-      INNER JOIN (
-        SELECT torn_user_id, MAX(snapshot_date) AS max_date
-        FROM personal_stats_snapshots
-        WHERE snapshot_date >= ? AND snapshot_date <= ? AND torn_user_id IN (${placeholders})
-        GROUP BY torn_user_id
-      ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
-    `).bind(monthStartDate, todayDate, ...ids).all(),
-  ]);
-
-  const odStart = {};
-  for (const r of startRows.results || []) odStart[r.torn_user_id] = r.val ?? 0;
-
-  let totalOverdoses = 0;
-  let membersWithOverdoses = 0;
-  for (const r of endRows.results || []) {
-    const delta = Math.max(0, (r.val ?? 0) - (odStart[r.torn_user_id] ?? 0));
-    if (delta > 0) { totalOverdoses += delta; membersWithOverdoses++; }
-  }
+  const rows = results || [];
+  const totalOverdoses = rows.reduce((s, r) => s + r.quantity, 0);
+  const monthlyCost = rows.reduce((s, r) => s + r.quantity * (r.unit_price_at_completion ?? 0), 0);
+  const membersWithOverdoses = new Set(rows.map(r => r.torn_user_id)).size;
 
   return {
-    eligible_members: eligible.length,
+    eligible_members: membersWithOverdoses,
     members_with_overdoses: membersWithOverdoses,
     total_overdoses: totalOverdoses,
-    unit_price: unitPrice,
-    monthly_cost: Math.round(totalOverdoses * unitPrice),
+    unit_price: totalOverdoses ? Math.round((monthlyCost / totalOverdoses) * 100) / 100 : 0,
+    monthly_cost: Math.round(monthlyCost),
     configured: true,
   };
 }
