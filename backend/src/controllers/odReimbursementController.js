@@ -121,9 +121,9 @@ export async function completeForBot(request, env) {
     if (!tornUserId) return errorResponse('torn_user_id is required', 400);
 
     const { results: pending } = await env.DB.prepare(
-      `SELECT id, item_name, quantity FROM od_reimbursements WHERE torn_user_id = ? AND status = 'pending'`
+      `SELECT id, item_name, quantity, discord_message_id FROM od_reimbursements WHERE torn_user_id = ? AND status = 'pending'`
     ).bind(tornUserId).all();
-    if (!pending.length) return jsonResponse({ updated: 0, total_value: 0 });
+    if (!pending.length) return jsonResponse({ updated: 0, total_value: 0, message_ids: [] });
 
     const priceCache = new Map();
     const now = Math.floor(Date.now() / 1000);
@@ -141,7 +141,10 @@ export async function completeForBot(request, env) {
     }
     await env.DB.batch(updates);
 
-    return jsonResponse({ updated: pending.length, total_value: Math.round(totalValue) });
+    // So the bot can react on each original OD log message to show it's done.
+    const messageIds = [...new Set(pending.map(r => r.discord_message_id).filter(Boolean))];
+
+    return jsonResponse({ updated: pending.length, total_value: Math.round(totalValue), message_ids: messageIds });
   } catch (e) {
     console.error('completeForBot error:', e);
     return errorResponse('Failed to complete reimbursement: ' + e.message, 500);
