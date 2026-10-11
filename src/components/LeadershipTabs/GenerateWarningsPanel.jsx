@@ -466,8 +466,8 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
   const showAttacks = data.include_attacks
 
   const colTemplate = showAttacks
-    ? '28px minmax(260px, 340px) 70px 70px 70px 56px 44px 76px 84px 230px'
-    : '28px minmax(260px, 340px) 70px 70px 56px 44px 76px 84px 230px'
+    ? '28px minmax(390px, 510px) 70px 70px 70px 56px 44px 76px 84px 230px'
+    : '28px minmax(390px, 510px) 70px 70px 56px 44px 76px 84px 230px'
 
   const headers = showAttacks
     ? ['#', 'Member', 'Gym', 'Attacks', 'Total', 'Days', 'OD', 'Avg/Day', 'vs Target', '']
@@ -479,7 +479,7 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
   // container forces overflow-y to a non-visible computed value.
   return (
     <div className="table-scroll">
-      <div style={{ minWidth: showAttacks ? '1150px' : '1070px' }}>
+      <div style={{ minWidth: showAttacks ? '1320px' : '1240px' }}>
         <div style={{
           display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
           zIndex: 5, background: '#141414',
