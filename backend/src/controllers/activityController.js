@@ -871,19 +871,23 @@ export async function generateEnergyWarningReport(request, env) {
     // ran (`takePersonalStatsSnapshot`, `WHERE is_active = 1`) — one row per
     // member per day reflecting who we actually believed their faction was
     // that day, with no duplicate/leftover-row concept at all.
+    // One segment per CONTIGUOUS stretch in a faction (not one per faction), so
+    // a member who went Occ2 -> Occ3 -> Occ2 -> Occ3 shows all of those moves
+    // instead of being collapsed into Occ2 -> Occ3.
     const membershipRows = await env.DB.prepare(`
-      SELECT torn_user_id, faction_id, MIN(snapshot_date) AS start_date, MAX(snapshot_date) AS end_date
+      SELECT torn_user_id, faction_id, snapshot_date
       FROM personal_stats_snapshots
       WHERE snapshot_date >= ? AND snapshot_date <= ?
-      GROUP BY torn_user_id, faction_id
-      ORDER BY torn_user_id, start_date ASC
+      GROUP BY torn_user_id, faction_id, snapshot_date
+      ORDER BY torn_user_id, snapshot_date ASC
     `).bind(monthStart, monthEnd).all();
 
     const segmentsByUser = {};
     for (const r of (membershipRows.results || [])) {
-      (segmentsByUser[r.torn_user_id] ??= []).push({
-        faction_id: r.faction_id, start_date: r.start_date, end_date: r.end_date,
-      });
+      const list = (segmentsByUser[r.torn_user_id] ??= []);
+      const last = list[list.length - 1];
+      if (last && last.faction_id === r.faction_id) last.end_date = r.snapshot_date;
+      else list.push({ faction_id: r.faction_id, start_date: r.snapshot_date, end_date: r.snapshot_date });
     }
     for (const segments of Object.values(segmentsByUser)) segments.sort((a, b) => a.start_date.localeCompare(b.start_date));
 
