@@ -536,10 +536,10 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                   )}
                   {m.partial_membership && (
                     <span
-                      title={`Counted for ${m.partial_membership.tracked_days} of ${m.partial_membership.window_days} days this month (${m.partial_membership.first_date} → ${m.partial_membership.last_date}). They left and rejoined or transferred in, and the first days after any join/transfer are recruit days that don't count. Average is over the countable days only.`}
+                      title={`Counted for ${m.partial_membership.tracked_days} of ${m.partial_membership.window_days} days this month, across all our factions (not just their current one) (${m.partial_membership.first_date} → ${m.partial_membership.last_date}). They left and rejoined or transferred in, and the first days after any join/transfer are recruit days that don't count. Average is over the countable days only.`}
                       style={{ color: '#f59e0b', marginLeft: '4px' }}
                     >
-                      ↩ {m.partial_membership.tracked_days}/{m.partial_membership.window_days}d in faction
+                      ↩ {m.partial_membership.tracked_days} of {m.partial_membership.window_days} days counted
                     </span>
                   )}
                 </span>
