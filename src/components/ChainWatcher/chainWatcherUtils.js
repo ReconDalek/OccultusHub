@@ -57,6 +57,25 @@ export function fmtSlotDay(slotStart) {
   })
 }
 
+// Viewer's own local time/day for a slot — browser default timezone, no override.
+export function fmtSlotTimeLocal(slotStart) {
+  return new Date(slotStart * 1000).toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+}
+
+export function fmtSlotDayLocal(slotStart) {
+  return new Date(slotStart * 1000).toLocaleDateString(undefined, {
+    weekday: 'short', day: 'numeric', month: 'short',
+  })
+}
+
+// True when the viewer's local calendar day differs from the TCT (UTC) day —
+// worth calling out since a slot can cross midnight in one tz but not the other.
+export function localDayDiffers(slotStart) {
+  return fmtSlotDayLocal(slotStart) !== fmtSlotDay(slotStart)
+}
+
 export function dayStart(ts) {
   const d = new Date(ts * 1000)
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000)

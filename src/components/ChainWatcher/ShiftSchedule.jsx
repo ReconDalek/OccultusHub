@@ -2,7 +2,8 @@ import { useMemo, useState, useCallback } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
   apiSend, card, sectionTitle, sectionSub,
-  upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, currentHourStart, HOUR,
+  upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
+  currentHourStart, HOUR,
 } from './chainWatcherUtils'
 
 const DAYS_AHEAD = 7
@@ -51,7 +52,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   return (
     <div style={card}>
       <p style={sectionTitle}>Shift Sign-Ups</p>
-      <p style={sectionSub}>Times shown are TCT (UTC).</p>
+      <p style={sectionSub}>Times shown are TCT (UTC), with your local time underneath.</p>
 
       {myShifts.length > 0 && (
         <div style={{ marginBottom: 14, padding: '8px 10px', borderRadius: 8, background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}>
@@ -67,7 +68,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
                   background: 'rgba(139,92,246,0.15)', color: '#c4b5fd',
                   border: '1px solid rgba(139,92,246,0.4)', cursor: 'pointer',
                 }}
-                title="Click to cancel"
+                title={`Click to cancel · ${fmtSlotTimeLocal(s.slot_start)} your local time`}
               >
                 {fmtSlotDay(s.slot_start)} {fmtSlotTime(s.slot_start)} ✕
               </button>
@@ -119,6 +120,10 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
           }
 
           const clickable = !isPast && (!taken || isMine)
+          const localTime = fmtSlotTimeLocal(slot)
+          const tctTime = fmtSlotTime(slot)
+          const showLocal = localTime !== tctTime
+          const dayShift = showLocal && localDayDiffers(slot)
 
           return (
             <button
@@ -134,7 +139,12 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
                 cursor: clickable ? 'pointer' : 'default', opacity: busy ? 0.5 : 1,
               }}
             >
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtSlotTime(slot)}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tctTime} TCT</div>
+              {showLocal && (
+                <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                  {localTime} local{dayShift ? ` (${fmtSlotDayLocal(slot).slice(0, 3)})` : ''}
+                </div>
+              )}
               <div style={{ fontSize: 13, fontWeight: 600, color: labelColor }}>
                 {label}{isMine && !isPast ? ' (you)' : ''}
               </div>

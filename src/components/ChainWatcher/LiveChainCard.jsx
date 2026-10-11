@@ -2,25 +2,39 @@ import { useEffect, useState } from 'react'
 import { apiGet, fmtDuration, card, sectionTitle } from './chainWatcherUtils'
 
 const POLL_MS = 20000
+const FAST_POLL_MS = 5000
+const FAST_POLL_THRESHOLD = 120 // seconds left before a chain drops — poll tighter once attacks matter most
 
 export default function LiveChainCard({ factionId }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [now, setNow] = useState(Date.now())
 
+  // Self-scheduling rather than a fixed interval, so the poll rate can tighten
+  // up as a chain gets close to timing out — each attack resets Torn's own
+  // timeout server-side, and polling faster near zero keeps the live display
+  // from lagging behind a reset by a full normal poll cycle.
   useEffect(() => {
     let cancelled = false
+    let timer = null
+
     async function load() {
+      let nextDelay = POLL_MS
       try {
         const json = await apiGet(`/api/chain-watcher/live?faction_id=${factionId}`)
-        if (!cancelled) { setData(json); setError(null) }
+        if (cancelled) return
+        setData(json)
+        setError(null)
+        if (json.status === 'active' && json.timeout <= FAST_POLL_THRESHOLD) nextDelay = FAST_POLL_MS
       } catch (e) {
-        if (!cancelled) setError(e.message)
+        if (cancelled) return
+        setError(e.message)
       }
+      if (!cancelled) timer = setTimeout(load, nextDelay)
     }
+
     load()
-    const poll = setInterval(load, POLL_MS)
-    return () => { cancelled = true; clearInterval(poll) }
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
   }, [factionId])
 
   useEffect(() => {
