@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from '../hooks/useSession'
 import { apiGet, OCC_FACTIONS } from '../components/ChainWatcher/chainWatcherUtils'
-import LiveChainCard from '../components/ChainWatcher/LiveChainCard'
+import ChainSessionCard from '../components/ChainWatcher/ChainSessionCard'
 import WatcherBanner from '../components/ChainWatcher/WatcherBanner'
 import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
 
@@ -65,7 +65,7 @@ export default function ChainWatcher() {
 
       {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
-      <LiveChainCard factionId={factionId} />
+      <ChainSessionCard factionId={factionId} />
       <WatcherBanner shifts={shifts} />
       <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} />
     </div>

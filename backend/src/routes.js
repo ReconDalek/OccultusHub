@@ -421,6 +421,20 @@ export async function handleRequest(request, env, ctx) {
   }
 
   // Chain watcher — live chain status + shift sign-ups (member auth required)
+  if (pathname === '/api/chain-watcher/session' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.getActiveSession(request, env);
+  }
+  if (pathname === '/api/chain-watcher/session' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.scheduleSession(request, env, user);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/session\/\d+\/end$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.endSession(request, env);
+  }
   if (pathname === '/api/chain-watcher/live' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     return chainWatcherController.getLiveStatus(request, env);
@@ -435,7 +449,13 @@ export async function handleRequest(request, env, ctx) {
   }
   if (pathname.match(/^\/api\/chain-watcher\/shifts\/\d+$/) && method === 'DELETE') {
     if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.cancelShift(request, env, user);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/shifts\/\d+\/note$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.setShiftNote(request, env);
   }
 
   // Forums endpoints (member auth required)

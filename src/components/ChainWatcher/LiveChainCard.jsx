@@ -69,7 +69,7 @@ export default function LiveChainCard({ factionId }) {
     <div style={{ ...card, border: urgent ? '1px solid #f87171' : card.border }}>
       <p style={sectionTitle}>Live Chain</p>
 
-      {data.status === 'idle' && (
+      {(data.status === 'idle' || data.status === 'no_session') && (
         <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No chain currently running.</p>
       )}
 

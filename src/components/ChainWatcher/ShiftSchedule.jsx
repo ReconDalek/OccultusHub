@@ -5,15 +5,20 @@ import {
   upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
   currentHourStart, HOUR,
 } from './chainWatcherUtils'
+import SignUpConfirmModal from './SignUpConfirmModal'
+import NoteModal from './NoteModal'
 
 const DAYS_AHEAD = 7
 const ACCENT = '#8b5cf6'
 
 export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   const { user } = useSession()
+  const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
   const [selectedDay, setSelectedDay] = useState(() => dayStart(Math.floor(Date.now() / 1000)))
   const [busySlot, setBusySlot] = useState(null)
   const [error, setError] = useState(null)
+  const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
+  const [editingShift, setEditingShift] = useState(null) // shift object whose note is being edited
 
   const days = useMemo(() => upcomingDays(DAYS_AHEAD), [])
   const byStart = useMemo(() => new Map(shifts.map(s => [s.slot_start, s])), [shifts])
@@ -23,19 +28,21 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
     [shifts, user]
   )
 
-  const handleSignUp = useCallback(async (slotStart) => {
+  const confirmSignUp = useCallback(async () => {
+    const slotStart = pendingSlot
     setBusySlot(slotStart); setError(null)
     try {
       await apiSend('/api/chain-watcher/shifts', 'POST', { faction_id: factionId, slot_start: slotStart })
+      setPendingSlot(null)
       onChanged()
     } catch (e) {
       setError(e.message)
     } finally {
       setBusySlot(null)
     }
-  }, [factionId, onChanged])
+  }, [factionId, pendingSlot, onChanged])
 
-  const handleCancel = useCallback(async (id, slotStart) => {
+  const handleRemove = useCallback(async (id, slotStart) => {
     setBusySlot(slotStart); setError(null)
     try {
       await apiSend(`/api/chain-watcher/shifts/${id}`, 'DELETE')
@@ -46,6 +53,20 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
       setBusySlot(null)
     }
   }, [onChanged])
+
+  const saveNote = useCallback(async (text) => {
+    if (!editingShift) return
+    setBusySlot(editingShift.slot_start); setError(null)
+    try {
+      await apiSend(`/api/chain-watcher/shifts/${editingShift.id}/note`, 'POST', { note: text })
+      setEditingShift(null)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusySlot(null)
+    }
+  }, [editingShift, onChanged])
 
   const curHour = currentHourStart()
 
@@ -59,19 +80,16 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
           <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Your shifts</div>
           <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
             {myShifts.map(s => (
-              <button
+              <span
                 key={s.id}
-                onClick={() => handleCancel(s.id, s.slot_start)}
-                disabled={busySlot === s.slot_start}
                 style={{
                   fontSize: 12, padding: '4px 10px', borderRadius: 6,
                   background: 'rgba(139,92,246,0.15)', color: '#c4b5fd',
-                  border: '1px solid rgba(139,92,246,0.4)', cursor: 'pointer',
+                  border: '1px solid rgba(139,92,246,0.4)',
                 }}
-                title={`Click to cancel · ${fmtSlotTimeLocal(s.slot_start)} your local time`}
               >
-                {fmtSlotDay(s.slot_start)} {fmtSlotTime(s.slot_start)} ✕
-              </button>
+                {fmtSlotDay(s.slot_start)} {fmtSlotTime(s.slot_start)}
+              </span>
             ))}
           </div>
         </div>
@@ -96,7 +114,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
         {hoursForDay.map(slot => {
           const taken = byStart.get(slot)
           const isPast = slot < curHour
@@ -119,24 +137,20 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
             border = isMine ? 'rgba(139,92,246,0.4)' : 'var(--border-subtle)'
           }
 
-          const clickable = !isPast && (!taken || isMine)
+          const openAndClickable = !isPast && !taken
           const localTime = fmtSlotTimeLocal(slot)
           const tctTime = fmtSlotTime(slot)
           const showLocal = localTime !== tctTime
           const dayShift = showLocal && localDayDiffers(slot)
 
           return (
-            <button
+            <div
               key={slot}
-              disabled={!clickable || busy}
-              onClick={() => {
-                if (isMine) handleCancel(taken.id, slot)
-                else if (!taken) handleSignUp(slot)
-              }}
+              onClick={() => { if (openAndClickable && !busy) setPendingSlot(slot) }}
               style={{
                 textAlign: 'left', padding: '8px 10px', borderRadius: 8,
                 background: bg, border: `1px solid ${border}`,
-                cursor: clickable ? 'pointer' : 'default', opacity: busy ? 0.5 : 1,
+                cursor: openAndClickable ? 'pointer' : 'default', opacity: busy ? 0.5 : 1,
               }}
             >
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tctTime} TCT</div>
@@ -148,10 +162,61 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
               <div style={{ fontSize: 13, fontWeight: 600, color: labelColor }}>
                 {label}{isMine && !isPast ? ' (you)' : ''}
               </div>
-            </button>
+
+              {!isPast && taken && isLeader && (
+                <div className="flex" style={{ gap: 6, marginTop: 6 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingShift(taken) }}
+                    disabled={busy}
+                    title="Add/edit note"
+                    style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'rgba(255,255,255,0.06)',
+                      color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', cursor: 'pointer',
+                    }}
+                  >
+                    Note
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRemove(taken.id, slot) }}
+                    disabled={busy}
+                    title="Remove from this shift"
+                    style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'rgba(248,113,113,0.1)',
+                      color: '#f87171', border: '1px solid rgba(248,113,113,0.3)', cursor: 'pointer',
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+
+              {!isPast && taken && isLeader && taken.note && (
+                <div style={{ fontSize: 10.5, color: '#f87171', marginTop: 5, fontStyle: 'italic' }}>
+                  {taken.note}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
+
+      {pendingSlot != null && (
+        <SignUpConfirmModal
+          slotStart={pendingSlot}
+          busy={busySlot === pendingSlot}
+          onConfirm={confirmSignUp}
+          onClose={() => setPendingSlot(null)}
+        />
+      )}
+
+      {editingShift && (
+        <NoteModal
+          shift={editingShift}
+          busy={busySlot === editingShift.slot_start}
+          onSave={saveNote}
+          onClose={() => setEditingShift(null)}
+        />
+      )}
     </div>
   )
 }
