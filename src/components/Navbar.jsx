@@ -35,6 +35,7 @@ function buildNavLinks(user, pages) {
     links.push({ label: 'Forums', to: '/forums' })
     links.push({ label: 'Stocks', to: '/stocks' })
     links.push({ label: 'Stats',  to: '/stats'  })
+    links.push({ label: 'Chain Watch', to: '/chain' })
     if (pages.factions)  links.push({ label: 'Factions',  to: '/factions'  })
     if (pages.companies) links.push({ label: 'Companies', to: '/companies' })
   }

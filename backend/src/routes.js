@@ -42,6 +42,7 @@ import * as progressionController from './controllers/progressionController.js';
 import * as spotifyController from './controllers/spotifyController.js';
 import * as factionActivityController from './controllers/factionActivityController.js';
 import * as rankRewardsController from './controllers/rankRewardsController.js';
+import * as chainWatcherController from './controllers/chainWatcherController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -417,6 +418,24 @@ export async function handleRequest(request, env, ctx) {
   if (pathname === '/api/stats/chains' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     return chainController.getChainStats(request, env);
+  }
+
+  // Chain watcher — live chain status + shift sign-ups (member auth required)
+  if (pathname === '/api/chain-watcher/live' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.getLiveStatus(request, env);
+  }
+  if (pathname === '/api/chain-watcher/shifts' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.listShifts(request, env);
+  }
+  if (pathname === '/api/chain-watcher/shifts' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.signUpShift(request, env, user);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/shifts\/\d+$/) && method === 'DELETE') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.cancelShift(request, env, user);
   }
 
   // Forums endpoints (member auth required)

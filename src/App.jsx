@@ -37,6 +37,7 @@ import Pact           from './pages/Pact'
 import Stocks         from './pages/Stocks'
 import Stats          from './pages/Stats'
 import Activity       from './pages/Activity'
+import ChainWatcher   from './pages/ChainWatcher'
 import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding', '/pact'] // active gameplay routes — suppress easter egg overlays
@@ -65,6 +66,10 @@ const PAGE_META = {
   '/stats': {
     title: 'Faction Stats — Occultus Hub',
     description: 'Career war stats and leaderboards for every member across the Occultus faction family.',
+  },
+  '/chain': {
+    title: 'Chain Watch — Occultus Hub',
+    description: 'Live chain tracking and watch shift sign-ups for the Occultus faction family.',
   },
   '/tos': {
     title: 'Terms of Service — Occultus Hub',
@@ -285,6 +290,17 @@ function AppRoutes() {
           <Layout>
             <ProtectedRoute requiredLevel="member">
               <Activity />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/chain"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="member">
+              <ChainWatcher />
             </ProtectedRoute>
           </Layout>
         }
