@@ -68,8 +68,8 @@ export default function ChainWatcher() {
 
       <ChainSessionCard factionId={factionId} />
       <WatcherBanner shifts={shifts} />
-      <MeritTracker factionId={factionId} />
       <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} />
+      <MeritTracker factionId={factionId} />
     </div>
   )
 }

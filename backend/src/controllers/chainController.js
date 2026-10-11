@@ -3,6 +3,7 @@ import { getRandomUserApiKey, getStaffApiKeyForFaction, fetchWithRetry } from '.
 import { logInfo, logWarn, logError } from '../services/logger.js';
 import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD, suppressSameDayOverdoseXanax } from './warController.js';
 import { getKickThresholdCounts } from './activityController.js';
+import { recordChainBonusHits } from './meritController.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -582,12 +583,14 @@ export async function saveChainImport(request, env, user) {
     if (membersAdded > 0) parts.push(`${membersAdded} new member${membersAdded !== 1 ? 's' : ''} added to member database`);
 
     const energyFetch = hitsSaved > 0 ? await triggerChainEnergyFetch(env, torn_chain_id) : { fetched: false, reason: 'no hits saved' };
+    const bonusHits = hitsSaved > 0 ? await recordChainBonusHits(env, torn_chain_id, faction_id) : { recorded: 0 };
 
     return jsonResponse({
       chainAdded,
       hitsSaved,
       membersAdded,
       energyFetch,
+      bonusHits,
       message: parts.join(' — '),
     });
   } catch (err) {
@@ -642,10 +645,12 @@ export async function saveChainHits(request, env, user) {
     }
 
     const energyFetch = saved > 0 ? await triggerChainEnergyFetch(env, torn_chain_id) : { fetched: false, reason: 'no hits saved' };
+    const bonusHits = saved > 0 ? await recordChainBonusHits(env, torn_chain_id, faction_id) : { recorded: 0 };
 
     return jsonResponse({
       saved,
       energyFetch,
+      bonusHits,
       message: `${saved} member hit record${saved !== 1 ? 's' : ''} saved`,
     });
   } catch (err) {

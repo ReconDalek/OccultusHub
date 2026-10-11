@@ -459,15 +459,13 @@ export async function handleRequest(request, env, ctx) {
     return chainWatcherController.setShiftNote(request, env);
   }
 
-  // Chain watcher — merit tracking (member auth required to view; leadership to award/revoke)
+  // Chain watcher — merit tracking (member auth required to view; leadership to revoke)
+  // Merits are now tracked automatically from chain bonus hits (see
+  // meritController.recordChainBonusHits, called from chainController's
+  // chain-save endpoints) — there's no manual "award" action any more.
   if (pathname === '/api/chain-watcher/merits' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     return meritController.getMerits(request, env);
-  }
-  if (pathname === '/api/chain-watcher/merits/award' && method === 'POST') {
-    if (!user) return errorResponse('Authentication required', 401);
-    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
-    return meritController.awardMerit(request, env, user);
   }
   if (pathname === '/api/chain-watcher/merits/award' && method === 'DELETE') {
     if (!user) return errorResponse('Authentication required', 401);

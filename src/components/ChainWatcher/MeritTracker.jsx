@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../../hooks/useSession'
-import { apiGet, apiSend, card, sectionTitle, sectionSub } from './chainWatcherUtils'
+import { apiGet, card, sectionTitle, sectionSub } from './chainWatcherUtils'
 
 const REFRESH_MS = 60000
 const ACCENT = '#8b5cf6'
@@ -16,7 +16,7 @@ export default function MeritTracker({ factionId }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [activeType, setActiveType] = useState(null)
-  const [busyId, setBusyId] = useState(null)
+  const [showFormula, setShowFormula] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -34,19 +34,6 @@ export default function MeritTracker({ factionId }) {
     const t = setInterval(load, REFRESH_MS)
     return () => clearInterval(t)
   }, [load])
-
-  const award = useCallback(async (tornUserId) => {
-    if (!activeType) return
-    setBusyId(tornUserId)
-    try {
-      await apiSend('/api/chain-watcher/merits/award', 'POST', { torn_user_id: tornUserId, merit_type: activeType })
-      await load()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setBusyId(null)
-    }
-  }, [activeType, load])
 
   if (error) {
     return (
@@ -68,14 +55,27 @@ export default function MeritTracker({ factionId }) {
 
   const candidates = data.candidates[activeType] || []
   const awardedCount = data.awardedCounts?.[activeType] || 0
+  const thresholds = data.thresholds?.[activeType] || []
 
   return (
     <div style={card}>
       <p style={sectionTitle}>Merit Tracker</p>
       <p style={sectionSub}>
-        Ranked by total hits, weighted by rank and how consistently they've pulled 50+ hits over the last 12 months.
-        Members who already have a merit are left off its list.
+        Tracked automatically from bonus hits during a chain — landing the {thresholds.join('th, ')}th hit earns it.
+        Already-received members drop off that merit's list.{' '}
+        <button
+          onClick={() => setShowFormula(s => !s)}
+          style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}
+        >
+          {showFormula ? 'Hide' : 'Show'} how ranking works
+        </button>
       </p>
+
+      {showFormula && (
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+          {data.formula}
+        </p>
+      )}
 
       <div className="flex" style={{ gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {data.meritTypes.map((type) => (
@@ -120,28 +120,21 @@ export default function MeritTracker({ factionId }) {
                   {c.username}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {c.faction_position || '—'} · {c.total_hits.toLocaleString()} hits · {fmtPct(c.consistency)} consistency
+                  {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) · {fmtPct(c.consistency)} consistency
                 </div>
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
                 {Math.round(c.score).toLocaleString()}
               </div>
-              {isLeader && (
-                <button
-                  onClick={() => award(c.torn_user_id)}
-                  disabled={busyId === c.torn_user_id}
-                  style={{
-                    fontSize: 11.5, padding: '5px 10px', borderRadius: 6, background: ACCENT, color: '#fff',
-                    border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0,
-                    opacity: busyId === c.torn_user_id ? 0.6 : 1,
-                  }}
-                >
-                  Award
-                </button>
-              )}
             </div>
           ))}
         </div>
+      )}
+
+      {isLeader && awardedCount > 0 && (
+        <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>
+          Need to correct a wrongly-attributed {activeType}? Let me know who and I'll remove it.
+        </p>
       )}
     </div>
   )
