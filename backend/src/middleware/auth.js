@@ -1,6 +1,6 @@
 import { jwtVerify, SignJWT } from 'jose';
 
-const LEADERSHIP_ROLES = ['Leader', 'Co-leader', 'Archon', 'High Council', 'Council'];
+export const LEADERSHIP_ROLES = ['Leader', 'Co-leader', 'Archon', 'High Council', 'Council'];
 const ALLOWED_FACTION_IDS = [33097, 9728, 9171];
 
 // Verify JWT token from request headers

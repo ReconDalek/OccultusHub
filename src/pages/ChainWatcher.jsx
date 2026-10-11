@@ -3,6 +3,7 @@ import { useSession } from '../hooks/useSession'
 import { apiGet, OCC_FACTIONS } from '../components/ChainWatcher/chainWatcherUtils'
 import ChainSessionCard from '../components/ChainWatcher/ChainSessionCard'
 import WatcherBanner from '../components/ChainWatcher/WatcherBanner'
+import MeritTracker from '../components/ChainWatcher/MeritTracker'
 import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
 
 const SHIFTS_REFRESH_MS = 30000
@@ -67,6 +68,7 @@ export default function ChainWatcher() {
 
       <ChainSessionCard factionId={factionId} />
       <WatcherBanner shifts={shifts} />
+      <MeritTracker factionId={factionId} />
       <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} />
     </div>
   )

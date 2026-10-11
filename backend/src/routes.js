@@ -43,6 +43,7 @@ import * as spotifyController from './controllers/spotifyController.js';
 import * as factionActivityController from './controllers/factionActivityController.js';
 import * as rankRewardsController from './controllers/rankRewardsController.js';
 import * as chainWatcherController from './controllers/chainWatcherController.js';
+import * as meritController from './controllers/meritController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -456,6 +457,22 @@ export async function handleRequest(request, env, ctx) {
     if (!user) return errorResponse('Authentication required', 401);
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.setShiftNote(request, env);
+  }
+
+  // Chain watcher — merit tracking (member auth required to view; leadership to award/revoke)
+  if (pathname === '/api/chain-watcher/merits' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return meritController.getMerits(request, env);
+  }
+  if (pathname === '/api/chain-watcher/merits/award' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return meritController.awardMerit(request, env, user);
+  }
+  if (pathname === '/api/chain-watcher/merits/award' && method === 'DELETE') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return meritController.revokeMerit(request, env);
   }
 
   // Forums endpoints (member auth required)
