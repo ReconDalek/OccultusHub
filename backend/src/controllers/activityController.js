@@ -920,6 +920,7 @@ export async function generateEnergyWarningReport(request, env) {
     // Registry rows are read from a few days BEFORE the report window so a run
     // that began just before the 1st still has its recruit days carried in.
     const RECRUIT_LEAD_DAYS = 4;
+    const MAX_BRIDGED_GAP_DAYS = 4; // date difference; bridges up to 3 consecutive missing days
     const shiftDate = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
     const lookbackStart = shiftDate(monthStart, -RECRUIT_LEAD_DAYS);
     const coverageRows = await env.DB.prepare(`
@@ -952,8 +953,12 @@ export async function generateEnergyWarningReport(request, env) {
         } else {
           const gap = Math.round((Date.parse(e.date + 'T00:00:00Z') - Date.parse(prev.date + 'T00:00:00Z')) / 86400000);
           const sameFaction = e.faction_id === prev.faction_id;
-          if (gap === 2 && sameFaction) {
-            addRunDay(shiftDate(prev.date, 1)); // one missed cron day inside a run — bridge it
+          if (gap >= 2 && gap <= MAX_BRIDGED_GAP_DAYS && sameFaction) {
+            // Missed registry days inside a run (a failed daily fetch — same
+            // faction on both sides, up to 3 days, matching the OC inactivity
+            // logic) — bridge them. Treating these as leaving and rejoining
+            // restarted the recruit clock and wrongly removed 4 more days each time.
+            for (let k = 1; k < gap; k++) addRunDay(shiftDate(prev.date, k));
           } else if (gap !== 1 || !sameFaction) {
             runStart = e.date; // absence or transfer — new run, recruit clock restarts
           }
