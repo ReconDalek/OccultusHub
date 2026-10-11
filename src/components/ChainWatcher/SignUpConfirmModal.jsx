@@ -21,9 +21,9 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
       }}>
         <p style={{ color: '#f4f4f5', fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>What watching involves:</p>
         <ul style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-          <li>Keep an eye on the faction chain for your full hour.</li>
-          <li>Watch for members leaving hospital/jail who could end the chain, and call attacks on them.</li>
-          <li>Give the faction a heads up if the timer is running low and nobody's acted.</li>
+          <li>Be in Torn for your hour with enough energy to make a save hit if needed.</li>
+          <li>Watch the timer — if it drops to ~2 minutes, attack to keep the chain alive.</li>
+          <li>Close to a bonus? Flag it to a leader so it can be organised.</li>
         </ul>
         <p style={{ color: '#f87171', fontSize: 12.5, margin: '10px 0 0', fontWeight: 600 }}>
           Once confirmed you can't remove yourself from this shift — only a leader can free it if you can't make it.
