@@ -1112,6 +1112,13 @@ export async function generateEnergyWarningReport(request, env) {
       // IN one of the selected factions at month's end — real energy earned
       // under a selected faction earlier in the month doesn't matter if
       // they'd already moved on by the time the month closed.
+      // A member with NO registry rows at all this month, while the registry
+      // clearly covers the month for everyone else, wasn't in the faction in
+      // it (e.g. left for months and only rejoined after the report window) —
+      // the current-faction fallback below would otherwise judge them over the
+      // whole month at 0 energy. The fallback stays for months the registry
+      // has no data for at all.
+      if (!segmentsByUser[r.torn_user_id] && Object.keys(segmentsByUser).length > 0) continue;
       const endOfMonthFaction = endOfMonthFactionByUser[r.torn_user_id] ?? r.current_faction_id;
       if (!factions.includes(endOfMonthFaction)) continue;
 
