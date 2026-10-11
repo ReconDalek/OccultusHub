@@ -876,7 +876,7 @@ export async function generateChainWarningReport(request, env) {
           return daysInFactionNow - daysSinceChainStart;
         }
 
-        const members = [
+        const allCandidates = [
           ...activeHits.map(h => ({
             torn_user_id:  h.torn_user_id,
             username:      h.username,
@@ -906,10 +906,15 @@ export async function generateChainWarningReport(request, env) {
             at_kick_threshold: (kickCounts[r.torn_user_id] ?? 0) >= 3,
             _estDays:      estimatedDaysInFactionAtChainStart(r.days_in_faction),
           })),
-        ]
+        ];
+        const members = allCandidates
           .filter(m => m._estDays == null || m._estDays >= 3)
           .map(({ _estDays, ...m }) => ({ ...m, just_joined: _estDays != null && _estDays < 10 }))
           .sort((a, b) => b.total_attacks - a.total_attacks);
+        // Shown in the UI so it's clear who was left out as a recruit.
+        const recruitsExcluded = allCandidates
+          .filter(m => m._estDays != null && m._estDays < 3)
+          .map(m => m.username);
 
         chains.push({
           faction_id: factionId,
@@ -919,6 +924,7 @@ export async function generateChainWarningReport(request, env) {
           start_at: chain.start_at,
           end_at: chain.end_at,
           prep_start_date: prepStart,
+          recruits_excluded: recruitsExcluded,
           members,
         });
       }

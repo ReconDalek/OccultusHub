@@ -536,10 +536,10 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                   )}
                   {m.partial_membership && (
                     <span
-                      title={`Counted for ${m.partial_membership.tracked_days} of ${m.partial_membership.window_days} days this month, across all our factions (not just their current one) (${m.partial_membership.first_date} → ${m.partial_membership.last_date}). They left and rejoined or transferred in, and the first days after any join/transfer are recruit days that don't count. Average is over the countable days only.`}
+                      title={`Counted for ${m.partial_membership.tracked_days} of ${m.partial_membership.window_days} days this month, across all our factions (not just their current one). Recruit days (the first days after joining, rejoining or moving between our factions) are not counted: ${m.partial_membership.recruit_days_removed || 0} removed (${m.partial_membership.first_date} → ${m.partial_membership.last_date}). They left and rejoined or transferred in, and the first days after any join/transfer are recruit days that don't count. Average is over the countable days only.`}
                       style={{ color: '#f59e0b', marginLeft: '4px' }}
                     >
-                      ↩ {m.partial_membership.tracked_days} of {m.partial_membership.window_days} days counted
+                      ↩ {m.partial_membership.tracked_days} of {m.partial_membership.window_days} days counted{m.partial_membership.recruit_days_removed > 0 && ` · ${m.partial_membership.recruit_days_removed} recruit day${m.partial_membership.recruit_days_removed !== 1 ? 's' : ''} removed`}
                     </span>
                   )}
                 </span>
@@ -1031,6 +1031,12 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, bootedMap, onRepo
           Chain of {fmt(chain.chain_length)} hits · {fmtChainDate(chain.start_at)} – {fmtChainDate(chain.end_at)} · {fmt(chain.respect)} respect
         </span>
       </div>
+
+      {chain.recruits_excluded?.length > 0 && (
+        <div style={{ padding: '6px 16px', color: 'var(--text-faint)', fontSize: '11px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          Recruits not counted (under 3 days in the faction at chain start): {chain.recruits_excluded.join(', ')}
+        </div>
+      )}
 
       {visibleMembers.length === 0 && exemptedMembers.length === 0 ? (
         <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '16px' }}>Every member met the target for this chain.</p>
@@ -1669,6 +1675,9 @@ function WarGenerator({ onWarningSaved }) {
 
   return (
     <div>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 14px' }}>
+        Recruits are not excluded here: everyone on the roster when the war started is checked.
+      </p>
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '18px' }}>
         <div>
           <label style={labelStyle}>Month</label>
@@ -1929,7 +1938,7 @@ function OCGenerator({ onWarningSaved }) {
   return (
     <div>
       <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 14px' }}>
-        24h+ outside any OC, after recruit and a {graceDays}-day leeway.
+        24h+ outside any OC. The first 3 days after joining, rejoining or moving between our factions (recruit) aren't counted, plus a {graceDays}-day leeway.
       </p>
 
       {/* Controls */}

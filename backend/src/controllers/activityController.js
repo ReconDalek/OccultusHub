@@ -1164,6 +1164,11 @@ export async function generateEnergyWarningReport(request, env) {
       // isn't a brand-new recruit (rejoined, or transferred in) — lets the UI
       // explain why their day count is short.
       const partialMembership = covered && trackedDays < reportWindowDays && !isBrandNewMember;
+      // Registered days this month that were dropped as recruit days (first
+      // days after any join / rejoin / transfer between our factions).
+      const recruitDaysRemoved = covered
+        ? (registryByUser[r.torn_user_id] || []).filter(e => e.date >= monthStart && e.date <= monthEnd && !covered.has(e.date)).length
+        : 0;
 
       // Exemptions: an "entire month" exemption (Exemptions tab's Entire
       // Month mode sets date_start/date_end to exactly the calendar month's
@@ -1270,10 +1275,10 @@ export async function generateEnergyWarningReport(request, env) {
         // Not brand new, but wasn't registered in the faction for the whole
         // report window (left and rejoined, or transferred in) — tracked_days
         // is already scoped to the days they were here.
-        partial_membership: partialMembership
+        partial_membership: (partialMembership || recruitDaysRemoved > 0)
           ? (() => {
               const sorted = [...covered].sort();
-              return { tracked_days: trackedDays, window_days: reportWindowDays, first_date: sorted[0], last_date: sorted[sorted.length - 1] };
+              return { tracked_days: trackedDays, window_days: reportWindowDays, first_date: sorted[0], last_date: sorted[sorted.length - 1], recruit_days_removed: recruitDaysRemoved };
             })()
           : null,
         tracked_days:     effectiveTrackedDays,
