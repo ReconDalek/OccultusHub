@@ -50,6 +50,60 @@ async function addWarningExclusion(warningType, year, month, tornUserId, usernam
   return json.id
 }
 
+// -- Boot UI shared by every generator ---------------------------------------
+function BootedTag({ date }) {
+  return (
+    <span style={{
+      marginLeft: '6px', color: '#c084fc', fontSize: '10px', fontWeight: '700',
+      padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
+      background: 'rgba(168,85,247,0.18)', border: '1px solid rgba(168,85,247,0.5)',
+    }}>
+      BOOTED{date ? ` ${fmtShortDate(String(date).slice(0, 10))}` : ''}
+    </span>
+  )
+}
+function BootButton({ onClick }) {
+  return (
+    <button onClick={onClick}
+      title="Mark as booted — highlights them and records the date on the Warnings tab, without adding a warning"
+      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(168,85,247,0.35)', background: 'transparent', color: '#c084fc', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+      Boot
+    </button>
+  )
+}
+function BootedButton({ onClick }) {
+  return (
+    <button onClick={onClick}
+      title="Booted — click to undo. Doesn't count toward the warning total."
+      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(168,85,247,0.5)', background: 'rgba(168,85,247,0.18)', color: '#c084fc', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+      ✓ Booted
+    </button>
+  )
+}
+// Boot toggle for a generator. Boots live in the same exclusion map (so they
+// act as excused everywhere); bootedMap just marks which of those are boots.
+function useBoots(warningType, selectedMonth, excludedMap, setExcludedMap) {
+  const [bootedMap, setBootedMap] = useState(new Map()) // torn_user_id -> created_at
+  function handleToggleBoot(m) {
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
+    const existingId = excludedMap.get(m.torn_user_id)
+    if (existingId && bootedMap.has(m.torn_user_id)) {
+      setExcludedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      setBootedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      removeWarningExclusion(existingId).catch(() => {})
+    } else {
+      addWarningExclusion(warningType, year, month, m.torn_user_id, m.username, 'boot')
+        .then(id => {
+          setExcludedMap(prev => new Map(prev).set(m.torn_user_id, id))
+          setBootedMap(prev => new Map(prev).set(m.torn_user_id, new Date().toISOString()))
+        })
+        .catch(() => {})
+    }
+  }
+  return { bootedMap, setBootedMap, handleToggleBoot }
+}
+
 // Which target applies to a member. Normally their current faction's — but a
 // member who moved factions during the month is badged with where they are
 // NOW, which may not be a faction this report has a target for (e.g. an Occ3
@@ -965,7 +1019,7 @@ function filterChainMembers(chain, targets) {
   }
 }
 
-function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggleExclude }) {
+function ChainCard({ chain, targets, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot }) {
   const { hasTarget, target, visibleMembers, exemptedMembers } = filterChainMembers(chain, targets)
   const colTemplate = '30px 1fr 90px 70px 60px 100px 160px'
 
@@ -1003,18 +1057,20 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
               // and excludedMap's existing convention.
               const reported = reportedIds.has(m.torn_user_id)
               const excluded = excludedMap.has(m.torn_user_id)
+              const booted = bootedMap.has(m.torn_user_id)
               const flagged = hasTarget && delta < 0 && !excluded
 
               return (
                 <div key={m.torn_user_id} style={{
                   display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
                   gap: '8px', padding: '9px 12px', borderRadius: '8px',
-                  background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
-                  border: flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+                  background: booted ? 'rgba(168,85,247,0.12)' : flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+                  border: booted ? '1px solid rgba(168,85,247,0.45)' : flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
                 }}>
                   <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
                   <div style={{ minWidth: 0 }}>
                     <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+{booted && <BootedTag date={bootedMap.get(m.torn_user_id)} />}
                     {m.at_kick_threshold && (
                       <span
                         title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
@@ -1046,7 +1102,9 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
                   <div style={{ display: 'flex', gap: '6px' }}>
                     {reported ? (
                       <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
-                    ) : excluded ? (
+                    ) : booted ? (
+<BootedButton onClick={() => onToggleBoot(m)} />
+) : excluded ? (
                       <button onClick={() => onToggleExclude(m)}
                         title="Excused for this month — click to undo"
                         style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
@@ -1063,6 +1121,7 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, onReport, onToggl
                           style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
                           Excuse
                         </button>
+<BootButton onClick={() => onToggleBoot(m)} />
                       </>
                     )}
                   </div>
@@ -1094,6 +1153,7 @@ function ChainGenerator({ onWarningSaved }) {
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
   const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
+  const { bootedMap, setBootedMap, handleToggleBoot } = useBoots('Chain', selectedMonth, excludedMap, setExcludedMap)
   const [reportingItem, setReportingItem] = useState(null) // { member, chain }
   const [summaryOpen, setSummaryOpen] = useState(false)
 
@@ -1120,9 +1180,9 @@ function ChainGenerator({ onWarningSaved }) {
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/warnings/generate/chain?${params}`, { headers: { Authorization: token() } })
         .then(res => res.json().then(json => ({ res, json }))),
-      fetchWarningExclusions('Chain', year, month),
+      fetchWarningExclusionsDetailed('Chain', year, month),
     ])
-      .then(([{ res, json }, exclusionsMap]) => {
+      .then(([{ res, json }, { map: exclusionsMap, booted }]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         // Already-warned members (real member_warnings rows for this month's
@@ -1131,6 +1191,7 @@ function ChainGenerator({ onWarningSaved }) {
         const warnedIds = json.chains.flatMap(c => c.members).filter(m => m.already_warned).map(m => m.torn_user_id)
         setReportedIds(new Set(warnedIds))
         setExcludedMap(exclusionsMap)
+        setBootedMap(booted)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -1283,8 +1344,10 @@ function ChainGenerator({ onWarningSaved }) {
               targets={targets}
               reportedIds={reportedIds}
               excludedMap={excludedMap}
+              bootedMap={bootedMap}
               onReport={setReportingItem}
               onToggleExclude={handleToggleExclude}
+              onToggleBoot={handleToggleBoot}
             />
           ))}
         </>
@@ -1334,7 +1397,7 @@ function fmtWarDate(epochSeconds) {
 // extraCols: optional [{ label, width, render(m) }] columns shown between
 // Detail and the action buttons (the no-login list uses them for war hits /
 // net respect).
-function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onToggleExclude, detailFor, extraCols = [] }) {
+function WarFlagList({ label, members, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot, detailFor, extraCols = [] }) {
   const candidates = members.filter(m => !m.exemption)
   const exempted   = members.filter(m => m.exemption)
   const colTemplate = ['1fr', '200px', ...extraCols.map(c => c.width), '150px'].join(' ')
@@ -1365,15 +1428,17 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
             {candidates.map((m, i) => {
               const reported = reportedIds.has(m.torn_user_id)
               const excluded = excludedMap.has(m.torn_user_id)
+              const booted = bootedMap.has(m.torn_user_id)
               return (
                 <div key={m.torn_user_id} style={{
                   display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center', gap: '8px',
                   padding: '9px 10px', borderRadius: '8px',
-                  background: !excluded ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
-                  border: !excluded ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+                  background: booted ? 'rgba(168,85,247,0.12)' : !excluded ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+                  border: booted ? '1px solid rgba(168,85,247,0.45)' : !excluded ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
                 }}>
                   <div style={{ minWidth: 0 }}>
                     <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+{booted && <BootedTag date={bootedMap.get(m.torn_user_id)} />}
                     {m.at_kick_threshold && (
                       <span
                         title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
@@ -1395,7 +1460,9 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
                   <div style={{ display: 'flex', gap: '6px' }}>
                     {reported ? (
                       <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
-                    ) : excluded ? (
+                    ) : booted ? (
+<BootedButton onClick={() => onToggleBoot(m)} />
+) : excluded ? (
                       <button onClick={() => onToggleExclude(m)}
                         title="Excused for this month — click to undo"
                         style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
@@ -1412,6 +1479,7 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
                           style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
                           Excuse
                         </button>
+<BootButton onClick={() => onToggleBoot(m)} />
                       </>
                     )}
                   </div>
@@ -1451,7 +1519,7 @@ function WarFlagList({ label, members, reportedIds, excludedMap, onReport, onTog
   )
 }
 
-function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleExclude }) {
+function WarCard({ war, minActive, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot }) {
   const loginLabel = minActive > 0 ? `No login / under ${minActive} min active during the war` : 'No login during the war'
   // War hits + net respect alongside each flagged member, so it's clear at a
   // glance whether a low-activity flag is worth a warning.
@@ -1480,8 +1548,10 @@ function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleE
         members={war.revives_on}
         reportedIds={reportedIds}
         excludedMap={excludedMap}
+        bootedMap={bootedMap}
         onReport={(m) => onReport({ member: m, war, reason: 'Revives set to "Everyone" at war start' })}
         onToggleExclude={onToggleExclude}
+        onToggleBoot={onToggleBoot}
         detailFor={(m) => `Revive setting: ${m.revive_setting || 'unknown'}`}
       />
 
@@ -1494,8 +1564,10 @@ function WarCard({ war, minActive, reportedIds, excludedMap, onReport, onToggleE
             members={war.no_login}
             reportedIds={reportedIds}
             excludedMap={excludedMap}
+        bootedMap={bootedMap}
             onReport={(m) => onReport({ member: m, war, reason: m.reason || 'No login recorded during the war' })}
             onToggleExclude={onToggleExclude}
+        onToggleBoot={onToggleBoot}
             extraCols={perfCols}
             detailFor={(m) => {
               const seen = m.last_action_at_end ? `Last seen ${fmtWarDate(m.last_action_at_end)}` : 'No recent login'
@@ -1532,6 +1604,7 @@ function WarGenerator({ onWarningSaved }) {
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
   const [excludedMap, setExcludedMap] = useState(new Map())
+  const { bootedMap, setBootedMap, handleToggleBoot } = useBoots('War', selectedMonth, excludedMap, setExcludedMap)
   const [reportingItem, setReportingItem] = useState(null) // { member, war, reason }
   // Also flag members who logged in but were active under this many minutes
   // across the war (Torn's activity time from the daily stats snapshots). 0 = off.
@@ -1561,9 +1634,9 @@ function WarGenerator({ onWarningSaved }) {
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/warnings/generate/war?${params}`, { headers: { Authorization: token() } })
         .then(res => res.json().then(json => ({ res, json }))),
-      fetchWarningExclusions('War', year, month),
+      fetchWarningExclusionsDetailed('War', year, month),
     ])
-      .then(([{ res, json }, exclusionsMap]) => {
+      .then(([{ res, json }, { map: exclusionsMap, booted }]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         const warnedIds = (json.wars || [])
@@ -1572,6 +1645,7 @@ function WarGenerator({ onWarningSaved }) {
           .map(m => m.torn_user_id)
         setReportedIds(new Set(warnedIds))
         setExcludedMap(exclusionsMap)
+        setBootedMap(booted)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -1695,8 +1769,10 @@ function WarGenerator({ onWarningSaved }) {
               minActive={data.min_active_minutes ?? 0}
               reportedIds={reportedIds}
               excludedMap={excludedMap}
+              bootedMap={bootedMap}
               onReport={setReportingItem}
               onToggleExclude={handleToggleExclude}
+              onToggleBoot={handleToggleBoot}
             />
           ))}
         </>
@@ -1769,6 +1845,7 @@ function OCGenerator({ onWarningSaved }) {
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
   const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
+  const { bootedMap, setBootedMap, handleToggleBoot } = useBoots('OC', selectedMonth, excludedMap, setExcludedMap)
   const [reportingMember, setReportingMember] = useState(null)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [expanded, setExpanded] = useState({})
@@ -1801,14 +1878,15 @@ function OCGenerator({ onWarningSaved }) {
           }))
           .then(json => json.members.map(m => ({ ...m, faction_id: fid })))
       })),
-      fetchWarningExclusions('OC', year, month),
+      fetchWarningExclusionsDetailed('OC', year, month),
     ])
-      .then(([memberLists, exclusionsMap]) => {
+      .then(([memberLists, { map: exclusionsMap, booted }]) => {
         const list = memberLists.flat().sort((a, b) => b.instance_count - a.instance_count || b.days - a.days)
         setRows(list)
         // Already-warned = a real member_warnings row for this month's OC type.
         setReportedIds(new Set(list.filter(m => m.already_warned).map(m => m.torn_user_id)))
         setExcludedMap(exclusionsMap)
+        setBootedMap(booted)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -1936,16 +2014,18 @@ function OCGenerator({ onWarningSaved }) {
 
       {visibleRows && visibleRows.map(m => {
         const excused = excludedMap.has(m.torn_user_id)
+        const booted = bootedMap.has(m.torn_user_id)
         const warned = reportedIds.has(m.torn_user_id)
         const key = `${m.faction_id}:${m.torn_user_id}`
         return (
-          <div key={key} style={{ ...ocCardStyle, opacity: excused ? 0.5 : 1 }}>
+          <div key={key} style={{ ...ocCardStyle, opacity: excused ? 0.5 : 1, ...(booted ? { background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.45)' } : {}) }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
               <div style={{ minWidth: 0 }}>
                 <a href={`https://www.torn.com/profiles.php?XID=${m.torn_user_id}`} target="_blank" rel="noopener noreferrer"
                   style={{ color: '#f4f4f5', fontWeight: '600', fontSize: '14px', textDecoration: 'none' }}>
                   {m.username || `#${m.torn_user_id}`}
                 </a>
+                {booted && <BootedTag date={bootedMap.get(m.torn_user_id)} />}
                 <span style={{ color: 'var(--text-secondary)', fontSize: '12px', marginLeft: '8px' }}>{FACTION_LABEL[m.faction_id]}</span>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '2px' }}>
                   {m.instance_count} instance{m.instance_count === 1 ? '' : 's'} · {m.days} day{m.days === 1 ? '' : 's'}
@@ -1957,9 +2037,12 @@ function OCGenerator({ onWarningSaved }) {
                 )}
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                <button onClick={() => handleToggleExclude(m)} style={{ ...ocPillStyle(excused), fontSize: '11px' }}>
-                  {excused ? 'Excused' : 'Excuse'}
-                </button>
+                {!booted && (
+                  <button onClick={() => handleToggleExclude(m)} style={{ ...ocPillStyle(excused), fontSize: '11px' }}>
+                    {excused ? 'Excused' : 'Excuse'}
+                  </button>
+                )}
+                {(booted || !excused) && (booted ? <BootedButton onClick={() => handleToggleBoot(m)} /> : <BootButton onClick={() => handleToggleBoot(m)} />)}
                 <button
                   onClick={() => !warned && setReportingMember(m)}
                   disabled={warned}
