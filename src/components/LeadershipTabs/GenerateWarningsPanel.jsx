@@ -558,23 +558,6 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                     ))}
                   </div>
                 )}
-                {m.exemption?.partial && (
-                  <div
-                    title={m.exemption.reason}
-                    style={{
-                      color: m.exemption.raw_avg_higher ? '#60a5fa' : '#f59e0b', fontSize: '11px', marginTop: '3px',
-                      padding: '4px 8px', borderRadius: '5px',
-                      background: m.exemption.raw_avg_higher ? 'rgba(96,165,250,0.08)' : 'transparent',
-                      border: m.exemption.raw_avg_higher ? '1px solid rgba(96,165,250,0.25)' : 'none',
-                    }}
-                  >
-                    ⚠ Exempt {fmtShortDate(m.exemption.overlap_start)}–{fmtShortDate(m.exemption.overlap_end)} ({m.exemption.excluded_days}d) —
-                    {' '}used here: {fmt(m.avg_per_day)}/day · full month (no exemption): {fmt(m.exemption.raw_avg_per_day)}/day
-                    {m.exemption.raw_avg_higher && (
-                      <> — they were more active during the excused days, so excluding them is lowering this average against them</>
-                    )}
-                  </div>
-                )}
               </div>
               {showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               {showAttacks && <span style={{ color: '#f87171', fontSize: '12px' }}>{m.attack_hits > 0 ? `+${fmt(m.attack_energy)}` : '—'}</span>}
@@ -620,6 +603,23 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                   </>
                 )}
               </div>
+                {m.exemption?.partial && (
+                  <div
+                    title={m.exemption.reason}
+                    style={{
+                      color: m.exemption.raw_avg_higher ? '#60a5fa' : '#f59e0b', fontSize: '11px', gridColumn: '1 / -1',
+                      padding: '4px 8px', borderRadius: '5px',
+                      background: m.exemption.raw_avg_higher ? 'rgba(96,165,250,0.08)' : 'transparent',
+                      border: m.exemption.raw_avg_higher ? '1px solid rgba(96,165,250,0.25)' : 'none',
+                    }}
+                  >
+                    ⚠ Exempt {fmtShortDate(m.exemption.overlap_start)}–{fmtShortDate(m.exemption.overlap_end)} ({m.exemption.excluded_days}d) —
+                    {' '}used here: {fmt(m.avg_per_day)}/day · full month (no exemption): {fmt(m.exemption.raw_avg_per_day)}/day
+                    {m.exemption.raw_avg_higher && (
+                      <> — they were more active during the excused days, so excluding them is lowering this average against them</>
+                    )}
+                  </div>
+                )}
             </div>
           )
         })}
