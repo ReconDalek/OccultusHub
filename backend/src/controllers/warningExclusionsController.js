@@ -18,7 +18,7 @@ export async function getWarningExclusions(request, env) {
     }
 
     const { results } = await env.DB.prepare(`
-      SELECT id, torn_user_id, username
+      SELECT id, torn_user_id, username, kind, created_at
       FROM warning_exclusions
       WHERE warning_type = ? AND year = ? AND month = ?
     `).bind(warningType, year, month).all();
@@ -36,6 +36,7 @@ export async function addWarningExclusion(request, env, user) {
   try {
     const body = await request.json();
     const { torn_user_id, username, warning_type, year, month } = body;
+    const kind = body.kind === 'boot' ? 'boot' : 'excuse';
 
     if (!torn_user_id || !VALID_TYPES.includes(warning_type) || !year || !month) {
       return errorResponse('Missing/invalid fields: torn_user_id, warning_type (Energy|Chain|War|OC), year, month', 400);
@@ -43,10 +44,10 @@ export async function addWarningExclusion(request, env, user) {
 
     const { meta } = await env.DB.prepare(`
       INSERT INTO warning_exclusions
-        (torn_user_id, username, warning_type, year, month, created_by, created_by_username)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (torn_user_id, username, warning_type, year, month, created_by, created_by_username, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(torn_user_id, warning_type, year, month) DO NOTHING
-    `).bind(torn_user_id, username || null, warning_type, year, month, user.tornUserId, user.username).run();
+    `).bind(torn_user_id, username || null, warning_type, year, month, user.tornUserId, user.username, kind).run();
 
     let id = meta.last_row_id;
     if (!id) {
@@ -56,7 +57,7 @@ export async function addWarningExclusion(request, env, user) {
       id = existing?.id ?? null;
     }
 
-    return jsonResponse({ message: 'Member excused for this month', id });
+    return jsonResponse({ message: kind === 'boot' ? 'Member booted' : 'Member excused for this month', id });
   } catch (err) {
     console.error('addWarningExclusion error:', err);
     return errorResponse('Failed to add warning exclusion', 500);
@@ -74,5 +75,23 @@ export async function deleteWarningExclusion(request, env) {
   } catch (err) {
     console.error('deleteWarningExclusion error:', err);
     return errorResponse('Failed to remove warning exclusion', 500);
+  }
+}
+
+// GET /api/leadership/warnings/boots
+// All booted members, newest first — shown on the Warnings overview. Booting is
+// deliberately not a member_warnings row, so it never counts toward the kick total.
+export async function getWarningBoots(request, env) {
+  try {
+    const { results } = await env.DB.prepare(`
+      SELECT id, torn_user_id, username, warning_type, year, month, created_by_username, created_at
+      FROM warning_exclusions
+      WHERE kind = 'boot'
+      ORDER BY created_at DESC
+    `).all();
+    return jsonResponse({ boots: results || [] });
+  } catch (err) {
+    console.error('getWarningBoots error:', err);
+    return errorResponse('Failed to fetch boots', 500);
   }
 }

@@ -792,7 +792,11 @@ function WarningRow({ w, expired, onDelete }) {
 
 // ─── Member card ──────────────────────────────────────────────────────────────
 
-function MemberCard({ member, windowWarnings, historicalWarnings, showAllWarnings, onDelete }) {
+function bootLabel(b) {
+  return `Booted ${fmtDate(b.created_at)} (${b.warning_type} report, ${MONTHS_FULL[b.month - 1] || b.month} ${b.year})${b.created_by_username ? ` by ${b.created_by_username}` : ''}`
+}
+
+function MemberCard({ member, windowWarnings, historicalWarnings, showAllWarnings, boots = [], onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const kickCount = windowWarnings.length
 
@@ -816,6 +820,16 @@ function MemberCard({ member, windowWarnings, historicalWarnings, showAllWarning
             {!member.is_active && <span style={{ color: '#f87171', marginLeft: '4px' }}>(departed)</span>}
           </span>
         </div>
+
+        {/* Boots are informational only — kickCount above counts warnings alone. */}
+        {boots.length > 0 && (
+          <span title={boots.map(b => bootLabel(b)).join(', ')} style={{
+            padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', whiteSpace: 'nowrap',
+            background: 'rgba(168,85,247,0.18)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.4)',
+          }}>
+            BOOTED {fmtDate(boots[0].created_at)}
+          </span>
+        )}
 
         {/* Kick-window badge — always shows 6-month count */}
         <span style={{
@@ -889,9 +903,10 @@ export default function WarningsTab() {
   const [factionFilter,    setFactionFilter]     = useState(FACTION_IDS_ALL)
   const [issuedFilter,     setIssuedFilter]      = useState('all') // 'all' | 'issued' | 'reported'
   const [typeFilter,       setTypeFilter]        = useState(WARNING_TYPES) // ['Energy','Chain','War','OC','Other']
+  const [boots,            setBoots]             = useState([])
 
   useEffect(() => {
-    Promise.all([fetchWarnings(), fetchMembers()])
+    Promise.all([fetchWarnings(), fetchMembers(), fetchBoots()])
   }, [])
 
   async function fetchWarnings() {
@@ -902,6 +917,14 @@ export default function WarningsTab() {
       setWarnings(data.warnings || [])
     } catch { /* ignore */ }
     finally { setLoading(false) }
+  }
+
+  async function fetchBoots() {
+    try {
+      const res  = await fetch(`${API_BASE_URL}/api/leadership/warnings/boots`, { headers: { Authorization: token() } })
+      const data = await res.json()
+      setBoots(data.boots || [])
+    } catch { /* ignore */ }
   }
 
   async function fetchMembers() {
@@ -1234,8 +1257,27 @@ export default function WarningsTab() {
               windowWarnings={m.windowWarnings}
               historicalWarnings={m.historicalWarnings}
               showAllWarnings={showAllWarnings}
+              boots={boots.filter(b => b.torn_user_id === parseInt(id, 10))}
               onDelete={handleDelete}
             />
+          ))}
+        </div>
+      )}
+
+      {boots.length > 0 && !search && (
+        <div style={{ marginTop: '20px' }}>
+          <p style={{ color: 'var(--text-faint)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            Booted — not counted as warnings
+          </p>
+          {boots.map(b => (
+            <div key={b.id} style={{
+              display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+              padding: '8px 14px', borderRadius: '8px', marginBottom: '6px',
+              background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)',
+            }}>
+              <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500', minWidth: '140px' }}>{b.username}</span>
+              <span style={{ color: '#c084fc', fontSize: '12px' }}>{bootLabel(b)}</span>
+            </div>
           ))}
         </div>
       )}

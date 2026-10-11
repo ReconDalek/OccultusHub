@@ -17,23 +17,56 @@ const token = () => localStorage.getItem('occultusSession')
 // the same month's report is regenerated later — including from a different
 // chain within Chain reports. ───────────────────────────────────────────────
 
-async function fetchWarningExclusions(warningType, year, month) {
+// A "boot" is stored as an exclusion with kind='boot' — it behaves like an
+// excuse here (no Warn, no red flag, dropped from the summary) but is also
+// shown on the Warnings overview with its date, and never counts as a warning.
+// `fetchWarningExclusionsDetailed` also returns the boot rows (tornId -> created_at);
+// `fetchWarningExclusions` keeps the plain tornId -> id map the other
+// generators already use (boots are in it too, so they read as excused there).
+async function fetchWarningExclusionsDetailed(warningType, year, month) {
   const params = new URLSearchParams({ warning_type: warningType, year: String(year), month: String(month) })
   const res = await fetch(`${API_BASE_URL}/api/leadership/warnings/exclusions?${params}`, { headers: { Authorization: token() } })
   const json = await res.json().catch(() => ({}))
   const map = new Map()
-  for (const e of (json.exclusions || [])) map.set(e.torn_user_id, e.id)
-  return map
+  const booted = new Map()
+  for (const e of (json.exclusions || [])) {
+    map.set(e.torn_user_id, e.id)
+    if (e.kind === 'boot') booted.set(e.torn_user_id, e.created_at)
+  }
+  return { map, booted }
 }
 
-async function addWarningExclusion(warningType, year, month, tornUserId, username) {
+async function fetchWarningExclusions(warningType, year, month) {
+  return (await fetchWarningExclusionsDetailed(warningType, year, month)).map
+}
+
+async function addWarningExclusion(warningType, year, month, tornUserId, username, kind = 'excuse') {
   const res = await fetch(`${API_BASE_URL}/api/leadership/warnings/exclusions`, {
     method: 'POST',
     headers: { Authorization: token(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ torn_user_id: tornUserId, username, warning_type: warningType, year, month }),
+    body: JSON.stringify({ torn_user_id: tornUserId, username, warning_type: warningType, year, month, kind }),
   })
   const json = await res.json()
   return json.id
+}
+
+// Which target applies to a member. Normally their current faction's — but a
+// member who moved factions during the month is badged with where they are
+// NOW, which may not be a faction this report has a target for (e.g. an Occ3
+// report at 400 showing someone who ended the month in Occ2). Falling back to
+// a faction from their movements (majority first) keeps them judged against
+// the target actually entered, so they're hidden when above it.
+function hasTargetValue(t) {
+  return t !== '' && t != null && !Number.isNaN(Number(t))
+}
+function targetFor(m, targets) {
+  const own = targets[m.faction_id]
+  if (hasTargetValue(own) || !m.movements?.length) return own
+  const ordered = [...m.movements].sort((a, b) => (b.is_majority ? 1 : 0) - (a.is_majority ? 1 : 0))
+  for (const mv of ordered) {
+    if (hasTargetValue(targets[mv.faction_id])) return targets[mv.faction_id]
+  }
+  return own
 }
 
 async function removeWarningExclusion(id) {
@@ -346,7 +379,7 @@ function ExemptionsNote({ members, targets, valueKey, valueLabel }) {
         Exemptions — below target, reason on record
       </p>
       {members.map(m => {
-        const target = targets[m.faction_id]
+        const target = targetFor(m, targets)
         return (
           <div key={m.torn_user_id} style={{
             display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap',
@@ -375,7 +408,7 @@ function ExemptionsNote({ members, targets, valueKey, valueLabel }) {
 
 // ─── Energy report table ──────────────────────────────────────────────────────
 
-function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, onToggleExclude }) {
+function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot }) {
   const showAttacks = data.include_attacks
 
   const colTemplate = showAttacks
@@ -403,23 +436,33 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
         </div>
 
         {data.members.map((m, i) => {
-          const target = targets[m.faction_id]
-          const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+          const target = targetFor(m, targets)
+          const hasTarget = hasTargetValue(target)
           const delta = hasTarget ? m.avg_per_day - Number(target) : null
           const reported = reportedIds.has(m.torn_user_id)
           const excluded = excludedMap.has(m.torn_user_id)
+          const booted = bootedMap.has(m.torn_user_id)
           const flagged = hasTarget && delta < 0 && !excluded
 
           return (
             <div key={m.torn_user_id} style={{
               display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
               gap: '8px', padding: '9px 12px', borderRadius: '8px',
-              background: flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
-              border: flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+              background: booted ? 'rgba(168,85,247,0.12)' : flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+              border: booted ? '1px solid rgba(168,85,247,0.45)' : flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
             }}>
               <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+                {booted && (
+                  <span style={{
+                    marginLeft: '6px', color: '#c084fc', fontSize: '10px', fontWeight: '700',
+                    padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
+                    background: 'rgba(168,85,247,0.18)', border: '1px solid rgba(168,85,247,0.5)',
+                  }}>
+                    BOOTED{bootedMap.get(m.torn_user_id) ? ` ${fmtShortDate(String(bootedMap.get(m.torn_user_id)).slice(0, 10))}` : ''}
+                  </span>
+                )}
                 {m.at_kick_threshold && (
                   <span
                     title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
@@ -492,6 +535,12 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
               <div style={{ display: 'flex', gap: '6px' }}>
                 {reported ? (
                   <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
+                ) : booted ? (
+                  <button onClick={() => onToggleBoot(m)}
+                    title="Booted — click to undo. Doesn't count toward the warning total."
+                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(168,85,247,0.5)', background: 'rgba(168,85,247,0.18)', color: '#c084fc', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    ✓ Booted
+                  </button>
                 ) : excluded ? (
                   <button onClick={() => onToggleExclude(m)}
                     title="Excused for this month — click to undo"
@@ -508,6 +557,11 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, onReport, 
                       title="Excuse this member for this month, without logging a formal exemption"
                       style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
                       Excuse
+                    </button>
+                    <button onClick={() => onToggleBoot(m)}
+                      title="Mark as booted — highlights them and records the date on the Warnings tab, without adding a warning"
+                      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(168,85,247,0.35)', background: 'transparent', color: '#c084fc', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      Boot
                     </button>
                   </>
                 )}
@@ -546,7 +600,8 @@ function EnergyGenerator({ onWarningSaved }) {
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
   const [reportedIds, setReportedIds] = useState(new Set())
-  const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id
+  const [excludedMap, setExcludedMap] = useState(new Map()) // torn_user_id -> exclusion id (boots included)
+  const [bootedMap, setBootedMap] = useState(new Map())     // torn_user_id -> boot created_at
   const [reportingMember, setReportingMember] = useState(null)
   const [summaryOpen, setSummaryOpen] = useState(false)
 
@@ -578,9 +633,9 @@ function EnergyGenerator({ onWarningSaved }) {
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/warnings/generate/energy?${params}`, { headers: { Authorization: token() } })
         .then(res => res.json().then(json => ({ res, json }))),
-      fetchWarningExclusions('Energy', year, month),
+      fetchWarningExclusionsDetailed('Energy', year, month),
     ])
-      .then(([{ res, json }, exclusionsMap]) => {
+      .then(([{ res, json }, { map: exclusionsMap, booted }]) => {
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
         setData(json)
         // Already-warned members (sourced from real member_warnings rows for
@@ -588,10 +643,29 @@ function EnergyGenerator({ onWarningSaved }) {
         // "✓ Warned" immediately, same persistence idea as excludedMap.
         setReportedIds(new Set(json.members.filter(m => m.already_warned).map(m => m.torn_user_id)))
         setExcludedMap(exclusionsMap)
+        setBootedMap(booted)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers])
+
+  function handleToggleBoot(m) {
+    const year  = selectedMonth.year
+    const month = selectedMonth.month + 1
+    const existingId = excludedMap.get(m.torn_user_id)
+    if (existingId && bootedMap.has(m.torn_user_id)) {
+      setExcludedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      setBootedMap(prev => { const next = new Map(prev); next.delete(m.torn_user_id); return next })
+      removeWarningExclusion(existingId).catch(() => {})
+    } else {
+      addWarningExclusion('Energy', year, month, m.torn_user_id, m.username, 'boot')
+        .then(id => {
+          setExcludedMap(prev => new Map(prev).set(m.torn_user_id, id))
+          setBootedMap(prev => new Map(prev).set(m.torn_user_id, new Date().toISOString()))
+        })
+        .catch(() => {})
+    }
+  }
 
   function handleToggleExclude(m) {
     const year  = selectedMonth.year
@@ -629,15 +703,15 @@ function EnergyGenerator({ onWarningSaved }) {
     (!excludeLowLevel || m.level == null || m.level > 15)
   ) : []
   const visibleMembers = eligibleMembers.filter(m => {
-    const target = targets[m.faction_id]
-    const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+    const target = targetFor(m, targets)
+    const hasTarget = hasTargetValue(target)
     const belowTarget = hasTarget && m.avg_per_day < Number(target)
     if (!hasTarget) return true
     return belowTarget && (!m.exemption || m.exemption.partial)
   })
   const exemptedMembers = eligibleMembers.filter(m => {
-    const target = targets[m.faction_id]
-    const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+    const target = targetFor(m, targets)
+    const hasTarget = hasTargetValue(target)
     return hasTarget && m.avg_per_day < Number(target) && m.exemption && !m.exemption.partial
   })
 
@@ -646,8 +720,8 @@ function EnergyGenerator({ onWarningSaved }) {
   const summaryRows = visibleMembers
     .filter(m => !excludedMap.has(m.torn_user_id))
     .map(m => {
-      const target = targets[m.faction_id]
-      const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
+      const target = targetFor(m, targets)
+      const hasTarget = hasTargetValue(target)
       return {
         id: m.torn_user_id,
         tornUserId: m.torn_user_id,
@@ -826,8 +900,10 @@ function EnergyGenerator({ onWarningSaved }) {
                   targets={targets}
                   reportedIds={reportedIds}
                   excludedMap={excludedMap}
+                  bootedMap={bootedMap}
                   onReport={setReportingMember}
                   onToggleExclude={handleToggleExclude}
+                  onToggleBoot={handleToggleBoot}
                 />
               </>
             )}
@@ -846,7 +922,7 @@ function EnergyGenerator({ onWarningSaved }) {
           periodLabel={periodLabel}
           periodMonth={selectedMonth.month + 1}
           periodYear={selectedMonth.year}
-          target={targets[reportingMember.faction_id]}
+          target={targetFor(reportingMember, targets)}
           onClose={() => setReportingMember(null)}
           onSaved={() => {
             setReportedIds(prev => new Set(prev).add(reportingMember.torn_user_id))

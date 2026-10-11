@@ -719,6 +719,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/warnings/exclusions' && method === 'GET') {
       return warningExclusionsController.getWarningExclusions(request, env);
     }
+    if (pathname === '/api/leadership/warnings/boots' && method === 'GET') {
+      return warningExclusionsController.getWarningBoots(request, env);
+    }
     if (pathname === '/api/leadership/warnings/exclusions' && method === 'POST') {
       return warningExclusionsController.addWarningExclusion(request, env, user);
     }
