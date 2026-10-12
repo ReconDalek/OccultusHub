@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
-  apiGet, apiSend, card, sectionTitle, sectionSub,
+  apiSend, card, sectionTitle, sectionSub,
   upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
   currentHourStart, HOUR,
 } from './chainWatcherUtils'
@@ -10,9 +10,8 @@ import NoteModal from './NoteModal'
 
 const DAYS_AHEAD = 7
 const ACCENT = '#8b5cf6'
-const SESSION_POLL_MS = 30000
 
-export default function ShiftSchedule({ factionId, shifts, onChanged }) {
+export default function ShiftSchedule({ factionId, shifts, onChanged, session }) {
   const { user } = useSession()
   const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
   const [selectedDay, setSelectedDay] = useState(() => dayStart(Math.floor(Date.now() / 1000)))
@@ -20,33 +19,28 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
   const [editingShift, setEditingShift] = useState(null) // shift object whose note is being edited
-  const [scheduledStart, setScheduledStart] = useState(null) // set while a session is 'scheduled' for this faction
   const jumpedForRef = useRef(null)
 
-  // Light independent poll — just enough to know whether a chain watch is
-  // scheduled and when, so the calendar can jump to that day and grey out
-  // the hours before it. DB-only read, no Torn API call involved. The jump
-  // happens right in the fetch callback (not a separate effect keyed off
-  // scheduledStart) so there's no cross-effect timing to reason about.
+  // Session comes from the page (shared with ChainSessionCard) so scheduling
+  // or cancelling there shows up here immediately instead of waiting on a
+  // separate poll.
+  const scheduledStart = session?.status === 'scheduled' ? session.scheduled_start : null
+
+  // Jump the calendar to the scheduled day once per distinct schedule (not
+  // on every re-poll, so a leader browsing other days isn't yanked back) —
+  // and revert back to today if that schedule is then cancelled/started/
+  // ended (scheduledStart disappearing), rather than staying frozen there.
   useEffect(() => {
-    let cancelled = false
-    const load = () => {
-      apiGet(`/api/chain-watcher/session?faction_id=${factionId}`)
-        .then(json => {
-          if (cancelled) return
-          const start = json.session?.status === 'scheduled' ? json.session.scheduled_start : null
-          setScheduledStart(start)
-          if (start != null && jumpedForRef.current !== start) {
-            jumpedForRef.current = start
-            setSelectedDay(dayStart(start))
-          }
-        })
-        .catch(() => {})
+    if (scheduledStart != null) {
+      if (jumpedForRef.current !== scheduledStart) {
+        jumpedForRef.current = scheduledStart
+        setSelectedDay(dayStart(scheduledStart))
+      }
+    } else if (jumpedForRef.current != null) {
+      jumpedForRef.current = null
+      setSelectedDay(dayStart(Math.floor(Date.now() / 1000)))
     }
-    load()
-    const t = setInterval(load, SESSION_POLL_MS)
-    return () => { cancelled = true; clearInterval(t) }
-  }, [factionId])
+  }, [scheduledStart])
 
   // The whole 7-day window starts from the scheduled day when one exists,
   // instead of always starting from today with the scheduled day spliced in.

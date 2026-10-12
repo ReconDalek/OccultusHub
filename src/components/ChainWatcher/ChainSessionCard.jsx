@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
-  apiGet, apiSend, card, sectionTitle, fmtLongDuration, tctInputToUnix,
+  apiSend, card, sectionTitle, fmtLongDuration, tctInputToUnix,
   fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
 } from './chainWatcherUtils'
 import LiveChainCard from './LiveChainCard'
 
-const SESSION_POLL_MS = 20000
 const ACCENT = '#8b5cf6'
 
 const primaryBtn = {
@@ -27,31 +26,14 @@ const dangerBtn = {
 // once a month, so there's no reason to hammer Torn's API the rest of the
 // time — LiveChainCard is only ever mounted (and so only ever polling) while
 // that's true.
-export default function ChainSessionCard({ factionId }) {
+export default function ChainSessionCard({ factionId, session, error: loadError, onChanged }) {
   const { user } = useSession()
   const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
 
-  const [session, setSession] = useState(undefined) // undefined = still loading
   const [error, setError] = useState(null)
   const [now, setNow] = useState(() => Date.now() / 1000)
   const [scheduleAt, setScheduleAt] = useState('')
   const [busy, setBusy] = useState(false)
-
-  const load = useCallback(async () => {
-    try {
-      const json = await apiGet(`/api/chain-watcher/session?faction_id=${factionId}`)
-      setSession(json.session)
-      setError(null)
-    } catch (e) {
-      setError(e.message)
-    }
-  }, [factionId])
-
-  useEffect(() => {
-    load()
-    const t = setInterval(load, SESSION_POLL_MS)
-    return () => clearInterval(t)
-  }, [load])
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now() / 1000), 1000)
@@ -62,9 +44,9 @@ export default function ChainSessionCard({ factionId }) {
     setBusy(true); setError(null)
     try {
       await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId })
-      await load()
+      await onChanged()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
-  }, [factionId, load])
+  }, [factionId, onChanged])
 
   const scheduleFor = useCallback(async () => {
     if (!scheduleAt) return
@@ -73,20 +55,22 @@ export default function ChainSessionCard({ factionId }) {
       const ts = tctInputToUnix(scheduleAt)
       await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId, scheduled_start: ts })
       setScheduleAt('')
-      await load()
+      await onChanged()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
-  }, [factionId, scheduleAt, load])
+  }, [factionId, scheduleAt, onChanged])
 
   const endWatch = useCallback(async () => {
     if (!session) return
     setBusy(true); setError(null)
     try {
       await apiSend(`/api/chain-watcher/session/${session.id}/end`, 'POST')
-      await load()
+      await onChanged()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
-  }, [session, load])
+  }, [session, onChanged])
 
-  if (session === undefined && !error) {
+  const displayError = error || loadError
+
+  if (session === undefined && !displayError) {
     return (
       <div style={card}>
         <p style={sectionTitle}>Chain Watch</p>
@@ -120,7 +104,7 @@ export default function ChainSessionCard({ factionId }) {
           Starts {fmtSlotDay(session.scheduled_start)} {fmtSlotTime(session.scheduled_start)} TCT
           {' '}({fmtSlotTimeLocal(session.scheduled_start)}{dayShift ? ` ${fmtSlotDayLocal(session.scheduled_start)}` : ''} local)
         </p>
-        {error && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{error}</p>}
+        {displayError && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{displayError}</p>}
         {isLeader && (
           <div className="flex" style={{ gap: 8, marginTop: 10 }}>
             <button onClick={startNow} disabled={busy} style={primaryBtn}>Start now</button>
@@ -135,7 +119,7 @@ export default function ChainSessionCard({ factionId }) {
     <div style={card}>
       <p style={sectionTitle}>Chain Watch</p>
       <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No chain watch scheduled.</p>
-      {error && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{error}</p>}
+      {displayError && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{displayError}</p>}
       {isLeader && (
         <div className="flex items-center" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <button onClick={startNow} disabled={busy} style={primaryBtn}>Start watching now</button>

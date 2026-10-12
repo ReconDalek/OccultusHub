@@ -7,6 +7,7 @@ import MeritTracker from '../components/ChainWatcher/MeritTracker'
 import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
 
 const SHIFTS_REFRESH_MS = 30000
+const SESSION_REFRESH_MS = 20000
 const WINDOW_SECONDS = 7 * 86400
 
 export default function ChainWatcher() {
@@ -16,6 +17,11 @@ export default function ChainWatcher() {
   )
   const [shifts, setShifts] = useState([])
   const [error, setError] = useState(null)
+  // Single source of truth for the chain-watch session — shared by
+  // ChainSessionCard and ShiftSchedule so scheduling/cancelling from one
+  // shows up in the other immediately instead of waiting on separate polls.
+  const [session, setSession] = useState(undefined) // undefined = still loading
+  const [sessionError, setSessionError] = useState(null)
 
   const loadShifts = useCallback(async () => {
     try {
@@ -28,11 +34,27 @@ export default function ChainWatcher() {
     }
   }, [factionId])
 
+  const loadSession = useCallback(async () => {
+    try {
+      const json = await apiGet(`/api/chain-watcher/session?faction_id=${factionId}`)
+      setSession(json.session)
+      setSessionError(null)
+    } catch (e) {
+      setSessionError(e.message)
+    }
+  }, [factionId])
+
   useEffect(() => {
     loadShifts()
     const t = setInterval(loadShifts, SHIFTS_REFRESH_MS)
     return () => clearInterval(t)
   }, [loadShifts])
+
+  useEffect(() => {
+    loadSession()
+    const t = setInterval(loadSession, SESSION_REFRESH_MS)
+    return () => clearInterval(t)
+  }, [loadSession])
 
   const tabs = useMemo(() => OCC_FACTIONS, [])
 
@@ -66,9 +88,9 @@ export default function ChainWatcher() {
 
       {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
-      <ChainSessionCard factionId={factionId} />
+      <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} />
       <WatcherBanner shifts={shifts} />
-      <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} />
+      <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
       <MeritTracker factionId={factionId} />
     </div>
   )
