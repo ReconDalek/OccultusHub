@@ -55,6 +55,8 @@ export default function Navbar() {
   const [grimoirePage, setGrimoirePage] = useState(null)
   const [profileOpen, setProfileOpen]   = useState(false)
   const [navStats, setNavStats]         = useState(null)
+  const [discordStatus, setDiscordStatus] = useState(null)
+  const [discordBusy, setDiscordBusy]     = useState(false)
   const dropdownRef  = useRef(null)
   const logoClickRef = useRef({ count: 0, timer: null })
 
@@ -65,7 +67,51 @@ export default function Navbar() {
       .then(r => r.json())
       .then(setNavStats)
       .catch(() => {})
+    fetch(`${API_BASE_URL}/api/discord/status`, { headers: { Authorization: token } })
+      .then(r => r.json())
+      .then(setDiscordStatus)
+      .catch(() => {})
   }, [dropdownOpen, user?.tornUserId])
+
+  // Discord OAuth redirects back here with ?discord=linked|error — pick that
+  // up, clean the URL, and pop the dropdown open so the result is visible.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('discord')
+    if (!result) return
+    window.history.replaceState({}, '', window.location.pathname)
+    if (result === 'linked' && user?.tornUserId) {
+      const token = localStorage.getItem('occultusSession')
+      fetch(`${API_BASE_URL}/api/discord/status`, { headers: { Authorization: token } })
+        .then(r => r.json())
+        .then(setDiscordStatus)
+        .catch(() => {})
+      setDropdown(true)
+    }
+  }, [user?.tornUserId])
+
+  const linkDiscord = async () => {
+    setDiscordBusy(true)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      const res = await fetch(`${API_BASE_URL}/api/discord/auth`, { headers: { Authorization: token } })
+      const data = await res.json()
+      if (data.url) window.location.href = data.url
+    } finally {
+      setDiscordBusy(false)
+    }
+  }
+
+  const unlinkDiscord = async () => {
+    setDiscordBusy(true)
+    try {
+      const token = localStorage.getItem('occultusSession')
+      await fetch(`${API_BASE_URL}/api/discord/unlink`, { method: 'DELETE', headers: { Authorization: token } })
+      setDiscordStatus({ linked: false })
+    } finally {
+      setDiscordBusy(false)
+    }
+  }
 
   useEffect(() => {
     function handler(e) {
@@ -233,6 +279,16 @@ export default function Navbar() {
                           style={{ background: 'rgba(255,255,255,0.06)' }}
                         >
                           View Full Profile
+                        </button>
+                      )}
+                      {discordStatus && (
+                        <button
+                          onClick={discordStatus.linked ? unlinkDiscord : linkDiscord}
+                          disabled={discordBusy}
+                          className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"
+                          style={{ background: discordStatus.linked ? 'rgba(88,101,242,0.18)' : 'rgba(255,255,255,0.06)', opacity: discordBusy ? 0.6 : 1 }}
+                        >
+                          {discordStatus.linked ? `Unlink Discord (${discordStatus.discordUsername})` : 'Link Discord'}
                         </button>
                       )}
                       {user.isLeader && pages.leadership && (
