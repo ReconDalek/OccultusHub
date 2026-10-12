@@ -58,9 +58,10 @@ const PENALTY_FLOOR = 0.7; // combined penalties never drop a score below 70% of
 export const MERIT_FORMULA_NOTE =
   'Score = hits × activity × rank × standing\n\n' +
   'hits — chain + war hits, last 12 months\n' +
-  'activity — avg(month hits ÷ faction avg, cap 2x) + energy bonus + presence bonus\n' +
-  'rank — 1.00–1.15, Acolyte to leadership\n' +
-  'standing — −≤15% warnings, −≤15% OC inactivity, floor 0.7';
+  "activity — your monthly hits vs. the faction's average that month (one big month can't count for more than double), " +
+  'plus small bonuses for average energy and time spent active online\n' +
+  'rank — small bump for earned rank: 1.00 up to 1.15 for leadership\n' +
+  'standing — reduced for recent warnings or OC inactivity, by at most 30% combined';
 
 function validFactionId(raw) {
   const id = parseInt(raw, 10);
