@@ -29,7 +29,7 @@ const MERIT_TYPES = Object.keys(MERIT_THRESHOLDS);
 // that moment) — so for now it's tracked manually via the Mark button.
 const SIMPLE_MERIT_TYPES = ['Chain Saver'];
 const ALL_MERIT_TYPES = [...MERIT_TYPES, ...SIMPLE_MERIT_TYPES];
-export const SIMPLE_MERIT_NOTE = 'Save a 100+ chain by hitting within 10 seconds of it dropping. Tracked manually for now.';
+export const SIMPLE_MERIT_NOTE = 'Save a 100+ chain by hitting within 10 seconds of it dropping.';
 
 // A member only shows up for a merit once they already hold its prerequisites
 // — Wishful Thinking candidates must already have Massacre AND Genocide, etc.
@@ -358,15 +358,62 @@ async function buildCandidatePool(env, factionId, energyBonusTiers) {
   });
 }
 
+const LAST_SEEN_WINDOW_DAYS = 7;
+
+// Last active/idle 30-min slot in a day's grid, as a unix timestamp — or
+// null if the member was offline/unsampled all day.
+function lastActiveSlotForDay(dayStr, slots) {
+  for (let i = slots.length - 1; i >= 0; i--) {
+    if (slots[i] === '1' || slots[i] === '2') {
+      return Math.floor(Date.parse(`${dayStr}T00:00:00Z`) / 1000) + i * 1800;
+    }
+  }
+  return null;
+}
+
+// Most recent active/idle sighting per member from the Activity Tracker
+// (sampled every 30 min) — much fresher than faction_members.last_seen_at,
+// which only updates on the 12-hourly member sync.
+async function fetchRecentActivityLastSeen(env, factionId) {
+  const to = new Date();
+  const from = new Date(to.getTime() - LAST_SEEN_WINDOW_DAYS * 86400000);
+  const url = `https://internal/api/leadership/activity/data?faction_id=${factionId}&from=${fmtDate(from)}&to=${fmtDate(to)}`;
+  try {
+    const res = await getActivityData(new Request(url), env);
+    if (!res.ok) return {};
+    const json = await res.json();
+    const map = {};
+    for (const [tornUserId, info] of Object.entries(json.members || {})) {
+      const days = Object.keys(info.d || {}).sort();
+      for (let i = days.length - 1; i >= 0; i--) {
+        const found = lastActiveSlotForDay(days[i], info.d[days[i]]);
+        if (found != null) { map[tornUserId] = found; break; }
+      }
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 // Plain roster for the unranked merit types — active members, most recently
-// seen first, no scoring.
+// seen first (Activity Tracker sighting, falling back to the daily member
+// sync for anyone with no recent activity-tracker data), no scoring.
 async function buildSimpleMeritPool(env, factionId) {
-  const { results } = await env.DB.prepare(
-    `SELECT torn_user_id, username, last_seen_at FROM faction_members
-     WHERE faction_id = ? AND is_active = 1
-     ORDER BY last_seen_at DESC`
-  ).bind(factionId).all();
-  return results || [];
+  const [{ results }, activityLastSeen] = await Promise.all([
+    env.DB.prepare(
+      `SELECT torn_user_id, username, last_seen_at FROM faction_members WHERE faction_id = ? AND is_active = 1`
+    ).bind(factionId).all(),
+    fetchRecentActivityLastSeen(env, factionId),
+  ]);
+
+  const members = (results || []).map(m => ({
+    torn_user_id: m.torn_user_id,
+    username: m.username,
+    last_seen_at: activityLastSeen[m.torn_user_id] ?? m.last_seen_at ?? null,
+  }));
+  members.sort((a, b) => (b.last_seen_at || 0) - (a.last_seen_at || 0));
+  return members;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

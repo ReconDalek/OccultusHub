@@ -281,16 +281,6 @@ export default function Navbar() {
                           View Full Profile
                         </button>
                       )}
-                      {discordStatus && (
-                        <button
-                          onClick={discordStatus.linked ? unlinkDiscord : linkDiscord}
-                          disabled={discordBusy}
-                          className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"
-                          style={{ background: discordStatus.linked ? 'rgba(88,101,242,0.18)' : 'rgba(255,255,255,0.06)', opacity: discordBusy ? 0.6 : 1 }}
-                        >
-                          {discordStatus.linked ? `Unlink Discord (${discordStatus.discordUsername})` : 'Link Discord'}
-                        </button>
-                      )}
                       {user.isLeader && pages.leadership && (
                         <Link
                           to="/leadership"
@@ -348,6 +338,16 @@ export default function Navbar() {
                           {cipherActive ? '◈ ON' : '◇ OFF'}
                         </span>
                       </button>
+                      {discordStatus && (
+                        <button
+                          onClick={discordStatus.linked ? unlinkDiscord : linkDiscord}
+                          disabled={discordBusy}
+                          className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"
+                          style={{ background: discordStatus.linked ? 'rgba(88,101,242,0.18)' : 'rgba(255,255,255,0.06)', opacity: discordBusy ? 0.6 : 1 }}
+                        >
+                          {discordStatus.linked ? `Unlink Discord (${discordStatus.discordUsername})` : 'Link Discord'}
+                        </button>
+                      )}
                       <button
                         onClick={async () => { await logout(); setDropdown(false) }}
                         className="w-full py-2.5 px-3.5 rounded-xl text-white cursor-pointer border-none transition-all hover:opacity-80"

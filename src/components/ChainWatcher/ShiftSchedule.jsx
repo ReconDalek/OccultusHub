@@ -21,17 +21,25 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
   const [editingShift, setEditingShift] = useState(null) // shift object whose note is being edited
   const [scheduledStart, setScheduledStart] = useState(null) // set while a session is 'scheduled' for this faction
+  const jumpedForRef = useRef(null)
 
   // Light independent poll — just enough to know whether a chain watch is
   // scheduled and when, so the calendar can jump to that day and grey out
-  // the hours before it. DB-only read, no Torn API call involved.
+  // the hours before it. DB-only read, no Torn API call involved. The jump
+  // happens right in the fetch callback (not a separate effect keyed off
+  // scheduledStart) so there's no cross-effect timing to reason about.
   useEffect(() => {
     let cancelled = false
     const load = () => {
       apiGet(`/api/chain-watcher/session?faction_id=${factionId}`)
         .then(json => {
           if (cancelled) return
-          setScheduledStart(json.session?.status === 'scheduled' ? json.session.scheduled_start : null)
+          const start = json.session?.status === 'scheduled' ? json.session.scheduled_start : null
+          setScheduledStart(start)
+          if (start != null && jumpedForRef.current !== start) {
+            jumpedForRef.current = start
+            setSelectedDay(dayStart(start))
+          }
         })
         .catch(() => {})
     }
@@ -40,17 +48,14 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
     return () => { cancelled = true; clearInterval(t) }
   }, [factionId])
 
-  // Jump the calendar to the scheduled day once (not on every re-poll, so a
-  // leader browsing other days isn't yanked back every 30s).
-  const jumpedForRef = useRef(null)
-  useEffect(() => {
-    if (scheduledStart != null && jumpedForRef.current !== scheduledStart) {
-      jumpedForRef.current = scheduledStart
-      setSelectedDay(dayStart(scheduledStart))
-    }
+  // The default 7-day window won't always contain a far-out scheduled day —
+  // splice it in so there's always a highlighted button to confirm the jump.
+  const days = useMemo(() => {
+    const base = upcomingDays(DAYS_AHEAD)
+    if (scheduledStart == null) return base
+    const schedDay = dayStart(scheduledStart)
+    return base.includes(schedDay) ? base : [...base, schedDay].sort((a, b) => a - b)
   }, [scheduledStart])
-
-  const days = useMemo(() => upcomingDays(DAYS_AHEAD), [])
   const byStart = useMemo(() => new Map(shifts.map(s => [s.slot_start, s])), [shifts])
   const hoursForDay = useMemo(() => Array.from({ length: 24 }, (_, h) => selectedDay + h * HOUR), [selectedDay])
   const myShifts = useMemo(
@@ -126,6 +131,21 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
       )}
 
       {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 10 }}>{error}</p>}
+
+      <div className="flex items-center" style={{ gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Showing {fmtSlotDay(selectedDay)}</span>
+        {scheduledStart != null && dayStart(scheduledStart) !== selectedDay && (
+          <button
+            onClick={() => setSelectedDay(dayStart(scheduledStart))}
+            style={{
+              fontSize: 11.5, padding: '3px 10px', borderRadius: 6, background: 'rgba(139,92,246,0.12)',
+              color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.35)', cursor: 'pointer',
+            }}
+          >
+            Jump to scheduled day ({fmtSlotDay(dayStart(scheduledStart))})
+          </button>
+        )}
+      </div>
 
       <div className="flex" style={{ gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 10 }}>
         {days.map(d => (
