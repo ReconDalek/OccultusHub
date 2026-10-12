@@ -56,6 +56,7 @@ export default function MeritTracker({ factionId }) {
   const candidates = data.candidates[activeType] || []
   const awardedCount = data.awardedCounts?.[activeType] || 0
   const thresholds = data.thresholds?.[activeType] || []
+  const prerequisites = data.prerequisites?.[activeType] || []
 
   return (
     <div style={card}>
@@ -96,10 +97,15 @@ export default function MeritTracker({ factionId }) {
 
       <p style={{ fontSize: 11.5, color: 'var(--text-faint)', margin: '0 0 10px' }}>
         {awardedCount} member{awardedCount === 1 ? '' : 's'} already have {activeType}.
+        {prerequisites.length > 0 && ` Only shown here once they already have ${prerequisites.join(' and ')}.`}
       </p>
 
       {candidates.length === 0 ? (
-        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members — everyone active has this merit.</p>
+        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>
+          No eligible members{prerequisites.length > 0
+            ? ` — either nobody in the faction has ${prerequisites.join(' and ')} yet, or everyone who does already has ${activeType}.`
+            : ' — everyone active has this merit.'}
+        </p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {candidates.map((c, i) => (

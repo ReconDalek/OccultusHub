@@ -18,6 +18,14 @@ export const MERIT_THRESHOLDS = {
 };
 const MERIT_TYPES = Object.keys(MERIT_THRESHOLDS);
 
+// A member only shows up for a merit once they already hold its prerequisites
+// — Wishful Thinking candidates must already have Massacre AND Genocide, etc.
+export const MERIT_PREREQUISITES = {
+  Massacre: [],
+  Genocide: ['Massacre'],
+  'Wishful Thinking': ['Massacre', 'Genocide'],
+};
+
 export const MERIT_FORMULA_NOTE =
   'Score = (chain hits in the last 12 months) × (% of those months with 50+ hits) × a small rank weight (1.00–1.15, ' +
   'Acolyte through leadership). Recent contribution drives the score; rank only nudges it.';
@@ -170,8 +178,10 @@ export async function getMerits(request, env) {
 
     const candidates = {};
     for (const type of MERIT_TYPES) {
+      const prereqs = MERIT_PREREQUISITES[type];
       candidates[type] = sorted
         .filter(m => !awardedSet.has(`${m.torn_user_id}:${type}`))
+        .filter(m => prereqs.every(p => awardedSet.has(`${m.torn_user_id}:${p}`)))
         .slice(0, CANDIDATE_LIMIT);
     }
 
@@ -179,7 +189,14 @@ export async function getMerits(request, env) {
       MERIT_TYPES.map(type => [type, (awardedResult.results || []).filter(r => r.merit_type === type).length])
     );
 
-    return jsonResponse({ meritTypes: MERIT_TYPES, thresholds: MERIT_THRESHOLDS, formula: MERIT_FORMULA_NOTE, candidates, awardedCounts });
+    return jsonResponse({
+      meritTypes: MERIT_TYPES,
+      thresholds: MERIT_THRESHOLDS,
+      prerequisites: MERIT_PREREQUISITES,
+      formula: MERIT_FORMULA_NOTE,
+      candidates,
+      awardedCounts,
+    });
   } catch (err) {
     console.error('getMerits error:', err);
     return errorResponse('Failed to fetch merit candidates', 500);
