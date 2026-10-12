@@ -56,10 +56,11 @@ const OC_PENALTY_CAP = 0.15;
 const PENALTY_FLOOR = 0.7; // combined penalties never drop a score below 70% of unpenalized
 
 export const MERIT_FORMULA_NOTE =
-  'Score = (chain + war hits, last 12 months) × activity factor × rank weight × standing penalty. ' +
-  'Activity factor = average of (your monthly hits ÷ faction average that month, capped at 2x) + a small bonus ' +
-  'for average energy and for time spent active online. Rank weight is 1.00–1.15 (Acolyte through leadership). ' +
-  'Standing penalty docks up to 15% for recent warnings and up to 15% for recent OC inactivity, never more than 30% combined.';
+  'Score = hits × activity × rank × standing\n\n' +
+  'hits — chain + war hits, last 12 months\n' +
+  'activity — avg(month hits ÷ faction avg, cap 2x) + energy bonus + presence bonus\n' +
+  'rank — 1.00–1.15, Acolyte to leadership\n' +
+  'standing — −≤15% warnings, −≤15% OC inactivity, floor 0.7';
 
 function validFactionId(raw) {
   const id = parseInt(raw, 10);

@@ -64,9 +64,13 @@ export default function MeritTracker({ factionId }) {
       </p>
 
       {showFormula && (
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+        <pre style={{
+          fontSize: 12, fontFamily: 'inherit', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)',
+          border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 10px', marginBottom: 10,
+          whiteSpace: 'pre-wrap', margin: '0 0 10px',
+        }}>
           {data.formula}
-        </p>
+        </pre>
       )}
 
       <div className="flex" style={{ gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
