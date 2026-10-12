@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSession } from '../../hooks/useSession'
 import { apiGet, card, sectionTitle, sectionSub } from './chainWatcherUtils'
 
 const REFRESH_MS = 60000
@@ -10,9 +9,6 @@ function fmtPct(n) {
 }
 
 export default function MeritTracker({ factionId }) {
-  const { user } = useSession()
-  const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
-
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [activeType, setActiveType] = useState(null)
@@ -126,7 +122,10 @@ export default function MeritTracker({ factionId }) {
                   {c.username}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) · {fmtPct(c.consistency)} consistency
+                  {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
+                  <span title="% of the last 12 months with 50+ chain hits in at least one chain">
+                    {fmtPct(c.consistency)} consistency
+                  </span>
                 </div>
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
@@ -135,12 +134,6 @@ export default function MeritTracker({ factionId }) {
             </div>
           ))}
         </div>
-      )}
-
-      {isLeader && awardedCount > 0 && (
-        <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>
-          Need to correct a wrongly-attributed {activeType}? Let me know who and I'll remove it.
-        </p>
       )}
     </div>
   )
