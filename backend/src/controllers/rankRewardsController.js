@@ -67,7 +67,7 @@ async function energyAveragesFor(env, year, month) {
 }
 
 // Highest active threshold within a category the value reaches.
-function bestBonus(bonuses, category, value) {
+export function bestBonus(bonuses, category, value) {
   if (value == null) return null;
   let best = null;
   for (const b of bonuses) {

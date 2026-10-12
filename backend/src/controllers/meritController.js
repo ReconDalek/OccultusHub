@@ -1,7 +1,10 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { LEADERSHIP_ROLES } from '../middleware/auth.js';
-import { getDerivedRank } from './rankRewardsController.js';
+import { getDerivedRank, loadRewardConfig, bestBonus } from './rankRewardsController.js';
 import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
+import { generateEnergyWarningReport } from './activityController.js';
+import { getActivityData } from './factionActivityController.js';
+import { getInactivity } from './ocInactivityController.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -26,9 +29,6 @@ export const MERIT_PREREQUISITES = {
   'Wishful Thinking': ['Massacre', 'Genocide'],
 };
 
-export const MERIT_FORMULA_NOTE =
-  'Score = (chain + war hits in the last 12 months) × (% of those months with 50+ combined hits) × rank weight (1.00–1.15).';
-
 // Small, deliberately narrow weighting by earned rank — contribution should
 // decide this, not seniority, so the full spread top-to-bottom is capped at
 // 15%. Every rank tier still gets its own step; none are skipped/collapsed.
@@ -36,6 +36,30 @@ const RANK_MOD = {
   Acolyte: 1.000, Adept: 1.025, Arcanist: 1.050, Sentinel: 1.075, Doomsayer: 1.100, Harbinger: 1.125,
 };
 const LEADERSHIP_RANK_MOD = 1.150;
+
+// A single month counts for at most 2x the faction's own average that month
+// — otherwise one outlier chain could dominate a member's whole year.
+const MONTH_RATIO_CAP = 2;
+// Small additive nudges from being generally active — energy reuses the same
+// bonus tiers Rank Rewards already exposes to leadership; presence is simple
+// % of sampled 30-min slots spent active over the trailing window.
+const PRESENCE_WINDOW_DAYS = 30;
+const PRESENCE_BONUS_MAX = 0.2;
+// Slight, capped negative modifiers — never enough alone to tank someone out
+// of contention.
+const WARNINGS_WINDOW_MONTHS = 6;
+const WARNING_PENALTY_PER = 0.05;
+const WARNING_PENALTY_CAP = 0.15;
+const OC_INACTIVITY_WINDOW_DAYS = 90;
+const OC_PENALTY_PER_DAY = 0.01;
+const OC_PENALTY_CAP = 0.15;
+const PENALTY_FLOOR = 0.7; // combined penalties never drop a score below 70% of unpenalized
+
+export const MERIT_FORMULA_NOTE =
+  'Score = (chain + war hits, last 12 months) × activity factor × rank weight × standing penalty. ' +
+  'Activity factor = average of (your monthly hits ÷ faction average that month, capped at 2x) + a small bonus ' +
+  'for average energy and for time spent active online. Rank weight is 1.00–1.15 (Acolyte through leadership). ' +
+  'Standing penalty docks up to 15% for recent warnings and up to 15% for recent OC inactivity, never more than 30% combined.';
 
 function validFactionId(raw) {
   const id = parseInt(raw, 10);
@@ -52,6 +76,14 @@ function meritTypeForChainPosition(position) {
     if (thresholds.includes(position)) return type;
   }
   return null;
+}
+
+function prevMonth(y, m) {
+  return m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+}
+
+function fmtDate(d) {
+  return d.toISOString().slice(0, 10);
 }
 
 // Fetches a chain's bonus-hit list from Torn and records (a) the raw bonus
@@ -94,17 +126,112 @@ export async function recordChainBonusHits(env, tornChainId, factionId) {
   }
 }
 
-// Builds the ranked candidate pool for a faction: chain + war hits over the
-// last 12 months (combined per month, since Occ1/Occ2 rarely chain outside
-// Torn's own events — chain-only activity would flatten their scores to
-// near-zero even for genuinely active members), weighted by how many of
-// those months cleared 50+ combined hits, weighted again (lightly) by the
-// member's established rank.
-async function buildCandidatePool(env, factionId) {
+// Last completed calendar month's average daily energy per member — same
+// internal-call pattern and same report rankRewardsController's energy
+// bonus already relies on, so the numbers match what leadership sees there.
+async function fetchEnergyAverages(env) {
+  const now = new Date();
+  const { year, month } = prevMonth(now.getUTCFullYear(), now.getUTCMonth() + 1);
+  const url = `https://internal/api/leadership/warnings/generate/energy?year=${year}&month=${month}` +
+              `&factions=${FACTION_IDS.join(',')}&includeAttacks=1&includeNewMembers=1`;
+  try {
+    const res = await generateEnergyWarningReport(new Request(url), env);
+    if (!res.ok) return {};
+    const json = await res.json();
+    const map = {};
+    for (const m of (json.members || [])) map[m.torn_user_id] = m.avg_per_day ?? 0;
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// % of sampled 30-min activity slots spent "active" (took an action, not
+// just idle-online) over the trailing window, per member.
+async function fetchPresenceRatios(env, factionId) {
+  const to = new Date();
+  const from = new Date(to.getTime() - PRESENCE_WINDOW_DAYS * 86400000);
+  const url = `https://internal/api/leadership/activity/data?faction_id=${factionId}&from=${fmtDate(from)}&to=${fmtDate(to)}`;
+  try {
+    const res = await getActivityData(new Request(url), env);
+    if (!res.ok) return {};
+    const json = await res.json();
+    const map = {};
+    for (const [tornUserId, info] of Object.entries(json.members || {})) {
+      let active = 0, sampled = 0;
+      for (const slots of Object.values(info.d || {})) {
+        for (const ch of slots) {
+          if (ch === '.') continue;
+          sampled++;
+          if (ch === '2') active++;
+        }
+      }
+      map[tornUserId] = sampled > 0 ? active / sampled : 0;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// Inactive days per member over the trailing window (24h+ out of any OC).
+async function fetchOcInactiveDays(env, factionId) {
+  const to = new Date();
+  const from = new Date(to.getTime() - OC_INACTIVITY_WINDOW_DAYS * 86400000);
+  const url = `https://internal/api/leadership/oc/inactivity?faction_id=${factionId}&from=${fmtDate(from)}&to=${fmtDate(to)}`;
+  try {
+    const res = await getInactivity(new Request(url), env, null);
+    if (!res.ok) return {};
+    const json = await res.json();
+    const map = {};
+    for (const m of (json.members || [])) map[m.torn_user_id] = m.days || 0;
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// Warning counts per member over the trailing window. Only rows with a
+// structured period_year/period_month can be placed in the window.
+async function fetchWarningCounts(env, factionId) {
+  const now = new Date();
+  let y = now.getUTCFullYear(), mo = now.getUTCMonth() + 1;
+  for (let i = 0; i < WARNINGS_WINDOW_MONTHS; i++) ({ year: y, month: mo } = prevMonth(y, mo));
+  const cutoffYm = y * 100 + mo;
+
+  try {
+    const { results } = await env.DB.prepare(`
+      SELECT torn_user_id, COUNT(*) AS cnt
+      FROM member_warnings
+      WHERE torn_user_id IN (SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1)
+        AND period_year IS NOT NULL AND period_month IS NOT NULL
+        AND (period_year * 100 + period_month) >= ?
+      GROUP BY torn_user_id
+    `).bind(factionId, cutoffYm).all();
+    const map = {};
+    for (const r of (results || [])) map[r.torn_user_id] = r.cnt;
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+// Builds the ranked candidate pool for a faction. Core volume is chain + war
+// hits over the last 12 months; everything else is a small nudge on top —
+// see MERIT_FORMULA_NOTE for the exact shape.
+async function buildCandidatePool(env, factionId, energyBonusTiers) {
   const now = new Date();
   const cutoff = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1) / 1000;
 
-  const [{ results: members }, { results: monthlyChain }, { results: monthlyWar }] = await Promise.all([
+  const [
+    { results: members },
+    { results: monthlyChain },
+    { results: monthlyWar },
+    energyByUser,
+    presenceByUser,
+    ocInactiveDaysByUser,
+    warningCountByUser,
+  ] = await Promise.all([
     env.DB.prepare(`
       SELECT
         fm.torn_user_id, fm.username, fm.faction_position,
@@ -131,8 +258,8 @@ async function buildCandidatePool(env, factionId) {
     // War hits have no date of their own — go via ranked_wars, same fallback
     // chain (ended_at → started_at → scheduled_start) rankRewardsController
     // uses. A war_hits row with no matching ranked_wars row has no knowable
-    // date, so it can't be placed in a month and is left out here (it's
-    // still counted in lifetime_hits above, just not in the recent window).
+    // date and is left out of the monthly breakdown (still counted in
+    // lifetime_hits above, just not in the recent window).
     env.DB.prepare(`
       SELECT wh.torn_user_id,
              strftime('%Y-%m', COALESCE(rw.ended_at, rw.started_at, rw.scheduled_start), 'unixepoch') AS ym,
@@ -142,10 +269,13 @@ async function buildCandidatePool(env, factionId) {
       WHERE wh.faction_id = ? AND COALESCE(rw.ended_at, rw.started_at, rw.scheduled_start) >= ?
       GROUP BY wh.torn_user_id, ym
     `).bind(factionId, cutoff).all(),
+    fetchEnergyAverages(env),
+    fetchPresenceRatios(env, factionId),
+    fetchOcInactiveDays(env, factionId),
+    fetchWarningCounts(env, factionId),
   ]);
 
-  // Combine chain + war hits per user per month before applying the 50+
-  // threshold, so a month counts as "active" on either source.
+  // Combine chain + war hits per user per month.
   const monthsByUser = new Map();
   for (const row of [...(monthlyChain || []), ...(monthlyWar || [])]) {
     if (!row.ym) continue;
@@ -154,30 +284,64 @@ async function buildCandidatePool(env, factionId) {
     months.set(row.ym, (months.get(row.ym) || 0) + row.hits);
   }
 
+  // Faction-wide average hits per active member, per month — this is what
+  // each member's month is measured against instead of a fixed threshold,
+  // so the bar moves with how much the faction is actually chaining/warring.
+  const activeMemberCount = (members || []).length || 1;
+  const facTotalsByMonth = new Map();
+  for (const months of monthsByUser.values()) {
+    for (const [ym, hits] of months) facTotalsByMonth.set(ym, (facTotalsByMonth.get(ym) || 0) + hits);
+  }
+  const facAvgByMonth = new Map();
+  for (const [ym, total] of facTotalsByMonth) facAvgByMonth.set(ym, total / activeMemberCount);
+
   const recentByUser = new Map();
   for (const [tornUserId, months] of monthsByUser) {
     let hits = 0;
-    let activeMonths = 0;
-    for (const monthHits of months.values()) {
-      hits += monthHits;
-      if (monthHits >= 50) activeMonths += 1;
+    for (const monthHits of months.values()) hits += monthHits;
+
+    const ratios = [];
+    for (const [ym, facAvg] of facAvgByMonth) {
+      if (facAvg <= 0) continue;
+      const memberHits = months.get(ym) || 0;
+      ratios.push(Math.min(memberHits / facAvg, MONTH_RATIO_CAP));
     }
-    recentByUser.set(tornUserId, { hits, activeMonths });
+    const relativeActivity = ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : 0;
+
+    recentByUser.set(tornUserId, { hits, relativeActivity });
   }
 
   return (members || []).map((m) => {
-    const recent = recentByUser.get(m.torn_user_id) || { hits: 0, activeMonths: 0 };
-    const consistency = Math.min(1, recent.activeMonths / 12);
+    const recent = recentByUser.get(m.torn_user_id) || { hits: 0, relativeActivity: 0 };
     const rankMod = rankModFor(m.faction_position, m.lifetime_hits || 0);
     const rank = LEADERSHIP_ROLES.includes(m.faction_position) ? m.faction_position : getDerivedRank(m.lifetime_hits || 0);
+
+    const avgEnergy = energyByUser[m.torn_user_id];
+    const energyBonus = avgEnergy != null
+      ? (bestBonus(energyBonusTiers, 'energy', avgEnergy)?.increment || 0)
+      : 0;
+    const presenceRatio = presenceByUser[m.torn_user_id] || 0;
+    const presenceBonus = presenceRatio * PRESENCE_BONUS_MAX;
+
+    const activityFactor = recent.relativeActivity + energyBonus + presenceBonus;
+
+    const warningCount = warningCountByUser[m.torn_user_id] || 0;
+    const ocInactiveDays = ocInactiveDaysByUser[m.torn_user_id] || 0;
+    const warningPenalty = Math.min(warningCount * WARNING_PENALTY_PER, WARNING_PENALTY_CAP);
+    const ocPenalty = Math.min(ocInactiveDays * OC_PENALTY_PER_DAY, OC_PENALTY_CAP);
+    const penaltyMultiplier = Math.max(PENALTY_FLOOR, 1 - warningPenalty - ocPenalty);
+
     return {
       torn_user_id: m.torn_user_id,
       username: m.username,
       rank,
       recent_hits: recent.hits,
-      consistency,
+      activity_factor: activityFactor,
       rank_mod: rankMod,
-      score: recent.hits * consistency * rankMod,
+      warning_count: warningCount,
+      oc_inactive_days: ocInactiveDays,
+      penalty_multiplier: penaltyMultiplier,
+      score: recent.hits * activityFactor * rankMod * penaltyMultiplier,
     };
   });
 }
@@ -193,8 +357,12 @@ export async function getMerits(request, env) {
   if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
 
   try {
+    // bestBonus needs the configured energy bonus tiers (same ones Rank
+    // Rewards exposes to leadership) — load once up front and pass through.
+    const cfg = await loadRewardConfig(env);
+
     const [pool, awardedResult] = await Promise.all([
-      buildCandidatePool(env, factionId),
+      buildCandidatePool(env, factionId, cfg.bonuses),
       env.DB.prepare(
         `SELECT torn_user_id, merit_type FROM member_merits WHERE torn_user_id IN (
            SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1

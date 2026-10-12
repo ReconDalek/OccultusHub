@@ -4,10 +4,6 @@ import { apiGet, card, sectionTitle, sectionSub } from './chainWatcherUtils'
 const REFRESH_MS = 60000
 const ACCENT = '#8b5cf6'
 
-function fmtPct(n) {
-  return `${Math.round(n * 100)}%`
-}
-
 export default function MeritTracker({ factionId }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -118,9 +114,14 @@ export default function MeritTracker({ factionId }) {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
-                  <span title="% of last 12 months with 50+ hits">
-                    {fmtPct(c.consistency)} consistency
+                  <span title="Hits vs. faction average + energy/presence bonus">
+                    {c.activity_factor.toFixed(2)}x activity
                   </span>
+                  {c.penalty_multiplier < 1 && (
+                    <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) in the window`}>
+                      {' '}· -{Math.round((1 - c.penalty_multiplier) * 100)}%
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
