@@ -84,8 +84,9 @@ export async function getMentoringAccess(user, env) {
   return { isLeader, isMentor: !!mentorRow, mentorId: mentorRow?.id ?? null };
 }
 
-// Generate JWT token for user
-export async function generateToken(user, env) {
+// Generate JWT token for user. `stayLoggedIn` issues a longer-lived token
+// (30d instead of the default 7d) for the login modal's "Stay Logged In" option.
+export async function generateToken(user, env, stayLoggedIn = false) {
   const secret = new TextEncoder().encode(env.JWT_SECRET);
 
   const token = await new SignJWT({
@@ -97,7 +98,7 @@ export async function generateToken(user, env) {
     isLeader: (user.is_owner === 1 || LEADERSHIP_ROLES.includes(user.faction_position)) ? true : false,
   })
     .setProtectedHeader({ alg: 'HS256' })
-    .setExpirationTime('7d')
+    .setExpirationTime(stayLoggedIn ? '30d' : '7d')
     .sign(secret);
 
   return token;

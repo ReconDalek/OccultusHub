@@ -1,7 +1,8 @@
 import { OCCULTUS_CONFIG } from './config'
 
-const SESSION_KEY = 'occultusSession'
-const USER_KEY    = 'occultusUser'
+const SESSION_KEY      = 'occultusSession'
+const USER_KEY         = 'occultusUser'
+const REMEMBERED_KEY   = 'occultusRememberedKey'
 const DEV_AUTH_ENABLED = true
 
 // API Base URL - automatically routes to dev or production
@@ -35,6 +36,26 @@ export function getUserSession() {
 
 export function clearUserSession() {
   localStorage.removeItem(USER_KEY)
+}
+
+// "Remember Me" — prefills the API key field on the next login. Same
+// base64 obfuscation the backend uses for stored keys, not real encryption.
+export function getRememberedApiKey() {
+  const raw = localStorage.getItem(REMEMBERED_KEY)
+  if (!raw) return ''
+  try {
+    return atob(raw)
+  } catch {
+    return ''
+  }
+}
+
+export function setRememberedApiKey(apiKey) {
+  localStorage.setItem(REMEMBERED_KEY, btoa(apiKey))
+}
+
+export function clearRememberedApiKey() {
+  localStorage.removeItem(REMEMBERED_KEY)
 }
 
 /* ── Access enrichment ───────────────────── */
@@ -72,26 +93,37 @@ export async function checkSession() {
   const token = getSessionToken()
 
   if (token) {
+    let res
     try {
-      const res  = await fetch(`${API_BASE_URL}/api/auth/session`, {
+      res = await fetch(`${API_BASE_URL}/api/auth/session`, {
         headers: { Authorization: token },
       })
-      const data = await res.json()
-
-      if (!data.valid) {
-        clearSessionToken()
-        clearUserSession()
-        return null
-      }
-
-      const enriched = enrichUserAccess(data.user)
-      setUserSession(enriched)
-      return enriched
     } catch {
+      // Request never reached the server (offline, blocked by an extension/
+      // ad-blocker, VPN hiccup, etc.) — not proof the token is invalid.
+      // Keep the cached session instead of forcing a re-login over a
+      // connectivity blip.
+      return getUserSession()
+    }
+
+    let data
+    try {
+      data = await res.json()
+    } catch {
+      // Got a response but couldn't parse it (e.g. a blocked/intercepted
+      // body) — same reasoning, don't nuke a possibly-valid session.
+      return getUserSession()
+    }
+
+    if (!data.valid) {
       clearSessionToken()
       clearUserSession()
       return null
     }
+
+    const enriched = enrichUserAccess(data.user)
+    setUserSession(enriched)
+    return enriched
   }
 
   if (isLocalhost && DEV_AUTH_ENABLED) {
@@ -144,6 +176,12 @@ export async function authenticateUser(apiKey, rememberMe, stayLoggedIn) {
   setSessionToken(data.token)
   const enriched = enrichUserAccess(data.user)
   setUserSession(enriched)
+
+  if (rememberMe) {
+    setRememberedApiKey(apiKey)
+  } else {
+    clearRememberedApiKey()
+  }
 
   // background refresh
   fetch('/api/company-refresh').catch(() => {})

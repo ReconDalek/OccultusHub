@@ -6,7 +6,7 @@ const TORN_API_BASE = 'https://api.torn.com/v2';
 
 export async function login(request, env) {
   try {
-    const { apiKey } = await request.json();
+    const { apiKey, stayLoggedIn } = await request.json();
 
     if (!apiKey) {
       return errorResponse('API key is required', 400);
@@ -111,7 +111,7 @@ export async function login(request, env) {
     });
 
     // Generate JWT token
-    const token = await generateToken(user, env);
+    const token = await generateToken(user, env, !!stayLoggedIn);
     const access = computeEffectiveAccess(user);
 
     return jsonResponse({

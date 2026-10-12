@@ -1,18 +1,25 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from '../hooks/useSession'
+import { getRememberedApiKey } from '../lib/auth'
 
 export default function LoginModal({ open, onClose }) {
   const { login }         = useSession()
   const [apiKey, setKey]  = useState('')
+  const [remember, setRemember] = useState(false)
   const [stay, setStay]   = useState(false)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const inputRef = useRef(null)
 
-  // Focus input when modal opens
+  // Focus input when modal opens, and prefill a remembered key if there is one
   useEffect(() => {
     if (open) {
       setStatus('')
+      const remembered = getRememberedApiKey()
+      if (remembered) {
+        setKey(remembered)
+        setRemember(true)
+      }
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
@@ -34,7 +41,7 @@ export default function LoginModal({ open, onClose }) {
     setStatus('Authenticating...')
 
     try {
-      const result = await login(key, false, stay)
+      const result = await login(key, remember, stay)
       if (result.success) {
         onClose()
         setKey('')
@@ -93,11 +100,20 @@ export default function LoginModal({ open, onClose }) {
           <label className="flex items-start gap-2 cursor-pointer leading-tight">
             <input
               type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="mt-0.5"
+            />
+            Remember Me (prefills your API key next time)
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer leading-tight">
+            <input
+              type="checkbox"
               checked={stay}
               onChange={(e) => setStay(e.target.checked)}
               className="mt-0.5"
             />
-            Stay Logged In
+            Stay Logged In (30 days instead of 7)
           </label>
         </div>
 
