@@ -358,6 +358,38 @@ async function buildCandidatePool(env, factionId, energyBonusTiers) {
   });
 }
 
+// The pool computation below fans out to several other heavy report
+// generators (energy, activity, OC inactivity) — none of that underlying
+// data moves fast enough to need recomputing more than hourly, so the
+// result is cached per faction instead of rebuilt on every page load/poll
+// from every viewer.
+const POOL_CACHE_TTL_SECONDS = 3600;
+
+async function getCachedPools(env, factionId) {
+  const row = await env.DB.prepare(
+    `SELECT pool_json, simple_pool_json, computed_at FROM merit_pool_cache WHERE faction_id = ?`
+  ).bind(factionId).first();
+
+  const nowSecs = Math.floor(Date.now() / 1000);
+  if (row && nowSecs - row.computed_at < POOL_CACHE_TTL_SECONDS) {
+    return { pool: JSON.parse(row.pool_json), simplePool: JSON.parse(row.simple_pool_json) };
+  }
+
+  const cfg = await loadRewardConfig(env);
+  const [pool, simplePool] = await Promise.all([
+    buildCandidatePool(env, factionId, cfg.bonuses),
+    buildSimpleMeritPool(env, factionId),
+  ]);
+
+  await env.DB.prepare(
+    `INSERT INTO merit_pool_cache (faction_id, pool_json, simple_pool_json, computed_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(faction_id) DO UPDATE SET
+       pool_json = excluded.pool_json, simple_pool_json = excluded.simple_pool_json, computed_at = excluded.computed_at`
+  ).bind(factionId, JSON.stringify(pool), JSON.stringify(simplePool), nowSecs).run();
+
+  return { pool, simplePool };
+}
+
 const LAST_SEEN_WINDOW_DAYS = 7;
 
 // Last active/idle 30-min slot in a day's grid, as a unix timestamp — or
@@ -427,13 +459,8 @@ export async function getMerits(request, env) {
   if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
 
   try {
-    // bestBonus needs the configured energy bonus tiers (same ones Rank
-    // Rewards exposes to leadership) — load once up front and pass through.
-    const cfg = await loadRewardConfig(env);
-
-    const [pool, simplePool, awardedResult] = await Promise.all([
-      buildCandidatePool(env, factionId, cfg.bonuses),
-      buildSimpleMeritPool(env, factionId),
+    const [{ pool, simplePool }, awardedResult] = await Promise.all([
+      getCachedPools(env, factionId),
       env.DB.prepare(
         `SELECT torn_user_id, merit_type FROM member_merits WHERE torn_user_id IN (
            SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1

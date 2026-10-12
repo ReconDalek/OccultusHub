@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../../hooks/useSession'
 import { apiGet, apiSend, card, sectionTitle, sectionSub, fmtLongDuration } from './chainWatcherUtils'
 
-const REFRESH_MS = 60000
+const REFRESH_MS = 300000
 const ACCENT = '#8b5cf6'
 
 export default function MeritTracker({ factionId }) {
