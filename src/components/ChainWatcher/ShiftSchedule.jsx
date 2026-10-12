@@ -48,14 +48,9 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
     return () => { cancelled = true; clearInterval(t) }
   }, [factionId])
 
-  // The default 7-day window won't always contain a far-out scheduled day —
-  // splice it in so there's always a highlighted button to confirm the jump.
-  const days = useMemo(() => {
-    const base = upcomingDays(DAYS_AHEAD)
-    if (scheduledStart == null) return base
-    const schedDay = dayStart(scheduledStart)
-    return base.includes(schedDay) ? base : [...base, schedDay].sort((a, b) => a - b)
-  }, [scheduledStart])
+  // The whole 7-day window starts from the scheduled day when one exists,
+  // instead of always starting from today with the scheduled day spliced in.
+  const days = useMemo(() => upcomingDays(DAYS_AHEAD, scheduledStart), [scheduledStart])
   const byStart = useMemo(() => new Map(shifts.map(s => [s.slot_start, s])), [shifts])
   const hoursForDay = useMemo(() => Array.from({ length: 24 }, (_, h) => selectedDay + h * HOUR), [selectedDay])
   const myShifts = useMemo(

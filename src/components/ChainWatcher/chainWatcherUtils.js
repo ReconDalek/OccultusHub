@@ -102,10 +102,21 @@ export function dayStart(ts) {
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000)
 }
 
-// Builds the list of day-start timestamps for the day picker (today + `count - 1` more).
-export function upcomingDays(count = 7) {
-  const start = dayStart(Math.floor(Date.now() / 1000))
+// Builds the list of day-start timestamps for the day picker — anchorTs
+// (today by default) + `count - 1` more days.
+export function upcomingDays(count = 7, anchorTs = null) {
+  const start = dayStart(anchorTs != null ? anchorTs : Math.floor(Date.now() / 1000))
   return Array.from({ length: count }, (_, i) => start + i * 86400)
+}
+
+// A TCT datetime-local input's value has no timezone of its own — treat
+// whatever the leader typed as TCT directly, instead of letting `new
+// Date(str)` interpret it as the browser's own local time.
+export function tctInputToUnix(value) {
+  const [datePart, timePart] = value.split('T')
+  const [y, m, d] = datePart.split('-').map(Number)
+  const [hh, mm] = (timePart || '00:00').split(':').map(Number)
+  return Math.floor(Date.UTC(y, m - 1, d, hh, mm) / 1000)
 }
 
 // Given the shifts claimed for a faction (sorted by slot_start) and "now",

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
-  apiGet, apiSend, card, sectionTitle, fmtLongDuration,
+  apiGet, apiSend, card, sectionTitle, fmtLongDuration, tctInputToUnix,
   fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
 } from './chainWatcherUtils'
 import LiveChainCard from './LiveChainCard'
@@ -70,7 +70,7 @@ export default function ChainSessionCard({ factionId }) {
     if (!scheduleAt) return
     setBusy(true); setError(null)
     try {
-      const ts = Math.floor(new Date(scheduleAt).getTime() / 1000)
+      const ts = tctInputToUnix(scheduleAt)
       await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId, scheduled_start: ts })
       setScheduleAt('')
       await load()
@@ -139,7 +139,7 @@ export default function ChainSessionCard({ factionId }) {
       {isLeader && (
         <div className="flex items-center" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <button onClick={startNow} disabled={busy} style={primaryBtn}>Start watching now</button>
-          <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>or schedule for</span>
+          <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>or schedule for (TCT)</span>
           <input
             type="datetime-local"
             value={scheduleAt}
@@ -149,6 +149,11 @@ export default function ChainSessionCard({ factionId }) {
               color: '#f4f4f5', border: '1px solid var(--border-subtle)',
             }}
           />
+          {scheduleAt && (
+            <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>
+              = {fmtSlotDayLocal(tctInputToUnix(scheduleAt))} {fmtSlotTimeLocal(tctInputToUnix(scheduleAt))} local
+            </span>
+          )}
           <button onClick={scheduleFor} disabled={busy || !scheduleAt} style={secondaryBtn}>Schedule</button>
         </div>
       )}
