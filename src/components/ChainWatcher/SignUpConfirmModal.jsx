@@ -11,8 +11,8 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
       </h3>
 
       <p style={{ color: 'var(--text-secondary)', fontSize: 14, margin: '0 0 12px' }}>
-        You're signing up to watch <strong>{fmtSlotDay(slotStart)} {fmtSlotTime(slotStart)} TCT</strong>
-        {' '}(<strong>{fmtSlotTimeLocal(slotStart)}{dayShift ? ` ${fmtSlotDayLocal(slotStart)}` : ''}</strong> your local time).
+        <strong>{fmtSlotDay(slotStart)} {fmtSlotTime(slotStart)} TCT</strong>
+        {' '}(<strong>{fmtSlotTimeLocal(slotStart)}{dayShift ? ` ${fmtSlotDayLocal(slotStart)}` : ''}</strong> local)
       </p>
 
       <div style={{
@@ -21,12 +21,12 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
       }}>
         <p style={{ color: '#f4f4f5', fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>What watching involves:</p>
         <ul style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-          <li>Be in Torn for your hour with enough energy to make a save hit if needed.</li>
-          <li>Watch the timer — if it drops to ~2 minutes, attack to keep the chain alive.</li>
-          <li>Close to a bonus? Flag it to a leader so it can be organised.</li>
+          <li>Be in Torn with enough energy to save the chain.</li>
+          <li>Attack when the timer drops below 2 minutes.</li>
+          <li>Near a bonus? Flag it to a leader.</li>
         </ul>
         <p style={{ color: '#f87171', fontSize: 12.5, margin: '10px 0 0', fontWeight: 600 }}>
-          Once confirmed you can't remove yourself from this shift — only a leader can free it if you can't make it.
+          You can't remove yourself after confirming — only a leader can.
         </p>
       </div>
 

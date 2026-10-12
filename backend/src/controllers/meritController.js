@@ -27,8 +27,7 @@ export const MERIT_PREREQUISITES = {
 };
 
 export const MERIT_FORMULA_NOTE =
-  'Score = (chain hits in the last 12 months) × (% of those months with 50+ hits) × a small rank weight (1.00–1.15, ' +
-  'Acolyte through leadership). Recent contribution drives the score; rank only nudges it.';
+  'Score = (chain + war hits in the last 12 months) × (% of those months with 50+ combined hits) × rank weight (1.00–1.15).';
 
 // Small, deliberately narrow weighting by earned rank — contribution should
 // decide this, not seniority, so the full spread top-to-bottom is capped at
@@ -95,14 +94,17 @@ export async function recordChainBonusHits(env, tornChainId, factionId) {
   }
 }
 
-// Builds the ranked candidate pool for a faction: chain hits over the last
-// 12 months, weighted by how many of those months cleared 50+ hits, weighted
-// again (lightly) by the member's established rank.
+// Builds the ranked candidate pool for a faction: chain + war hits over the
+// last 12 months (combined per month, since Occ1/Occ2 rarely chain outside
+// Torn's own events — chain-only activity would flatten their scores to
+// near-zero even for genuinely active members), weighted by how many of
+// those months cleared 50+ combined hits, weighted again (lightly) by the
+// member's established rank.
 async function buildCandidatePool(env, factionId) {
   const now = new Date();
   const cutoff = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1) / 1000;
 
-  const [{ results: members }, { results: monthly }] = await Promise.all([
+  const [{ results: members }, { results: monthlyChain }, { results: monthlyWar }] = await Promise.all([
     env.DB.prepare(`
       SELECT
         fm.torn_user_id, fm.username, fm.faction_position,
@@ -126,14 +128,41 @@ async function buildCandidatePool(env, factionId) {
       WHERE faction_id = ? AND start_at >= ?
       GROUP BY torn_user_id, ym
     `).bind(factionId, cutoff).all(),
+    // War hits have no date of their own — go via ranked_wars, same fallback
+    // chain (ended_at → started_at → scheduled_start) rankRewardsController
+    // uses. A war_hits row with no matching ranked_wars row has no knowable
+    // date, so it can't be placed in a month and is left out here (it's
+    // still counted in lifetime_hits above, just not in the recent window).
+    env.DB.prepare(`
+      SELECT wh.torn_user_id,
+             strftime('%Y-%m', COALESCE(rw.ended_at, rw.started_at, rw.scheduled_start), 'unixepoch') AS ym,
+             SUM(COALESCE(wh.rank_hits, wh.war_hits)) AS hits
+      FROM war_hits wh
+      JOIN ranked_wars rw ON rw.id = wh.ranked_war_id
+      WHERE wh.faction_id = ? AND COALESCE(rw.ended_at, rw.started_at, rw.scheduled_start) >= ?
+      GROUP BY wh.torn_user_id, ym
+    `).bind(factionId, cutoff).all(),
   ]);
 
+  // Combine chain + war hits per user per month before applying the 50+
+  // threshold, so a month counts as "active" on either source.
+  const monthsByUser = new Map();
+  for (const row of [...(monthlyChain || []), ...(monthlyWar || [])]) {
+    if (!row.ym) continue;
+    if (!monthsByUser.has(row.torn_user_id)) monthsByUser.set(row.torn_user_id, new Map());
+    const months = monthsByUser.get(row.torn_user_id);
+    months.set(row.ym, (months.get(row.ym) || 0) + row.hits);
+  }
+
   const recentByUser = new Map();
-  for (const row of monthly || []) {
-    if (!recentByUser.has(row.torn_user_id)) recentByUser.set(row.torn_user_id, { hits: 0, activeMonths: 0 });
-    const u = recentByUser.get(row.torn_user_id);
-    u.hits += row.hits;
-    if (row.hits >= 50) u.activeMonths += 1;
+  for (const [tornUserId, months] of monthsByUser) {
+    let hits = 0;
+    let activeMonths = 0;
+    for (const monthHits of months.values()) {
+      hits += monthHits;
+      if (monthHits >= 50) activeMonths += 1;
+    }
+    recentByUser.set(tornUserId, { hits, activeMonths });
   }
 
   return (members || []).map((m) => {

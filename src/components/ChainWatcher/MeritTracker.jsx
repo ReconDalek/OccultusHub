@@ -58,13 +58,12 @@ export default function MeritTracker({ factionId }) {
     <div style={card}>
       <p style={sectionTitle}>Merit Tracker</p>
       <p style={sectionSub}>
-        Tracked automatically from bonus hits during a chain — landing the {thresholds.join('th, ')}th hit earns it.
-        Already-received members drop off that merit's list.{' '}
+        Earned by landing the {thresholds.join('th, ')}th hit in a chain.{' '}
         <button
           onClick={() => setShowFormula(s => !s)}
           style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}
         >
-          {showFormula ? 'Hide' : 'Show'} how ranking works
+          {showFormula ? 'Hide' : 'Show'} formula
         </button>
       </p>
 
@@ -93,15 +92,11 @@ export default function MeritTracker({ factionId }) {
 
       <p style={{ fontSize: 11.5, color: 'var(--text-faint)', margin: '0 0 10px' }}>
         {awardedCount} member{awardedCount === 1 ? '' : 's'} already have {activeType}.
-        {prerequisites.length > 0 && ` Only shown here once they already have ${prerequisites.join(' and ')}.`}
+        {prerequisites.length > 0 && ` Requires ${prerequisites.join(' + ')}.`}
       </p>
 
       {candidates.length === 0 ? (
-        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>
-          No eligible members{prerequisites.length > 0
-            ? ` — either nobody in the faction has ${prerequisites.join(' and ')} yet, or everyone who does already has ${activeType}.`
-            : ' — everyone active has this merit.'}
-        </p>
+        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {candidates.map((c, i) => (
@@ -123,7 +118,7 @@ export default function MeritTracker({ factionId }) {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
-                  <span title="% of the last 12 months with 50+ chain hits in at least one chain">
+                  <span title="% of last 12 months with 50+ hits">
                     {fmtPct(c.consistency)} consistency
                   </span>
                 </div>

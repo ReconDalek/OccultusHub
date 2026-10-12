@@ -73,7 +73,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   return (
     <div style={card}>
       <p style={sectionTitle}>Shift Sign-Ups</p>
-      <p style={sectionSub}>Times shown are TCT (UTC), with your local time underneath.</p>
+      <p style={sectionSub}>Times in TCT, with your local time underneath.</p>
 
       {myShifts.length > 0 && (
         <div style={{ marginBottom: 14, padding: '8px 10px', borderRadius: 8, background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}>

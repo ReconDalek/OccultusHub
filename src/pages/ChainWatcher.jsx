@@ -43,7 +43,7 @@ export default function ChainWatcher() {
           Chain Watch
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '6px 0 0' }}>
-          Sign up for a watch shift, see who's on now, and track the live chain. Each faction runs its own chain and schedule.
+          Live chain tracking, shift sign-ups, and merits. Per faction.
         </p>
       </div>
 
