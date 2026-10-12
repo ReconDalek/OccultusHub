@@ -1010,6 +1010,16 @@ export async function handleRequest(request, env, ctx) {
     return ocInactivityController.resolveMemberForBot(request, env);
   }
 
+  // Chain watcher — bot-facing, shared-secret auth. The Discord bot's own
+  // /chainwatcher polls Torn's live chain status and reads shift sign-ups
+  // through here instead of calling Torn directly or reading a Google Sheet.
+  if (pathname === '/api/discord/chain-watcher/live' && method === 'GET') {
+    return chainWatcherController.getLiveStatusForBot(request, env);
+  }
+  if (pathname === '/api/discord/chain-watcher/watcher' && method === 'GET') {
+    return chainWatcherController.getCurrentWatcherForBot(request, env);
+  }
+
   // OD reimbursement tracking — bot-facing, shared-secret auth (same as OC inactivity).
   if (pathname === '/api/discord/od-reimbursements/check' && method === 'GET') {
     return odReimbursementController.checkEligibilityForBot(request, env);

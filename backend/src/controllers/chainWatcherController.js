@@ -9,6 +9,48 @@ function validFactionId(raw) {
   return FACTION_IDS.includes(id) ? id : null;
 }
 
+// Bot-facing auth — shared secret, same pattern as the OC Inactivity/OD
+// reimbursement bot endpoints. The Discord bot has no JWT, so it can't go
+// through the member/leadership checks the website routes use.
+function checkChainBotSecret(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  return !!env.CHAIN_BOT_SECRET && auth === `Bearer ${env.CHAIN_BOT_SECRET}`;
+}
+
+// The actual Torn call, shared by the website's session-gated endpoint and
+// the bot-facing one (which manages its own watch state and isn't gated by
+// a website session). Must use a key belonging to this exact faction, since
+// Torn scopes the chain selection to the key's own faction.
+async function fetchLiveChainFromTorn(env, factionId) {
+  const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
+  if (!apiKeyObj?.key) {
+    const err = new Error('No API key available for this faction');
+    err.status = 503;
+    throw err;
+  }
+
+  const data = await fetchWithRetry(
+    `${TORN_API_BASE}/faction/${factionId}/chain`,
+    { Authorization: `ApiKey ${apiKeyObj.key}` }
+  );
+
+  const chain = data.chain || {};
+  let status = 'idle';
+  if (chain.timeout > 0) status = 'active';
+  else if (chain.cooldown > 0) status = 'cooldown';
+
+  return {
+    factionId,
+    status,
+    current: chain.current || 0,
+    timeout: chain.timeout || 0,
+    cooldown: chain.cooldown || 0,
+    start: chain.start || 0,
+    end: chain.end || 0,
+    fetchedAt: Math.floor(Date.now() / 1000),
+  };
+}
+
 // Reads the faction's current session row, flipping a 'scheduled' session to
 // 'active' once its scheduled_start has passed (lazily, on read — no cron
 // needed). Returns null if nothing is scheduled/active.
@@ -125,32 +167,86 @@ export async function getLiveStatus(request, env) {
       return jsonResponse({ factionId, status: 'no_session', fetchedAt: Math.floor(Date.now() / 1000) });
     }
 
-    const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
-    if (!apiKeyObj?.key) return errorResponse('No API key available for this faction', 503);
-
-    const data = await fetchWithRetry(
-      `${TORN_API_BASE}/faction/${factionId}/chain`,
-      { Authorization: `ApiKey ${apiKeyObj.key}` }
-    );
-
-    const chain = data.chain || {};
-    let status = 'idle';
-    if (chain.timeout > 0) status = 'active';
-    else if (chain.cooldown > 0) status = 'cooldown';
-
-    return jsonResponse({
-      factionId,
-      status,
-      current: chain.current || 0,
-      timeout: chain.timeout || 0,
-      cooldown: chain.cooldown || 0,
-      start: chain.start || 0,
-      end: chain.end || 0,
-      fetchedAt: Math.floor(Date.now() / 1000),
-    });
+    return jsonResponse(await fetchLiveChainFromTorn(env, factionId));
   } catch (err) {
     console.error('getLiveStatus error:', err);
-    return errorResponse(`Torn API error: ${err.message}`, 502);
+    return errorResponse(err.status ? err.message : `Torn API error: ${err.message}`, err.status || 502);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/discord/chain-watcher/live?faction_id=X — bot-facing, shared-secret
+// auth. No website session gate: the Discord bot tracks its own per-faction
+// watch state (see OccultusBot's chainWatchers map) independently of the
+// website's leader-scheduled sessions, so it polls this directly whenever
+// its own /chainwatcher command is active for that faction.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getLiveStatusForBot(request, env) {
+  if (!checkChainBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+
+  const url = new URL(request.url);
+  const factionId = validFactionId(url.searchParams.get('faction_id'));
+  if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+
+  try {
+    return jsonResponse(await fetchLiveChainFromTorn(env, factionId));
+  } catch (err) {
+    console.error('getLiveStatusForBot error:', err);
+    return errorResponse(err.status ? err.message : `Torn API error: ${err.message}`, err.status || 502);
+  }
+}
+
+// Current-hour + next-different-watcher for a faction, collapsing consecutive
+// hours held by the same person — same rule the website's WatcherBanner uses,
+// ported here so the bot doesn't need to re-derive it from raw shift rows.
+async function computeCurrentWatcher(env, factionId) {
+  const hour = 3600;
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const curSlot = Math.floor(nowSecs / hour) * hour;
+
+  const { results } = await env.DB.prepare(
+    `SELECT s.slot_start, s.torn_user_id, u.username, dl.discord_id
+     FROM chain_watch_shifts s
+     JOIN users u ON u.torn_user_id = s.torn_user_id
+     LEFT JOIN discord_links dl ON dl.user_id = u.id
+     WHERE s.faction_id = ? AND s.slot_start >= ? AND s.slot_start < ?
+     ORDER BY s.slot_start ASC`
+  ).bind(factionId, curSlot, curSlot + 48 * hour).all();
+
+  const byStart = new Map((results || []).map(r => [r.slot_start, r]));
+  const current = byStart.get(curSlot) || null;
+
+  let nextSlot = curSlot + hour;
+  while (current && byStart.get(nextSlot)?.torn_user_id === current.torn_user_id) {
+    nextSlot += hour;
+  }
+  const next = byStart.get(nextSlot) || null;
+
+  return {
+    current: current ? { torn_user_id: current.torn_user_id, username: current.username, discord_id: current.discord_id || null } : null,
+    next: next ? { torn_user_id: next.torn_user_id, username: next.username, discord_id: next.discord_id || null } : null,
+    nextChangeAt: current ? nextSlot : null,
+    currentSlot: curSlot,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/discord/chain-watcher/watcher?faction_id=X — bot-facing, shared-
+// secret auth. Replaces the Google Sheet the bot used to read for its hourly
+// shift-rotation ping — sign-ups now happen on the website.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getCurrentWatcherForBot(request, env) {
+  if (!checkChainBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+
+  const url = new URL(request.url);
+  const factionId = validFactionId(url.searchParams.get('faction_id'));
+  if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+
+  try {
+    return jsonResponse(await computeCurrentWatcher(env, factionId));
+  } catch (err) {
+    console.error('getCurrentWatcherForBot error:', err);
+    return errorResponse('Failed to compute current watcher', 500);
   }
 }
 
