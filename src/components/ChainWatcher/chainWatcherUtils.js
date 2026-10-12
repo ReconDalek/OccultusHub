@@ -85,8 +85,10 @@ export function fmtSlotTimeLocal(slotStart) {
   })
 }
 
+// Same locale as fmtSlotDay (en-GB: day before month) so the local date
+// reads in the same order as the TCT one — only the timezone differs.
 export function fmtSlotDayLocal(slotStart) {
-  return new Date(slotStart * 1000).toLocaleDateString(undefined, {
+  return new Date(slotStart * 1000).toLocaleDateString('en-GB', {
     weekday: 'short', day: 'numeric', month: 'short',
   })
 }

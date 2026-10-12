@@ -12,7 +12,7 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
 
       <p style={{ color: 'var(--text-secondary)', fontSize: 14, margin: '0 0 12px' }}>
         <strong>{fmtSlotDay(slotStart)} {fmtSlotTime(slotStart)} TCT</strong>
-        {' '}(<strong>{fmtSlotTimeLocal(slotStart)}{dayShift ? ` ${fmtSlotDayLocal(slotStart)}` : ''}</strong> local)
+        {' '}(<strong>{dayShift ? `${fmtSlotDayLocal(slotStart)} ` : ''}{fmtSlotTimeLocal(slotStart)}</strong> local)
       </p>
 
       <div style={{

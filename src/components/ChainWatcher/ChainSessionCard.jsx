@@ -102,7 +102,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
         </p>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
           Starts {fmtSlotDay(session.scheduled_start)} {fmtSlotTime(session.scheduled_start)} TCT
-          {' '}({fmtSlotTimeLocal(session.scheduled_start)}{dayShift ? ` ${fmtSlotDayLocal(session.scheduled_start)}` : ''} local)
+          {' '}({dayShift ? `${fmtSlotDayLocal(session.scheduled_start)} ` : ''}{fmtSlotTimeLocal(session.scheduled_start)} local)
         </p>
         {displayError && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{displayError}</p>}
         {isLeader && (
