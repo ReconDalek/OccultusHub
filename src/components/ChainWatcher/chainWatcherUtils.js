@@ -133,11 +133,18 @@ export function computeWatcherStatus(shifts, nowSec = Date.now() / 1000) {
   while (current && byStart.get(nextSlot)?.torn_user_id === current.torn_user_id) {
     nextSlot += HOUR
   }
-  const next = byStart.get(nextSlot) || null
+  // The next sign-up isn't always the very next hour — a scheduled chain can
+  // be days out with nothing claimed in between — so scan forward to the
+  // nearest hour that actually has someone.
+  let next = byStart.get(nextSlot) || null
+  if (!next) {
+    const upcoming = shifts.filter(s => s.slot_start >= nextSlot).sort((a, b) => a.slot_start - b.slot_start)
+    next = upcoming[0] || null
+  }
 
   return {
     current,
     next,
-    nextChangeAt: current ? nextSlot : null, // only meaningful once someone's actually watching
+    nextChangeAt: next ? next.slot_start : null,
   }
 }

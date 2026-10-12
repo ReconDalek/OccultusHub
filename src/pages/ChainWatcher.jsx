@@ -23,17 +23,6 @@ export default function ChainWatcher() {
   const [session, setSession] = useState(undefined) // undefined = still loading
   const [sessionError, setSessionError] = useState(null)
 
-  const loadShifts = useCallback(async () => {
-    try {
-      const now = Math.floor(Date.now() / 1000)
-      const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${now - 3600}&to=${now + WINDOW_SECONDS}`)
-      setShifts(json.shifts || [])
-      setError(null)
-    } catch (e) {
-      setError(e.message)
-    }
-  }, [factionId])
-
   const loadSession = useCallback(async () => {
     try {
       const json = await apiGet(`/api/chain-watcher/session?faction_id=${factionId}`)
@@ -43,6 +32,22 @@ export default function ChainWatcher() {
       setSessionError(e.message)
     }
   }, [factionId])
+
+  // Normally we only need shifts for the week ahead of today — but a chain
+  // can be scheduled further out than that, and the calendar jumps to show
+  // that week instead, so the fetch window has to stretch to cover it too.
+  const scheduledStart = session?.status === 'scheduled' ? session.scheduled_start : null
+  const loadShifts = useCallback(async () => {
+    try {
+      const now = Math.floor(Date.now() / 1000)
+      const to = scheduledStart != null ? Math.max(now + WINDOW_SECONDS, scheduledStart + WINDOW_SECONDS) : now + WINDOW_SECONDS
+      const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${now - 3600}&to=${to}`)
+      setShifts(json.shifts || [])
+      setError(null)
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [factionId, scheduledStart])
 
   useEffect(() => {
     loadShifts()
