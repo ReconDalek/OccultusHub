@@ -467,6 +467,11 @@ export async function handleRequest(request, env, ctx) {
     if (!user) return errorResponse('Authentication required', 401);
     return meritController.getMerits(request, env);
   }
+  if (pathname === '/api/chain-watcher/merits/award' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return meritController.awardMerit(request, env, user);
+  }
   if (pathname === '/api/chain-watcher/merits/award' && method === 'DELETE') {
     if (!user) return errorResponse('Authentication required', 401);
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);

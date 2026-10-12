@@ -1,7 +1,7 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
-  apiSend, card, sectionTitle, sectionSub,
+  apiGet, apiSend, card, sectionTitle, sectionSub,
   upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
   currentHourStart, HOUR,
 } from './chainWatcherUtils'
@@ -10,6 +10,7 @@ import NoteModal from './NoteModal'
 
 const DAYS_AHEAD = 7
 const ACCENT = '#8b5cf6'
+const SESSION_POLL_MS = 30000
 
 export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   const { user } = useSession()
@@ -19,6 +20,35 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
   const [editingShift, setEditingShift] = useState(null) // shift object whose note is being edited
+  const [scheduledStart, setScheduledStart] = useState(null) // set while a session is 'scheduled' for this faction
+
+  // Light independent poll — just enough to know whether a chain watch is
+  // scheduled and when, so the calendar can jump to that day and grey out
+  // the hours before it. DB-only read, no Torn API call involved.
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      apiGet(`/api/chain-watcher/session?faction_id=${factionId}`)
+        .then(json => {
+          if (cancelled) return
+          setScheduledStart(json.session?.status === 'scheduled' ? json.session.scheduled_start : null)
+        })
+        .catch(() => {})
+    }
+    load()
+    const t = setInterval(load, SESSION_POLL_MS)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [factionId])
+
+  // Jump the calendar to the scheduled day once (not on every re-poll, so a
+  // leader browsing other days isn't yanked back every 30s).
+  const jumpedForRef = useRef(null)
+  useEffect(() => {
+    if (scheduledStart != null && jumpedForRef.current !== scheduledStart) {
+      jumpedForRef.current = scheduledStart
+      setSelectedDay(dayStart(scheduledStart))
+    }
+  }, [scheduledStart])
 
   const days = useMemo(() => upcomingDays(DAYS_AHEAD), [])
   const byStart = useMemo(() => new Map(shifts.map(s => [s.slot_start, s])), [shifts])
@@ -118,6 +148,8 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
         {hoursForDay.map(slot => {
           const taken = byStart.get(slot)
           const isPast = slot < curHour
+          const isBeforeScheduledStart = scheduledStart != null && slot < scheduledStart
+          const isDisabled = isPast || isBeforeScheduledStart
           const isMine = !!taken && taken.torn_user_id === user?.tornUserId
           const busy = busySlot === slot
 
@@ -126,7 +158,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
           let label = 'Open'
           let labelColor = 'var(--text-faint)'
 
-          if (isPast) {
+          if (isDisabled) {
             label = taken ? taken.username : '—'
             labelColor = 'var(--text-faint)'
             bg = 'rgba(255,255,255,0.015)'
@@ -137,7 +169,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
             border = isMine ? 'rgba(139,92,246,0.4)' : 'var(--border-subtle)'
           }
 
-          const openAndClickable = !isPast && !taken
+          const openAndClickable = !isDisabled && !taken
           const localTime = fmtSlotTimeLocal(slot)
           const tctTime = fmtSlotTime(slot)
           const showLocal = localTime !== tctTime
@@ -160,10 +192,10 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
                 </div>
               )}
               <div style={{ fontSize: 13, fontWeight: 600, color: labelColor }}>
-                {label}{isMine && !isPast ? ' (you)' : ''}
+                {label}{isMine && !isDisabled ? ' (you)' : ''}
               </div>
 
-              {!isPast && taken && isLeader && (
+              {!isDisabled && taken && isLeader && (
                 <div className="flex" style={{ gap: 6, marginTop: 6 }}>
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditingShift(taken) }}
@@ -190,7 +222,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged }) {
                 </div>
               )}
 
-              {!isPast && taken && isLeader && taken.note && (
+              {!isDisabled && taken && isLeader && taken.note && (
                 <div style={{ fontSize: 10.5, color: '#f87171', marginTop: 5, fontStyle: 'italic' }}>
                   {taken.note}
                 </div>

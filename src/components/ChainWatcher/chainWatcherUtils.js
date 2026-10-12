@@ -45,6 +45,27 @@ export function fmtDuration(totalSeconds) {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
+// Full breakdown for a long wait (a scheduled chain watch can be days or
+// weeks out) — fmtDuration above stays short-form (h/m or mm:ss) for the
+// live chain timer, which never runs anywhere near this long.
+export function fmtLongDuration(totalSeconds) {
+  let s = Math.max(0, Math.floor(totalSeconds))
+  const MONTH = 30 * 86400, WEEK = 7 * 86400, DAY = 86400
+  const months = Math.floor(s / MONTH); s -= months * MONTH
+  const weeks = Math.floor(s / WEEK); s -= weeks * WEEK
+  const days = Math.floor(s / DAY); s -= days * DAY
+  const hours = Math.floor(s / 3600); s -= hours * 3600
+  const minutes = Math.floor(s / 60)
+
+  const parts = []
+  if (months) parts.push(`${months}mo`)
+  if (weeks) parts.push(`${weeks}w`)
+  if (days) parts.push(`${days}d`)
+  if (hours) parts.push(`${hours}h`)
+  if (minutes || parts.length === 0) parts.push(`${minutes}m`)
+  return parts.join(' ')
+}
+
 export function fmtSlotTime(slotStart) {
   return new Date(slotStart * 1000).toLocaleTimeString('en-GB', {
     hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false,

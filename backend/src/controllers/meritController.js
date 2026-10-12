@@ -21,6 +21,16 @@ export const MERIT_THRESHOLDS = {
 };
 const MERIT_TYPES = Object.keys(MERIT_THRESHOLDS);
 
+// Chain Saver isn't scored/ranked like the three above — just a plain list
+// of members who still need it, most-recently-active first. Torn's merit is
+// "save a 100+ chain within 10 seconds of it dropping", which we can't
+// reliably attribute automatically (Torn's chainreport gives aggregate
+// per-attacker totals, not a per-hit timestamp against the live countdown at
+// that moment) — so for now it's tracked manually via the Mark button.
+const SIMPLE_MERIT_TYPES = ['Chain Saver'];
+const ALL_MERIT_TYPES = [...MERIT_TYPES, ...SIMPLE_MERIT_TYPES];
+export const SIMPLE_MERIT_NOTE = 'Save a 100+ chain by hitting within 10 seconds of it dropping. Tracked manually for now.';
+
 // A member only shows up for a merit once they already hold its prerequisites
 // — Wishful Thinking candidates must already have Massacre AND Genocide, etc.
 export const MERIT_PREREQUISITES = {
@@ -348,6 +358,17 @@ async function buildCandidatePool(env, factionId, energyBonusTiers) {
   });
 }
 
+// Plain roster for the unranked merit types — active members, most recently
+// seen first, no scoring.
+async function buildSimpleMeritPool(env, factionId) {
+  const { results } = await env.DB.prepare(
+    `SELECT torn_user_id, username, last_seen_at FROM faction_members
+     WHERE faction_id = ? AND is_active = 1
+     ORDER BY last_seen_at DESC`
+  ).bind(factionId).all();
+  return results || [];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/chain-watcher/merits?faction_id=X
 // Ranked "who's next" shortlist per merit type — already-awarded members are
@@ -363,8 +384,9 @@ export async function getMerits(request, env) {
     // Rewards exposes to leadership) — load once up front and pass through.
     const cfg = await loadRewardConfig(env);
 
-    const [pool, awardedResult] = await Promise.all([
+    const [pool, simplePool, awardedResult] = await Promise.all([
       buildCandidatePool(env, factionId, cfg.bonuses),
+      buildSimpleMeritPool(env, factionId),
       env.DB.prepare(
         `SELECT torn_user_id, merit_type FROM member_merits WHERE torn_user_id IN (
            SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1
@@ -384,21 +406,56 @@ export async function getMerits(request, env) {
         .slice(0, CANDIDATE_LIMIT);
     }
 
+    const simpleCandidates = {};
+    for (const type of SIMPLE_MERIT_TYPES) {
+      simpleCandidates[type] = simplePool.filter(m => !awardedSet.has(`${m.torn_user_id}:${type}`));
+    }
+
     const awardedCounts = Object.fromEntries(
-      MERIT_TYPES.map(type => [type, (awardedResult.results || []).filter(r => r.merit_type === type).length])
+      ALL_MERIT_TYPES.map(type => [type, (awardedResult.results || []).filter(r => r.merit_type === type).length])
     );
 
     return jsonResponse({
       meritTypes: MERIT_TYPES,
+      simpleMeritTypes: SIMPLE_MERIT_TYPES,
+      simpleMeritNote: SIMPLE_MERIT_NOTE,
       thresholds: MERIT_THRESHOLDS,
       prerequisites: MERIT_PREREQUISITES,
       formula: MERIT_FORMULA_NOTE,
       candidates,
+      simpleCandidates,
       awardedCounts,
     });
   } catch (err) {
     console.error('getMerits error:', err);
     return errorResponse('Failed to fetch merit candidates', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/chain-watcher/merits/award  { torn_user_id, merit_type } — leadership-only
+// Only for merit types that aren't auto-tracked (currently just Chain
+// Saver) — Massacre/Genocide/Wishful Thinking stay fully automatic.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function awardMerit(request, env, user) {
+  try {
+    const body = await request.json();
+    const tornUserId = parseInt(body.torn_user_id, 10);
+    const meritType = body.merit_type;
+
+    if (!tornUserId) return errorResponse('Invalid or missing torn_user_id', 400);
+    if (!SIMPLE_MERIT_TYPES.includes(meritType)) {
+      return errorResponse('This merit is tracked automatically and cannot be manually awarded', 400);
+    }
+
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type, awarded_by) VALUES (?, ?, ?)`
+    ).bind(tornUserId, meritType, user.userId).run();
+
+    return jsonResponse({ success: true });
+  } catch (err) {
+    console.error('awardMerit error:', err);
+    return errorResponse('Failed to record merit award', 500);
   }
 }
 
@@ -414,7 +471,7 @@ export async function revokeMerit(request, env) {
     const meritType = url.searchParams.get('merit_type');
 
     if (!tornUserId) return errorResponse('Invalid or missing torn_user_id', 400);
-    if (!MERIT_TYPES.includes(meritType)) return errorResponse('Invalid merit_type', 400);
+    if (!ALL_MERIT_TYPES.includes(meritType)) return errorResponse('Invalid merit_type', 400);
 
     await env.DB.prepare(
       `DELETE FROM member_merits WHERE torn_user_id = ? AND merit_type = ?`

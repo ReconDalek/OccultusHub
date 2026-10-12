@@ -1,21 +1,27 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiGet, card, sectionTitle, sectionSub } from './chainWatcherUtils'
+import { useSession } from '../../hooks/useSession'
+import { apiGet, apiSend, card, sectionTitle, sectionSub, fmtLongDuration } from './chainWatcherUtils'
 
 const REFRESH_MS = 60000
 const ACCENT = '#8b5cf6'
 
 export default function MeritTracker({ factionId }) {
+  const { user } = useSession()
+  const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
+
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [activeType, setActiveType] = useState(null)
   const [showFormula, setShowFormula] = useState(false)
+  const [markingId, setMarkingId] = useState(null)
 
   const load = useCallback(async () => {
     try {
       const json = await apiGet(`/api/chain-watcher/merits?faction_id=${factionId}`)
       setData(json)
       setError(null)
-      setActiveType((prev) => (prev && json.meritTypes.includes(prev) ? prev : json.meritTypes[0]))
+      const allTypes = [...json.meritTypes, ...(json.simpleMeritTypes || [])]
+      setActiveType((prev) => (prev && allTypes.includes(prev) ? prev : allTypes[0]))
     } catch (e) {
       setError(e.message)
     }
@@ -26,6 +32,18 @@ export default function MeritTracker({ factionId }) {
     const t = setInterval(load, REFRESH_MS)
     return () => clearInterval(t)
   }, [load])
+
+  const markReceived = useCallback(async (tornUserId) => {
+    setMarkingId(tornUserId)
+    try {
+      await apiSend('/api/chain-watcher/merits/award', 'POST', { torn_user_id: tornUserId, merit_type: activeType })
+      await load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setMarkingId(null)
+    }
+  }, [activeType, load])
 
   if (error) {
     return (
@@ -45,25 +63,28 @@ export default function MeritTracker({ factionId }) {
     )
   }
 
-  const candidates = data.candidates[activeType] || []
+  const isSimple = data.simpleMeritTypes?.includes(activeType)
   const awardedCount = data.awardedCounts?.[activeType] || 0
-  const thresholds = data.thresholds?.[activeType] || []
-  const prerequisites = data.prerequisites?.[activeType] || []
 
   return (
     <div style={card}>
       <p style={sectionTitle}>Merit Tracker</p>
-      <p style={sectionSub}>
-        Earned by landing the {thresholds.join('th, ')}th hit in a chain.{' '}
-        <button
-          onClick={() => setShowFormula(s => !s)}
-          style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}
-        >
-          {showFormula ? 'Hide' : 'Show'} formula
-        </button>
-      </p>
 
-      {showFormula && (
+      {isSimple ? (
+        <p style={sectionSub}>{data.simpleMeritNote}</p>
+      ) : (
+        <p style={sectionSub}>
+          Earned by landing the {(data.thresholds?.[activeType] || []).join('th, ')}th hit in a chain.{' '}
+          <button
+            onClick={() => setShowFormula(s => !s)}
+            style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}
+          >
+            {showFormula ? 'Hide' : 'Show'} formula
+          </button>
+        </p>
+      )}
+
+      {!isSimple && showFormula && (
         <pre style={{
           fontSize: 12, fontFamily: 'inherit', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)',
           border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '8px 10px', marginBottom: 10,
@@ -74,7 +95,7 @@ export default function MeritTracker({ factionId }) {
       )}
 
       <div className="flex" style={{ gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {data.meritTypes.map((type) => (
+        {[...data.meritTypes, ...(data.simpleMeritTypes || [])].map((type) => (
           <button
             key={type}
             onClick={() => setActiveType(type)}
@@ -92,49 +113,103 @@ export default function MeritTracker({ factionId }) {
 
       <p style={{ fontSize: 11.5, color: 'var(--text-faint)', margin: '0 0 10px' }}>
         {awardedCount} member{awardedCount === 1 ? '' : 's'} already have {activeType}.
-        {prerequisites.length > 0 && ` Requires ${prerequisites.join(' + ')}.`}
+        {!isSimple && data.prerequisites?.[activeType]?.length > 0 && ` Requires ${data.prerequisites[activeType].join(' + ')}.`}
       </p>
 
-      {candidates.length === 0 ? (
-        <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members.</p>
+      {isSimple ? (
+        <SimpleMeritList
+          members={data.simpleCandidates?.[activeType] || []}
+          isLeader={isLeader}
+          markingId={markingId}
+          onMark={markReceived}
+        />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {candidates.map((c, i) => (
-            <div
-              key={c.torn_user_id}
-              className="flex items-center"
+        <RankedMeritList candidates={data.candidates[activeType] || []} />
+      )}
+    </div>
+  )
+}
+
+function RankedMeritList({ candidates }) {
+  if (candidates.length === 0) {
+    return <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members.</p>
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {candidates.map((c, i) => (
+        <div
+          key={c.torn_user_id}
+          className="flex items-center"
+          style={{
+            gap: 10, padding: '8px 10px', borderRadius: 8,
+            background: i === 0 ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${i === 0 ? 'rgba(139,92,246,0.3)' : 'var(--border-subtle)'}`,
+          }}
+        >
+          <div style={{ width: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>
+            {i + 1}
+          </div>
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#f4f4f5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {c.username}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
+              <span title="Hits vs. faction average + energy/presence bonus">
+                {c.activity_factor.toFixed(2)}x activity
+              </span>
+              {c.penalty_multiplier < 1 && (
+                <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) in the window`}>
+                  {' '}· -{Math.round((1 - c.penalty_multiplier) * 100)}%
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
+            {Math.round(c.score).toLocaleString()}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SimpleMeritList({ members, isLeader, markingId, onMark }) {
+  if (members.length === 0) {
+    return <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members.</p>
+  }
+  const now = Date.now() / 1000
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {members.map((m) => (
+        <div
+          key={m.torn_user_id}
+          className="flex items-center"
+          style={{ gap: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)' }}
+        >
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#f4f4f5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {m.username}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {m.last_seen_at ? `last seen ${fmtLongDuration(now - m.last_seen_at)} ago` : 'last seen —'}
+            </div>
+          </div>
+          {isLeader && (
+            <button
+              onClick={() => onMark(m.torn_user_id)}
+              disabled={markingId === m.torn_user_id}
               style={{
-                gap: 10, padding: '8px 10px', borderRadius: 8,
-                background: i === 0 ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${i === 0 ? 'rgba(139,92,246,0.3)' : 'var(--border-subtle)'}`,
+                fontSize: 11.5, padding: '5px 10px', borderRadius: 6, background: ACCENT, color: '#fff',
+                border: 'none', cursor: 'pointer', fontWeight: 600, flexShrink: 0,
+                opacity: markingId === m.torn_user_id ? 0.6 : 1,
               }}
             >
-              <div style={{ width: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>
-                {i + 1}
-              </div>
-              <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#f4f4f5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.username}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
-                  <span title="Hits vs. faction average + energy/presence bonus">
-                    {c.activity_factor.toFixed(2)}x activity
-                  </span>
-                  {c.penalty_multiplier < 1 && (
-                    <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) in the window`}>
-                      {' '}· -{Math.round((1 - c.penalty_multiplier) * 100)}%
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
-                {Math.round(c.score).toLocaleString()}
-              </div>
-            </div>
-          ))}
+              Mark
+            </button>
+          )}
         </div>
-      )}
+      ))}
     </div>
   )
 }

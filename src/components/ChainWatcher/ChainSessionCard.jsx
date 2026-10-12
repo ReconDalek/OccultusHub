@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../../hooks/useSession'
-import { apiGet, apiSend, card, sectionTitle, fmtDuration } from './chainWatcherUtils'
+import {
+  apiGet, apiSend, card, sectionTitle, fmtLongDuration,
+  fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
+} from './chainWatcherUtils'
 import LiveChainCard from './LiveChainCard'
 
 const SESSION_POLL_MS = 20000
@@ -106,11 +109,16 @@ export default function ChainSessionCard({ factionId }) {
   }
 
   if (session?.status === 'scheduled') {
+    const dayShift = localDayDiffers(session.scheduled_start)
     return (
       <div style={card}>
         <p style={sectionTitle}>Chain Watch</p>
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          Scheduled to start in <strong>{fmtDuration(session.scheduled_start - now)}</strong>
+          Scheduled to start in <strong>{fmtLongDuration(session.scheduled_start - now)}</strong>
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+          Starts {fmtSlotDay(session.scheduled_start)} {fmtSlotTime(session.scheduled_start)} TCT
+          {' '}({fmtSlotTimeLocal(session.scheduled_start)}{dayShift ? ` ${fmtSlotDayLocal(session.scheduled_start)}` : ''} local)
         </p>
         {error && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{error}</p>}
         {isLeader && (
