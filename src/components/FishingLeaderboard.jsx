@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSession } from '../hooks/useSession'
 import { API_BASE_URL } from '../config/api'
 import { OCCULTUS_CONFIG } from '../lib/config'
-
-const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
+import { fallbackAvatarFor } from '../lib/avatarFallback'
 
 function getRankStyle(rank) {
   if (rank === 1) return { color: '#fbbf24', icon: '⊕' }
@@ -103,7 +102,7 @@ export default function FishingLeaderboard({ open, onClose }) {
                     <div style={{ minWidth: '32px', textAlign: 'center', fontSize: rank <= 3 ? '18px' : '13px', color: rs.color, fontWeight: 700, fontFamily: 'monospace' }}>
                       {rs.icon}
                     </div>
-                    <img src={entry.image_url || DEFAULT_AVATAR} alt="" onError={e => (e.currentTarget.src = DEFAULT_AVATAR)}
+                    <img src={entry.image_url || fallbackAvatarFor(entry.torn_user_id)} alt="" onError={e => (e.currentTarget.src = fallbackAvatarFor(entry.torn_user_id))}
                       style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(109,40,217,0.3)', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>

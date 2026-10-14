@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { API_BASE_URL } from '../config/api'
+import { fallbackAvatarFor } from '../lib/avatarFallback'
 
-const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
 const FACTION_NAME = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' }
 
 function authHeaders() {
@@ -102,9 +102,10 @@ export default function ProfileCard({ tornUserId, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <img
-              src={data?.identity?.image_url || DEFAULT_AVATAR} alt="avatar"
+              src={data?.identity?.image_url || fallbackAvatarFor(tornUserId)} alt="avatar"
               className="w-14 h-14 rounded-full object-cover"
               style={{ border: '3px solid #4f0051' }}
+              onError={(e) => { e.currentTarget.src = fallbackAvatarFor(tornUserId) }}
             />
             <div>
               <div style={{ fontWeight: '700', fontSize: '16px', color: '#f4f4f5' }}>

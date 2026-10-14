@@ -6,21 +6,22 @@ import { useCipher } from '../contexts/CipherContext'
 import { useSite } from '../contexts/SiteContext'
 import { OCCULTUS_CONFIG } from '../lib/config'
 import { API_BASE_URL } from '../config/api'
+import { fallbackAvatarFor } from '../lib/avatarFallback'
 import LoginModal from './LoginModal'
 import Grimoire   from './Grimoire'
 import ProfileCard from './ProfileCard'
 
-const DEFAULT_AVATAR = 'https://www.torn.com/images/profile_man.jpg'
-
-function SafeAvatar({ src, alt, className }) {
-  const [imgSrc, setImgSrc] = useState(src || DEFAULT_AVATAR)
-  useEffect(() => { setImgSrc(src || DEFAULT_AVATAR) }, [src])
+function SafeAvatar({ src, alt, className, seed, style }) {
+  const fallback = fallbackAvatarFor(seed)
+  const [imgSrc, setImgSrc] = useState(src || fallback)
+  useEffect(() => { setImgSrc(src || fallback) }, [src, fallback])
   return (
     <img
       src={imgSrc}
       alt={alt}
       className={className}
-      onError={() => setImgSrc(DEFAULT_AVATAR)}
+      style={style}
+      onError={() => setImgSrc(fallback)}
     />
   )
 }
@@ -223,6 +224,7 @@ export default function Navbar() {
                 >
                   <SafeAvatar
                     src={user.image}
+                    seed={user.tornUserId}
                     alt="Member Avatar"
                     className="w-[52px] h-[52px] rounded-full object-cover block"
                     style={{ border: '3px solid #4f0051' }}
@@ -242,6 +244,7 @@ export default function Navbar() {
                     <div className="flex gap-3.5 items-center">
                       <SafeAvatar
                         src={user.image}
+                        seed={user.tornUserId}
                         alt="Avatar"
                         className="w-16 h-16 rounded-full object-cover"
                         style={{ border: '3px solid #4f0051' }}
