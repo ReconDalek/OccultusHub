@@ -786,7 +786,7 @@ export async function generateChainWarningReport(request, env) {
       WHERE warning_type = 'Chain' AND period_year = ? AND period_month = ?
     `).bind(year, month).all();
     const warnedSet = new Set((warnedRows.results || []).map(r => r.torn_user_id));
-    const kickCounts = await getKickThresholdCounts(env);
+    const kickCounts = await getKickThresholdCounts(env, year, month);
 
     const chains = [];
     for (const factionId of factions) {

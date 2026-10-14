@@ -287,7 +287,7 @@ export async function getInactivity(request, env, user) {
         `SELECT DISTINCT torn_user_id FROM member_warnings WHERE warning_type = 'OC' AND period_year = ? AND period_month = ?`
       ).bind(Number(yearStr), Number(monthStr)).all();
       const warnedIds = new Set((warnedRows || []).map(r => r.torn_user_id));
-      const kickCounts = await getKickThresholdCounts(env);
+      const kickCounts = await getKickThresholdCounts(env, Number(yearStr), Number(monthStr));
       for (const m of members) {
         m.already_warned = warnedIds.has(m.torn_user_id);
         m.kick_count_6mo = kickCounts[m.torn_user_id] ?? 0;

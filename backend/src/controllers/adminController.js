@@ -479,9 +479,10 @@ export async function getAnalyticsDashboard(request, env, user) {
       deviceCounts[device] = (deviceCounts[device] || 0) + 1;
     }
 
-    // "at or over the kick threshold right now" — same trailing-6-complete-
-    // months window Generate Warnings/WarningsTab both use (see
-    // [[generate_warnings_feature]]), reused rather than reimplemented.
+    // "at or over the kick threshold right now" — real-time, unlike Generate
+    // Warnings' report-scoped counts (which end at the report's own month, not
+    // today — see [[generate_warnings_feature]]) — omitting targetYear/Month
+    // here is what keeps this one live.
     const kickCounts = await getKickThresholdCounts(env);
     const membersAtKickThreshold = Object.values(kickCounts).filter(c => c >= 3).length;
 

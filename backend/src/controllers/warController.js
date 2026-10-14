@@ -2387,7 +2387,7 @@ export async function generateWarWarningReport(request, env) {
       WHERE warning_type = 'War' AND period_year = ? AND period_month = ?
     `).bind(year, month).all();
     const warnedSet  = new Set((warnedRows.results || []).map((r) => r.torn_user_id));
-    const kickCounts = await getKickThresholdCounts(env);
+    const kickCounts = await getKickThresholdCounts(env, year, month);
 
     const wars = [];
     const noDataWars = [];
