@@ -462,9 +462,10 @@ export async function getMerits(request, env) {
     const [{ pool, simplePool }, awardedResult] = await Promise.all([
       getCachedPools(env, factionId),
       env.DB.prepare(
-        `SELECT torn_user_id, merit_type FROM member_merits WHERE torn_user_id IN (
-           SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1
-         )`
+        `SELECT mm.torn_user_id, mm.merit_type, fm.username
+         FROM member_merits mm
+         JOIN faction_members fm ON fm.torn_user_id = mm.torn_user_id
+         WHERE fm.faction_id = ? AND fm.is_active = 1`
       ).bind(factionId).all(),
     ]);
 
@@ -485,8 +486,14 @@ export async function getMerits(request, env) {
       simpleCandidates[type] = simplePool.filter(m => !awardedSet.has(`${m.torn_user_id}:${type}`));
     }
 
+    const awardedMembers = {};
+    for (const type of ALL_MERIT_TYPES) {
+      awardedMembers[type] = (awardedResult.results || [])
+        .filter(r => r.merit_type === type)
+        .map(r => ({ torn_user_id: r.torn_user_id, username: r.username }));
+    }
     const awardedCounts = Object.fromEntries(
-      ALL_MERIT_TYPES.map(type => [type, (awardedResult.results || []).filter(r => r.merit_type === type).length])
+      ALL_MERIT_TYPES.map(type => [type, awardedMembers[type].length])
     );
 
     return jsonResponse({
@@ -498,6 +505,7 @@ export async function getMerits(request, env) {
       formula: MERIT_FORMULA_NOTE,
       candidates,
       simpleCandidates,
+      awardedMembers,
       awardedCounts,
     });
   } catch (err) {
