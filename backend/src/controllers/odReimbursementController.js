@@ -10,8 +10,14 @@ import { getEligibleMembers } from './xanaxController.js';
 // supplied, so nothing is owed). Nothing here is Torn-API-driven — it's all
 // our own record of what's actually been reimbursed.
 
+// Case/whitespace-insensitive: item_name on a pending row comes from free
+// text (manual /od_add, or whatever casing Torn's log line used), and an
+// exact-match miss against item_prices_cache's name silently priced the
+// item at $0 at completion instead of failing loudly.
 async function getUnitPrice(env, itemName) {
-  const row = await env.DB.prepare(`SELECT effective_price FROM item_prices_cache WHERE name = ?`).bind(itemName).first();
+  const row = await env.DB.prepare(
+    `SELECT effective_price FROM item_prices_cache WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))`
+  ).bind(itemName).first();
   return row?.effective_price ?? 0;
 }
 

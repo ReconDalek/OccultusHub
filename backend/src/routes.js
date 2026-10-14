@@ -1058,6 +1058,11 @@ export async function handleRequest(request, env, ctx) {
     return apiKeySyncController.getApiKeysForBot(request, env);
   }
 
+  // Item price search — backs /od_add's item autocomplete.
+  if (pathname === '/api/discord/item-prices' && method === 'GET') {
+    return armoryController.searchItemPricesForBot(request, env);
+  }
+
   if (pathname.startsWith('/api/discord/')) {
     if (!user) return errorResponse('Authentication required', 401);
 

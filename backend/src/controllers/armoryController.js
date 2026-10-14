@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getStaffApiKeyForFaction, fetchWithRetry, getRandomUserApiKey } from '../services/tornApiService.js';
 import { ARMORY_IGNORE } from './warController.js';
+import { checkBotSecret } from './ocInactivityController.js';
 
 const FACTION_IDS = [33097, 9171, 9728];
 
@@ -465,6 +466,25 @@ export async function getItemPricesStatus(request, env, user) {
     return jsonResponse({ count: row?.count ?? 0, fetched_at: row?.fetched_at ?? null });
   } catch (e) {
     return errorResponse('Failed to fetch item prices status: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/discord/item-prices?q= — bot-facing, shared-secret auth ─────────
+// Backs /od_add's item autocomplete so leadership picks an exact name from
+// this cache instead of free-typing one — a typo'd case (e.g. "xanax" vs the
+// cache's "Xanax") used to silently price a reimbursement at $0, since the
+// OD completion lookup matches by exact name.
+export async function searchItemPricesForBot(request, env) {
+  if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+  try {
+    const url = new URL(request.url);
+    const q = (url.searchParams.get('q') || '').trim();
+    const { results } = await env.DB.prepare(
+      `SELECT name, effective_price FROM item_prices_cache WHERE name LIKE ? ORDER BY name LIMIT 25`
+    ).bind(`%${q}%`).all();
+    return jsonResponse({ items: results || [] });
+  } catch (e) {
+    return errorResponse('Failed to search item prices: ' + e.message, 500);
   }
 }
 
