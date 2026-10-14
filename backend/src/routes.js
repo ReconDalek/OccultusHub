@@ -26,6 +26,7 @@ import * as stocksController from './controllers/stocksController.js'
 import * as armoryController from './controllers/armoryController.js';
 import * as companyProfitController from './controllers/companyProfitController.js';
 import * as webhookController from './controllers/webhookController.js';
+import * as patchNotesController from './controllers/patchNotesController.js';
 import * as bindingController from './controllers/bindingController.js';
 import * as warningsController from './controllers/warningsController.js';
 import * as exemptionsController from './controllers/exemptionsController.js';
@@ -211,6 +212,18 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/admin\/webhooks\/[^/]+\/preview$/) && method === 'POST') {
       return webhookController.previewWebhook(request, env, user);
+    }
+
+    // Patch notes — Claude appends a draft after each major update, the admin
+    // edits it in place, then sends it to Discord with a button click.
+    if (pathname === '/api/admin/patch-notes' && method === 'GET') {
+      return patchNotesController.getPatchNotes(request, env);
+    }
+    if (pathname === '/api/admin/patch-notes' && method === 'PUT') {
+      return patchNotesController.savePatchNotesDraft(request, env);
+    }
+    if (pathname === '/api/admin/patch-notes/send' && method === 'POST') {
+      return patchNotesController.sendPatchNotes(request, env, user);
     }
 
     // Analytics endpoint

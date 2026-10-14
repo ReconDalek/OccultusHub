@@ -7,6 +7,7 @@ import SeasonalEventsTab from '../components/AdminTabs/SeasonalEventsTab'
 import AdminCardsTab from '../components/AdminTabs/AdminCardsTab'
 import LogsTab from '../components/AdminTabs/LogsTab'
 import WebhooksTab from '../components/AdminTabs/WebhooksTab'
+import PatchNotesTab from '../components/AdminTabs/PatchNotesTab'
 import AnalyticsTab from '../components/AdminTabs/AnalyticsTab'
 import AchievementsTab from '../components/AdminTabs/AchievementsTab'
 
@@ -24,6 +25,7 @@ export default function Admin() {
     { id: 'leaderboards', label: 'Leaderboards' },
     { id: 'cards',       label: 'Cards' },
     { id: 'webhooks',    label: 'Webhooks' },
+    { id: 'patch-notes', label: 'Patch Notes' },
   ]
 
   // Deep-link support (e.g. the Spotify OAuth callback returns to ?tab=music)
@@ -99,6 +101,7 @@ export default function Admin() {
           {activeTab === 'cards'    && <AdminCardsTab />}
           {activeTab === 'logs'     && <LogsTab />}
           {activeTab === 'webhooks' && <WebhooksTab />}
+          {activeTab === 'patch-notes' && <PatchNotesTab />}
         </div>
       </div>
     </div>
