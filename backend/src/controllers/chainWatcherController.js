@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
+import { recordBonusHitEntries, MERIT_THRESHOLDS } from './meritController.js';
 
 const TORN_API_BASE = 'https://api.torn.com/v2';
 const FACTION_IDS = [33097, 9728, 9171];
@@ -158,20 +159,40 @@ export async function scheduleSession(request, env, user) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/chain-watcher/session/:id/end — leadership-only.
+// Ending a test session also runs a synthetic bonus-hit report through the
+// same recordBonusHitEntries insertion a real chain uses — one simulated hit
+// at each merit type's lowest threshold, attributed to the leader ending it —
+// so the whole auto-tracking pipeline (chain_bonus_hits log + member_merits
+// auto-award) can be verified on demand without a real chain ever running.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function endSession(request, env) {
+export async function endSession(request, env, user) {
   try {
     const match = new URL(request.url).pathname.match(/\/api\/chain-watcher\/session\/(?<id>\d+)\/end/);
     const id = match?.groups?.id;
     if (!id) return errorResponse('Invalid session id', 400);
 
+    const session = await env.DB.prepare(
+      `SELECT * FROM chain_watch_sessions WHERE id = ? AND status IN ('scheduled','active')`
+    ).bind(id).first();
+    if (!session) return errorResponse('Session not found or already ended', 404);
+
     const nowSecs = Math.floor(Date.now() / 1000);
-    const result = await env.DB.prepare(
-      `UPDATE chain_watch_sessions SET status = 'ended', ended_at = ? WHERE id = ? AND status IN ('scheduled','active')`
+    await env.DB.prepare(
+      `UPDATE chain_watch_sessions SET status = 'ended', ended_at = ? WHERE id = ?`
     ).bind(nowSecs, id).run();
 
-    if (!result.meta.changes) return errorResponse('Session not found or already ended', 404);
-    return jsonResponse({ success: true });
+    let meritTest = null;
+    if (session.is_test) {
+      const testChainId = -session.id; // negative — can never collide with a real Torn chain id
+      const bonuses = Object.values(MERIT_THRESHOLDS).map((positions) => ({
+        attacker_id: user.tornUserId,
+        chain: positions[0],
+        respect: null,
+      }));
+      meritTest = await recordBonusHitEntries(env, testChainId, session.faction_id, bonuses);
+    }
+
+    return jsonResponse({ success: true, meritTest });
   } catch (err) {
     console.error('endSession error:', err);
     return errorResponse('Failed to end session', 500);

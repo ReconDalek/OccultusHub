@@ -435,7 +435,7 @@ export async function handleRequest(request, env, ctx) {
   if (pathname.match(/^\/api\/chain-watcher\/session\/\d+\/end$/) && method === 'POST') {
     if (!user) return errorResponse('Authentication required', 401);
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
-    return chainWatcherController.endSession(request, env);
+    return chainWatcherController.endSession(request, env, user);
   }
   if (pathname === '/api/chain-watcher/live' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);

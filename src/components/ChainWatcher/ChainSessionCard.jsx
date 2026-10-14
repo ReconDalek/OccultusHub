@@ -31,6 +31,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
   const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
 
   const [error, setError] = useState(null)
+  const [info, setInfo] = useState(null)
   const [now, setNow] = useState(() => Date.now() / 1000)
   const [scheduleAt, setScheduleAt] = useState('')
   const [busy, setBusy] = useState(false)
@@ -41,7 +42,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
   }, [])
 
   const startNow = useCallback(async () => {
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setInfo(null)
     try {
       await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId })
       await onChanged()
@@ -49,7 +50,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
   }, [factionId, onChanged])
 
   const startTest = useCallback(async () => {
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setInfo(null)
     try {
       await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId, is_test: true })
       await onChanged()
@@ -58,7 +59,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
 
   const scheduleFor = useCallback(async () => {
     if (!scheduleAt) return
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setInfo(null)
     try {
       const ts = tctInputToUnix(scheduleAt)
       await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId, scheduled_start: ts })
@@ -69,9 +70,12 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
 
   const endWatch = useCallback(async () => {
     if (!session) return
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setInfo(null)
     try {
-      await apiSend(`/api/chain-watcher/session/${session.id}/end`, 'POST')
+      const res = await apiSend(`/api/chain-watcher/session/${session.id}/end`, 'POST')
+      if (res?.meritTest) {
+        setInfo(`Test ended — ${res.meritTest.recorded} simulated bonus hit(s) run through the merit pipeline. Check Merit Tracker, then revoke any you don't want to keep.`)
+      }
       await onChanged()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }, [session, onChanged])
@@ -129,6 +133,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
     <div style={card}>
       <p style={sectionTitle}>Chain Watch</p>
       <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No chain watch scheduled.</p>
+      {info && <p style={{ color: '#34d399', fontSize: 12.5, marginTop: 8 }}>{info}</p>}
       {displayError && <p style={{ color: '#f87171', fontSize: 13, marginTop: 8 }}>{displayError}</p>}
       {isLeader && (
         <div className="flex items-center" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>

@@ -98,6 +98,33 @@ function fmtDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+// Shared insertion step: given a chain's bonus-hit entries (attacker_id,
+// chain position, respect), records the raw bonus-hit log and auto-awards
+// any merit thresholds landed on. Used both by recordChainBonusHits below
+// (real Torn chainreport data) and by chainWatcherController's test-chain
+// end (synthetic entries), so the test path exercises the exact same
+// insertion code a real chain does.
+export async function recordBonusHitEntries(env, tornChainId, factionId, bonuses) {
+  let recorded = 0;
+  for (const b of bonuses) {
+    if (!b.attacker_id || !b.chain) continue;
+
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO chain_bonus_hits (torn_chain_id, faction_id, torn_user_id, chain_position, respect)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(tornChainId, factionId, b.attacker_id, b.chain, b.respect ?? null).run();
+    recorded++;
+
+    const meritType = meritTypeForChainPosition(b.chain);
+    if (meritType) {
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type) VALUES (?, ?)`
+      ).bind(b.attacker_id, meritType).run();
+    }
+  }
+  return { recorded };
+}
+
 // Fetches a chain's bonus-hit list from Torn and records (a) the raw bonus
 // hit log and (b) a member_merits row for anyone who landed on one of our
 // three merit-threshold positions. Best-effort — called right after a chain
@@ -113,25 +140,7 @@ export async function recordChainBonusHits(env, tornChainId, factionId) {
       { Authorization: `ApiKey ${apiKeyObj.key}` }
     );
     const bonuses = data.chainreport?.bonuses || [];
-
-    let recorded = 0;
-    for (const b of bonuses) {
-      if (!b.attacker_id || !b.chain) continue;
-
-      await env.DB.prepare(
-        `INSERT OR IGNORE INTO chain_bonus_hits (torn_chain_id, faction_id, torn_user_id, chain_position, respect)
-         VALUES (?, ?, ?, ?, ?)`
-      ).bind(tornChainId, factionId, b.attacker_id, b.chain, b.respect ?? null).run();
-      recorded++;
-
-      const meritType = meritTypeForChainPosition(b.chain);
-      if (meritType) {
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type) VALUES (?, ?)`
-        ).bind(b.attacker_id, meritType).run();
-      }
-    }
-    return { recorded };
+    return await recordBonusHitEntries(env, tornChainId, factionId, bonuses);
   } catch (err) {
     console.error(`recordChainBonusHits failed for chain ${tornChainId}:`, err.message);
     return { recorded: 0, reason: err.message };
