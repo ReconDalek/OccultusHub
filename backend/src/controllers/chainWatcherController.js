@@ -236,9 +236,10 @@ async function computeCurrentWatcher(env, factionId) {
   const curSlot = Math.floor(nowSecs / hour) * hour;
 
   const { results } = await env.DB.prepare(
-    `SELECT s.slot_start, s.torn_user_id, u.username, dl.discord_id
+    `SELECT s.slot_start, s.torn_user_id, fm.username, dl.discord_id
      FROM chain_watch_shifts s
-     JOIN users u ON u.torn_user_id = s.torn_user_id
+     JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id AND fm.faction_id = s.faction_id
+     LEFT JOIN users u ON u.torn_user_id = s.torn_user_id
      LEFT JOIN discord_links dl ON dl.user_id = u.id
      WHERE s.faction_id = ? AND s.slot_start >= ? AND s.slot_start < ?
      ORDER BY s.slot_start ASC`
@@ -284,7 +285,11 @@ export async function getCurrentWatcherForBot(request, env) {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/chain-watcher/shifts?faction_id=X&from=unix&to=unix
 // Claimed shifts in range (an hour with no row is open). Defaults to a window
-// starting an hour ago through 7 days out.
+// starting an hour ago through 7 days out. Joins faction_members (not users)
+// for the username — a member can be assigned a shift without ever having a
+// website account, and an INNER JOIN against users silently dropped those
+// rows from this list while still enforcing the one-per-hour UNIQUE
+// constraint, making an already-claimed slot look open.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function listShifts(request, env) {
   const url = new URL(request.url);
@@ -297,9 +302,9 @@ export async function listShifts(request, env) {
 
   try {
     const result = await env.DB.prepare(
-      `SELECT s.id, s.slot_start, s.torn_user_id, s.note, u.username
+      `SELECT s.id, s.slot_start, s.torn_user_id, s.note, fm.username
        FROM chain_watch_shifts s
-       JOIN users u ON u.torn_user_id = s.torn_user_id
+       JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id AND fm.faction_id = s.faction_id
        WHERE s.faction_id = ? AND s.slot_start >= ? AND s.slot_start < ?
        ORDER BY s.slot_start ASC`
     ).bind(factionId, from, to).all();

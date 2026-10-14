@@ -34,6 +34,7 @@ import * as mentoringController from './controllers/mentoringController.js';
 import * as ocController from './controllers/ocController.js';
 import * as ocInactivityController from './controllers/ocInactivityController.js';
 import * as odReimbursementController from './controllers/odReimbursementController.js';
+import * as apiKeySyncController from './controllers/apiKeySyncController.js';
 import * as xanaxController from './controllers/xanaxController.js';
 import * as bountyController from './controllers/bountyController.js';
 import * as leaderboardController from './controllers/leaderboardController.js';
@@ -1045,6 +1046,11 @@ export async function handleRequest(request, env, ctx) {
   }
   if (pathname === '/api/discord/od-reimbursements' && method === 'POST') {
     return odReimbursementController.createReimbursementForBot(request, env);
+  }
+
+  // API key sync — bot-facing, shared-secret auth (same as OC inactivity).
+  if (pathname === '/api/discord/api-keys' && method === 'GET') {
+    return apiKeySyncController.getApiKeysForBot(request, env);
   }
 
   if (pathname.startsWith('/api/discord/')) {
