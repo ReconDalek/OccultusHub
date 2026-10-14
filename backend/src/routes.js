@@ -437,6 +437,11 @@ export async function handleRequest(request, env, ctx) {
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.endSession(request, env, user);
   }
+  if (pathname === '/api/chain-watcher/target-estimate' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.getTargetEstimate(request, env);
+  }
   if (pathname === '/api/chain-watcher/live' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     return chainWatcherController.getLiveStatus(request, env);

@@ -13,6 +13,10 @@ export const OCC_FACTIONS = [
   { id: 9171,  label: 'Occ3', name: 'Occul3us' },
 ]
 
+// Chain length targets a leader can pick when scheduling/starting a watch —
+// mirrors the backend's TARGET_LENGTHS in chainController.js.
+export const TARGET_LENGTHS = [2500, 5000, 10000, 25000, 50000, 100000]
+
 const token = () => localStorage.getItem('occultusSession')
 
 export async function apiGet(path) {

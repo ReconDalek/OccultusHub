@@ -14,6 +14,42 @@ const MIN_CHAIN_LENGTH = 1000; // Only store chains >= this many hits
 // historical faction IDs we previously owned but no longer actively track.
 const ALLOWED_IMPORT_FACTION_IDS = [33097, 9728, 9171, 355];
 
+// Chain Watch scheduling lets a leader pick a target length from these —
+// Torn's own merit-threshold chain lengths, which is also why historic
+// chains tend to cluster near them (people aim for a merit, not a round
+// number for its own sake).
+export const TARGET_LENGTHS = [2500, 5000, 10000, 25000, 50000, 100000];
+
+// Estimated time to reach a target chain length, from this faction's own
+// chain_cache history. We don't have timestamps for *when* a chain crossed
+// any given length mid-run — chain_cache only has each chain's final length
+// and overall start/end — so this only uses past chains that FINISHED in the
+// same band as the target (at least `target`, below the next higher target),
+// on the assumption a finished chain's length wasn't arbitrary: the faction
+// was most likely aiming for that specific milestone. Averages those chains'
+// actual total durations as the estimate; callers should treat sampleSize as
+// how much to trust it.
+export async function estimateChainDuration(env, factionId, targetLength) {
+  const idx = TARGET_LENGTHS.indexOf(targetLength);
+  if (idx === -1) return { sampleSize: 0 };
+  const upperBound = idx + 1 < TARGET_LENGTHS.length ? TARGET_LENGTHS[idx + 1] : null;
+
+  const stmt = upperBound
+    ? env.DB.prepare(
+        `SELECT (end_at - start_at) AS duration FROM chain_cache WHERE faction_id = ? AND chain_length >= ? AND chain_length < ?`
+      ).bind(factionId, targetLength, upperBound)
+    : env.DB.prepare(
+        `SELECT (end_at - start_at) AS duration FROM chain_cache WHERE faction_id = ? AND chain_length >= ?`
+      ).bind(factionId, targetLength);
+
+  const { results } = await stmt.all();
+  const durations = (results || []).map((r) => r.duration).filter((d) => d > 0);
+  if (durations.length === 0) return { sampleSize: 0 };
+
+  const avgSeconds = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
+  return { sampleSize: durations.length, avgSeconds };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal: fetch chain lists for all factions and upsert only NEW chains
 // that meet the minimum hit threshold.

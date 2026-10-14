@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { recordBonusHitEntries, MERIT_THRESHOLDS } from './meritController.js';
+import { TARGET_LENGTHS, estimateChainDuration } from './chainController.js';
 
 const TORN_API_BASE = 'https://api.torn.com/v2';
 const FACTION_IDS = [33097, 9728, 9171];
@@ -117,12 +118,13 @@ export async function getActiveSession(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/chain-watcher/session  { faction_id, scheduled_start?, is_test? }
+// POST /api/chain-watcher/session  { faction_id, scheduled_start?, is_test?, target_length? }
 // Leadership-only (enforced in routes.js). scheduled_start omitted/in the
 // past = starts immediately; otherwise the session stays 'scheduled' until
 // that time, and no Torn polling happens in the meantime. is_test starts a
 // simulated chain (always immediately — there's no reason to schedule a test
 // for later) so the live view can be exercised without a real chain.
+// target_length is an optional goal chain length, one of TARGET_LENGTHS.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function scheduleSession(request, env, user) {
   try {
@@ -133,27 +135,56 @@ export async function scheduleSession(request, env, user) {
     const existing = await loadCurrentSession(env, factionId);
     if (existing) return errorResponse('A chain watch is already scheduled or active for this faction', 409);
 
+    let targetLength = null;
+    if (body.target_length != null) {
+      const t = parseInt(body.target_length, 10);
+      if (!TARGET_LENGTHS.includes(t)) return errorResponse('Invalid target_length', 400);
+      targetLength = t;
+    }
+
     const nowSecs = Math.floor(Date.now() / 1000);
     const isTest = !!body.is_test;
     const scheduledStart = isTest ? null : (body.scheduled_start ? parseInt(body.scheduled_start, 10) : null);
     const startsNow = isTest || !scheduledStart || scheduledStart <= nowSecs;
 
     const result = await env.DB.prepare(
-      `INSERT INTO chain_watch_sessions (faction_id, status, scheduled_start, started_at, created_by, is_test)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO chain_watch_sessions (faction_id, status, scheduled_start, started_at, created_by, is_test, target_length)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       factionId,
       startsNow ? 'active' : 'scheduled',
       scheduledStart,
       startsNow ? nowSecs : null,
       user.tornUserId,
-      isTest ? 1 : 0
+      isTest ? 1 : 0,
+      targetLength
     ).run();
 
     return jsonResponse({ success: true, id: result.meta.last_row_id });
   } catch (err) {
     console.error('scheduleSession error:', err);
     return errorResponse('Failed to schedule chain watch', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/chain-watcher/target-estimate?faction_id=X&target=Y — leadership-
+// only. Estimated time to reach a target chain length, from this faction's
+// own chain history — see estimateChainDuration for the method/caveats.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getTargetEstimate(request, env) {
+  const url = new URL(request.url);
+  const factionId = validFactionId(url.searchParams.get('faction_id'));
+  const target = parseInt(url.searchParams.get('target'), 10);
+  if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+  if (!TARGET_LENGTHS.includes(target)) return errorResponse('Invalid target', 400);
+
+  try {
+    const estimate = await estimateChainDuration(env, factionId, target);
+    return jsonResponse({ target, ...estimate });
+  } catch (err) {
+    console.error('getTargetEstimate error:', err);
+    return errorResponse('Failed to compute estimate', 500);
   }
 }
 

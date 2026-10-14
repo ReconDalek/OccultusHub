@@ -5,7 +5,7 @@ const POLL_MS = 20000
 const FAST_POLL_MS = 5000
 const FAST_POLL_THRESHOLD = 120 // seconds left before a chain drops — poll tighter once attacks matter most
 
-export default function LiveChainCard({ factionId }) {
+export default function LiveChainCard({ factionId, target }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [now, setNow] = useState(Date.now())
@@ -93,7 +93,9 @@ export default function LiveChainCard({ factionId }) {
         <div className="flex items-center" style={{ gap: 28, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Hits</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#f4f4f5' }}>{data.current.toLocaleString()}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: '#f4f4f5' }}>
+              {data.current.toLocaleString()}{target ? ` / ${target.toLocaleString()}` : ''}
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
