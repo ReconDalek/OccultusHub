@@ -1,8 +1,11 @@
+import { useState } from 'react'
 import Modal from './Modal'
 import { fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, localDayDiffers, fmtSlotDayLocal } from './chainWatcherUtils'
 
-export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose }) {
+export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId }) {
   const dayShift = localDayDiffers(slotStart)
+  const [assigneeId, setAssigneeId] = useState(currentUserId ?? null)
+  const assigningOther = assigneeId != null && assigneeId !== currentUserId
 
   return (
     <Modal onClose={onClose}>
@@ -15,6 +18,25 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
         {' '}(<strong>{dayShift ? `${fmtSlotDayLocal(slotStart)} ` : ''}{fmtSlotTimeLocal(slotStart)}</strong> local)
       </p>
 
+      {isLeader && members.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Assign to</label>
+          <select
+            value={assigneeId ?? ''}
+            onChange={(e) => setAssigneeId(parseInt(e.target.value, 10))}
+            style={{
+              width: '100%', fontSize: 13, padding: '6px 8px', borderRadius: 6,
+              background: 'rgba(255,255,255,0.04)', color: '#f4f4f5', border: '1px solid var(--border-subtle)',
+            }}
+          >
+            <option value={currentUserId ?? ''}>Myself</option>
+            {members.filter((m) => m.torn_user_id !== currentUserId).map((m) => (
+              <option key={m.torn_user_id} value={m.torn_user_id}>{m.username}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div style={{
         background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)',
         borderRadius: 10, padding: '12px 14px', marginBottom: 18,
@@ -26,7 +48,7 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
           <li>Near a bonus? Flag it to a leader.</li>
         </ul>
         <p style={{ color: '#f87171', fontSize: 12.5, margin: '10px 0 0', fontWeight: 600 }}>
-          You can't remove yourself after confirming — only a leader can.
+          Once confirmed, only a leader can remove this shift.
         </p>
       </div>
 
@@ -42,14 +64,14 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
           Cancel
         </button>
         <button
-          onClick={onConfirm}
+          onClick={() => onConfirm(assigneeId)}
           disabled={busy}
           style={{
             fontSize: 13, padding: '8px 16px', borderRadius: 7, background: '#8b5cf6', color: '#fff',
             border: 'none', cursor: 'pointer', fontWeight: 600, opacity: busy ? 0.6 : 1,
           }}
         >
-          {busy ? 'Signing up…' : 'Confirm sign-up'}
+          {busy ? 'Signing up…' : (assigningOther ? 'Confirm assignment' : 'Confirm sign-up')}
         </button>
       </div>
     </Modal>

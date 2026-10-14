@@ -51,6 +51,31 @@ async function fetchLiveChainFromTorn(env, factionId) {
   };
 }
 
+// Deterministic simulated chain data for test mode — no Torn call. Cycles
+// through a 5-minute window per "hit" window so the countdown, hit count, and
+// the urgent/about-to-drop styling all get exercised automatically without
+// needing a real chain or any manual input.
+const TEST_CYCLE_SECONDS = 300;
+const TEST_HIT_INTERVAL_SECONDS = 20;
+
+function generateTestChainData(factionId, session) {
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const elapsed = Math.max(0, nowSecs - (session.started_at || nowSecs));
+  const cyclePos = elapsed % TEST_CYCLE_SECONDS;
+
+  return {
+    factionId,
+    status: 'active',
+    current: Math.floor(elapsed / TEST_HIT_INTERVAL_SECONDS) + 1,
+    timeout: TEST_CYCLE_SECONDS - cyclePos,
+    cooldown: 0,
+    start: session.started_at,
+    end: 0,
+    fetchedAt: nowSecs,
+    isTest: true,
+  };
+}
+
 // Reads the faction's current session row, flipping a 'scheduled' session to
 // 'active' once its scheduled_start has passed (lazily, on read — no cron
 // needed). Returns null if nothing is scheduled/active.
@@ -91,10 +116,12 @@ export async function getActiveSession(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/chain-watcher/session  { faction_id, scheduled_start? }
+// POST /api/chain-watcher/session  { faction_id, scheduled_start?, is_test? }
 // Leadership-only (enforced in routes.js). scheduled_start omitted/in the
 // past = starts immediately; otherwise the session stays 'scheduled' until
-// that time, and no Torn polling happens in the meantime.
+// that time, and no Torn polling happens in the meantime. is_test starts a
+// simulated chain (always immediately — there's no reason to schedule a test
+// for later) so the live view can be exercised without a real chain.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function scheduleSession(request, env, user) {
   try {
@@ -106,18 +133,20 @@ export async function scheduleSession(request, env, user) {
     if (existing) return errorResponse('A chain watch is already scheduled or active for this faction', 409);
 
     const nowSecs = Math.floor(Date.now() / 1000);
-    const scheduledStart = body.scheduled_start ? parseInt(body.scheduled_start, 10) : null;
-    const startsNow = !scheduledStart || scheduledStart <= nowSecs;
+    const isTest = !!body.is_test;
+    const scheduledStart = isTest ? null : (body.scheduled_start ? parseInt(body.scheduled_start, 10) : null);
+    const startsNow = isTest || !scheduledStart || scheduledStart <= nowSecs;
 
     const result = await env.DB.prepare(
-      `INSERT INTO chain_watch_sessions (faction_id, status, scheduled_start, started_at, created_by)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO chain_watch_sessions (faction_id, status, scheduled_start, started_at, created_by, is_test)
+       VALUES (?, ?, ?, ?, ?, ?)`
     ).bind(
       factionId,
       startsNow ? 'active' : 'scheduled',
       scheduledStart,
       startsNow ? nowSecs : null,
-      user.tornUserId
+      user.tornUserId,
+      isTest ? 1 : 0
     ).run();
 
     return jsonResponse({ success: true, id: result.meta.last_row_id });
@@ -166,6 +195,8 @@ export async function getLiveStatus(request, env) {
     if (!session || session.status !== 'active') {
       return jsonResponse({ factionId, status: 'no_session', fetchedAt: Math.floor(Date.now() / 1000) });
     }
+
+    if (session.is_test) return jsonResponse(generateTestChainData(factionId, session));
 
     return jsonResponse(await fetchLiveChainFromTorn(env, factionId));
   } catch (err) {
@@ -281,10 +312,13 @@ export async function listShifts(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/chain-watcher/shifts  { faction_id, slot_start }
+// POST /api/chain-watcher/shifts  { faction_id, slot_start, torn_user_id? }
 // Claims an open hour slot for the calling member. Once claimed, only
 // leadership can free it again (see cancelShift) — there's no self-service
 // cancel, by design: the frontend makes members confirm that before signing up.
+// A leader may pass torn_user_id to assign the slot to someone else (e.g. a
+// member who asked a leader to sign them up) — anyone else attempting that
+// is rejected.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function signUpShift(request, env, user) {
   try {
@@ -300,9 +334,21 @@ export async function signUpShift(request, env, user) {
     const currentHour = Math.floor(Date.now() / 3600000) * 3600;
     if (slotStart < currentHour) return errorResponse('Cannot sign up for a past shift', 400);
 
+    let targetUserId = user.tornUserId;
+    if (body.torn_user_id != null && parseInt(body.torn_user_id, 10) !== user.tornUserId) {
+      if (!user.isLeader && !user.isAdmin && !user.isOwner) {
+        return errorResponse('Leadership access required to assign another member', 403);
+      }
+      targetUserId = parseInt(body.torn_user_id, 10);
+      const target = await env.DB.prepare(
+        `SELECT torn_user_id FROM faction_members WHERE torn_user_id = ? AND faction_id = ? AND is_active = 1`
+      ).bind(targetUserId, factionId).first();
+      if (!target) return errorResponse('That member is not an active member of this faction', 400);
+    }
+
     await env.DB.prepare(
       `INSERT INTO chain_watch_shifts (faction_id, slot_start, torn_user_id) VALUES (?, ?, ?)`
-    ).bind(factionId, slotStart, user.tornUserId).run();
+    ).bind(factionId, slotStart, targetUserId).run();
 
     return jsonResponse({ success: true });
   } catch (err) {
@@ -311,6 +357,26 @@ export async function signUpShift(request, env, user) {
     }
     console.error('signUpShift error:', err);
     return errorResponse('Failed to sign up for shift', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/chain-watcher/members?faction_id=X — leadership-only.
+// Plain active-member roster for the shift-assign picker.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function listActiveMembers(request, env) {
+  const url = new URL(request.url);
+  const factionId = validFactionId(url.searchParams.get('faction_id'));
+  if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1 ORDER BY username ASC`
+    ).bind(factionId).all();
+    return jsonResponse({ members: results || [] });
+  } catch (err) {
+    console.error('listActiveMembers error:', err);
+    return errorResponse('Failed to fetch members', 500);
   }
 }
 

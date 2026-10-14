@@ -48,6 +48,14 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }, [factionId, onChanged])
 
+  const startTest = useCallback(async () => {
+    setBusy(true); setError(null)
+    try {
+      await apiSend('/api/chain-watcher/session', 'POST', { faction_id: factionId, is_test: true })
+      await onChanged()
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }, [factionId, onChanged])
+
   const scheduleFor = useCallback(async () => {
     if (!scheduleAt) return
     setBusy(true); setError(null)
@@ -85,7 +93,9 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
         <LiveChainCard factionId={factionId} />
         {isLeader && (
           <div style={{ marginTop: -8, marginBottom: 16 }}>
-            <button onClick={endWatch} disabled={busy} style={dangerBtn}>End chain watch</button>
+            <button onClick={endWatch} disabled={busy} style={dangerBtn}>
+              {session.is_test ? 'End test chain' : 'End chain watch'}
+            </button>
           </div>
         )}
       </>
@@ -123,6 +133,14 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
       {isLeader && (
         <div className="flex items-center" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <button onClick={startNow} disabled={busy} style={primaryBtn}>Start watching now</button>
+          <button
+            onClick={startTest}
+            disabled={busy}
+            style={secondaryBtn}
+            title="Simulated chain data, no real Torn chain needed — for testing the live view"
+          >
+            Start test chain
+          </button>
           <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>or schedule for (TCT)</span>
           <input
             type="datetime-local"

@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
-  apiSend, card, sectionTitle, sectionSub,
+  apiGet, apiSend, card, sectionTitle, sectionSub,
   upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
   currentHourStart, HOUR,
 } from './chainWatcherUtils'
@@ -19,7 +19,17 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
   const [editingShift, setEditingShift] = useState(null) // shift object whose note is being edited
+  const [members, setMembers] = useState([]) // active roster, for leaders assigning a shift to someone else
   const jumpedForRef = useRef(null)
+
+  useEffect(() => {
+    if (!isLeader) { setMembers([]); return undefined }
+    let cancelled = false
+    apiGet(`/api/chain-watcher/members?faction_id=${factionId}`)
+      .then((json) => { if (!cancelled) setMembers(json.members || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [factionId, isLeader])
 
   // Session comes from the page (shared with ChainSessionCard) so scheduling
   // or cancelling there shows up here immediately instead of waiting on a
@@ -52,11 +62,13 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
     [shifts, user]
   )
 
-  const confirmSignUp = useCallback(async () => {
+  const confirmSignUp = useCallback(async (assigneeId) => {
     const slotStart = pendingSlot
     setBusySlot(slotStart); setError(null)
     try {
-      await apiSend('/api/chain-watcher/shifts', 'POST', { faction_id: factionId, slot_start: slotStart })
+      const body = { faction_id: factionId, slot_start: slotStart }
+      if (assigneeId != null && assigneeId !== user?.tornUserId) body.torn_user_id = assigneeId
+      await apiSend('/api/chain-watcher/shifts', 'POST', body)
       setPendingSlot(null)
       onChanged()
     } catch (e) {
@@ -64,7 +76,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
     } finally {
       setBusySlot(null)
     }
-  }, [factionId, pendingSlot, onChanged])
+  }, [factionId, pendingSlot, onChanged, user])
 
   const handleRemove = useCallback(async (id, slotStart) => {
     setBusySlot(slotStart); setError(null)
@@ -247,6 +259,9 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           busy={busySlot === pendingSlot}
           onConfirm={confirmSignUp}
           onClose={() => setPendingSlot(null)}
+          isLeader={isLeader}
+          members={members}
+          currentUserId={user?.tornUserId}
         />
       )}
 

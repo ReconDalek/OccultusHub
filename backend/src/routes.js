@@ -458,6 +458,11 @@ export async function handleRequest(request, env, ctx) {
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.setShiftNote(request, env);
   }
+  if (pathname === '/api/chain-watcher/members' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.listActiveMembers(request, env);
+  }
 
   // Chain watcher — merit tracking (member auth required to view; leadership to revoke)
   // Merits are now tracked automatically from chain bonus hits (see

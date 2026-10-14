@@ -67,7 +67,17 @@ export default function LiveChainCard({ factionId }) {
 
   return (
     <div style={{ ...card, border: urgent ? '1px solid #f87171' : card.border }}>
-      <p style={sectionTitle}>Live Chain</p>
+      <p style={sectionTitle}>
+        Live Chain
+        {data.isTest && (
+          <span style={{
+            marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#f4f4f5', background: '#8b5cf6',
+            borderRadius: 5, padding: '2px 7px', verticalAlign: 'middle', letterSpacing: '0.04em',
+          }}>
+            TEST
+          </span>
+        )}
+      </p>
 
       {(data.status === 'idle' || data.status === 'no_session') && (
         <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No chain currently running.</p>
