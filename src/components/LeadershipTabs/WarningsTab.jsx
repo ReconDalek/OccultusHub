@@ -796,9 +796,54 @@ function bootLabel(b) {
   return `Booted ${fmtDate(b.created_at)} (${b.warning_type} report, ${MONTHS_FULL[b.month - 1] || b.month} ${b.year})${b.created_by_username ? ` by ${b.created_by_username}` : ''}`
 }
 
+// Read-only — boots have no edit/delete action in the UI (informational, per
+// the header badge's own note that they don't count toward the kick total).
+function BootRow({ b }) {
+  return (
+    <div style={{
+      padding: '12px 14px', borderRadius: '8px', marginBottom: '6px',
+      background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.25)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+        <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700', background: 'rgba(168,85,247,0.18)', color: '#c084fc', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          BOOTED
+        </span>
+        <div style={{ flex: 1, minWidth: '200px' }}>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '4px' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+              From: <span style={{ color: '#f4f4f5' }}>{b.warning_type} report, {MONTHS_FULL[b.month - 1] || b.month} {b.year}</span>
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--text-faint)', fontSize: '11px' }}>Date: {fmtDate(b.created_at)}</span>
+            {b.created_by_username && (
+              <span style={{ color: 'var(--text-faint)', fontSize: '11px' }}>By: {b.created_by_username}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MemberCard({ member, windowWarnings, historicalWarnings, showAllWarnings, boots = [], onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const kickCount = windowWarnings.length
+
+  // Interleaves boots into the current-window warning list by real date, so a
+  // boot shows up where it actually happened relative to the warnings around
+  // it (e.g. after the warnings that led to it) instead of only as the
+  // collapsed header badge. Sort key is the warning's own real-world date
+  // (issued, falling back to reported) — not period_year/month, which
+  // describes when the bad behavior happened, not when the warning record
+  // itself landed.
+  const timeline = [...windowWarnings.map(w => ({
+    kind: 'warning', key: w.id, expired: false,
+    ts: Date.parse(w.date_issued || w.date_reported || 0) || 0, w,
+  })), ...boots.map(b => ({
+    kind: 'boot', key: `boot-${b.id}`,
+    ts: Date.parse(b.created_at) || 0, b,
+  }))].sort((a, b) => b.ts - a.ts)
 
   return (
     <div style={{ border: `1px solid ${kickCount >= 3 ? 'rgba(248,113,113,0.25)' : 'rgba(255,255,255,0.07)'}`, borderRadius: '10px', overflow: 'hidden', marginBottom: '8px' }}>
@@ -860,12 +905,14 @@ function MemberCard({ member, windowWarnings, historicalWarnings, showAllWarning
       {/* Expanded warnings */}
       {expanded && (
         <div style={{ padding: '10px 14px 14px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          {windowWarnings.map(w => (
-            <WarningRow key={w.id} w={w} expired={false} onDelete={onDelete} />
+          {timeline.map(item => (
+            item.kind === 'boot'
+              ? <BootRow key={item.key} b={item.b} />
+              : <WarningRow key={item.key} w={item.w} expired={false} onDelete={onDelete} />
           ))}
           {showAllWarnings && historicalWarnings.length > 0 && (
             <>
-              {windowWarnings.length > 0 && (
+              {timeline.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '10px 0 8px' }}>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.05)' }} />
                   <span style={{ color: 'var(--text-faint)', fontSize: '11px' }}>older / expired</span>
