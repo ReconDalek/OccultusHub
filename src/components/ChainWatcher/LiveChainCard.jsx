@@ -103,6 +103,7 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
   const chainKeyRef = useRef(null)
   const firedThresholdsRef = useRef(new Set())
   const prevTimeoutRef = useRef(null)
+  const prevPolledTimeoutRef = useRef(null)
 
   // Self-scheduling rather than a fixed interval, so the poll rate can tighten
   // up as a chain gets close to timing out — each attack resets Torn's own
@@ -150,19 +151,34 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
       chainKeyRef.current = data.start
       firedThresholdsRef.current = new Set()
       prevTimeoutRef.current = null
+      prevPolledTimeoutRef.current = null
     }
   }, [data?.start, data?.status])
 
-  // Fires on a threshold CROSSING (previous reading above it, this one
-  // at/below) — not just "currently at or below," so loading the page
-  // mid-chain doesn't immediately fire every threshold already passed before
-  // anyone was watching. Shared by both effects below via firedThresholdsRef,
-  // so whichever one notices the crossing first fires it — the other is then
-  // a no-op for that same threshold.
+  // A threshold is allowed to fire again any time the timeout has gone back
+  // ABOVE it since it last fired — a chain's timeout resets on every attack,
+  // so it can have several close calls in one chain, each one worth its own
+  // alert, not just the first ever. firedThresholdsRef tracks "currently
+  // below and already alerted for" rather than "ever fired this chain": it's
+  // cleared for a threshold the moment we're back above it, and only set
+  // again on the next genuine crossing. Shared by both effects below, so
+  // whichever one notices a crossing first fires it — the other is then a
+  // no-op for that same crossing.
   function checkThresholds(prev, timeout) {
-    if (prev == null) return
+    if (prev == null) {
+      // First observation for this mount/chain — mark anything already
+      // passed as "fired" so it doesn't alert retroactively, without
+      // touching anything still above its threshold (which stays eligible
+      // to fire normally once actually crossed).
+      for (const t of settings.thresholds) {
+        if (timeout <= t) firedThresholdsRef.current.add(t)
+      }
+      return
+    }
     for (const t of settings.thresholds) {
-      if (prev > t && timeout <= t && !firedThresholdsRef.current.has(t)) {
+      if (timeout > t) {
+        firedThresholdsRef.current.delete(t)
+      } else if (!firedThresholdsRef.current.has(t)) {
         firedThresholdsRef.current.add(t)
         if (settings.sound) playChirp()
         if (settings.flash) triggerFlashSequence(setFlashOn)
@@ -187,7 +203,6 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
   // tab itself, but not while looking at a different tab with only the
   // pop-out visible. This doesn't depend on the countdown tick at all, so it
   // still catches a crossing even if that tick has stalled.
-  const prevPolledTimeoutRef = useRef(null)
   useEffect(() => {
     if (!settings.enabled || data?.status !== 'active') { prevPolledTimeoutRef.current = null; return }
     const prev = prevPolledTimeoutRef.current
