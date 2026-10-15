@@ -10,7 +10,12 @@ const DEFAULTS = {
   notification: false, // off by default — needs explicit browser permission first
   thresholds: [90, 60, 30], // seconds remaining — 1m30, 1min and 30s warnings
   alwaysOnTop: true, // only matters if the pop-out timer is opened
+  overlayFontSize: 56, // px, base size the pop-out's countdown is drawn at — everything else in it scales off this
 }
+
+export const OVERLAY_FONT_MIN = 24
+export const OVERLAY_FONT_MAX = 160
+export const OVERLAY_FONT_STEP = 8
 
 export function loadAlertSettings() {
   try {
@@ -24,6 +29,7 @@ export function loadAlertSettings() {
       notification: parsed.notification ?? DEFAULTS.notification,
       thresholds: Array.isArray(parsed.thresholds) ? parsed.thresholds : DEFAULTS.thresholds,
       alwaysOnTop: parsed.alwaysOnTop ?? DEFAULTS.alwaysOnTop,
+      overlayFontSize: parsed.overlayFontSize ?? DEFAULTS.overlayFontSize,
     }
   } catch {
     return { ...DEFAULTS }

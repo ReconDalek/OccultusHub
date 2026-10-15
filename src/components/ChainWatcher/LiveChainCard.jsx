@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiGet, fmtDuration, card, sectionTitle, computeWatcherStatus } from './chainWatcherUtils'
-import { loadAlertSettings, saveAlertSettings, playChirp, triggerFlashSequence, showChainAlertNotification } from './chainAlerts'
+import {
+  loadAlertSettings, saveAlertSettings, playChirp, triggerFlashSequence, showChainAlertNotification,
+  OVERLAY_FONT_MIN, OVERLAY_FONT_MAX, OVERLAY_FONT_STEP,
+} from './chainAlerts'
 import ChainAlertSettingsModal from './ChainAlertSettingsModal'
 
 const POLL_MS = 20000
@@ -17,34 +20,62 @@ function RedFlash() {
   )
 }
 
+const fontStepBtn = {
+  width: 22, height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: '#e4e4e7',
+  border: '1px solid rgba(255,255,255,0.18)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1,
+}
+
 // Compact view rendered into the pop-out/PiP window — just the countdown and
-// current/next watcher, nothing else needs to travel with it. Sized with
-// clamp()+vmin (not fixed px) throughout so dragging the window bigger or
-// smaller scales the timer/labels right along with it instead of leaving
-// tiny text in a big window or overflow in a small one — vmin/vh here
-// resolve against this popped-out window's OWN viewport, not the main page's.
-// The clamp() max bounds are set deliberately high (reachable only in a
-// genuinely huge window) — too-low caps make the text stop growing well
-// before the window does, which looks exactly like it's "falling behind."
-function OverlayContent({ liveTimeout, urgent, current, next, flashOn }) {
+// current/next watcher, nothing else needs to travel with it. Font size is a
+// single user-controlled base (the countdown's own size, in px) with every
+// other size in here derived as a fixed ratio off it — automatic viewport-
+// based scaling (clamp()+vmin) didn't track window resizes the way the user
+// wanted, so sizing is manual via the A−/A+ buttons instead, persisted like
+// the other alert settings.
+function OverlayContent({ liveTimeout, urgent, current, next, flashOn, fontSize, onFontSizeChange }) {
+  const labelSize = Math.round(fontSize * 0.13)
+  const nameLabelSize = Math.round(fontSize * 0.1)
+  const nameSize = Math.round(fontSize * 0.2)
+
   return (
     <div style={{
-      position: 'relative', minHeight: '100vh', boxSizing: 'border-box', padding: 'clamp(8px, 4vmin, 64px)',
-      color: '#f4f4f5', background: '#0c0c0c', display: 'flex', flexDirection: 'column',
-      gap: 'clamp(6px, 2.5vmin, 40px)', justifyContent: 'center', fontFamily: 'inherit',
+      position: 'relative', minHeight: '100vh', boxSizing: 'border-box', overflow: 'auto',
+      padding: Math.round(fontSize * 0.3), color: '#f4f4f5', background: '#0c0c0c',
+      display: 'flex', flexDirection: 'column', gap: Math.round(fontSize * 0.2),
+      justifyContent: 'center', fontFamily: 'inherit',
     }}>
+      <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4 }}>
+        <button
+          onClick={() => onFontSizeChange(-OVERLAY_FONT_STEP)}
+          disabled={fontSize <= OVERLAY_FONT_MIN}
+          title="Smaller text"
+          style={{ ...fontStepBtn, opacity: fontSize <= OVERLAY_FONT_MIN ? 0.4 : 1 }}
+        >
+          A−
+        </button>
+        <button
+          onClick={() => onFontSizeChange(OVERLAY_FONT_STEP)}
+          disabled={fontSize >= OVERLAY_FONT_MAX}
+          title="Bigger text"
+          style={{ ...fontStepBtn, opacity: fontSize >= OVERLAY_FONT_MAX ? 0.4 : 1 }}
+        >
+          A+
+        </button>
+      </div>
+
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 'clamp(9px, 3vmin, 40px)', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
-        <div style={{ fontSize: 'clamp(28px, 16vmin, 220px)', fontWeight: 800, lineHeight: 1.1, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
+        <div style={{ fontSize: labelSize, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
+        <div style={{ fontSize, fontWeight: 800, lineHeight: 1.1, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-around' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 'clamp(7px, 2.4vmin, 32px)', letterSpacing: '0.05em' }}>Watching</div>
-          <div style={{ fontWeight: 700, fontSize: 'clamp(11px, 4vmin, 56px)' }}>{current?.username || 'Unassigned'}</div>
+          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: nameLabelSize, letterSpacing: '0.05em' }}>Watching</div>
+          <div style={{ fontWeight: 700, fontSize: nameSize }}>{current?.username || 'Unassigned'}</div>
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 'clamp(7px, 2.4vmin, 32px)', letterSpacing: '0.05em' }}>Next</div>
-          <div style={{ fontWeight: 700, fontSize: 'clamp(11px, 4vmin, 56px)' }}>{next?.username || 'Unassigned'}</div>
+          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: nameLabelSize, letterSpacing: '0.05em' }}>Next</div>
+          <div style={{ fontWeight: 700, fontSize: nameSize }}>{next?.username || 'Unassigned'}</div>
         </div>
       </div>
       {flashOn && <RedFlash />}
@@ -137,6 +168,11 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
   function updateSettings(next) {
     setSettings(next)
     saveAlertSettings(next)
+  }
+
+  function adjustOverlayFontSize(delta) {
+    const size = Math.min(OVERLAY_FONT_MAX, Math.max(OVERLAY_FONT_MIN, settings.overlayFontSize + delta))
+    updateSettings({ ...settings, overlayFontSize: size })
   }
 
   function copyStylesInto(win) {
@@ -287,7 +323,10 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
       )}
 
       {overlayWindow && createPortal(
-        <OverlayContent liveTimeout={liveTimeout} urgent={urgent} current={current} next={next} flashOn={flashOn} />,
+        <OverlayContent
+          liveTimeout={liveTimeout} urgent={urgent} current={current} next={next} flashOn={flashOn}
+          fontSize={settings.overlayFontSize} onFontSizeChange={adjustOverlayFontSize}
+        />,
         overlayWindow.document.body
       )}
     </div>
