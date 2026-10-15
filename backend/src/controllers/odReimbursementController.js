@@ -4,11 +4,16 @@ import { getEligibleMembers } from './xanaxController.js';
 
 // OD (overdose) item reimbursement tracking — the Discord bot detects OD logs
 // in a channel, checks eligibility here (Adept+ by our own rank, never Torn's
-// in-game rank — same rule OD Insurance and Rank Perks already use), and
-// queues a pending reimbursement. Leadership marks each member complete
-// (paid out, value locked in) or rejects them (e.g. the item was faction-
-// supplied, so nothing is owed). Nothing here is Torn-API-driven — it's all
-// our own record of what's actually been reimbursed.
+// in-game rank — same rank tiers Rank Perks uses), and queues a pending
+// reimbursement. Leadership marks each member complete (paid out, value
+// locked in) or rejects them (e.g. the item was faction-supplied, so nothing
+// is owed). Nothing here is Torn-API-driven — it's all our own record of
+// what's actually been reimbursed.
+//
+// Unlike Rank Perks (a monthly reward, so eligibility there freezes on hits
+// banked before the current month started), OD reimbursement isn't a
+// monthly allocation — it's "are you Adept+ right now", so eligibility here
+// uses the member's live, current hit total instead.
 
 // Case/whitespace-insensitive: item_name on a pending row comes from free
 // text (manual /od_add, or whatever casing Torn's log line used), and an
@@ -37,7 +42,10 @@ export async function checkEligibilityForBot(request, env) {
       return jsonResponse({ eligible: false, reason: 'not_an_active_member' });
     }
 
-    const eligible = await getEligibleMembers(env, member.faction_id);
+    // Pass "now" instead of leaving asOfTs to default to the start of the
+    // current month — see the file-level comment on why OD eligibility is
+    // live rather than frozen at last month's banked hits.
+    const eligible = await getEligibleMembers(env, member.faction_id, Math.floor(Date.now() / 1000));
     const match = eligible.find(m => m.torn_user_id === tornUserId);
     if (!match) {
       return jsonResponse({ eligible: false, reason: 'rank_too_low', faction_id: member.faction_id, username: member.username });
