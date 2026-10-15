@@ -153,25 +153,47 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
     }
   }, [data?.start, data?.status])
 
-  // Fires on a threshold CROSSING (previous tick above it, this tick at/below
-  // it) — not just "currently at or below," so loading the page mid-chain
-  // doesn't immediately fire every threshold already passed before anyone was
-  // watching.
-  useEffect(() => {
-    if (!settings.enabled || data?.status !== 'active') { prevTimeoutRef.current = null; return }
-    const prev = prevTimeoutRef.current
-    prevTimeoutRef.current = liveTimeout
+  // Fires on a threshold CROSSING (previous reading above it, this one
+  // at/below) — not just "currently at or below," so loading the page
+  // mid-chain doesn't immediately fire every threshold already passed before
+  // anyone was watching. Shared by both effects below via firedThresholdsRef,
+  // so whichever one notices the crossing first fires it — the other is then
+  // a no-op for that same threshold.
+  function checkThresholds(prev, timeout) {
     if (prev == null) return
-
     for (const t of settings.thresholds) {
-      if (prev > t && liveTimeout <= t && !firedThresholdsRef.current.has(t)) {
+      if (prev > t && timeout <= t && !firedThresholdsRef.current.has(t)) {
         firedThresholdsRef.current.add(t)
         if (settings.sound) playChirp()
         if (settings.flash) triggerFlashSequence(setFlashOn)
         if (settings.notification) showChainAlertNotification(t)
       }
     }
+  }
+
+  // Primary check: the locally-ticking countdown, every second — catches the
+  // exact moment while the tab is actively being watched.
+  useEffect(() => {
+    if (!settings.enabled || data?.status !== 'active') { prevTimeoutRef.current = null; return }
+    const prev = prevTimeoutRef.current
+    prevTimeoutRef.current = liveTimeout
+    checkThresholds(prev, liveTimeout)
   }, [liveTimeout, settings, data?.status])
+
+  // Backup check: the server's own timeout value, every time a fresh poll
+  // arrives — a browser can throttle a backgrounded tab's setInterval (e.g.
+  // the countdown tick above) long before it throttles the poll's own timer,
+  // which is exactly the case reported: alerts fired fine on the Chain Watch
+  // tab itself, but not while looking at a different tab with only the
+  // pop-out visible. This doesn't depend on the countdown tick at all, so it
+  // still catches a crossing even if that tick has stalled.
+  const prevPolledTimeoutRef = useRef(null)
+  useEffect(() => {
+    if (!settings.enabled || data?.status !== 'active') { prevPolledTimeoutRef.current = null; return }
+    const prev = prevPolledTimeoutRef.current
+    prevPolledTimeoutRef.current = data.timeout
+    checkThresholds(prev, data.timeout)
+  }, [data, settings])
 
   function updateSettings(next) {
     setSettings(next)
