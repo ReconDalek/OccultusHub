@@ -1,14 +1,62 @@
-import { useEffect, useState } from 'react'
-import { apiGet, fmtDuration, card, sectionTitle } from './chainWatcherUtils'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { apiGet, fmtDuration, card, sectionTitle, computeWatcherStatus } from './chainWatcherUtils'
+import { loadAlertSettings, saveAlertSettings, playChirp, triggerFlashSequence } from './chainAlerts'
+import ChainAlertSettingsModal from './ChainAlertSettingsModal'
 
 const POLL_MS = 20000
 const FAST_POLL_MS = 5000
 const FAST_POLL_THRESHOLD = 120 // seconds left before a chain drops — poll tighter once attacks matter most
+const PIP_SUPPORTED = typeof window !== 'undefined' && 'documentPictureInPicture' in window
 
-export default function LiveChainCard({ factionId, target }) {
+// Full-viewport red flash — rendered into whichever document(s) are
+// currently relevant (the main page, and the pop-out window if one is open).
+function RedFlash() {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'none', background: 'rgba(120,0,0,0.45)' }} />
+  )
+}
+
+// Compact view rendered into the pop-out/PiP window — just the countdown and
+// current/next watcher, nothing else needs to travel with it.
+function OverlayContent({ liveTimeout, urgent, current, next, flashOn }) {
+  return (
+    <div style={{
+      position: 'relative', minHeight: '100vh', boxSizing: 'border-box', padding: 18,
+      color: '#f4f4f5', background: '#0c0c0c', display: 'flex', flexDirection: 'column',
+      gap: 14, justifyContent: 'center', fontFamily: 'inherit',
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 11, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
+        <div style={{ fontSize: 42, fontWeight: 800, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-around', fontSize: 13 }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>Watching</div>
+          <div style={{ fontWeight: 700 }}>{current?.username || 'Unassigned'}</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>Next</div>
+          <div style={{ fontWeight: 700 }}>{next?.username || 'Unassigned'}</div>
+        </div>
+      </div>
+      {flashOn && <RedFlash />}
+    </div>
+  )
+}
+
+export default function LiveChainCard({ factionId, target, shifts = [] }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [now, setNow] = useState(Date.now())
+  const [settings, setSettings] = useState(() => loadAlertSettings())
+  const [showSettings, setShowSettings] = useState(false)
+  const [flashOn, setFlashOn] = useState(false)
+  const [overlayWindow, setOverlayWindow] = useState(null)
+
+  const chainKeyRef = useRef(null)
+  const firedThresholdsRef = useRef(new Set())
+  const prevTimeoutRef = useRef(null)
 
   // Self-scheduling rather than a fixed interval, so the poll rate can tighten
   // up as a chain gets close to timing out — each attack resets Torn's own
@@ -42,6 +90,94 @@ export default function LiveChainCard({ factionId, target }) {
     return () => clearInterval(tick)
   }, [])
 
+  const elapsedSincePoll = data ? Math.max(0, (now - data.fetchedAt * 1000) / 1000) : 0
+  const liveTimeout = data?.status === 'active' ? Math.max(0, data.timeout - elapsedSincePoll) : 0
+  const liveCooldown = data?.status === 'cooldown' ? Math.max(0, data.cooldown - elapsedSincePoll) : 0
+  const urgent = data?.status === 'active' && liveTimeout <= 90
+  const { current, next } = computeWatcherStatus(shifts, now / 1000)
+
+  // A new chain run resets which thresholds have already fired — `data.start`
+  // uniquely identifies the chain, so this only resets on an actual new chain,
+  // not every poll of the same one.
+  useEffect(() => {
+    if (data?.status === 'active' && data.start !== chainKeyRef.current) {
+      chainKeyRef.current = data.start
+      firedThresholdsRef.current = new Set()
+      prevTimeoutRef.current = null
+    }
+  }, [data?.start, data?.status])
+
+  // Fires on a threshold CROSSING (previous tick above it, this tick at/below
+  // it) — not just "currently at or below," so loading the page mid-chain
+  // doesn't immediately fire every threshold already passed before anyone was
+  // watching.
+  useEffect(() => {
+    if (!settings.enabled || data?.status !== 'active') { prevTimeoutRef.current = null; return }
+    const prev = prevTimeoutRef.current
+    prevTimeoutRef.current = liveTimeout
+    if (prev == null) return
+
+    for (const t of settings.thresholds) {
+      if (prev > t && liveTimeout <= t && !firedThresholdsRef.current.has(t)) {
+        firedThresholdsRef.current.add(t)
+        if (settings.sound) playChirp()
+        if (settings.flash) triggerFlashSequence(setFlashOn)
+      }
+    }
+  }, [liveTimeout, settings, data?.status])
+
+  function updateSettings(next) {
+    setSettings(next)
+    saveAlertSettings(next)
+  }
+
+  function copyStylesInto(win) {
+    [...document.styleSheets].forEach((sheet) => {
+      try {
+        const rules = [...sheet.cssRules].map((r) => r.cssText).join('')
+        const style = win.document.createElement('style')
+        style.textContent = rules
+        win.document.head.appendChild(style)
+      } catch {
+        if (sheet.href) {
+          const link = win.document.createElement('link')
+          link.rel = 'stylesheet'
+          link.href = sheet.href
+          win.document.head.appendChild(link)
+        }
+      }
+    })
+    win.document.body.style.margin = '0'
+  }
+
+  async function openOverlay() {
+    if (overlayWindow && !overlayWindow.closed) { overlayWindow.focus(); return }
+
+    let win = null
+    if (settings.alwaysOnTop && PIP_SUPPORTED) {
+      try {
+        win = await window.documentPictureInPicture.requestWindow({ width: 300, height: 200 })
+      } catch {
+        win = null
+      }
+    }
+    if (!win) {
+      win = window.open('', 'chainTimerOverlay', 'width=300,height=220,resizable=yes')
+    }
+    if (!win) return // popup blocked
+
+    copyStylesInto(win)
+    win.document.title = 'Chain Timer'
+    win.addEventListener('pagehide', () => setOverlayWindow(null), { once: true })
+    setOverlayWindow(win)
+  }
+
+  // Close the pop-out if this card unmounts (chain watch ended) rather than
+  // leaving an orphaned window showing stale data.
+  useEffect(() => {
+    return () => { if (overlayWindow && !overlayWindow.closed) overlayWindow.close() }
+  }, [overlayWindow])
+
   if (error) {
     return (
       <div style={card}>
@@ -60,24 +196,46 @@ export default function LiveChainCard({ factionId, target }) {
     )
   }
 
-  const elapsedSincePoll = Math.max(0, (now - data.fetchedAt * 1000) / 1000)
-  const liveTimeout = data.status === 'active' ? Math.max(0, data.timeout - elapsedSincePoll) : 0
-  const liveCooldown = data.status === 'cooldown' ? Math.max(0, data.cooldown - elapsedSincePoll) : 0
-  const urgent = data.status === 'active' && liveTimeout <= 90
-
   return (
-    <div style={{ ...card, border: urgent ? '1px solid #f87171' : card.border }}>
-      <p style={sectionTitle}>
-        Live Chain
-        {data.isTest && (
-          <span style={{
-            marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#f4f4f5', background: '#8b5cf6',
-            borderRadius: 5, padding: '2px 7px', verticalAlign: 'middle', letterSpacing: '0.04em',
-          }}>
-            TEST
-          </span>
-        )}
-      </p>
+    <div style={{ ...card, border: urgent ? '1px solid #f87171' : card.border, position: 'relative' }}>
+      <div className="flex items-center" style={{ justifyContent: 'space-between' }}>
+        <p style={sectionTitle}>
+          Live Chain
+          {data.isTest && (
+            <span style={{
+              marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#f4f4f5', background: '#8b5cf6',
+              borderRadius: 5, padding: '2px 7px', verticalAlign: 'middle', letterSpacing: '0.04em',
+            }}>
+              TEST
+            </span>
+          )}
+        </p>
+        <div className="flex items-center" style={{ gap: 6 }}>
+          {data.status === 'active' && (
+            <button
+              onClick={openOverlay}
+              title="Open a small floating timer window"
+              style={{
+                fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'rgba(255,255,255,0.05)',
+                color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', cursor: 'pointer',
+              }}
+            >
+              ⧉ Pop out
+            </button>
+          )}
+          <button
+            onClick={() => setShowSettings(true)}
+            title="Timer alert settings"
+            style={{
+              fontSize: 13, width: 26, height: 26, borderRadius: 6, background: 'rgba(255,255,255,0.05)',
+              color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            ⚙
+          </button>
+        </div>
+      </div>
 
       {(data.status === 'idle' || data.status === 'no_session') && (
         <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No chain currently running.</p>
@@ -107,6 +265,22 @@ export default function LiveChainCard({ factionId, target }) {
             </div>
           )}
         </div>
+      )}
+
+      {flashOn && <RedFlash />}
+
+      {showSettings && (
+        <ChainAlertSettingsModal
+          settings={settings}
+          onChange={updateSettings}
+          onClose={() => setShowSettings(false)}
+          pipSupported={PIP_SUPPORTED}
+        />
+      )}
+
+      {overlayWindow && createPortal(
+        <OverlayContent liveTimeout={liveTimeout} urgent={urgent} current={current} next={next} flashOn={flashOn} />,
+        overlayWindow.document.body
       )}
     </div>
   )

@@ -93,7 +93,7 @@ export default function ChainWatcher() {
 
       {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
-      <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} />
+      <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} shifts={shifts} />
       <WatcherBanner shifts={shifts} />
       <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
       <MeritTracker factionId={factionId} />
