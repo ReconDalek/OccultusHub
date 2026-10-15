@@ -33,7 +33,7 @@ const fontStepBtn = {
 // based scaling (clamp()+vmin) didn't track window resizes the way the user
 // wanted, so sizing is manual via the A−/A+ buttons instead, persisted like
 // the other alert settings.
-function OverlayContent({ liveTimeout, urgent, current, next, flashOn, fontSize, onFontSizeChange }) {
+function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flashOn, fontSize, onFontSizeChange }) {
   const labelSize = Math.round(fontSize * 0.13)
   const nameLabelSize = Math.round(fontSize * 0.1)
   const nameSize = Math.round(fontSize * 0.2)
@@ -64,9 +64,17 @@ function OverlayContent({ liveTimeout, urgent, current, next, flashOn, fontSize,
         </button>
       </div>
 
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: labelSize, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
-        <div style={{ fontSize, fontWeight: 800, lineHeight: 1.1, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: Math.round(fontSize * 0.5), flexWrap: 'wrap' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: labelSize, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Hits</div>
+          <div style={{ fontSize, fontWeight: 800, lineHeight: 1.1 }}>
+            {hits.toLocaleString()}{target ? ` / ${target.toLocaleString()}` : ''}
+          </div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: labelSize, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
+          <div style={{ fontSize, fontWeight: 800, lineHeight: 1.1, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
+        </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-around' }}>
         <div style={{ textAlign: 'center' }}>
@@ -324,7 +332,8 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
 
       {overlayWindow && createPortal(
         <OverlayContent
-          liveTimeout={liveTimeout} urgent={urgent} current={current} next={next} flashOn={flashOn}
+          liveTimeout={liveTimeout} urgent={urgent} hits={data?.current ?? 0} target={target}
+          current={current} next={next} flashOn={flashOn}
           fontSize={settings.overlayFontSize} onFontSizeChange={adjustOverlayFontSize}
         />,
         overlayWindow.document.body
