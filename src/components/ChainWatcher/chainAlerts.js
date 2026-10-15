@@ -7,6 +7,7 @@ const DEFAULTS = {
   enabled: true,
   sound: true,
   flash: true,
+  notification: false, // off by default — needs explicit browser permission first
   thresholds: [90, 60, 30], // seconds remaining — 1m30, 1min and 30s warnings
   alwaysOnTop: true, // only matters if the pop-out timer is opened
 }
@@ -20,6 +21,7 @@ export function loadAlertSettings() {
       enabled: parsed.enabled ?? DEFAULTS.enabled,
       sound: parsed.sound ?? DEFAULTS.sound,
       flash: parsed.flash ?? DEFAULTS.flash,
+      notification: parsed.notification ?? DEFAULTS.notification,
       thresholds: Array.isArray(parsed.thresholds) ? parsed.thresholds : DEFAULTS.thresholds,
       alwaysOnTop: parsed.alwaysOnTop ?? DEFAULTS.alwaysOnTop,
     }
@@ -67,6 +69,36 @@ export function playChirp() {
   }
   beepAt(0)
   beepAt(0.18)
+}
+
+// OS-level toast — the one alert channel that genuinely surfaces over other
+// apps/windows regardless of focus (sound is heard anywhere too, but this
+// adds a visible readout of what actually happened for anyone not looking at
+// a screen at all when it fires). Requires the browser's own permission
+// prompt, which must originate from a user gesture — handled by the settings
+// modal's checkbox, not requested on page load.
+export function notificationSupported() {
+  return typeof window !== 'undefined' && 'Notification' in window
+}
+
+export function notificationPermission() {
+  return notificationSupported() ? Notification.permission : 'unsupported'
+}
+
+export async function requestNotificationPermission() {
+  if (!notificationSupported()) return 'unsupported'
+  return Notification.requestPermission()
+}
+
+export function showChainAlertNotification(secondsRemaining) {
+  if (!notificationSupported() || Notification.permission !== 'granted') return
+  try {
+    new Notification('Chain Watch', {
+      body: secondsRemaining <= 0 ? 'Chain is dropping now!' : `Chain dropping in ${secondsRemaining}s`,
+      tag: 'chain-watch-alert', // replaces any still-showing alert instead of stacking
+      silent: true, // we already play our own chirp — avoid a second, different beep
+    })
+  } catch { /* some browsers restrict Notification() in certain contexts — fail quietly */ }
 }
 
 // Drives a red screen flash on/off exactly `times` times via setTimeout chain

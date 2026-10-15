@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiGet, fmtDuration, card, sectionTitle, computeWatcherStatus } from './chainWatcherUtils'
-import { loadAlertSettings, saveAlertSettings, playChirp, triggerFlashSequence } from './chainAlerts'
+import { loadAlertSettings, saveAlertSettings, playChirp, triggerFlashSequence, showChainAlertNotification } from './chainAlerts'
 import ChainAlertSettingsModal from './ChainAlertSettingsModal'
 
 const POLL_MS = 20000
@@ -126,6 +126,7 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
         firedThresholdsRef.current.add(t)
         if (settings.sound) playChirp()
         if (settings.flash) triggerFlashSequence(setFlashOn)
+        if (settings.notification) showChainAlertNotification(t)
       }
     }
   }, [liveTimeout, settings, data?.status])

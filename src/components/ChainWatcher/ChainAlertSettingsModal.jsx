@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Modal from './Modal'
+import { notificationSupported, notificationPermission, requestNotificationPermission } from './chainAlerts'
 
 const ACCENT = '#8b5cf6'
 
@@ -16,6 +17,16 @@ const checkboxRow = {
 
 export default function ChainAlertSettingsModal({ settings, onChange, onClose, pipSupported }) {
   const [thresholdInput, setThresholdInput] = useState('')
+  const [permission, setPermission] = useState(() => notificationPermission())
+
+  async function toggleNotification(checked) {
+    if (checked && permission !== 'granted') {
+      const result = await requestNotificationPermission()
+      setPermission(result)
+      if (result !== 'granted') return // left off if the browser prompt was denied/dismissed
+    }
+    onChange({ ...settings, notification: checked })
+  }
 
   function addThreshold() {
     const val = parseInt(thresholdInput, 10)
@@ -44,10 +55,24 @@ export default function ChainAlertSettingsModal({ settings, onChange, onClose, p
           <input type="checkbox" checked={settings.sound} onChange={(e) => onChange({ ...settings, sound: e.target.checked })} />
           Sound (chirp)
         </label>
-        <label style={{ ...checkboxRow, marginBottom: 16 }}>
+        <label style={checkboxRow}>
           <input type="checkbox" checked={settings.flash} onChange={(e) => onChange({ ...settings, flash: e.target.checked })} />
           Screen flash (5x, red)
         </label>
+
+        {notificationSupported() && (
+          <>
+            <label style={{ ...checkboxRow, marginBottom: permission === 'denied' ? 2 : 16 }}>
+              <input type="checkbox" checked={settings.notification} onChange={(e) => toggleNotification(e.target.checked)} />
+              Desktop notification
+            </label>
+            {permission === 'denied' && (
+              <p style={{ fontSize: 11, color: '#f87171', margin: '0 0 16px 24px' }}>
+                Notifications are blocked for this site — allow them in your browser's site settings to use this.
+              </p>
+            )}
+          </>
+        )}
 
         <p style={{ fontSize: 12, color: 'var(--text-faint)', margin: '0 0 8px' }}>Alert when time remaining drops to:</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
