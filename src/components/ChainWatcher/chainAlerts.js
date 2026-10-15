@@ -95,7 +95,9 @@ export function showChainAlertNotification(secondsRemaining) {
   try {
     new Notification('Chain Watch', {
       body: secondsRemaining <= 0 ? 'Chain is dropping now!' : `Chain dropping in ${secondsRemaining}s`,
-      tag: 'chain-watch-alert', // replaces any still-showing alert instead of stacking
+      tag: 'chain-watch-alert', // reuses one slot across multiple thresholds instead of stacking
+      renotify: true, // without this, a 2nd/3rd threshold hitting the same tag can silently replace the first with no new pop/alert
+      requireInteraction: true, // stays until dismissed — Chrome's own anti-spam heuristic quiets/blocks a site whose notifications it sees vanish unclicked, so this gives it a real interaction to see instead of none
       silent: true, // we already play our own chirp — avoid a second, different beep
     })
   } catch { /* some browsers restrict Notification() in certain contexts — fail quietly */ }

@@ -23,25 +23,28 @@ function RedFlash() {
 // smaller scales the timer/labels right along with it instead of leaving
 // tiny text in a big window or overflow in a small one — vmin/vh here
 // resolve against this popped-out window's OWN viewport, not the main page's.
+// The clamp() max bounds are set deliberately high (reachable only in a
+// genuinely huge window) — too-low caps make the text stop growing well
+// before the window does, which looks exactly like it's "falling behind."
 function OverlayContent({ liveTimeout, urgent, current, next, flashOn }) {
   return (
     <div style={{
-      position: 'relative', minHeight: '100vh', boxSizing: 'border-box', padding: 'clamp(8px, 4vmin, 24px)',
+      position: 'relative', minHeight: '100vh', boxSizing: 'border-box', padding: 'clamp(8px, 4vmin, 64px)',
       color: '#f4f4f5', background: '#0c0c0c', display: 'flex', flexDirection: 'column',
-      gap: 'clamp(6px, 2.5vmin, 16px)', justifyContent: 'center', fontFamily: 'inherit',
+      gap: 'clamp(6px, 2.5vmin, 40px)', justifyContent: 'center', fontFamily: 'inherit',
     }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 'clamp(9px, 3vmin, 15px)', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
-        <div style={{ fontSize: 'clamp(28px, 16vmin, 96px)', fontWeight: 800, lineHeight: 1.1, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
+        <div style={{ fontSize: 'clamp(9px, 3vmin, 40px)', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time left</div>
+        <div style={{ fontSize: 'clamp(28px, 16vmin, 220px)', fontWeight: 800, lineHeight: 1.1, color: urgent ? '#f87171' : '#f4f4f5' }}>{fmtDuration(liveTimeout)}</div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-around' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 'clamp(7px, 2.4vmin, 12px)', letterSpacing: '0.05em' }}>Watching</div>
-          <div style={{ fontWeight: 700, fontSize: 'clamp(11px, 4vmin, 22px)' }}>{current?.username || 'Unassigned'}</div>
+          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 'clamp(7px, 2.4vmin, 32px)', letterSpacing: '0.05em' }}>Watching</div>
+          <div style={{ fontWeight: 700, fontSize: 'clamp(11px, 4vmin, 56px)' }}>{current?.username || 'Unassigned'}</div>
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 'clamp(7px, 2.4vmin, 12px)', letterSpacing: '0.05em' }}>Next</div>
-          <div style={{ fontWeight: 700, fontSize: 'clamp(11px, 4vmin, 22px)' }}>{next?.username || 'Unassigned'}</div>
+          <div style={{ color: '#a1a1aa', textTransform: 'uppercase', fontSize: 'clamp(7px, 2.4vmin, 32px)', letterSpacing: '0.05em' }}>Next</div>
+          <div style={{ fontWeight: 700, fontSize: 'clamp(11px, 4vmin, 56px)' }}>{next?.username || 'Unassigned'}</div>
         </div>
       </div>
       {flashOn && <RedFlash />}
