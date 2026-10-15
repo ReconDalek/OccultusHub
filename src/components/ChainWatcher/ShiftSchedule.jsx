@@ -10,11 +10,25 @@ import NoteModal from './NoteModal'
 
 const DAYS_AHEAD = 7
 const ACCENT = '#8b5cf6'
+const MY_SHIFTS_TZ_KEY = 'chainWatch.myShiftsLocalTime'
 
 export default function ShiftSchedule({ factionId, shifts, onChanged, session }) {
   const { user } = useSession()
   const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
   const [selectedDay, setSelectedDay] = useState(() => dayStart(Math.floor(Date.now() / 1000)))
+  // "Your shifts" badges are too small to show both TCT and local at once —
+  // a toggle instead of the grid's two-line layout. Personal display
+  // preference, so it's remembered per-browser rather than reset every visit.
+  const [myShiftsLocal, setMyShiftsLocal] = useState(() => {
+    try { return localStorage.getItem(MY_SHIFTS_TZ_KEY) === '1' } catch { return false }
+  })
+  function toggleMyShiftsLocal() {
+    setMyShiftsLocal((prev) => {
+      const next = !prev
+      try { localStorage.setItem(MY_SHIFTS_TZ_KEY, next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }
   const [busySlot, setBusySlot] = useState(null)
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
@@ -113,7 +127,19 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
 
       {myShifts.length > 0 && (
         <div style={{ marginBottom: 14, padding: '8px 10px', borderRadius: 8, background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Your shifts</div>
+          <div className="flex items-center" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your shifts</span>
+            <button
+              onClick={toggleMyShiftsLocal}
+              title="Switch between TCT and your local time"
+              style={{
+                fontSize: 10.5, padding: '2px 8px', borderRadius: 10, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
+              }}
+            >
+              {myShiftsLocal ? 'Local' : 'TCT'}
+            </button>
+          </div>
           <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
             {myShifts.map(s => (
               <span
@@ -124,7 +150,9 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
                   border: '1px solid rgba(139,92,246,0.4)',
                 }}
               >
-                {fmtSlotDay(s.slot_start)} {fmtSlotTime(s.slot_start)}
+                {myShiftsLocal
+                  ? `${fmtSlotDayLocal(s.slot_start)} ${fmtSlotTimeLocal(s.slot_start)}`
+                  : `${fmtSlotDay(s.slot_start)} ${fmtSlotTime(s.slot_start)}`}
               </span>
             ))}
           </div>
