@@ -7,7 +7,7 @@ const DEFAULTS = {
   enabled: true,
   sound: true,
   flash: true,
-  thresholds: [300, 60], // seconds remaining — 5 min and 1 min warnings
+  thresholds: [90, 60, 30], // seconds remaining — 1m30, 1min and 30s warnings
   alwaysOnTop: true, // only matters if the pop-out timer is opened
 }
 
