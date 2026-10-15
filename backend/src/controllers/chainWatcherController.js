@@ -288,9 +288,13 @@ async function computeCurrentWatcher(env, factionId) {
   const curSlot = Math.floor(nowSecs / hour) * hour;
 
   const { results } = await env.DB.prepare(
-    `SELECT s.slot_start, s.torn_user_id, fm.username, dl.discord_id
+    `SELECT s.slot_start, s.torn_user_id,
+       COALESCE(
+         (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id AND faction_id = s.faction_id LIMIT 1),
+         (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id ORDER BY is_active DESC LIMIT 1)
+       ) AS username,
+       dl.discord_id
      FROM chain_watch_shifts s
-     JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id AND fm.faction_id = s.faction_id
      LEFT JOIN users u ON u.torn_user_id = s.torn_user_id
      LEFT JOIN discord_links dl ON dl.user_id = u.id
      WHERE s.faction_id = ? AND s.slot_start >= ? AND s.slot_start < ?
@@ -337,11 +341,18 @@ export async function getCurrentWatcherForBot(request, env) {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/chain-watcher/shifts?faction_id=X&from=unix&to=unix
 // Claimed shifts in range (an hour with no row is open). Defaults to a window
-// starting an hour ago through 7 days out. Joins faction_members (not users)
-// for the username — a member can be assigned a shift without ever having a
-// website account, and an INNER JOIN against users silently dropped those
-// rows from this list while still enforcing the one-per-hour UNIQUE
-// constraint, making an already-claimed slot look open.
+// starting an hour ago through 7 days out. Resolves the username from
+// faction_members (not users) via a scalar subquery rather than a plain JOIN,
+// for two reasons found the hard way: (1) a member can be assigned a shift
+// without ever having a website account — an INNER JOIN against users
+// silently dropped those rows while still enforcing the one-per-hour UNIQUE
+// constraint, making an already-claimed slot look open; (2) leadership signs
+// up for shifts across all three factions, not just their own roster's — a
+// plain JOIN requiring faction_members.faction_id to match the shift's own
+// faction_id dropped THEM too (e.g. an Occ1 leader self-signing up for an
+// Occ2 slot). The subquery prefers a faction_members row matching the
+// shift's own faction, falling back to any row for that user (so a
+// cross-faction signup still resolves a username) rather than requiring one.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function listShifts(request, env) {
   const url = new URL(request.url);
@@ -354,9 +365,12 @@ export async function listShifts(request, env) {
 
   try {
     const result = await env.DB.prepare(
-      `SELECT s.id, s.slot_start, s.torn_user_id, s.note, fm.username
+      `SELECT s.id, s.slot_start, s.torn_user_id, s.note,
+         COALESCE(
+           (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id AND faction_id = s.faction_id LIMIT 1),
+           (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id ORDER BY is_active DESC LIMIT 1)
+         ) AS username
        FROM chain_watch_shifts s
-       JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id AND fm.faction_id = s.faction_id
        WHERE s.faction_id = ? AND s.slot_start >= ? AND s.slot_start < ?
        ORDER BY s.slot_start ASC`
     ).bind(factionId, from, to).all();
