@@ -469,6 +469,22 @@ function Spider({ x, y, swingPx, delay, size = 1 }) {
   )
 }
 
+// ── Spider hanging from the nav bar itself, not from either corner web ──────
+// Offset right of dead-centre rather than perfectly centred, on its own
+// thread straight down from the nav.
+function NavbarSpider() {
+  return (
+    <div style={{
+      position:'fixed', top:'var(--ev-header-h, 64px)', left:'calc(50% + 90px)',
+      zIndex:3, pointerEvents:'none', width:70, height:150,
+    }}>
+      <svg viewBox="0 0 70 150" width="70" height="150" opacity="0.6">
+        <Spider x={25} y={95} swingPx={30} delay={1} size={0.55}/>
+      </svg>
+    </div>
+  )
+}
+
 function SpiderWeb({ side }) {
   const flip = side === 'right' ? 'scaleX(-1)' : 'none'
   const pos  = side === 'right' ? { right: 0, top: 0 } : { left: 0, top: 0 }
@@ -478,7 +494,10 @@ function SpiderWeb({ side }) {
       transform: flip,
       width:'clamp(160px,24vw,290px)', height:'clamp(160px,24vw,290px)',
     }}>
-      <svg viewBox="0 0 290 290" width="100%" height="100%" opacity="0.6">
+      {/* overflow:visible — the left web's low-hanging spider drops its
+          thread past the web's own 290-unit box on purpose; a clipped SVG
+          would otherwise cut it off at the box edge. */}
+      <svg viewBox="0 0 290 290" width="100%" height="100%" opacity="0.6" style={{ overflow:'visible' }}>
         {[0,15,30,45,60,75,90].map(angle => {
           const rad = (angle * Math.PI) / 180
           return <line key={angle} x1="0" y1="0" x2={290*Math.cos(rad)} y2={290*Math.sin(rad)}
@@ -491,12 +510,19 @@ function SpiderWeb({ side }) {
           })
           return <polyline key={r} points={pts.join(' ')} fill="none" stroke="rgba(200,180,230,0.4)" strokeWidth="0.8"/>
         })}
-        {/* Stationary sway spider near the corner */}
-        <g style={{ transformOrigin:'22px 0', animation:'evSpiderSway 4.5s ease-in-out infinite' }}>
-          <Spider x={22} y={58} swingPx={0} delay={0} size={0.45}/>
-        </g>
-        {/* Swinging spider travelling between webs */}
-        <Spider x={80} y={105} swingPx={55} delay={1.8} size={0.55}/>
+        {side === 'left' ? (
+          <>
+            {/* Stationary sway spider near the corner */}
+            <g style={{ transformOrigin:'22px 0', animation:'evSpiderSway 4.5s ease-in-out infinite' }}>
+              <Spider x={22} y={58} swingPx={0} delay={0} size={0.45}/>
+            </g>
+            {/* Hangs well past the web's own bottom edge, on a long thread */}
+            <Spider x={80} y={320} swingPx={30} delay={1.8} size={0.55}/>
+          </>
+        ) : (
+          /* Right web's second spider moved to the nav bar instead — see NavbarSpider */
+          <Spider x={80} y={105} swingPx={55} delay={1.8} size={0.55}/>
+        )}
       </svg>
     </div>
   )
@@ -928,7 +954,7 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
       {[ev.extras].flat().filter(Boolean).map(x => (
         <span key={x}>
           {x === 'bloodMoon'   && <BloodMoonOrb/>}
-          {x === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/></>}
+          {x === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/><NavbarSpider/></>}
           {x === 'candles'     && <Candles/>}
           {x === 'anniversary' && <AnniversaryOrb/>}
           {x === 'sigil'       && <Sigil/>}
