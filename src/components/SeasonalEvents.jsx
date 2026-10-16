@@ -446,17 +446,24 @@ function Spider({ x, y, swingPx, delay, size = 1 }) {
   return (
     <g style={{ '--swing':`${swingPx}px`, animation:`evSpiderSwing ${5+Math.abs(swingPx)*0.04}s ${delay}s ease-in-out infinite`, transformOrigin:`${x}px 0` }}>
       <line x1={x} y1="0" x2={x} y2={y} stroke="rgba(200,180,230,0.55)" strokeWidth="0.7"/>
-      <g transform={`translate(${x},${y})`} style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>
-        {/* Legs — behind the body, bent hip → knee → foot, both sides */}
-        {[-1,1].map(sd => legs.map((leg, i) => (
-          <polyline key={`${sd}${i}`}
-            points={`${sd*leg.hip[0]},${leg.hip[1]} ${sd*leg.knee[0]},${leg.knee[1]} ${sd*leg.foot[0]},${leg.foot[1]}`}
-            fill="none" stroke={ink} strokeWidth={1.1*s} strokeLinecap="round"/>
-        )))}
-        {/* Abdomen — sits right where the thread ends */}
-        <ellipse cx="0" cy={6*s} rx={7*s} ry={9*s} fill={ink}/>
-        {/* Cephalothorax — below the abdomen */}
-        <circle cx="0" cy={20*s} r={4.5*s} fill={ink}/>
+      {/* Positioning only — a CSS animation on this same element would
+          override this transform attribute outright (CSS wins over SVG
+          presentation attributes), silently resetting the spider back to
+          (0,0) once the drop-in animation finished. The entrance animation
+          lives on the nested group below instead, so the two compose. */}
+      <g transform={`translate(${x},${y})`}>
+        <g style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>
+          {/* Legs — behind the body, bent hip → knee → foot, both sides */}
+          {[-1,1].map(sd => legs.map((leg, i) => (
+            <polyline key={`${sd}${i}`}
+              points={`${sd*leg.hip[0]},${leg.hip[1]} ${sd*leg.knee[0]},${leg.knee[1]} ${sd*leg.foot[0]},${leg.foot[1]}`}
+              fill="none" stroke={ink} strokeWidth={1.1*s} strokeLinecap="round"/>
+          )))}
+          {/* Abdomen — sits right where the thread ends */}
+          <ellipse cx="0" cy={6*s} rx={7*s} ry={9*s} fill={ink}/>
+          {/* Cephalothorax — below the abdomen */}
+          <circle cx="0" cy={20*s} r={4.5*s} fill={ink}/>
+        </g>
       </g>
     </g>
   )
@@ -486,10 +493,10 @@ function SpiderWeb({ side }) {
         })}
         {/* Stationary sway spider near the corner */}
         <g style={{ transformOrigin:'22px 0', animation:'evSpiderSway 4.5s ease-in-out infinite' }}>
-          <Spider x={22} y={58} swingPx={0} delay={0} size={1}/>
+          <Spider x={22} y={58} swingPx={0} delay={0} size={0.45}/>
         </g>
         {/* Swinging spider travelling between webs */}
-        <Spider x={80} y={105} swingPx={55} delay={1.8} size={1.25}/>
+        <Spider x={80} y={105} swingPx={55} delay={1.8} size={0.55}/>
       </svg>
     </div>
   )
