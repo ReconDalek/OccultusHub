@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
+import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
 import { recordBonusHitEntries, MERIT_THRESHOLDS } from './meritController.js';
 import { TARGET_LENGTHS, estimateChainDuration } from './chainController.js';
 
@@ -21,12 +21,15 @@ function checkChainBotSecret(request, env) {
 
 // The actual Torn call, shared by the website's session-gated endpoint and
 // the bot-facing one (which manages its own watch state and isn't gated by
-// a website session). Must use a key belonging to this exact faction, since
-// Torn scopes the chain selection to the key's own faction.
+// a website session). The faction chain endpoint is public — any valid key
+// can read any faction's chain status — so this draws from the full
+// submitted-key pool rather than requiring one belonging to this specific
+// faction's own leadership, which would fail outright if that faction
+// happened to have no staff key on file.
 async function fetchLiveChainFromTorn(env, factionId) {
-  const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
+  const apiKeyObj = await getRandomUserApiKey(env);
   if (!apiKeyObj?.key) {
-    const err = new Error('No API key available for this faction');
+    const err = new Error('No API key available');
     err.status = 503;
     throw err;
   }
