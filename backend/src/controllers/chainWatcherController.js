@@ -279,13 +279,21 @@ export async function getLiveStatusForBot(request, env) {
   }
 }
 
-// Current-hour + next-different-watcher for a faction, collapsing consecutive
-// hours held by the same person — same rule the website's WatcherBanner uses,
-// ported here so the bot doesn't need to re-derive it from raw shift rows.
+// Current hour + the LITERAL next hour's assignment (no skip-ahead) — the
+// bot's hourly ping needs to tell apart three distinct cases for the next
+// hour specifically: nobody signed up (a gap — announce it, don't silently
+// search further ahead for someone), the same person covering back-to-back
+// (double duty), or a genuine handoff to someone else. Deliberately NOT the
+// "collapse consecutive hours / skip past gaps" rule the website's own
+// WatcherBanner uses for its own different purpose (a running summary of who
+// has the chain covered) — that's wrong for a ping that fires fresh every
+// hour and would otherwise present someone 3 hours out as if they're "up
+// next" while the hour right after this one sits silently unclaimed.
 async function computeCurrentWatcher(env, factionId) {
   const hour = 3600;
   const nowSecs = Math.floor(Date.now() / 1000);
   const curSlot = Math.floor(nowSecs / hour) * hour;
+  const nextSlot = curSlot + hour;
 
   const { results } = await env.DB.prepare(
     `SELECT s.slot_start, s.torn_user_id,
@@ -297,33 +305,16 @@ async function computeCurrentWatcher(env, factionId) {
      FROM chain_watch_shifts s
      LEFT JOIN users u ON u.torn_user_id = s.torn_user_id
      LEFT JOIN discord_links dl ON dl.user_id = u.id
-     WHERE s.faction_id = ? AND s.slot_start >= ? AND s.slot_start < ?
-     ORDER BY s.slot_start ASC`
-  ).bind(factionId, curSlot, curSlot + 48 * hour).all();
+     WHERE s.faction_id = ? AND s.slot_start IN (?, ?)`
+  ).bind(factionId, curSlot, nextSlot).all();
 
   const byStart = new Map((results || []).map(r => [r.slot_start, r]));
   const current = byStart.get(curSlot) || null;
-
-  let nextSlot = curSlot + hour;
-  while (current && byStart.get(nextSlot)?.torn_user_id === current.torn_user_id) {
-    nextSlot += hour;
-  }
-  // The next sign-up isn't always the very next hour — there can be a gap
-  // with nothing claimed in between (same fix as the website's own
-  // computeWatcherStatus in chainWatcherUtils.js) — scan forward through the
-  // already-fetched 48h window to the nearest hour that actually has someone.
-  let next = byStart.get(nextSlot) || null;
-  if (!next) {
-    const upcoming = (results || [])
-      .filter((r) => r.slot_start >= nextSlot)
-      .sort((a, b) => a.slot_start - b.slot_start);
-    next = upcoming[0] || null;
-  }
+  const next = byStart.get(nextSlot) || null;
 
   return {
     current: current ? { torn_user_id: current.torn_user_id, username: current.username, discord_id: current.discord_id || null } : null,
     next: next ? { torn_user_id: next.torn_user_id, username: next.username, discord_id: next.discord_id || null } : null,
-    nextChangeAt: next ? next.slot_start : null,
     currentSlot: curSlot,
   };
 }
