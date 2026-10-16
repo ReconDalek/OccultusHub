@@ -71,7 +71,7 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
   for (const factionId of FACTION_IDS) {
     const url = `${TORN_API_BASE}/faction/${factionId}/chains?limit=100&sort=DESC&comment=OccHub`;
     try {
-      const data = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKey}` });
+      const data = await fetchWithRetry(url, () => getRandomUserApiKey(env));
       const chains = data.chains || [];
       let added   = 0;
       let skipped = 0;
@@ -144,7 +144,7 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
 // - OD: over the Energy In window (stacking period through chain end) — OD
 //   risk ties to the chain's own active period, not the extended repay window.
 // ─────────────────────────────────────────────────────────────────────────────
-async function fetchChainEnergyData(env, chain, apiKey) {
+async function fetchChainEnergyData(env, chain) {
   const { torn_chain_id: chainId, faction_id: factionId, start_at: startAt, end_at: endAt } = chain;
   const now = Math.floor(Date.now() / 1000);
 
@@ -178,7 +178,7 @@ async function fetchChainEnergyData(env, chain, apiKey) {
   const MAX_PAGES = 50; // 5000 news entries
   let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${stackFrom}&cat=armoryAction&comment=OccHub`;
   for (let page = 0; page < MAX_PAGES && nextUrl; page++) {
-    const data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
+    const data = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId));
     const items = data.news || [];
     if (!items.length) break;
     let reachedEnd = false;
@@ -278,10 +278,10 @@ async function triggerChainEnergyFetch(env, chainId) {
     // faction would silently scope the whole fetch to the wrong faction and
     // never match this chain's members (previously used getRandomUserApiKey,
     // which picks across all factions with no such guarantee).
-    const apiKeyObj = await getStaffApiKeyForFaction(env, chainRow.faction_id);
-    if (!apiKeyObj?.key) return { fetched: false, reason: 'no API key available for this faction' };
+    const keyProbe = await getStaffApiKeyForFaction(env, chainRow.faction_id);
+    if (!keyProbe?.key) return { fetched: false, reason: 'no API key available for this faction' };
 
-    const result = await fetchChainEnergyData(env, chainRow, apiKeyObj.key);
+    const result = await fetchChainEnergyData(env, chainRow);
     return { fetched: true, updated: result.updated };
   } catch (e) {
     console.error(`triggerChainEnergyFetch: chain ${chainId} failed:`, e.message);
@@ -473,8 +473,8 @@ export async function getChainReport(request, env) {
       return errorResponse('Missing chain_id', 400);
     }
 
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) {
+    const keyProbe = await getRandomUserApiKey(env);
+    if (!keyProbe?.key) {
       return errorResponse('No API key available — please ensure a user has a valid key stored', 503);
     }
 
@@ -482,7 +482,7 @@ export async function getChainReport(request, env) {
     try {
       data = await fetchWithRetry(
         `${TORN_API_BASE}/faction/${chainId}/chainreport?comment=OccHub`,
-        { Authorization: `ApiKey ${apiKeyObj.key}` }
+        () => getRandomUserApiKey(env)
       );
     } catch (err) {
       return errorResponse(`Torn API error: ${err.message}`, 502);
@@ -1099,7 +1099,7 @@ export async function refetchChainEnergy(request, env, user) {
     const apiKeyObj = await getStaffApiKeyForFaction(env, chain.faction_id);
     if (!apiKeyObj?.key) return errorResponse('No API key available for this faction — please ensure a staff member has a valid key stored', 503);
 
-    const result = await fetchChainEnergyData(env, chain, apiKeyObj.key);
+    const result = await fetchChainEnergyData(env, chain);
 
     await logInfo(env, {
       category: 'admin', event: 'chain_energy_refetch',
@@ -1150,13 +1150,12 @@ export async function backfillChainEnergy(request, env, user) {
           const apiKeyObj = await getStaffApiKeyForFaction(env, chain.faction_id);
           keyByFaction[chain.faction_id] = apiKeyObj?.key ?? null;
         }
-        const apiKey = keyByFaction[chain.faction_id];
-        if (!apiKey) {
+        if (!keyByFaction[chain.faction_id]) {
           errors.push(`Chain #${chain.torn_chain_id}: no API key available for faction ${chain.faction_id}`);
           continue;
         }
 
-        const result = await fetchChainEnergyData(env, chain, apiKey);
+        const result = await fetchChainEnergyData(env, chain);
         processed++;
         updatedMembers += result.updated;
       } catch (e) {

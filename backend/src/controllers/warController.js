@@ -479,12 +479,11 @@ async function fetchFactionMembersForChecks(env, factionId) {
   // returns "Unknown" for every member. getStaffApiKeyForFaction selects only
   // Leader/Co-leader/Council/Archon keys for this faction and returns null if
   // none is available (no fallback to a rank-and-file member key).
-  const keyObj = await getStaffApiKeyForFaction(env, factionId);
-  const key = keyObj?.key;
-  if (!key) return null;
+  const keyProbe = await getStaffApiKeyForFaction(env, factionId);
+  if (!keyProbe?.key) return null;
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/faction/${factionId}/members?striptags=true&comment=OccHub`,
-    { Authorization: `ApiKey ${key}` }
+    () => getStaffApiKeyForFaction(env, factionId)
   );
   const list = Array.isArray(data?.members) ? data.members : [];
   return list.map((m) => ({
@@ -568,12 +567,12 @@ async function captureWarEndChecks(env, warId, factionId) {
 
 // notBefore: earliest plausible start of THIS war (see warNewsFloor). Older
 // ranked wars against the same opponent (rematches) must never match.
-async function fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey, notBefore = 0) {
+async function fetchAndUpdateScores(env, warId, factionId, opponentId, notBefore = 0) {
   let data;
   try {
     data = await fetchWithRetry(
       `${TORN_API_BASE}/faction/rankedwars?limit=20&sort=DESC&comment=OccHub`,
-      { Authorization: `ApiKey ${apiKey}` }
+      () => getStaffApiKeyForFaction(env, factionId)
     );
   } catch { return null; }
 
@@ -614,12 +613,12 @@ export async function checkWarMatches(env, trigger = 'cron') {
 
   for (const factionId of FACTION_IDS) {
     try {
-      const apiKeyObj = await getStaffApiKeyForFaction(env, factionId); const apiKey = apiKeyObj?.key ?? null;
-      if (!apiKey) { results.push({ factionId, error: 'no API key' }); continue; }
+      const keyProbe = await getStaffApiKeyForFaction(env, factionId);
+      if (!keyProbe?.key) { results.push({ factionId, error: 'no API key' }); continue; }
 
       const data = await fetchWithRetry(
         `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
-        { Authorization: `ApiKey ${apiKey}` }
+        () => getStaffApiKeyForFaction(env, factionId)
       );
 
       for (const item of data.news || []) {
@@ -745,7 +744,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
       // ── 1. Fetch live scores from rankedwars API ────────────────────────────
       // For active wars: updates scores OR detects war end
       if (status === 'active') {
-        const scoreResult = await fetchAndUpdateScores(env, warId, factionId, opponentId, apiKey, newsFloor);
+        const scoreResult = await fetchAndUpdateScores(env, warId, factionId, opponentId, newsFloor);
 
         if (scoreResult?.ended) {
           const result       = scoreResult.winner === factionId ? 'won' : 'lost';
@@ -756,7 +755,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
           ).bind(scoreResult.ourScore, scoreResult.oppScore, scoreResult.target, scoreResult.ourChain, scoreResult.oppChain, scoreResult.tornWarId, tornEndedAt, result, warId).run();
 
           // Final attack fetch capped at exact Torn war end time
-          await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, tornEndedAt);
+          await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, tornEndedAt);
 
           await summariseAndCleanWar(env, warId, factionId);
           console.log(`trackActiveWars: war ${warId} ended (scores API) — ${result}`);
@@ -775,7 +774,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
       try {
         const newsData = await fetchWithRetry(
           `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
-          { Authorization: `ApiKey ${apiKey}` }
+          () => getStaffApiKeyForFaction(env, factionId)
         );
         newsItems = (newsData.news || []).filter((n) => n.timestamp >= newsFloor);
       } catch (e) {
@@ -812,7 +811,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
 
             // Final attack fetch capped at war end — captures any attacks that
             // occurred since the last cron run up to the exact war end timestamp.
-            await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, warEndedAt);
+            await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, warEndedAt);
 
             await summariseAndCleanWar(env, warId, factionId);
             console.log(`trackActiveWars: war ${warId} ended (news) — ${result}`);
@@ -859,8 +858,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
       let newArmory = 0;
       let armoryMeta = null;
       const armoryKeyObj = await getStaffApiKeyForFaction(env, factionId);
-      const armoryKey = armoryKeyObj?.key ?? apiKey;
-      const armoryKeyUser = armoryKeyObj?.username ?? apiKeyObj?.username ?? 'unknown';
+      const armoryKeyUser = armoryKeyObj?.username ?? 'unknown';
       const armoryKeyType = armoryKeyObj ? 'leadership' : 'fallback';
       try {
         // Paginated newest → oldest, following the API's own `prev` cursor
@@ -878,7 +876,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
         let nextUrl = baseUrl;
         let fetched = 0, pages = 0, dupArmory = 0;
         while (nextUrl && pages < MAX_ARMORY_PAGES) {
-          const armoryData = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${armoryKey}` });
+          const armoryData = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId));
           const armoryItems = armoryData.news || [];
           pages++;
           fetched += armoryItems.length;
@@ -917,7 +915,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
       // ── 4. Fetch attacks (active wars only, isolated to this faction) ───────
       let newAttacks = 0;
       if (currentWar?.status === 'active') {
-        newAttacks = await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, apiKey, null);
+        newAttacks = await fetchAndStoreAttacks(env, warId, factionId, opponentId, warStartedAt || 0, lastAttackId || 0, null);
       }
 
       await env.DB.prepare(`UPDATE ranked_wars SET last_checked_at=CURRENT_TIMESTAMP WHERE id=?`).bind(warId).run();
@@ -951,7 +949,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
   return { checked, errors };
 }
 
-async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, warStartedAt, lastAttackId, apiKey, warEndedAt = null) {
+async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, warStartedAt, lastAttackId, warEndedAt = null) {
   // lastAttackId: highest torn attack ID already stored — stop when we see IDs <= this
   // warEndedAt: when set, attacks after this timestamp are ignored (final-fetch on war end)
   // Pagination: follow _metadata.links.prev "to" timestamp until we've gone past war start
@@ -980,7 +978,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
     try {
-      data = await fetchWithRetry(nextUrl, { Authorization: `ApiKey ${apiKey}` });
+      data = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId));
     } catch (e) { console.error(`fetchAndStoreAttacks: ${e.message}`); break; }
 
     const attacks = data.attacks || [];

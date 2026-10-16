@@ -27,8 +27,8 @@ function checkChainBotSecret(request, env) {
 // faction's own leadership, which would fail outright if that faction
 // happened to have no staff key on file.
 async function fetchLiveChainFromTorn(env, factionId) {
-  const apiKeyObj = await getRandomUserApiKey(env);
-  if (!apiKeyObj?.key) {
+  const keyProbe = await getRandomUserApiKey(env);
+  if (!keyProbe?.key) {
     const err = new Error('No API key available');
     err.status = 503;
     throw err;
@@ -36,7 +36,7 @@ async function fetchLiveChainFromTorn(env, factionId) {
 
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/faction/${factionId}/chain`,
-    { Authorization: `ApiKey ${apiKeyObj.key}` }
+    () => getRandomUserApiKey(env)
   );
 
   const chain = data.chain || {};

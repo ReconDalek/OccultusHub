@@ -12,12 +12,12 @@ async function getApiKey(env) {
 }
 
 export async function fetchAndCacheStockList(env) {
-  const key = await getApiKey(env);
-  if (!key) throw new Error('No API key available');
+  const probe = await getApiKey(env);
+  if (!probe) throw new Error('No API key available');
 
   const json = await fetchWithRetry(
     `${TORN_API_BASE}/torn/stocks?selections=stocks`,
-    { Authorization: `ApiKey ${key}` }
+    async () => { const key = await getApiKey(env); return key ? { key } : null; }
   );
 
   if (!json?.stocks) throw new Error('Unexpected Torn stocks response');
@@ -35,14 +35,14 @@ export async function fetchAndCacheStockDetail(env) {
   const errors = [];
 
   for (const stockId of STOCK_IDS) {
-    // Rotate API key per request to spread load
-    const key = await getApiKey(env);
-    if (!key) { errors.push(`${stockId}: no api key`); continue; }
+    // Rotate API key per request to spread load (and again on any retry)
+    const probe = await getApiKey(env);
+    if (!probe) { errors.push(`${stockId}: no api key`); continue; }
 
     try {
       const json = await fetchWithRetry(
         `${TORN_API_BASE}/torn/${stockId}/stocks`,
-        { Authorization: `ApiKey ${key}` }
+        async () => { const key = await getApiKey(env); return key ? { key } : null; }
       );
 
       // Response: { stocks: { id, name, market, bonus, chart: { performance, history } } }

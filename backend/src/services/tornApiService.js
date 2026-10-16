@@ -12,20 +12,67 @@ async function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Returns true for transient errors worth retrying (network failures, 5xx, 429).
-// Torn API application errors (e.g. "Incorrect ID-entity relation") are not retryable.
-function isRetryable(error) {
+// Torn error text for a problem with the key itself (as opposed to the
+// request) — retrying the SAME key can never fix these, but a DIFFERENT key
+// from the pool might, so these are only retryable when the caller gave us
+// a way to fetch one (see fetchWithRetry's getFreshKey param). Matched
+// against Torn's actual "error" text, lowercased.
+const KEY_ERROR_PATTERNS = [
+  'key is empty',                                  // code 2
+  'incorrect key',                                  // code 3
+  'key owner is in federal jail',                   // code 10
+  'key is temporarily disabled due to owner inactivity', // code 13
+  'daily read limit reached',                       // code 14 — per-key cap, another key isn't capped
+  'access level of this key is not high enough',    // code 16
+  'api key paused by owner',                        // code 18
+  'too many requests',                              // per-key rate limit (200 response, not HTTP 429)
+];
+
+function isKeyError(error) {
+  const msg = error.message.toLowerCase();
+  return msg.startsWith('torn api error:') && KEY_ERROR_PATTERNS.some((p) => msg.includes(p));
+}
+
+// Returns true for errors worth retrying. Network failures, 5xx and 429 are
+// always retryable. Other Torn application errors (e.g. "Incorrect
+// ID-entity relation") never are — no key or wait fixes a logically wrong
+// request. A key-specific error (bad/dead key) is retryable ONLY when a
+// getFreshKey function was supplied, since that's what makes "try a
+// different key" possible instead of hammering the same dead one.
+function isRetryable(error, canSwapKey) {
+  if (canSwapKey && isKeyError(error)) return true;
   const msg = error.message;
   if (msg.startsWith('Torn API error:')) return false; // application-level error
   if (/^HTTP 4/.test(msg) && !msg.startsWith('HTTP 429')) return false; // 4xx except rate-limit
   return true; // network error, 5xx, 429
 }
 
-// Shared retry wrapper used by all Torn API callers.
-// Returns parsed JSON on success, throws on final failure.
-export async function fetchWithRetry(url, headers = {}, maxRetries = MAX_RETRIES) {
+// Shared retry wrapper used by all Torn API callers. Returns parsed JSON on
+// success, throws on final failure.
+//
+// `authOrGetKey` is either:
+//   - a fixed headers object (e.g. { Authorization: 'ApiKey ...' }) — no
+//     key-swapping; every attempt reuses the same key, matching the
+//     original behaviour, for call sites that already resolved one specific
+//     key for a reason (e.g. want to log exactly which key was used without
+//     extra bookkeeping).
+//   - an async function returning a fresh { key, tornUserId, username }
+//     object — called again before EVERY attempt, including retries, so a
+//     transient failure also gets a new key (not just a wait), and a
+//     bad/dead key gets swapped out instead of failing outright. Capture
+//     the returned object in a closure variable if the caller needs to know
+//     afterward which key actually succeeded (for logging).
+export async function fetchWithRetry(url, authOrGetKey = {}, maxRetries = MAX_RETRIES) {
+  const getFreshKey = typeof authOrGetKey === 'function' ? authOrGetKey : null;
+  let headers = getFreshKey ? null : authOrGetKey;
+
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (getFreshKey) {
+      const keyObj = await getFreshKey();
+      if (!keyObj?.key) throw new Error('No API key available');
+      headers = authHeader(keyObj.key);
+    }
     try {
       const response = await fetch(url, { headers });
       if (!response.ok) {
@@ -37,14 +84,19 @@ export async function fetchWithRetry(url, headers = {}, maxRetries = MAX_RETRIES
       }
       return data;
     } catch (error) {
-      if (!isRetryable(error)) throw error; // fast-fail non-transient errors
+      if (!isRetryable(error, !!getFreshKey)) throw error; // fast-fail non-transient errors
       lastError = error;
       if (attempt < maxRetries) {
-        const waitMs = error.message.startsWith('HTTP 429')
-          ? 15000  // rate-limited: wait 15s
-          : BASE_DELAY_MS * Math.pow(2, attempt); // 2s, 4s, 8s
-        console.warn(`[fetchWithRetry] attempt ${attempt + 1}/${maxRetries + 1} failed (${error.message}) — retrying in ${waitMs}ms`);
-        await delay(waitMs);
+        // A bad/rate-limited key's fix is the swap itself, not a wait — the
+        // next attempt already uses a different key, so retry immediately.
+        const swappingBadKey = getFreshKey && isKeyError(error);
+        const waitMs = swappingBadKey
+          ? 0
+          : error.message.startsWith('HTTP 429')
+            ? 15000  // rate-limited: wait 15s
+            : BASE_DELAY_MS * Math.pow(2, attempt); // 2s, 4s, 8s
+        console.warn(`[fetchWithRetry] attempt ${attempt + 1}/${maxRetries + 1} failed (${error.message}) — retrying${waitMs ? ` in ${waitMs}ms` : ''}${getFreshKey ? ' with a different key' : ''}`);
+        if (waitMs) await delay(waitMs);
       }
     }
   }
@@ -141,23 +193,26 @@ export async function getRandomUserApiKey(env) {
 // on any failure (no key available, API error) — callers should treat that as
 // "unknown, needs manual entry," not "age is zero."
 export async function fetchTornAccountAge(env, tornUserId) {
-  const apiKeyObj = await getRandomUserApiKey(env);
-  if (!apiKeyObj?.key) {
+  let usedKeyObj = null;
+  const getFreshKey = async () => { usedKeyObj = await getRandomUserApiKey(env); return usedKeyObj; };
+
+  const probe = await getFreshKey();
+  if (!probe?.key) {
     await logError(env, { category: 'api_error', event: 'mentoring_age_fetch_no_key', message: 'No API key available for mentee age lookup', meta: { targetTornUserId: tornUserId } });
     return null;
   }
   const url = `${TORN_API_BASE}/user/${tornUserId}/profile?striptags=true&comment=OccHub`;
   try {
-    const data = await fetchWithRetry(url, authHeader(apiKeyObj.key));
+    const data = await fetchWithRetry(url, getFreshKey);
     const age = data?.profile?.age;
     if (typeof age !== 'number') {
-      await logError(env, { category: 'api_error', event: 'mentoring_age_fetch_bad_shape', message: 'Torn profile response had no numeric age field', torn_user_id: apiKeyObj.tornUserId, username: apiKeyObj.username, meta: { targetTornUserId: tornUserId, endpoint: url } });
+      await logError(env, { category: 'api_error', event: 'mentoring_age_fetch_bad_shape', message: 'Torn profile response had no numeric age field', torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username, meta: { targetTornUserId: tornUserId, endpoint: url } });
       return null;
     }
     await logInfo(env, {
       category: 'api_call', event: 'mentoring_age_fetch_success',
       message: `Fetched account age for mentee ${tornUserId}: ${age} days`,
-      torn_user_id: apiKeyObj.tornUserId, username: apiKeyObj.username,
+      torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username,
       meta: { targetTornUserId: tornUserId, age, endpoint: url },
     });
     return age;
@@ -165,7 +220,7 @@ export async function fetchTornAccountAge(env, tornUserId) {
     await logError(env, {
       category: 'api_error', event: 'mentoring_age_fetch_failed',
       message: `Failed to fetch account age for mentee ${tornUserId}: ${error.message}`,
-      torn_user_id: apiKeyObj.tornUserId, username: apiKeyObj.username,
+      torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username,
       meta: { targetTornUserId: tornUserId, endpoint: url, error: error.message },
     });
     return null;
@@ -178,8 +233,11 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
   let errors = 0;
 
   for (const factionId of factionIds) {
-    const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
-    if (!apiKeyObj?.key) {
+    let usedKeyObj = null;
+    const getFreshKey = async () => { usedKeyObj = await getStaffApiKeyForFaction(env, factionId); return usedKeyObj; };
+
+    const probe = await getFreshKey();
+    if (!probe?.key) {
       await logError(env, { category: 'api_error', event: 'faction_cache_no_key', message: `No API key available for faction ${factionId}`, faction_id: factionId, meta: { trigger } });
       await env.DB.prepare(
         `INSERT INTO faction_cache (faction_id, data, error) VALUES (?, '{}', ?)
@@ -188,11 +246,10 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
       errors++;
       continue;
     }
-    const { key, tornUserId, username } = apiKeyObj;
     const url = `${TORN_API_BASE}/faction?selections=basic,members,balance,rackets&id=${factionId}&cat=all&comment=OccHub`;
 
     try {
-      const data = await fetchWithRetry(url, authHeader(key));
+      const data = await fetchWithRetry(url, getFreshKey);
 
       await env.DB.prepare(
         `INSERT INTO faction_cache (faction_id, data, fetched_at, error)
@@ -205,7 +262,7 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
       await logInfo(env, {
         category: 'api_call', event: 'faction_cache_success',
         message: `Faction ${factionId} cache refreshed`,
-        torn_user_id: tornUserId, username, faction_id: factionId,
+        torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username, faction_id: factionId,
         meta: { trigger, endpoint: url },
       });
     } catch (error) {
@@ -214,7 +271,7 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
       await logError(env, {
         category: 'api_error', event: 'faction_cache_failed',
         message: `Faction ${factionId} cache failed: ${error.message}`,
-        torn_user_id: tornUserId, username, faction_id: factionId,
+        torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username, faction_id: factionId,
         meta: { trigger, endpoint: url, error: error.message },
       });
       await env.DB.prepare(
@@ -232,15 +289,25 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger
     await logError(env, { category: 'api_error', event: 'company_cache_no_key', message: 'No API key available for company cache refresh', meta: { trigger } });
     return { fetched: 0, errors: 1 };
   }
-  const { key, tornUserId, username } = apiKeyObj;
 
   let fetched = 0;
   let errors = 0;
 
   for (const companyId of companyIds) {
+    // First attempt reuses the key the caller already resolved (so a single
+    // caller-level call still mostly uses one key); any retry grabs a fresh
+    // one from the general pool, swapping out a bad/dead key automatically.
+    let usedKeyObj = apiKeyObj;
+    let firstAttempt = true;
+    const getFreshKey = async () => {
+      if (firstAttempt) { firstAttempt = false; return usedKeyObj; }
+      usedKeyObj = await getRandomUserApiKey(env);
+      return usedKeyObj;
+    };
+
     const url = `${TORN_API_BASE}/company?selections=profile,employees&id=${companyId}&comment=OccHub`;
     try {
-      const data = await fetchWithRetry(url, authHeader(key));
+      const data = await fetchWithRetry(url, getFreshKey);
 
       await env.DB.prepare(
         `INSERT INTO company_cache (company_id, data, fetched_at, error)
@@ -253,7 +320,7 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger
       await logInfo(env, {
         category: 'api_call', event: 'company_cache_success',
         message: `Company ${companyId} cache refreshed`,
-        torn_user_id: tornUserId, username,
+        torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username,
         meta: { trigger, companyId, endpoint: url },
       });
     } catch (error) {
@@ -262,7 +329,7 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger
       await logError(env, {
         category: 'api_error', event: 'company_cache_failed',
         message: `Company ${companyId} cache failed: ${error.message}`,
-        torn_user_id: tornUserId, username,
+        torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username,
         meta: { trigger, companyId, endpoint: url, error: error.message },
       });
       await env.DB.prepare(

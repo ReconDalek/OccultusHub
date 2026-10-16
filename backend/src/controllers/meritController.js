@@ -132,12 +132,12 @@ export async function recordBonusHitEntries(env, tornChainId, factionId, bonuses
 // block saving the chain's hit totals.
 export async function recordChainBonusHits(env, tornChainId, factionId) {
   try {
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) return { recorded: 0, reason: 'no API key available' };
+    const keyProbe = await getRandomUserApiKey(env);
+    if (!keyProbe?.key) return { recorded: 0, reason: 'no API key available' };
 
     const data = await fetchWithRetry(
       `${TORN_API_BASE}/faction/${tornChainId}/chainreport?comment=OccHub`,
-      { Authorization: `ApiKey ${apiKeyObj.key}` }
+      () => getRandomUserApiKey(env)
     );
     const bonuses = data.chainreport?.bonuses || [];
     return await recordBonusHitEntries(env, tornChainId, factionId, bonuses);

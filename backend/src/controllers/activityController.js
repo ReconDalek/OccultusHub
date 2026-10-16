@@ -228,10 +228,10 @@ const FACTION_IDS = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
 
 // Fetch gym energy contributors for a faction — cat=all includes ex-members who contributed.
-async function fetchGymEnergy(apiKey) {
+async function fetchGymEnergy(env, factionId) {
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/faction/contributors?stat=gymenergy&cat=all&comment=OccHub`,
-    { Authorization: `ApiKey ${apiKey}` }
+    () => getStaffApiKeyForFaction(env, factionId)
   );
   return data.contributors || [];
 }
@@ -263,8 +263,8 @@ export async function takeEnergySnapshot(env) {
       const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
       if (!apiKeyObj?.key) throw new Error(`No API key for faction ${factionId}`);
 
-      // fetchWithRetry handles transient errors (3 retries, 2/4/8s backoff)
-      const contributors = await fetchGymEnergy(apiKeyObj.key);
+      // fetchWithRetry handles transient errors (3 retries, 2/4/8s backoff) and bad-key swaps
+      const contributors = await fetchGymEnergy(env, factionId);
       console.log(`[energy snapshot] faction ${factionId}: ${contributors.length} members`);
 
       const stmt = env.DB.prepare(`
@@ -1334,10 +1334,10 @@ export async function generateEnergyWarningReport(request, env) {
 
 // Fetch and store a single member's personalstats snapshot for the given date.
 // Returns true on success, throws on failure (caller decides retry strategy).
-async function fetchAndStoreMemberStats(env, member, apiKey, date, now) {
+async function fetchAndStoreMemberStats(env, member, pool, date, now) {
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`,
-    { Authorization: `ApiKey ${apiKey}` }
+    () => pool.getKey()
   );
   await env.DB.prepare(`
     INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
@@ -1407,9 +1407,8 @@ export async function takePersonalStatsSnapshot(env) {
   const permanentErrors   = []; // Torn API errors / bad member IDs
 
   for (const member of members) {
-    const keyObj = await pool.getKey();
     try {
-      await fetchAndStoreMemberStats(env, member, keyObj.key, yesterday, now);
+      await fetchAndStoreMemberStats(env, member, pool, yesterday, now);
       success++;
     } catch (e) {
       // fetchWithRetry already exhausted retries for transient errors.
@@ -1432,9 +1431,8 @@ export async function takePersonalStatsSnapshot(env) {
     await new Promise(r => setTimeout(r, 15000));
 
     for (const member of transientFailures) {
-      const keyObj = await pool.getKey();
       try {
-        await fetchAndStoreMemberStats(env, member, keyObj.key, yesterday, now);
+        await fetchAndStoreMemberStats(env, member, pool, yesterday, now);
         success++;
         pass2Success++;
       } catch (e) {
@@ -1760,8 +1758,8 @@ export async function backfillPersonalStats(request, env, user) {
     ).bind(torn_user_id).first();
     if (!member) return errorResponse(`Member ${torn_user_id} not found in faction_members`, 404);
 
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) return errorResponse('No API key available', 503);
+    const keyProbe = await getRandomUserApiKey(env);
+    if (!keyProbe?.key) return errorResponse('No API key available', 503);
 
     // 01:00 UTC on the missing date — matches when the daily cron runs.
     const timestamp = Math.floor(new Date(snapshot_date + 'T01:00:00Z').getTime() / 1000);
@@ -1780,7 +1778,7 @@ export async function backfillPersonalStats(request, env, user) {
 
     for (let i = 0; i < allUrls.length; i++) {
       try {
-        const data = await fetchWithRetry(allUrls[i], { Authorization: `ApiKey ${apiKeyObj.key}` });
+        const data = await fetchWithRetry(allUrls[i], () => getRandomUserApiKey(env));
         if (Array.isArray(data?.personalstats)) {
           for (const entry of data.personalstats) {
             if (entry?.name) flatByStatName[entry.name] = entry.value ?? 0;

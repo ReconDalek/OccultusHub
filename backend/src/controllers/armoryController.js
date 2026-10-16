@@ -70,7 +70,7 @@ export async function fetchAndCacheArmory(env) {
       for (const cat of ARMORY_CATEGORIES) {
         try {
           const url = `https://api.torn.com/v2/faction/inventory?cat=${cat}`;
-          const catData = await fetchWithRetry(url, { Authorization: `ApiKey ${apiKeyObj.key}` });
+          const catData = await fetchWithRetry(url, () => getStaffApiKeyForFaction(env, factionId));
           if (catData?.error) {
             categoryErrors.push(`${cat}: ${catData.error.code} ${catData.error.error}`);
             // Fall back to last known-good data for just this category rather
@@ -207,7 +207,7 @@ export async function fetchAndCacheArmoryDeposits(env) {
         const offset = page * 100;
         const data = await fetchWithRetry(
           `https://api.torn.com/v2/faction/news?striptags=false&limit=100&offset=${offset}&sort=DESC&from=${from}&cat=armoryDeposit`,
-          { Authorization: `ApiKey ${apiKeyObj.key}` }
+          () => getStaffApiKeyForFaction(env, factionId)
         );
         if (data?.error) {
           results.errors.push({ factionId, error: `Torn API error ${data.error.code}: ${data.error.error}` });
@@ -388,12 +388,12 @@ export async function getFactionArmoryExpense(env, factionId, monthStartTs, mont
 export async function fetchAndCacheItemPrices(env) {
   console.log('[item-prices] fetching all items from Torn API...');
   try {
-    const apiKeyObj = await getRandomUserApiKey(env);
-    if (!apiKeyObj?.key) throw new Error('No user API key available');
+    const keyProbe = await getRandomUserApiKey(env);
+    if (!keyProbe?.key) throw new Error('No user API key available');
 
     const data = await fetchWithRetry(
       'https://api.torn.com/v2/torn/items?cat=All&sort=ASC',
-      { Authorization: `ApiKey ${apiKeyObj.key}` }
+      () => getRandomUserApiKey(env)
     );
 
     if (data?.error) throw new Error(`Torn API error ${data.error.code}: ${data.error.error}`);

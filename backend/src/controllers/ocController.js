@@ -45,7 +45,7 @@ export async function fetchAndCacheFactionCrimes(env) {
         const offset = page * 100;
         const data = await fetchWithRetry(
           `${TORN_API_BASE}/faction/crimes?cat=all&offset=${offset}&sort=DESC&comment=OccHub`,
-          { Authorization: `ApiKey ${apiKeyObj.key}` }
+          () => getStaffApiKeyForFaction(env, factionId)
         );
 
         const crimes = data?.crimes || [];
