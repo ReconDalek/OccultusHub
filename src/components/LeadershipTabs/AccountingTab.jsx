@@ -4,6 +4,7 @@ import InvestmentsSubTab from './AccountingSubTabs/InvestmentsSubTab'
 import StocksSubTab from './AccountingSubTabs/StocksSubTab'
 import CompanySubTab from './AccountingSubTabs/CompanySubTab'
 import CompanyAnalyticsTab from './AccountingSubTabs/CompanyAnalyticsTab'
+import ODInsuranceSubTab from './AccountingSubTabs/ODInsuranceSubTab'
 
 const FACTION_OPTIONS = [
   { id: null,  label: 'All Factions' },
@@ -20,6 +21,7 @@ const SUB_TABS = [
   { id: 'stocks',      label: 'Stocks' },
   { id: 'companies',   label: 'Companies' },
   { id: 'company-analytics', label: 'Company Analytics' },
+  { id: 'od-insurance', label: 'OD Insurance' },
 ]
 
 export default function AccountingTab() {
@@ -104,6 +106,7 @@ export default function AccountingTab() {
       {activeSubTab === 'stocks'      && <StocksSubTab factionId={factionId} />}
       {activeSubTab === 'companies'   && <CompanySubTab factionId={factionId} />}
       {activeSubTab === 'company-analytics' && <CompanyAnalyticsTab factionId={factionId} />}
+      {activeSubTab === 'od-insurance' && <ODInsuranceSubTab factionId={factionId} />}
     </div>
   )
 }
