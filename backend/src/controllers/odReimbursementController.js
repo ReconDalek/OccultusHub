@@ -165,6 +165,82 @@ export async function completeForBot(request, env) {
   }
 }
 
+// ── GET /api/leadership/od-reimbursements — overview/search for the website ──
+// Query params (all optional): faction_id, status (pending|completed|rejected|
+// all — default all), search (torn_user_id exact match if numeric, else a
+// username substring), item_name (exact), from/to (unix seconds, filtered on
+// logged_at), limit (default 200, max 500).
+export async function listReimbursementsForLeadership(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = url.searchParams.get('faction_id');
+    const status = url.searchParams.get('status') || 'all';
+    const search = (url.searchParams.get('search') || '').trim();
+    const itemName = url.searchParams.get('item_name');
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const limit = Math.min(parseInt(url.searchParams.get('limit'), 10) || 200, 500);
+
+    const where = [];
+    const params = [];
+
+    if (factionId) { where.push('faction_id = ?'); params.push(parseInt(factionId, 10)); }
+    if (status !== 'all') { where.push('status = ?'); params.push(status); }
+    if (itemName) { where.push('item_name = ?'); params.push(itemName); }
+    if (from) { where.push('logged_at >= ?'); params.push(parseInt(from, 10)); }
+    if (to) { where.push('logged_at <= ?'); params.push(parseInt(to, 10)); }
+    if (search) {
+      if (/^\d+$/.test(search)) {
+        where.push('torn_user_id = ?');
+        params.push(parseInt(search, 10));
+      } else {
+        where.push('username LIKE ?');
+        params.push(`%${search}%`);
+      }
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const { results } = await env.DB.prepare(
+      `SELECT id, torn_user_id, username, faction_id, item_name, quantity, status,
+              logged_at, completed_at, completed_by, unit_price_at_completion, created_at
+       FROM od_reimbursements ${whereSql}
+       ORDER BY created_at DESC LIMIT ?`
+    ).bind(...params, limit).all();
+
+    // Totals across every row matching the filters above (not just the
+    // returned page), so the summary reflects what's actually being viewed.
+    const summaryRow = await env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+         SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count,
+         SUM(CASE WHEN status = 'completed' THEN quantity * COALESCE(unit_price_at_completion, 0) ELSE 0 END) AS completed_value
+       FROM od_reimbursements ${whereSql}`
+    ).bind(...params).first();
+
+    // Distinct item names ever logged, for the item filter dropdown — not
+    // scoped to the current filters, so switching items doesn't narrow itself out.
+    const { results: itemRows } = await env.DB.prepare(
+      `SELECT DISTINCT item_name FROM od_reimbursements ORDER BY item_name`
+    ).all();
+
+    return jsonResponse({
+      reimbursements: results || [],
+      summary: {
+        pending_count: summaryRow?.pending_count || 0,
+        completed_count: summaryRow?.completed_count || 0,
+        rejected_count: summaryRow?.rejected_count || 0,
+        completed_value: Math.round(summaryRow?.completed_value || 0),
+      },
+      items: (itemRows || []).map(r => r.item_name),
+    });
+  } catch (e) {
+    console.error('listReimbursementsForLeadership error:', e);
+    return errorResponse('Failed to fetch OD reimbursements: ' + e.message, 500);
+  }
+}
+
 // ── POST /api/discord/od-reimbursements/reject — body { torn_user_id, rejected_by } ─
 // No value recorded — for cases leadership determines don't qualify (e.g. the
 // item was faction-supplied, so nothing is owed).

@@ -913,6 +913,11 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/item-prices' && method === 'GET') {
       return armoryController.getItemPrices(request, env, user);
     }
+
+    // OD insurance / reimbursement overview
+    if (pathname === '/api/leadership/od-reimbursements' && method === 'GET') {
+      return odReimbursementController.listReimbursementsForLeadership(request, env, user);
+    }
     // Company profits
     if (pathname === '/api/leadership/accounting/companies' && method === 'GET') {
       return companyProfitController.getCompanyProfits(request, env, user);

@@ -11,6 +11,7 @@ import ArmoryTab from '../components/LeadershipTabs/ArmoryTab'
 import WarningsTab from '../components/LeadershipTabs/WarningsTab'
 import OCTab from '../components/LeadershipTabs/OCTab'
 import MentoringTab from '../components/LeadershipTabs/MentoringTab'
+import ODInsuranceTab from '../components/LeadershipTabs/ODInsuranceTab'
 
 const tabs = [
   { id: 'notices',    label: 'Notices' },
@@ -20,6 +21,7 @@ const tabs = [
   { id: 'accounting', label: 'Accounting' },
   { id: 'armory',     label: 'Armory' },
   { id: 'oc',         label: 'Organized Crime' },
+  { id: 'od',         label: 'OD Insurance' },
   { id: 'warnings',   label: 'Warnings' },
   { id: 'mentoring',  label: 'Mentoring' },
   { id: 'tools',      label: 'Tools' },
@@ -116,6 +118,7 @@ export default function Leadership() {
               {activeTab === 'accounting' && <AccountingTab />}
               {activeTab === 'armory'    && <ArmoryTab />}
               {activeTab === 'oc'        && <OCTab />}
+              {activeTab === 'od'        && <ODInsuranceTab />}
               {activeTab === 'warnings'  && <WarningsTab />}
               {activeTab === 'mentoring' && <MentoringTab />}
             </div>
