@@ -129,14 +129,14 @@ export const EVENT_DEFS = [
   },
   {
     id: 'halloween',
-    name: "All Hallows' Eve", icon: '🕷️', dateDesc: 'Oct 28–31',
-    isActive: () => inRange(10,28,31),
+    name: "All Hallows' Eve", icon: '🕷️', dateDesc: 'Oct 1–31',
+    isActive: () => new Date().getMonth() + 1 === 10,
     bodyBg: `radial-gradient(circle at top, rgba(65,5,130,0.58), transparent 50%),
              radial-gradient(circle at bottom right, rgba(25,65,5,0.32), transparent 50%), #040208`,
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(50,10,80,0.22) 0%, rgba(20,5,35,0.12) 65%, transparent 88%)',
     pulseAnim: 'evHexPulse 6s ease-in-out infinite',
     banner: { text: 'THE VEIL THINS',          color: '#d8b4fe', bg: 'rgba(20,5,35,0.7)',  border: 'rgba(109,40,217,0.6)' },
-    extras: 'halloween', textVars: TV.purple,
+    extras: ['halloween', 'batScare'], textVars: TV.purple,
   },
   {
     id: 'samhain',
@@ -257,6 +257,8 @@ const KEYFRAMES = `
   @keyframes evGarlandSway { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.04)} }
   @keyframes evSigilPulse  { 0%,100%{opacity:.18;filter:drop-shadow(0 0 6px rgba(200,30,60,0.4))} 50%{opacity:.32;filter:drop-shadow(0 0 14px rgba(220,40,70,0.7))} }
   @keyframes evFlicker     { 0%{opacity:1} 10%{opacity:0.12} 18%{opacity:0.9} 26%{opacity:0.08} 36%{opacity:0.85} 46%{opacity:0.1} 56%{opacity:0.88} 68%{opacity:0.07} 78%{opacity:0.92} 88%{opacity:0.1} 100%{opacity:1} }
+  @keyframes evBatFly  { 0%{transform:translate(0,0) scale(var(--bs));opacity:0} 8%{opacity:1} 82%{opacity:1} 100%{transform:translate(var(--bdx),var(--bdy)) scale(var(--bs));opacity:0} }
+  @keyframes evBatFlap { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.4)} }
 `
 
 // ── Particle generators ──────────────────────────────────────────────────────
@@ -728,6 +730,81 @@ function Flicker() {
   )
 }
 
+// ── Bat silhouette ───────────────────────────────────────────────────────────
+function Bat() {
+  return (
+    <svg viewBox="0 0 64 32" style={{ width:'100%', height:'100%', display:'block', animation:'evBatFlap 0.35s ease-in-out infinite' }}>
+      <path
+        d="M32 15 C28 4 18 0 7 5 C12 7 17 9 19 12 C10 13 2 17 0 23 C10 21 18 17 22 14
+           C24 16 24 18 26 20 C23 23 19 27 14 29 C23 28 28 24 32 19 C36 24 41 28 50 29
+           C45 27 41 23 38 20 C40 18 40 16 42 14 C46 17 54 21 64 23 C62 17 54 13 45 12
+           C47 9 52 7 57 5 C46 0 36 4 32 15 Z"
+        fill="rgba(10,3,20,0.88)"
+      />
+    </svg>
+  )
+}
+
+// ── Halloween jump-scare: a random flash, then bats flee the screen ──────────
+// Reuses the same flash look/timing as Flicker, but the moment the flash
+// clears, a handful of bats scatter outward from the middle and off-screen —
+// as if the flash startled them — before everything settles for the next
+// random interval.
+function BatScare() {
+  const [flashActive, setFlashActive] = useState(false)
+  const [bats, setBats] = useState(null)
+
+  useEffect(() => {
+    let t
+    function schedule() {
+      t = setTimeout(() => {
+        setFlashActive(true)
+        setTimeout(() => {
+          setFlashActive(false)
+          setBats(Array.from({ length: 6 + Math.floor(Math.random()*3) }, () => {
+            const angle = Math.random() * Math.PI * 2
+            const dist  = 70 + Math.random() * 40 // vw/vh units, guarantees off-screen
+            return {
+              left:  30 + Math.random()*40, // start scattered near the middle
+              top:   20 + Math.random()*35,
+              bdx:   `${Math.cos(angle)*dist}vw`,
+              bdy:   `${Math.sin(angle)*dist}vh`,
+              bs:    0.6 + Math.random()*0.7,
+              dur:   1.8 + Math.random()*1.1,
+              delay: Math.random()*0.3,
+            }
+          }))
+          setTimeout(() => { setBats(null); schedule() }, 3200)
+        }, 850)
+      }, 18000 + Math.random() * 17000)
+    }
+    schedule()
+    return () => clearTimeout(t)
+  }, [])
+
+  return (
+    <>
+      {flashActive && (
+        <div style={{
+          position:'fixed', inset:0, zIndex:9998, pointerEvents:'none',
+          background:'rgba(5,0,10,0.85)',
+          animation:'evFlicker 0.8s linear forwards',
+        }}/>
+      )}
+      {bats && bats.map((b, i) => (
+        <div key={i} style={{
+          position:'fixed', left:`${b.left}%`, top:`${b.top}%`, zIndex:9997, pointerEvents:'none',
+          width:34, height:17,
+          '--bdx':b.bdx, '--bdy':b.bdy, '--bs':b.bs,
+          animation:`evBatFly ${b.dur}s ${b.delay}s ease-out forwards`,
+        }}>
+          <Bat/>
+        </div>
+      ))}
+    </>
+  )
+}
+
 // ── Preview localStorage key ─────────────────────────────────────────────────
 export const PREVIEW_KEY = 'occultus_event_preview'
 
@@ -828,6 +905,7 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
           {x === 'icicles'     && <Icicles/>}
           {x === 'bonfire'     && <Bonfire/>}
           {x === 'flicker'     && <Flicker/>}
+          {x === 'batScare'    && <BatScare/>}
         </span>
       ))}
 
