@@ -3,7 +3,7 @@ import { getRandomUserApiKey, getStaffApiKeyForFaction, fetchWithRetry } from '.
 import { logInfo, logWarn, logError } from '../services/logger.js';
 import { parseArmoryEntry, BULK_DEPOSIT_THRESHOLD, suppressSameDayOverdoseXanax } from './warController.js';
 import { getKickThresholdCounts } from './activityController.js';
-import { recordChainBonusHits } from './meritController.js';
+import { recordChainBonusHits, MERIT_THRESHOLDS } from './meritController.js';
 
 const FACTION_IDS  = [33097, 9728, 9171];
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -632,6 +632,85 @@ export async function saveChainImport(request, env, user) {
   } catch (err) {
     console.error('saveChainImport error:', err);
     return errorResponse('Failed to import chain', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/leadership/chains/:tornChainId
+// Cleanly removes a chain and everything keyed to it — chain_cache,
+// chain_hits (per-member attack/respect/energy data) and chain_bonus_hits
+// (the merit-eligibility log) — for correcting a chain that was imported or
+// cached in error (e.g. one that predates owning the faction). Doesn't touch
+// member_merits: a merit is a standing "they have it" marker, not re-derived
+// live from chain_bonus_hits, so deleting this chain's bonus-hit rows can't
+// safely auto-retract one. Instead, for any merit this chain's bonus hits
+// contributed to, checks whether the member still has ANOTHER chain's bonus
+// hit at a qualifying position after this one's removed — if not, flags it
+// as possibly orphaned in the response so a leader can review/revoke it via
+// the Merit Tracker's existing revoke control, rather than silently acting
+// on someone's earned-merit status.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function removeChain(request, env) {
+  try {
+    const match = new URL(request.url).pathname.match(/\/api\/leadership\/chains\/(?<id>\d+)$/);
+    const tornChainId = match?.groups?.id ? parseInt(match.groups.id, 10) : NaN;
+    if (!tornChainId) return errorResponse('Invalid chain id', 400);
+
+    const chainRow = await env.DB.prepare(
+      `SELECT torn_chain_id, faction_id, chain_length, start_at, end_at FROM chain_cache WHERE torn_chain_id = ?`
+    ).bind(tornChainId).first();
+
+    const { results: bonusRows } = await env.DB.prepare(
+      `SELECT torn_user_id, chain_position FROM chain_bonus_hits WHERE torn_chain_id = ?`
+    ).bind(tornChainId).all();
+
+    const candidatePairs = [];
+    for (const row of (bonusRows || [])) {
+      for (const [meritType, thresholds] of Object.entries(MERIT_THRESHOLDS)) {
+        if (thresholds.includes(row.chain_position)) {
+          candidatePairs.push({ torn_user_id: row.torn_user_id, merit_type: meritType });
+        }
+      }
+    }
+
+    const possiblyOrphanedMerits = [];
+    for (const { torn_user_id, merit_type } of candidatePairs) {
+      const hasMerit = await env.DB.prepare(
+        `SELECT 1 FROM member_merits WHERE torn_user_id = ? AND merit_type = ?`
+      ).bind(torn_user_id, merit_type).first();
+      if (!hasMerit) continue;
+
+      const thresholds = MERIT_THRESHOLDS[merit_type];
+      const ph = thresholds.map(() => '?').join(',');
+      const stillQualifies = await env.DB.prepare(
+        `SELECT 1 FROM chain_bonus_hits WHERE torn_user_id = ? AND torn_chain_id != ? AND chain_position IN (${ph})`
+      ).bind(torn_user_id, tornChainId, ...thresholds).first();
+
+      if (!stillQualifies) {
+        const member = await env.DB.prepare(
+          `SELECT username FROM faction_members WHERE torn_user_id = ? LIMIT 1`
+        ).bind(torn_user_id).first();
+        possiblyOrphanedMerits.push({ torn_user_id, username: member?.username ?? null, merit_type });
+      }
+    }
+
+    const bonusHitsResult = await env.DB.prepare(`DELETE FROM chain_bonus_hits WHERE torn_chain_id = ?`).bind(tornChainId).run();
+    const chainHitsResult = await env.DB.prepare(`DELETE FROM chain_hits WHERE torn_chain_id = ?`).bind(tornChainId).run();
+    const chainCacheResult = await env.DB.prepare(`DELETE FROM chain_cache WHERE torn_chain_id = ?`).bind(tornChainId).run();
+
+    return jsonResponse({
+      success: true,
+      tornChainId,
+      factionId: chainRow?.faction_id ?? null,
+      chainLength: chainRow?.chain_length ?? null,
+      bonusHitsDeleted: bonusHitsResult.meta.changes,
+      chainHitsDeleted: chainHitsResult.meta.changes,
+      chainCacheDeleted: chainCacheResult.meta.changes > 0,
+      possiblyOrphanedMerits,
+    });
+  } catch (err) {
+    console.error('removeChain error:', err);
+    return errorResponse('Failed to remove chain', 500);
   }
 }
 

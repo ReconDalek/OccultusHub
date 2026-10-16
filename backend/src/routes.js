@@ -661,6 +661,12 @@ export async function handleRequest(request, env, ctx) {
       return chainController.saveChainImport(request, env, user);
     }
 
+    // Cleanly remove a chain and everything keyed to it (chain_cache,
+    // chain_hits, chain_bonus_hits) — for correcting a chain added in error
+    if (pathname.match(/^\/api\/leadership\/chains\/\d+$/) && method === 'DELETE') {
+      return chainController.removeChain(request, env);
+    }
+
     // Faction member list with chain hit totals (for Ranks tab)
     if (pathname === '/api/leadership/members' && method === 'GET') {
       return memberController.getFactionMembers(request, env);

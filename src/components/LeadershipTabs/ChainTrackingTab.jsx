@@ -532,6 +532,108 @@ function ChainReport({ chain, report, onSave, saveStatus, savedInDB, saveLabel =
 
 // ─── Chain Card ───────────────────────────────────────────────────────────────
 
+// Shared by ChainCard and SavedChainCard — cleanly removes a chain and
+// everything keyed to it (chain_cache, chain_hits, chain_bonus_hits), for
+// correcting one added in error (e.g. imported from before the faction owned
+// it). Reloads the page on success rather than threading a refresh callback
+// through both the recent-5 list and the separate archive dropdown — this is
+// a rare, destructive correction, not a routine action worth the extra state
+// plumbing.
+function RemoveChainControl({ tornChainId }) {
+  const [confirming, setConfirming] = useState(false)
+  const [status, setStatus] = useState(null) // null | 'removing' | 'done' | 'error'
+  const [result, setResult] = useState(null)
+
+  const remove = async () => {
+    setStatus('removing')
+    try {
+      const token = localStorage.getItem('occultusSession')
+      const res  = await fetch(`${API_BASE_URL}/api/leadership/chains/${tornChainId}`, {
+        method: 'DELETE', headers: { Authorization: token },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setStatus('done')
+        setResult(data)
+      } else {
+        setStatus('error')
+        setResult(data)
+      }
+    } catch (e) {
+      setStatus('error')
+      setResult({ error: e.message })
+    }
+  }
+
+  if (status === 'done') {
+    return (
+      <div style={{ marginTop: '14px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+        <p style={{ color: '#4ade80', fontSize: '12.5px', margin: 0 }}>
+          Chain removed — {result.chainHitsDeleted} member hit record{result.chainHitsDeleted === 1 ? '' : 's'} and {result.bonusHitsDeleted} bonus hit{result.bonusHitsDeleted === 1 ? '' : 's'} deleted.
+          Refresh the page to update the list.
+        </p>
+        {result.possiblyOrphanedMerits?.length > 0 && (
+          <p style={{ color: '#fbbf24', fontSize: '12.5px', margin: '8px 0 0' }}>
+            ⚠ {result.possiblyOrphanedMerits.map(m => `${m.username ?? `#${m.torn_user_id}`} (${m.merit_type})`).join(', ')}
+            {' '}may have earned {result.possiblyOrphanedMerits.length === 1 ? 'that merit' : 'those merits'} only from this chain — check Chain Watch &gt; Merit Tracker and revoke if needed.
+          </p>
+        )}
+        <button
+          onClick={() => window.location.reload()}
+          style={{ marginTop: '8px', padding: '5px 12px', borderRadius: '6px', fontSize: '11.5px', cursor: 'pointer', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#f4f4f5' }}
+        >
+          Refresh now
+        </button>
+      </div>
+    )
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); setConfirming(true) }}
+        style={{
+          marginTop: '14px', padding: '5px 12px', borderRadius: '6px', fontSize: '11.5px', cursor: 'pointer',
+          background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171',
+        }}
+      >
+        Remove chain
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: '14px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.25)' }}>
+      <p style={{ color: '#f87171', fontSize: '12.5px', margin: '0 0 8px', fontWeight: 600 }}>
+        Permanently delete this chain's cache, member hits, and bonus-hit log?
+      </p>
+      {status === 'error' && (
+        <p style={{ color: '#f87171', fontSize: '12px', margin: '0 0 8px' }}>{result?.error || 'Failed to remove chain'}</p>
+      )}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={(e) => { e.stopPropagation(); remove() }}
+          disabled={status === 'removing'}
+          style={{
+            padding: '5px 14px', borderRadius: '6px', fontSize: '11.5px', cursor: status === 'removing' ? 'default' : 'pointer',
+            background: 'rgba(248,113,113,0.18)', border: '1px solid rgba(248,113,113,0.4)', color: '#f87171',
+            opacity: status === 'removing' ? 0.6 : 1,
+          }}
+        >
+          {status === 'removing' ? 'Removing…' : 'Yes, remove it'}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setConfirming(false) }}
+          disabled={status === 'removing'}
+          style={{ padding: '5px 14px', borderRadius: '6px', fontSize: '11.5px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)' }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ChainCard({ chain }) {
   const [open,         setOpen]         = useState(false)
   const [report,       setReport]       = useState(() => getCachedReport(chain.torn_chain_id))
@@ -832,6 +934,8 @@ function ChainCard({ chain }) {
               </span>
             </div>
           )}
+
+          <RemoveChainControl tornChainId={chain.torn_chain_id} />
         </div>
       )}
     </div>
@@ -1293,6 +1397,8 @@ function SavedChainCard({ data, onRefetchEnergy, energyRefetching }) {
           </span>
         </div>
       )}
+
+      <RemoveChainControl tornChainId={chain.torn_chain_id} />
     </div>
   )
 }
