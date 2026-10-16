@@ -308,12 +308,22 @@ async function computeCurrentWatcher(env, factionId) {
   while (current && byStart.get(nextSlot)?.torn_user_id === current.torn_user_id) {
     nextSlot += hour;
   }
-  const next = byStart.get(nextSlot) || null;
+  // The next sign-up isn't always the very next hour — there can be a gap
+  // with nothing claimed in between (same fix as the website's own
+  // computeWatcherStatus in chainWatcherUtils.js) — scan forward through the
+  // already-fetched 48h window to the nearest hour that actually has someone.
+  let next = byStart.get(nextSlot) || null;
+  if (!next) {
+    const upcoming = (results || [])
+      .filter((r) => r.slot_start >= nextSlot)
+      .sort((a, b) => a.slot_start - b.slot_start);
+    next = upcoming[0] || null;
+  }
 
   return {
     current: current ? { torn_user_id: current.torn_user_id, username: current.username, discord_id: current.discord_id || null } : null,
     next: next ? { torn_user_id: next.torn_user_id, username: next.username, discord_id: next.discord_id || null } : null,
-    nextChangeAt: current ? nextSlot : null,
+    nextChangeAt: next ? next.slot_start : null,
     currentSlot: curSlot,
   };
 }
