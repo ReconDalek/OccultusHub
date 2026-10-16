@@ -431,21 +431,32 @@ function BloodMoonOrb() {
 }
 
 // ── Halloween cobwebs ────────────────────────────────────────────────────────
+// Hangs from the thread's own end, abdomen first (that's where the silk
+// actually comes from), with the cephalothorax and legs below it — a solid
+// black silhouette, no colour, legs bent at a "knee" like a real spider
+// rather than straight spokes.
 function Spider({ x, y, swingPx, delay, size = 1 }) {
   const s = size
+  const ink = 'rgba(6,2,12,0.95)'
+  const legs = [0,1,2,3].map(i => ({
+    hip:  [4*s,  15*s],
+    knee: [(12+i*3)*s, (2+i*2)*s],
+    foot: [(30+i*6)*s, (26+i*6)*s],
+  }))
   return (
     <g style={{ '--swing':`${swingPx}px`, animation:`evSpiderSwing ${5+Math.abs(swingPx)*0.04}s ${delay}s ease-in-out infinite`, transformOrigin:`${x}px 0` }}>
       <line x1={x} y1="0" x2={x} y2={y} stroke="rgba(200,180,230,0.55)" strokeWidth="0.7"/>
       <g transform={`translate(${x},${y})`} style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>
-        <ellipse cx="0" cy="0" rx={7*s} ry={9*s} fill="rgba(20,3,40,0.92)" stroke="rgba(160,120,200,0.5)" strokeWidth="0.5"/>
-        <circle cx="0" cy={-13*s} r={5*s} fill="rgba(20,3,40,0.92)" stroke="rgba(160,120,200,0.5)" strokeWidth="0.5"/>
-        <circle cx={-2*s} cy={-14*s} r={1.4*s} fill="rgba(220,30,40,0.95)"/>
-        <circle cx={2*s}  cy={-14*s} r={1.4*s} fill="rgba(220,30,40,0.95)"/>
-        {[-1,1].map(sd => [0,1,2,3].map(j => (
-          <line key={`${sd}${j}`}
-            x1={sd*2*s} y1={(-6+j*4)*s} x2={sd*20*s} y2={(-10+j*5)*s}
-            stroke="rgba(160,120,200,0.75)" strokeWidth={0.9*s}/>
+        {/* Legs — behind the body, bent hip → knee → foot, both sides */}
+        {[-1,1].map(sd => legs.map((leg, i) => (
+          <polyline key={`${sd}${i}`}
+            points={`${sd*leg.hip[0]},${leg.hip[1]} ${sd*leg.knee[0]},${leg.knee[1]} ${sd*leg.foot[0]},${leg.foot[1]}`}
+            fill="none" stroke={ink} strokeWidth={1.1*s} strokeLinecap="round"/>
         )))}
+        {/* Abdomen — sits right where the thread ends */}
+        <ellipse cx="0" cy={6*s} rx={7*s} ry={9*s} fill={ink}/>
+        {/* Cephalothorax — below the abdomen */}
+        <circle cx="0" cy={20*s} r={4.5*s} fill={ink}/>
       </g>
     </g>
   )
@@ -731,15 +742,28 @@ function Flicker() {
 }
 
 // ── Bat silhouette ───────────────────────────────────────────────────────────
+// Solid black, no colour — a smooth belly with a jagged, two-pointed wing on
+// each side (the classic notched bat-wing membrane) and two small ear bumps
+// over the body, instead of the blobby wavy outline this replaced.
 function Bat() {
   return (
-    <svg viewBox="0 0 64 32" style={{ width:'100%', height:'100%', display:'block', animation:'evBatFlap 0.35s ease-in-out infinite' }}>
+    <svg viewBox="0 0 100 40" style={{ width:'100%', height:'100%', display:'block', animation:'evBatFlap 0.35s ease-in-out infinite' }}>
       <path
-        d="M32 15 C28 4 18 0 7 5 C12 7 17 9 19 12 C10 13 2 17 0 23 C10 21 18 17 22 14
-           C24 16 24 18 26 20 C23 23 19 27 14 29 C23 28 28 24 32 19 C36 24 41 28 50 29
-           C45 27 41 23 38 20 C40 18 40 16 42 14 C46 17 54 21 64 23 C62 17 54 13 45 12
-           C47 9 52 7 57 5 C46 0 36 4 32 15 Z"
-        fill="rgba(10,3,20,0.88)"
+        d="M0,18
+           C4,10 8,10 12,15
+           C16,20 18,24 22,10
+           C25,2 28,2 32,12
+           C34,18 36,20 40,16
+           C44,12 47,12 50,16
+           C53,12 56,12 60,16
+           C64,20 66,18 68,12
+           C72,2 75,2 78,10
+           C82,24 84,20 88,15
+           C92,10 96,10 100,18
+           C90,31 75,38 50,38
+           C25,38 10,31 0,18
+           Z"
+        fill="rgba(5,2,10,0.95)"
       />
     </svg>
   )
@@ -763,18 +787,18 @@ function BatScare() {
           setFlashActive(false)
           setBats(Array.from({ length: 6 + Math.floor(Math.random()*3) }, () => {
             const angle = Math.random() * Math.PI * 2
-            const dist  = 70 + Math.random() * 40 // vw/vh units, guarantees off-screen
+            const dist  = 65 + Math.random() * 35 // vw/vh units, guarantees off-screen
             return {
               left:  30 + Math.random()*40, // start scattered near the middle
               top:   20 + Math.random()*35,
               bdx:   `${Math.cos(angle)*dist}vw`,
               bdy:   `${Math.sin(angle)*dist}vh`,
               bs:    0.6 + Math.random()*0.7,
-              dur:   1.8 + Math.random()*1.1,
-              delay: Math.random()*0.3,
+              dur:   4 + Math.random()*2.2, // slow, unhurried flaps away rather than a dart
+              delay: Math.random()*0.5,
             }
           }))
-          setTimeout(() => { setBats(null); schedule() }, 3200)
+          setTimeout(() => { setBats(null); schedule() }, 7200)
         }, 850)
       }, 18000 + Math.random() * 17000)
     }
