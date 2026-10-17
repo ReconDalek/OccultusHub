@@ -185,7 +185,8 @@ function RoundDetail({ roundId, onBack }) {
   const [error, setError] = useState('')
   const [removalMode, setRemovalMode] = useState('all_tickets')
   const [animationStyle, setAnimationStyle] = useState('slot_machine')
-  const [drawing, setDrawing] = useState(null) // { pool, winner, remainingTickets } while animation plays
+  const [testMode, setTestMode] = useState(false)
+  const [drawing, setDrawing] = useState(null) // { pool, winner, remainingTickets, isTest } while animation plays
 
   const load = async () => {
     try {
@@ -208,7 +209,10 @@ function RoundDetail({ roundId, onBack }) {
   }
 
   const deleteRound = async () => {
-    if (!confirm('Delete this raffle round? This only works before any draws have been run.')) return
+    const warn = winners.length > 0
+      ? `Delete this raffle round? It already has ${winners.length} winner${winners.length === 1 ? '' : 's'} drawn — this removes that history too.`
+      : 'Delete this raffle round?'
+    if (!confirm(warn)) return
     try {
       await apiSend(`/api/chain-watcher/raffle/rounds/${roundId}`, 'DELETE')
       onBack()
@@ -226,32 +230,53 @@ function RoundDetail({ roundId, onBack }) {
     }
   }
 
+  // The pool "as it stands right now" — for the animation to shuffle through
+  // — is every live ticket this round, derived client-side from what we
+  // already loaded (entries minus already-removed winners), mirroring
+  // exactly what the backend itself draws from for a real draw.
+  const computeLivePool = () => {
+    const removedUserIds = new Set(
+      data.winners.filter(w => w.removal_mode === 'all_tickets').map(w => w.torn_user_id)
+    )
+    const removedEntryIds = new Set(
+      data.winners.filter(w => w.winning_entry_id).map(w => w.winning_entry_id)
+    )
+    return data.entries
+      .filter(e => (e.review_status === 'auto' || e.review_status === 'included'))
+      .filter(e => !removedUserIds.has(e.torn_user_id) && !removedEntryIds.has(e.id))
+  }
+
   const runDraw = async () => {
     setError('')
     try {
-      // The pool "as it stands right now" — for the animation to shuffle
-      // through — is every live ticket this round, derived client-side from
-      // what we already loaded (entries minus already-removed winners),
-      // mirroring exactly what the backend itself will draw from.
-      const removedUserIds = new Set(
-        data.winners.filter(w => w.removal_mode === 'all_tickets').map(w => w.torn_user_id)
-      )
-      const removedEntryIds = new Set(
-        data.winners.filter(w => w.winning_entry_id).map(w => w.winning_entry_id)
-      )
-      const livePool = data.entries
-        .filter(e => (e.review_status === 'auto' || e.review_status === 'included'))
-        .filter(e => !removedUserIds.has(e.torn_user_id) && !removedEntryIds.has(e.id))
-
+      const livePool = computeLivePool()
       if (!livePool.length) { setError('No tickets left in the pool.'); return }
 
       const json = await apiSend(`/api/chain-watcher/raffle/rounds/${roundId}/draw`, 'POST', {
         removal_mode: removalMode, animation_style: animationStyle,
       })
-      setDrawing({ pool: livePool, winner: json.winner, remainingTickets: json.remainingTickets })
+      setDrawing({ pool: livePool, winner: json.winner, remainingTickets: json.remainingTickets, isTest: false })
     } catch (err) {
       setError(err.message)
     }
+  }
+
+  // Picks a winner entirely client-side and never calls the backend — lets
+  // a leader preview/compare the animations against this round's real pool
+  // as many times as they like without recording anything or touching the
+  // ticket pool. (Added after test rounds got stuck in production with no
+  // way to tell a real round from a test one apart from deleting it.)
+  const runTestDraw = () => {
+    setError('')
+    const livePool = computeLivePool()
+    if (!livePool.length) { setError('No tickets in the pool to test with.'); return }
+    const pick = livePool[Math.floor(Math.random() * livePool.length)]
+    setDrawing({
+      pool: livePool,
+      winner: { torn_user_id: pick.torn_user_id, username: pick.username, winning_entry_id: pick.id },
+      remainingTickets: livePool.length - 1,
+      isTest: true,
+    })
   }
 
   if (error && !data) return <div style={card}><p style={{ color: '#f87171', fontSize: 13 }}>{error}</p></div>
@@ -281,7 +306,7 @@ function RoundDetail({ roundId, onBack }) {
         <p style={{ color: 'var(--text-faint)', fontSize: 12, margin: '4px 0 0' }}>
           {entries.length} ticket{entries.length === 1 ? '' : 's'} pulled &middot; {liveTicketCount} still in the pool &middot; aiming for {round.draw_count} winner{round.draw_count === 1 ? '' : 's'}
         </p>
-        {round.status === 'building' && winners.length === 0 && (
+        {(
           <div style={{ marginTop: 10 }}>
             <button onClick={deleteRound} style={{ ...ghostBtn, color: '#f87171' }}>Delete round</button>
           </div>
@@ -352,7 +377,8 @@ function RoundDetail({ roundId, onBack }) {
             style={animationStyle}
             pool={drawing.pool}
             winner={drawing.winner}
-            onDone={() => setDrawing(null)}
+            isTest={drawing.isTest}
+            onDone={() => { const wasTest = drawing.isTest; setDrawing(null); if (!wasTest) load() }}
           />
         ) : (
           <>
@@ -376,11 +402,21 @@ function RoundDetail({ roundId, onBack }) {
                 ))}
               </div>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#fbbf24', marginBottom: 12, cursor: 'pointer' }}>
+              <input type="checkbox" checked={testMode} onChange={e => setTestMode(e.target.checked)} />
+              Test mode &mdash; spin repeatedly to preview the animation, nothing is recorded
+            </label>
             {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={runDraw} disabled={liveTicketCount <= 0} style={{ ...primaryBtn, opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
-                Draw Winner {winners.length > 0 ? `(#${winners.length + 1})` : ''}
-              </button>
+              {testMode ? (
+                <button onClick={runTestDraw} disabled={liveTicketCount <= 0} style={{ ...ghostBtn, border: '1px dashed #fbbf24', color: '#fbbf24', opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
+                  Test Spin
+                </button>
+              ) : (
+                <button onClick={runDraw} disabled={liveTicketCount <= 0} style={{ ...primaryBtn, opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
+                  Draw Winner {winners.length > 0 ? `(#${winners.length + 1})` : ''}
+                </button>
+              )}
               {round.status !== 'completed' && winners.length > 0 && (
                 <button onClick={completeRound} style={ghostBtn}>Mark Round Complete</button>
               )}
@@ -393,18 +429,56 @@ function RoundDetail({ roundId, onBack }) {
 }
 
 // ─── Draw animations ─────────────────────────────────────────────────────────
+// Each animation runs its own "spin" phase, then renders WinnerReveal, which
+// handles the lingering reveal itself and calls onDone only once that's
+// run its course — so the winner's name stays on screen for a few seconds
+// instead of vanishing the instant the spin stops.
 
-function DrawAnimation({ style, pool, winner, onDone }) {
-  if (style === 'wheel') return <SpinWheel pool={pool} winner={winner} onDone={onDone} />
-  if (style === 'lotto_balls') return <LottoBalls pool={pool} winner={winner} onDone={onDone} />
-  return <SlotMachineReel pool={pool} winner={winner} onDone={onDone} />
+function DrawAnimation({ style, pool, winner, onDone, isTest }) {
+  const inner = style === 'wheel'
+    ? <SpinWheel pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
+    : style === 'lotto_balls'
+      ? <LottoBalls pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
+      : <SlotMachineReel pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
+
+  if (!isTest) return inner
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{
+        position: 'absolute', top: -10, right: -6, zIndex: 5, padding: '3px 10px', borderRadius: 999,
+        background: 'rgba(251,191,36,0.2)', color: '#fbbf24', fontSize: 11, fontWeight: 700,
+        border: '1px solid rgba(251,191,36,0.5)', letterSpacing: '0.04em',
+      }}>
+        TEST &mdash; not recorded
+      </div>
+      {inner}
+    </div>
+  )
 }
 
-const ITEM_H = 48
+function WinnerReveal({ winner, lingerMs = 3200, onDone, isTest }) {
+  useEffect(() => {
+    const t = setTimeout(() => onDone?.(), lingerMs)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <div style={{ textAlign: 'center', animation: 'raffleRevealPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both' }}>
+      <style>{`@keyframes raffleRevealPop { 0%{transform:scale(0.4);opacity:0} 100%{transform:scale(1);opacity:1} }`}</style>
+      <div style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#fbbf24', fontWeight: 700 }}>Winner</div>
+      <div style={{ fontSize: 30, fontWeight: 800, color: '#f4f4f5', marginTop: 4 }}>
+        {winner.username || winner.torn_user_id}
+      </div>
+      {isTest && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>(test spin &mdash; not recorded)</div>}
+    </div>
+  )
+}
+
+const ITEM_H = 60
 const VISIBLE = 5
 const CENTER_OFFSET = Math.floor(VISIBLE / 2)
 
-function SlotMachineReel({ pool, winner, onDone }) {
+function SlotMachineReel({ pool, winner, onDone, isTest }) {
   const reel = useMemo(() => {
     const names = pool.length ? pool : [winner]
     const arr = []
@@ -415,36 +489,39 @@ function SlotMachineReel({ pool, winner, onDone }) {
 
   const finalTranslate = -(reel.length - 1 - CENTER_OFFSET) * ITEM_H
   const [translateY, setTranslateY] = useState(0)
+  const [phase, setPhase] = useState('spin')
 
   useEffect(() => {
     const spin = setTimeout(() => setTranslateY(finalTranslate), 50)
-    const done = setTimeout(() => onDone?.(), 3300)
-    return () => { clearTimeout(spin); clearTimeout(done) }
+    const reveal = setTimeout(() => setPhase('reveal'), 3100)
+    return () => { clearTimeout(spin); clearTimeout(reveal) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <div style={{ position: 'relative', height: ITEM_H * VISIBLE, width: 260, overflow: 'hidden', borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.3)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+      <div style={{ position: 'relative', height: ITEM_H * VISIBLE, width: 320, overflow: 'hidden', borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.35)' }}>
         <div style={{
           position: 'absolute', top: ITEM_H * CENTER_OFFSET, left: 0, right: 0, height: ITEM_H,
-          background: 'rgba(179,18,63,0.18)', borderTop: '2px solid #b3123f', borderBottom: '2px solid #b3123f', zIndex: 2, pointerEvents: 'none',
+          background: 'rgba(179,18,63,0.2)', borderTop: '2px solid #b3123f', borderBottom: '2px solid #b3123f', zIndex: 2, pointerEvents: 'none',
         }} />
         <div style={{ transform: `translateY(${translateY}px)`, transition: 'transform 3s cubic-bezier(0.08,0.75,0.15,1)' }}>
           {reel.map((p, i) => (
-            <div key={i} style={{ height: ITEM_H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 600, color: '#f4f4f5' }}>
+            <div key={i} style={{ height: ITEM_H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#f4f4f5' }}>
               {p.username || p.torn_user_id}
             </div>
           ))}
         </div>
       </div>
+      {phase === 'reveal' && <WinnerReveal winner={winner} onDone={onDone} isTest={isTest} />}
     </div>
   )
 }
 
+const WHEEL_SIZE = 320
 const WHEEL_PALETTE = ['#b3123f', '#8b5cf6', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#ef4444', '#14b8a6', '#eab308', '#6366f1']
 
-function SpinWheel({ pool, winner, onDone }) {
+function SpinWheel({ pool, winner, onDone, isTest }) {
   const segments = useMemo(() => {
     const map = new Map()
     for (const p of pool) {
@@ -465,79 +542,171 @@ function SpinWheel({ pool, winner, onDone }) {
       acc += span
       return seg
     })
-  }, [pool])
+  }, [pool, winner])
 
   const winnerSeg = segments.find(s => s.torn_user_id === winner.torn_user_id) || segments[0]
   const winnerMid = winnerSeg ? (winnerSeg.startAngle + winnerSeg.endAngle) / 2 : 0
   const finalRotation = 5 * 360 + (360 - winnerMid)
 
   const [rotation, setRotation] = useState(0)
+  const [phase, setPhase] = useState('spin')
   useEffect(() => {
     const spin = setTimeout(() => setRotation(finalRotation), 50)
-    const done = setTimeout(() => onDone?.(), 4000)
-    return () => { clearTimeout(spin); clearTimeout(done) }
+    const reveal = setTimeout(() => setPhase('reveal'), 3900)
+    return () => { clearTimeout(spin); clearTimeout(reveal) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const gradient = segments.map((s, i) => `${WHEEL_PALETTE[i % WHEEL_PALETTE.length]} ${s.startAngle}deg ${s.endAngle}deg`).join(',')
+  const labelRadius = WHEEL_SIZE / 2 * 0.68
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <div style={{ position: 'relative', width: 220, height: 220 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+      <div style={{ position: 'relative', width: WHEEL_SIZE, height: WHEEL_SIZE }}>
         <div style={{
-          width: '100%', height: '100%', borderRadius: '50%',
-          background: `conic-gradient(${gradient})`,
+          position: 'absolute', inset: 0, borderRadius: '50%',
           transform: `rotate(${rotation}deg)`,
           transition: 'transform 3.8s cubic-bezier(0.1,0.65,0.15,1)',
-          border: '3px solid rgba(255,255,255,0.2)',
-          boxShadow: '0 0 30px rgba(0,0,0,0.4)',
-        }} />
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            background: `conic-gradient(${gradient})`,
+            border: '3px solid rgba(255,255,255,0.2)', boxShadow: '0 0 30px rgba(0,0,0,0.4)',
+          }} />
+          {segments.map(s => {
+            const mid = (s.startAngle + s.endAngle) / 2
+            return (
+              <div key={s.torn_user_id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `rotate(${mid}deg)` }}>
+                <span style={{
+                  position: 'absolute', left: 0, top: -labelRadius, transform: 'translate(-50%,-50%)',
+                  width: 86, textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#fff',
+                  textShadow: '0 1px 4px rgba(0,0,0,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {s.username || s.torn_user_id}
+                </span>
+              </div>
+            )
+          })}
+        </div>
         <div style={{
-          position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)',
-          width: 0, height: 0, borderLeft: '11px solid transparent', borderRight: '11px solid transparent', borderTop: '20px solid #f4f4f5',
+          position: 'absolute', top: -18, left: '50%', transform: 'translateX(-50%)',
+          width: 0, height: 0, borderLeft: '12px solid transparent', borderRight: '12px solid transparent', borderTop: '22px solid #f4f4f5',
+          filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))',
         }} />
       </div>
+      {phase === 'reveal' && <WinnerReveal winner={winner} onDone={onDone} isTest={isTest} />}
     </div>
   )
 }
 
-function LottoBalls({ pool, winner, onDone }) {
-  const balls = useMemo(() => {
-    const map = new Map()
-    for (const p of pool) { if (!map.has(p.torn_user_id)) map.set(p.torn_user_id, p) }
-    if (!map.has(winner.torn_user_id)) map.set(winner.torn_user_id, winner)
-    return [...map.values()]
+// ── Lotto balls ──────────────────────────────────────────────────────────────
+// Tickets (one ball per entry, not deduped by person — a bigger pool means
+// more balls in the drum, same as more tickets means better real odds) drop
+// into a drum, tumble around for a bit, then the actual winning ticket's
+// ball slides down out of the drum and the name is revealed below it.
+const MACHINE_W = 320
+const MACHINE_H = 210
+const BALL_SIZE = 42
+const MAX_BALLS = 40
+
+function randomBallPos() {
+  const pad = BALL_SIZE / 2 + 6
+  return {
+    x: pad + Math.random() * (MACHINE_W - pad * 2),
+    y: pad + Math.random() * (MACHINE_H - pad * 2),
+  }
+}
+
+function LottoBalls({ pool, winner, onDone, isTest }) {
+  const tickets = useMemo(() => {
+    let list = pool.length ? pool : [winner]
+    const isWinnerTicket = (t) => (winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id)
+    if (!list.some(isWinnerTicket)) list = [...list, winner]
+    if (list.length > MAX_BALLS) {
+      const winnerTicket = list.find(isWinnerTicket)
+      const rest = list.filter(t => t !== winnerTicket)
+      const sample = [...rest].sort(() => Math.random() - 0.5).slice(0, MAX_BALLS - 1)
+      list = winnerTicket ? [...sample, winnerTicket] : sample
+    }
+    return list
   }, [pool, winner])
 
-  const [revealed, setRevealed] = useState(false)
+  const winnerIdx = useMemo(() => tickets.findIndex(t =>
+    winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id
+  ), [tickets, winner])
+
+  const [positions, setPositions] = useState(() => tickets.map(() => ({ x: MACHINE_W / 2, y: -60 })))
+  const [phase, setPhase] = useState('dropping') // dropping -> mixing -> selecting -> revealed
+
   useEffect(() => {
-    const reveal = setTimeout(() => setRevealed(true), 2500)
-    const done = setTimeout(() => onDone?.(), 3800)
-    return () => { clearTimeout(reveal); clearTimeout(done) }
+    const timers = []
+    tickets.forEach((_, i) => {
+      timers.push(setTimeout(() => {
+        setPositions(prev => { const next = [...prev]; next[i] = randomBallPos(); return next })
+      }, 150 + i * 60))
+    })
+    timers.push(setTimeout(() => setPhase('mixing'), 150 + tickets.length * 60 + 500))
+    ;[1600, 2150, 2700].forEach(t => {
+      timers.push(setTimeout(() => setPositions(() => tickets.map(() => randomBallPos())), t))
+    })
+    timers.push(setTimeout(() => {
+      setPhase('selecting')
+      setPositions(prev => {
+        const next = [...prev]
+        if (winnerIdx >= 0) next[winnerIdx] = { x: MACHINE_W / 2, y: MACHINE_H + 60 }
+        return next
+      })
+    }, 3250))
+    timers.push(setTimeout(() => setPhase('revealed'), 4000))
+    return () => timers.forEach(clearTimeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
-    <div style={{ position: 'relative', minHeight: 170, display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
-      <style>{`@keyframes lottoJitter { from{transform:translateY(-5px) rotate(-3deg)} to{transform:translateY(5px) rotate(3deg)} }`}</style>
-      {balls.map((b, i) => {
-        const isWinner = b.torn_user_id === winner.torn_user_id
-        const big = revealed && isWinner
-        return (
-          <div key={b.torn_user_id} style={{
-            width: big ? 100 : 44, height: big ? 100 : 44, borderRadius: '50%',
-            background: isWinner ? 'linear-gradient(135deg,#fbbf24,#b3123f)' : 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.18)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-            fontSize: big ? 11 : 10, fontWeight: 700, color: '#f4f4f5', padding: 4, overflow: 'hidden',
-            opacity: revealed && !isWinner ? 0.1 : 1,
-            animation: !revealed ? `lottoJitter ${0.5 + (i % 5) * 0.09}s ease-in-out infinite alternate` : 'none',
-            transition: 'width 0.6s ease, height 0.6s ease, opacity 0.6s ease',
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+      <div style={{ position: 'relative', width: MACHINE_W, height: MACHINE_H + 110 }}>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: MACHINE_W, height: MACHINE_H, borderRadius: 24,
+          border: '3px solid rgba(255,255,255,0.16)',
+          background: 'radial-gradient(ellipse at 50% 25%, rgba(255,255,255,0.06), rgba(0,0,0,0.4))',
+          overflow: 'hidden', boxShadow: 'inset 0 10px 24px rgba(0,0,0,0.4)',
+        }}>
+          {tickets.map((t, i) => {
+            const pos = positions[i] || { x: MACHINE_W / 2, y: -60 }
+            const isWinnerBall = i === winnerIdx
+            const fadeOut = phase === 'selecting' && !isWinnerBall
+            return (
+              <div key={t.id ?? t.torn_user_id} style={{
+                position: 'absolute', width: BALL_SIZE, height: BALL_SIZE, borderRadius: '50%',
+                left: pos.x - BALL_SIZE / 2, top: pos.y - BALL_SIZE / 2,
+                background: 'linear-gradient(135deg,#f4f4f5,#a1a1aa)',
+                boxShadow: 'inset -4px -4px 7px rgba(0,0,0,0.3), inset 3px 3px 5px rgba(255,255,255,0.5)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 800, color: '#27272a',
+                opacity: fadeOut ? 0.1 : 1,
+                transition: 'left 0.8s cubic-bezier(0.32,0.6,0.3,1), top 0.8s cubic-bezier(0.32,0.6,0.3,1), opacity 0.6s ease',
+              }}>
+                {i + 1}
+              </div>
+            )
+          })}
+        </div>
+        {(phase === 'selecting' || phase === 'revealed') && winnerIdx >= 0 && (
+          <div style={{
+            position: 'absolute', left: MACHINE_W / 2, top: MACHINE_H + 55,
+            transform: `translate(-50%,-50%) scale(${phase === 'revealed' ? 1.6 : 1})`,
+            width: BALL_SIZE, height: BALL_SIZE, borderRadius: '50%',
+            background: 'linear-gradient(135deg,#fbbf24,#b3123f)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, fontWeight: 800, color: '#fff',
+            boxShadow: '0 8px 22px rgba(0,0,0,0.5)',
+            transition: 'transform 0.6s cubic-bezier(0.34,1.56,0.64,1)',
           }}>
-            {big ? (b.username || b.torn_user_id) : i + 1}
+            {winnerIdx + 1}
           </div>
-        )
-      })}
+        )}
+      </div>
+      {phase === 'revealed' && <WinnerReveal winner={winner} onDone={onDone} isTest={isTest} />}
     </div>
   )
 }

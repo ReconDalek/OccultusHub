@@ -238,19 +238,20 @@ export async function completeRound(request, env) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/chain-watcher/raffle/rounds/:id — leadership-only
-// Only while still 'building' — a misconfigured round (wrong window/faction)
-// shouldn't need a DB console to clean up. Once draws have happened the
-// round is history and stays.
+// Deletable at any status (including after draws) — this is an internal
+// leadership tool, not a public audit trail, and a leader who confirms the
+// delete should be able to clean up a misconfigured or test round regardless
+// of how far it got. Cascades to its entries and any winners drawn.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function deleteRound(request, env) {
   try {
     const { id } = new URL(request.url).pathname.match(/\/rounds\/(?<id>\d+)$/)?.groups ?? {};
     if (!id) return errorResponse('Invalid round id', 400);
 
-    const round = await env.DB.prepare(`SELECT status FROM chain_raffle_rounds WHERE id = ?`).bind(id).first();
+    const round = await env.DB.prepare(`SELECT id FROM chain_raffle_rounds WHERE id = ?`).bind(id).first();
     if (!round) return errorResponse('Round not found', 404);
-    if (round.status !== 'building') return errorResponse('Only a round with no draws yet can be deleted', 400);
 
+    await env.DB.prepare(`DELETE FROM chain_raffle_winners WHERE round_id = ?`).bind(id).run();
     await env.DB.prepare(`DELETE FROM chain_raffle_entries WHERE round_id = ?`).bind(id).run();
     await env.DB.prepare(`DELETE FROM chain_raffle_rounds WHERE id = ?`).bind(id).run();
 
