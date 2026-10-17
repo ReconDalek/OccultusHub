@@ -124,7 +124,7 @@ export default function ChainSessionCard({ factionId, session, error: loadError,
   if (session?.status === 'active') {
     return (
       <>
-        <LiveChainCard factionId={factionId} target={session.target_length} shifts={shifts} />
+        <LiveChainCard factionId={factionId} target={session.target_length} shifts={shifts} isLeader={isLeader} />
         {isLeader && (
           <div style={{ marginTop: -8, marginBottom: 16 }}>
             <button onClick={endWatch} disabled={busy} style={dangerBtn}>

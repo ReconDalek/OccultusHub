@@ -95,6 +95,19 @@ export default function UsersTab() {
     }
   }
 
+  const reenableApiKey = async (tornUserId) => {
+    try {
+      const token = localStorage.getItem('occultusSession')
+      await fetch(`${API_BASE_URL}/api/admin/users/${tornUserId}/api-key/reenable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+      })
+      fetchUsers()
+    } catch (err) {
+      console.error('Failed to re-enable API key:', err)
+    }
+  }
+
   const revokeAccessOverride = async (tornUserId) => {
     try {
       const token = localStorage.getItem('occultusSession')
@@ -205,6 +218,7 @@ export default function UsersTab() {
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Last Visit</th>
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Logins</th>
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Member</th>
+                <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>API Key</th>
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Temp Access</th>
                 <th style={{ textAlign: 'left', padding: '8px', color: "var(--text-secondary)" }}>Actions</th>
               </tr>
@@ -230,6 +244,28 @@ export default function UsersTab() {
                     <span style={{ padding: '4px 8px', borderRadius: '4px', background: badge.bg, color: badge.color, fontSize: '12px' }}>
                       {badge.label}
                     </span>
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    {!u.has_api_key ? (
+                      <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>None on file</span>
+                    ) : u.api_key_disabled ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          title={u.api_key_disabled_reason || 'Disabled by Torn'}
+                          style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', background: 'rgba(248,113,113,0.2)', color: '#f87171' }}
+                        >
+                          Disabled{u.api_key_disabled_at ? ` · ${formatUTC(u.api_key_disabled_at)}` : ''}
+                        </span>
+                        <button
+                          onClick={() => reenableApiKey(u.torn_user_id)}
+                          title="Clear now instead of waiting for them to log in again"
+                          className="border-none cursor-pointer text-sm transition-all hover:opacity-80"
+                          style={{ background: 'none', color: 'var(--text-faint)', fontSize: '14px', lineHeight: 1, padding: '2px 4px' }}
+                        >✕</button>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#4ade80', fontSize: '12px' }}>Active</span>
+                    )}
                   </td>
                   <td style={{ padding: '8px' }}>
                     {overrideActive(u) ? (

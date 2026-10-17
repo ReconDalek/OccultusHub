@@ -26,6 +26,43 @@ const fontStepBtn = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1,
 }
 
+const RECONNECT_PULSE_KEYFRAMES = `@keyframes chainReconnectPulse { 0%,100%{opacity:.35} 50%{opacity:1} }`
+
+// Small "still trying" blip — not an error, just a loading indicator, shown
+// wherever the live chain data could otherwise look stale or blank.
+function ReconnectBlip({ fontSize = 11 }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize, color: '#a1a1aa', fontWeight: 500 }}>
+      <style>{RECONNECT_PULSE_KEYFRAMES}</style>
+      <span style={{
+        display: 'inline-block', width: Math.max(5, Math.round(fontSize * 0.5)), height: Math.max(5, Math.round(fontSize * 0.5)),
+        borderRadius: '50%', background: '#f87171', animation: 'chainReconnectPulse 1s ease-in-out infinite',
+      }}/>
+      reconnecting…
+    </span>
+  )
+}
+
+// Faction newsletter shortcut — leadership-only, opens Torn's own mailer in
+// a new tab rather than anything this site manages itself.
+function MailerButton({ fontSize = 12 }) {
+  return (
+    <a
+      href="https://www.torn.com/factions.php?step=your#/tab=controls&option=newsletter"
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, fontSize,
+        padding: '6px 12px', borderRadius: 6, background: 'rgba(255,255,255,0.05)',
+        color: '#d4d4d8', border: '1px solid rgba(255,255,255,0.14)',
+        textDecoration: 'none', whiteSpace: 'nowrap',
+      }}
+    >
+      ✉ Faction mailer
+    </a>
+  )
+}
+
 // Compact view rendered into the pop-out/PiP window — just the countdown and
 // current/next watcher, nothing else needs to travel with it. Font size is a
 // single user-controlled base (the countdown's own size, in px) with every
@@ -33,7 +70,7 @@ const fontStepBtn = {
 // based scaling (clamp()+vmin) didn't track window resizes the way the user
 // wanted, so sizing is manual via the A−/A+ buttons instead, persisted like
 // the other alert settings.
-function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flashOn, fontSize, onFontSizeChange }) {
+function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flashOn, fontSize, onFontSizeChange, reconnecting, isLeader }) {
   const labelSize = Math.round(fontSize * 0.13)
   const nameLabelSize = Math.round(fontSize * 0.1)
   const nameSize = Math.round(fontSize * 0.2)
@@ -86,14 +123,38 @@ function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flas
           <div style={{ fontWeight: 700, fontSize: nameSize }}>{next?.username || 'Unassigned'}</div>
         </div>
       </div>
+      {reconnecting && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <ReconnectBlip fontSize={labelSize} />
+        </div>
+      )}
+      {isLeader && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <MailerButton fontSize={labelSize} />
+        </div>
+      )}
       {flashOn && <RedFlash />}
     </div>
   )
 }
 
-export default function LiveChainCard({ factionId, target, shifts = [] }) {
+// How long a poll is allowed to keep failing before the UI admits it —
+// a single bad/rate-limited key swapped out and retried (both the backend's
+// own retry and this component's own fast re-poll below) usually recovers
+// within a second or two, and flagging that routine blip would just be
+// noise. Only a failure that's still going after this long is worth saying
+// anything about.
+const RECONNECT_UI_DELAY_MS = 4000
+// While erroring, re-poll much sooner than the normal cadence — each retry
+// hits the backend again, which picks a fresh key per attempt (see
+// tornApiService.js's fetchWithRetry), so this is what "force a new check
+// with a different key" actually looks like from here.
+const ERROR_RETRY_MS = 2500
+
+export default function LiveChainCard({ factionId, target, shifts = [], isLeader = false }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [reconnecting, setReconnecting] = useState(false)
   const [now, setNow] = useState(Date.now())
   const [settings, setSettings] = useState(() => loadAlertSettings())
   const [showSettings, setShowSettings] = useState(false)
@@ -104,6 +165,7 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
   const firedThresholdsRef = useRef(new Set())
   const prevTimeoutRef = useRef(null)
   const prevPolledTimeoutRef = useRef(null)
+  const reconnectTimerRef = useRef(null)
 
   // Self-scheduling rather than a fixed interval, so the poll rate can tighten
   // up as a chain gets close to timing out — each attack resets Torn's own
@@ -120,16 +182,26 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
         if (cancelled) return
         setData(json)
         setError(null)
+        setReconnecting(false)
+        if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
         if (json.status === 'active' && json.timeout <= FAST_POLL_THRESHOLD) nextDelay = FAST_POLL_MS
       } catch (e) {
         if (cancelled) return
         setError(e.message)
+        nextDelay = ERROR_RETRY_MS
+        if (!reconnectTimerRef.current) {
+          reconnectTimerRef.current = setTimeout(() => { setReconnecting(true) }, RECONNECT_UI_DELAY_MS)
+        }
       }
       if (!cancelled) timer = setTimeout(load, nextDelay)
     }
 
     load()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+    }
   }, [factionId])
 
   useEffect(() => {
@@ -278,19 +350,21 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
   }, [overlayWindow])
 
   // A poll failing (a bad key, a brief network blip, Torn itself hiccuping)
-  // is routine and usually resolves on the very next poll — it must NOT blank
-  // out an otherwise-still-valid last-known chain state. Someone watching a
-  // chain could read a blanked display as "the chain ended" and stop
-  // attacking, which is exactly the failure this is trying to avoid. Only
-  // show the hard error view when there's no prior data to fall back on at
-  // all (e.g. the very first load fails); once we have data, keep showing it
-  // — ticking down locally off the last successful poll — with a small,
-  // unalarming "reconnecting" note instead.
+  // is routine and usually resolves within a couple of fast retries — it
+  // must NOT blank out an otherwise-still-valid last-known chain state.
+  // Someone watching a chain could read a blanked display as "the chain
+  // ended" and stop attacking, which is exactly the failure this is trying
+  // to avoid. Only show a hard error once it's been failing long enough to
+  // set `reconnecting` (a quick retry that recovers in a blip never shows
+  // anything); once we have data, keep showing it — ticking down locally off
+  // the last successful poll — with a small, unalarming note instead.
   if (error && !data) {
     return (
       <div style={card}>
         <p style={sectionTitle}>Live Chain</p>
-        <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>
+        <p style={{ color: reconnecting ? '#f87171' : 'var(--text-faint)', fontSize: 13 }}>
+          {reconnecting ? error : 'Loading…'}
+        </p>
       </div>
     )
   }
@@ -317,12 +391,9 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
               TEST
             </span>
           )}
-          {error && (
-            <span
-              title={error}
-              style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: 'var(--text-faint)' }}
-            >
-              ⟳ reconnecting…
+          {reconnecting && (
+            <span title={error} style={{ marginLeft: 8 }}>
+              <ReconnectBlip />
             </span>
           )}
         </p>
@@ -383,6 +454,12 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
         </div>
       )}
 
+      {isLeader && (
+        <div style={{ marginTop: 12 }}>
+          <MailerButton />
+        </div>
+      )}
+
       {flashOn && <RedFlash />}
 
       {showSettings && (
@@ -399,6 +476,7 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
           liveTimeout={liveTimeout} urgent={urgent} hits={data?.current ?? 0} target={target}
           current={current} next={next} flashOn={flashOn}
           fontSize={settings.overlayFontSize} onFontSizeChange={adjustOverlayFontSize}
+          reconnecting={reconnecting} isLeader={isLeader}
         />,
         overlayWindow.document.body
       )}
