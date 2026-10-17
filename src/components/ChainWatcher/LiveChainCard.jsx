@@ -71,8 +71,8 @@ function MailerButton({ fontSize = 12 }) {
 // wanted, so sizing is manual via the A−/A+ buttons instead, persisted like
 // the other alert settings.
 function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flashOn, fontSize, onFontSizeChange, reconnecting, isLeader }) {
-  const labelSize = Math.round(fontSize * 0.13)
-  const nameLabelSize = Math.round(fontSize * 0.1)
+  const labelSize = Math.round(fontSize * 0.18)
+  const nameLabelSize = Math.round(fontSize * 0.16)
   const nameSize = Math.round(fontSize * 0.2)
 
   return (
@@ -180,7 +180,24 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
       try {
         const json = await apiGet(`/api/chain-watcher/live?faction_id=${factionId}`)
         if (cancelled) return
-        setData(json)
+        setData((prev) => {
+          // Torn's own chain timeout only ever resets upward on a NEW hit —
+          // with no hit since the last poll (same `current`, same chain),
+          // it can only count down, never up. A poll that disagrees with
+          // that is a bad/stale read (seen live: the timer jumping up ~20s
+          // with no attack shown, then correcting itself a few seconds
+          // later) — discard just that one poll and keep ticking off the
+          // last good data; the next poll is almost always fine.
+          if (
+            prev && prev.status === 'active' && json.status === 'active' &&
+            json.start === prev.start && json.current === prev.current &&
+            json.timeout > prev.timeout
+          ) {
+            console.warn(`[LiveChainCard] ignoring anomalous timeout jump with no new hit (${prev.timeout}s -> ${json.timeout}s)`)
+            return prev
+          }
+          return json
+        })
         setError(null)
         setReconnecting(false)
         if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
