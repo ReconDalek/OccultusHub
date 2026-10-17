@@ -222,6 +222,13 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
 
   function copyStylesInto(win) {
     [...document.styleSheets].forEach((sheet) => {
+      // Skip any seasonal-event theme tag (e.g. the Halloween body-background
+      // override) — it's a one-time snapshot clone, not a live sync, so if a
+      // theme happened to be active at pop-out time it would otherwise stay
+      // baked into this window's background forever, even after the theme
+      // ends or the main tab navigates away. The overlay has its own fixed
+      // dark background regardless, so this stylesheet is never wanted here.
+      if (sheet.ownerNode?.id === 'occultus-event-bg') return
       try {
         const rules = [...sheet.cssRules].map((r) => r.cssText).join('')
         const style = win.document.createElement('style')
@@ -237,6 +244,9 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
       }
     })
     win.document.body.style.margin = '0'
+    // Belt-and-braces: guarantee a solid background underneath the overlay
+    // content no matter what else got cloned in above.
+    win.document.body.style.background = '#0c0c0c'
   }
 
   async function openOverlay() {
@@ -267,7 +277,16 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
     return () => { if (overlayWindow && !overlayWindow.closed) overlayWindow.close() }
   }, [overlayWindow])
 
-  if (error) {
+  // A poll failing (a bad key, a brief network blip, Torn itself hiccuping)
+  // is routine and usually resolves on the very next poll — it must NOT blank
+  // out an otherwise-still-valid last-known chain state. Someone watching a
+  // chain could read a blanked display as "the chain ended" and stop
+  // attacking, which is exactly the failure this is trying to avoid. Only
+  // show the hard error view when there's no prior data to fall back on at
+  // all (e.g. the very first load fails); once we have data, keep showing it
+  // — ticking down locally off the last successful poll — with a small,
+  // unalarming "reconnecting" note instead.
+  if (error && !data) {
     return (
       <div style={card}>
         <p style={sectionTitle}>Live Chain</p>
@@ -296,6 +315,14 @@ export default function LiveChainCard({ factionId, target, shifts = [] }) {
               borderRadius: 5, padding: '2px 7px', verticalAlign: 'middle', letterSpacing: '0.04em',
             }}>
               TEST
+            </span>
+          )}
+          {error && (
+            <span
+              title={error}
+              style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: 'var(--text-faint)' }}
+            >
+              ⟳ reconnecting…
             </span>
           )}
         </p>

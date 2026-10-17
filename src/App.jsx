@@ -113,6 +113,10 @@ function ScrollToTop() {
 function Layout({ children }) {
   const { pathname } = useLocation()
   const isGameRoute = GAME_ROUTES.includes(pathname)
+  // Chain Watch has its own urgent-alert screen flash for "chain about to
+  // end" — a seasonal event's random flash (or the Halloween bat-scare)
+  // firing on top of that is genuinely confusing for whoever's watching.
+  const suppressSeasonal = pathname === '/chain'
 
   return (
     <>
@@ -130,7 +134,7 @@ function Layout({ children }) {
       {!isGameRoute && <RuneEasterEgg />}
       {!isGameRoute && <WatchingEye />}
       {!isGameRoute && <SpotifyPlayer />}
-      <SeasonalEvents />
+      {!suppressSeasonal && <SeasonalEvents />}
     </>
   )
 }
