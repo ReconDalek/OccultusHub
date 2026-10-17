@@ -71,7 +71,7 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
   for (const factionId of FACTION_IDS) {
     const url = `${TORN_API_BASE}/faction/${factionId}/chains?limit=100&sort=DESC&comment=OccHub`;
     try {
-      const data = await fetchWithRetry(url, () => getRandomUserApiKey(env));
+      const data = await fetchWithRetry(url, () => getRandomUserApiKey(env), env);
       const chains = data.chains || [];
       let added   = 0;
       let skipped = 0;
@@ -178,7 +178,7 @@ async function fetchChainEnergyData(env, chain) {
   const MAX_PAGES = 50; // 5000 news entries
   let nextUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=ASC&from=${stackFrom}&cat=armoryAction&comment=OccHub`;
   for (let page = 0; page < MAX_PAGES && nextUrl; page++) {
-    const data = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId));
+    const data = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId), env);
     const items = data.news || [];
     if (!items.length) break;
     let reachedEnd = false;
@@ -482,7 +482,8 @@ export async function getChainReport(request, env) {
     try {
       data = await fetchWithRetry(
         `${TORN_API_BASE}/faction/${chainId}/chainreport?comment=OccHub`,
-        () => getRandomUserApiKey(env)
+        () => getRandomUserApiKey(env),
+        env
       );
     } catch (err) {
       return errorResponse(`Torn API error: ${err.message}`, 502);

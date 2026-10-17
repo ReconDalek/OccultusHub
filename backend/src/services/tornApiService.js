@@ -33,6 +33,43 @@ function isKeyError(error) {
   return msg.startsWith('torn api error:') && KEY_ERROR_PATTERNS.some((p) => msg.includes(p));
 }
 
+// A subset of KEY_ERROR_PATTERNS where swapping to a different key fixes
+// the CALL but the broken key itself should stop being offered to anyone
+// until its owner has logged into Torn again — "too many requests" and
+// "daily read limit reached" are the opposite: routine, self-clearing
+// within a minute/day, not a sign the key is actually broken, so those
+// are deliberately excluded here.
+const PERSISTENT_KEY_ERROR_PATTERNS = [
+  'key is empty',
+  'incorrect key',
+  'key owner is in federal jail',
+  'key is temporarily disabled due to owner inactivity',
+  'access level of this key is not high enough',
+  'api key paused by owner',
+];
+
+function isPersistentKeyError(error) {
+  const msg = error.message.toLowerCase();
+  return msg.startsWith('torn api error:') && PERSISTENT_KEY_ERROR_PATTERNS.some((p) => msg.includes(p));
+}
+
+// Marks a key unusable for every future call (all the getXApiKey selectors
+// below exclude it) until the owner logs into Torn and back into this site —
+// the login flow re-validates the submitted key against Torn and clears
+// this flag on success. Best-effort: never throws, so a logging hiccup here
+// can't take down the actual API call that triggered it.
+export async function disableApiKey(env, tornUserId, reason) {
+  try {
+    await env.DB.prepare(
+      `UPDATE users SET api_key_disabled = 1, api_key_disabled_at = CURRENT_TIMESTAMP, api_key_disabled_reason = ?
+       WHERE torn_user_id = ? AND (api_key_disabled IS NULL OR api_key_disabled = 0)`
+    ).bind(reason, tornUserId).run();
+    console.warn(`[API key] disabled for torn_user_id ${tornUserId}: ${reason}`);
+  } catch (e) {
+    console.error('Failed to disable API key:', e);
+  }
+}
+
 // Returns true for errors worth retrying. Network failures, 5xx and 429 are
 // always retryable. Other Torn application errors (e.g. "Incorrect
 // ID-entity relation") never are — no key or wait fixes a logically wrong
@@ -62,9 +99,15 @@ function isRetryable(error, canSwapKey) {
 //     bad/dead key gets swapped out instead of failing outright. Capture
 //     the returned object in a closure variable if the caller needs to know
 //     afterward which key actually succeeded (for logging).
-export async function fetchWithRetry(url, authOrGetKey = {}, maxRetries = MAX_RETRIES) {
+//
+// `env` is only needed alongside a getFreshKey function — when a key error
+// turns out to be a PERSISTENT one (not just "too many requests" or the
+// daily cap, which clear on their own), that key gets disabled site-wide via
+// disableApiKey rather than just skipped for this one call.
+export async function fetchWithRetry(url, authOrGetKey = {}, env = null, maxRetries = MAX_RETRIES) {
   const getFreshKey = typeof authOrGetKey === 'function' ? authOrGetKey : null;
   let headers = getFreshKey ? null : authOrGetKey;
+  let lastKeyObj = null;
 
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -72,6 +115,7 @@ export async function fetchWithRetry(url, authOrGetKey = {}, maxRetries = MAX_RE
       const keyObj = await getFreshKey();
       if (!keyObj?.key) throw new Error('No API key available');
       headers = authHeader(keyObj.key);
+      lastKeyObj = keyObj;
     }
     try {
       const response = await fetch(url, { headers });
@@ -86,6 +130,9 @@ export async function fetchWithRetry(url, authOrGetKey = {}, maxRetries = MAX_RE
     } catch (error) {
       if (!isRetryable(error, !!getFreshKey)) throw error; // fast-fail non-transient errors
       lastError = error;
+      if (getFreshKey && env && lastKeyObj?.tornUserId && isPersistentKeyError(error)) {
+        await disableApiKey(env, lastKeyObj.tornUserId, error.message);
+      }
       if (attempt < maxRetries) {
         // A bad/rate-limited key's fix is the swap itself, not a wait — the
         // next attempt already uses a different key, so retry immediately.
@@ -107,7 +154,9 @@ export async function fetchWithRetry(url, authOrGetKey = {}, maxRetries = MAX_RE
 export async function getRandomApiKeyForFaction(env, factionId) {
   try {
     const result = await env.DB.prepare(
-      `SELECT api_key, torn_user_id, username FROM users WHERE api_key IS NOT NULL AND faction_id = ? ORDER BY RANDOM() LIMIT 1`
+      `SELECT api_key, torn_user_id, username FROM users
+       WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0) AND faction_id = ?
+       ORDER BY RANDOM() LIMIT 1`
     ).bind(factionId).first();
     if (!result?.api_key) return null;
     try { return { key: atob(result.api_key), tornUserId: result.torn_user_id, username: result.username }; }
@@ -129,7 +178,8 @@ export async function getStaffApiKeysForFaction(env, factionId) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT api_key, torn_user_id, username FROM users
-       WHERE api_key IS NOT NULL AND faction_id = ? AND faction_position IN ${positions}`
+       WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)
+         AND faction_id = ? AND faction_position IN ${positions}`
     ).bind(factionId).all();
     const keys = [];
     for (const r of (results || [])) {
@@ -158,7 +208,8 @@ export async function getStaffApiKeyForFaction(env, factionId) {
   try {
     const result = await env.DB.prepare(
       `SELECT api_key, torn_user_id, username FROM users
-       WHERE api_key IS NOT NULL AND faction_id = ? AND faction_position IN ${positions}
+       WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)
+         AND faction_id = ? AND faction_position IN ${positions}
        ORDER BY RANDOM()
        LIMIT 1`
     ).bind(factionId).first();
@@ -175,7 +226,9 @@ export async function getStaffApiKeyForFaction(env, factionId) {
 export async function getRandomUserApiKey(env) {
   try {
     const result = await env.DB.prepare(
-      `SELECT api_key, torn_user_id, username FROM users WHERE api_key IS NOT NULL ORDER BY RANDOM() LIMIT 1`
+      `SELECT api_key, torn_user_id, username FROM users
+       WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)
+       ORDER BY RANDOM() LIMIT 1`
     ).first();
     if (!result?.api_key) return null;
     try { return { key: atob(result.api_key), tornUserId: result.torn_user_id, username: result.username }; }
@@ -203,7 +256,7 @@ export async function fetchTornAccountAge(env, tornUserId) {
   }
   const url = `${TORN_API_BASE}/user/${tornUserId}/profile?striptags=true&comment=OccHub`;
   try {
-    const data = await fetchWithRetry(url, getFreshKey);
+    const data = await fetchWithRetry(url, getFreshKey, env);
     const age = data?.profile?.age;
     if (typeof age !== 'number') {
       await logError(env, { category: 'api_error', event: 'mentoring_age_fetch_bad_shape', message: 'Torn profile response had no numeric age field', torn_user_id: usedKeyObj?.tornUserId, username: usedKeyObj?.username, meta: { targetTornUserId: tornUserId, endpoint: url } });
@@ -249,7 +302,7 @@ export async function fetchAndCacheFactions(env, factionIds, _ignoredKey, trigge
     const url = `${TORN_API_BASE}/faction?selections=basic,members,balance,rackets&id=${factionId}&cat=all&comment=OccHub`;
 
     try {
-      const data = await fetchWithRetry(url, getFreshKey);
+      const data = await fetchWithRetry(url, getFreshKey, env);
 
       await env.DB.prepare(
         `INSERT INTO faction_cache (faction_id, data, fetched_at, error)
@@ -307,7 +360,7 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger
 
     const url = `${TORN_API_BASE}/company?selections=profile,employees&id=${companyId}&comment=OccHub`;
     try {
-      const data = await fetchWithRetry(url, getFreshKey);
+      const data = await fetchWithRetry(url, getFreshKey, env);
 
       await env.DB.prepare(
         `INSERT INTO company_cache (company_id, data, fetched_at, error)

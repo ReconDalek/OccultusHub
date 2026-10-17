@@ -483,7 +483,8 @@ async function fetchFactionMembersForChecks(env, factionId) {
   if (!keyProbe?.key) return null;
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/faction/${factionId}/members?striptags=true&comment=OccHub`,
-    () => getStaffApiKeyForFaction(env, factionId)
+    () => getStaffApiKeyForFaction(env, factionId),
+    env
   );
   const list = Array.isArray(data?.members) ? data.members : [];
   return list.map((m) => ({
@@ -572,7 +573,8 @@ async function fetchAndUpdateScores(env, warId, factionId, opponentId, notBefore
   try {
     data = await fetchWithRetry(
       `${TORN_API_BASE}/faction/rankedwars?limit=20&sort=DESC&comment=OccHub`,
-      () => getStaffApiKeyForFaction(env, factionId)
+      () => getStaffApiKeyForFaction(env, factionId),
+      env
     );
   } catch { return null; }
 
@@ -618,7 +620,8 @@ export async function checkWarMatches(env, trigger = 'cron') {
 
       const data = await fetchWithRetry(
         `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
-        () => getStaffApiKeyForFaction(env, factionId)
+        () => getStaffApiKeyForFaction(env, factionId),
+        env
       );
 
       for (const item of data.news || []) {
@@ -774,7 +777,8 @@ export async function trackActiveWars(env, trigger = 'cron') {
       try {
         const newsData = await fetchWithRetry(
           `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=rankedWar&comment=OccHub`,
-          () => getStaffApiKeyForFaction(env, factionId)
+          () => getStaffApiKeyForFaction(env, factionId),
+          env
         );
         newsItems = (newsData.news || []).filter((n) => n.timestamp >= newsFloor);
       } catch (e) {
@@ -876,7 +880,7 @@ export async function trackActiveWars(env, trigger = 'cron') {
         let nextUrl = baseUrl;
         let fetched = 0, pages = 0, dupArmory = 0;
         while (nextUrl && pages < MAX_ARMORY_PAGES) {
-          const armoryData = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId));
+          const armoryData = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId), env);
           const armoryItems = armoryData.news || [];
           pages++;
           fetched += armoryItems.length;
@@ -978,7 +982,7 @@ async function fetchAndStoreAttacks(env, warId, factionId, opponentFactionId, wa
   for (let page = 0; page < MAX_PAGES; page++) {
     let data;
     try {
-      data = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId));
+      data = await fetchWithRetry(nextUrl, () => getStaffApiKeyForFaction(env, factionId), env);
     } catch (e) { console.error(`fetchAndStoreAttacks: ${e.message}`); break; }
 
     const attacks = data.attacks || [];

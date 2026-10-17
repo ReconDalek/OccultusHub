@@ -145,6 +145,10 @@ export async function handleRequest(request, env, ctx) {
       return adminController.setAccessOverride(request, env, user);
     }
 
+    if (pathname.match(/^\/api\/admin\/users\/\d+\/api-key\/reenable$/) && method === 'POST') {
+      return adminController.reenableApiKey(request, env, user);
+    }
+
     // Cache endpoints
     if (pathname === '/api/admin/cache/status' && method === 'GET') {
       return adminController.getCacheStatus(request, env, user);

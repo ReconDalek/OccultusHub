@@ -34,6 +34,10 @@ export async function getAllUsers(request, env, user) {
         u.access_override,
         u.access_override_expires_at,
         u.access_override_note,
+        u.api_key IS NOT NULL as has_api_key,
+        u.api_key_disabled,
+        u.api_key_disabled_at,
+        u.api_key_disabled_reason,
         COUNT(lh.id) as login_count,
         json_extract(fc.data, '$.basic.name') as faction_name
       FROM users u
@@ -189,6 +193,31 @@ export async function revokeAdmin(request, env, user) {
   } catch (error) {
     console.error('revokeAdmin error:', error);
     return errorResponse('Failed to revoke admin access', 500);
+  }
+}
+
+// Manually clears a key Torn flagged as temporarily unusable (see
+// tornApiService.js's disableApiKey) — normally the user's own next
+// successful login already does this, but a leader/admin may want to
+// restore it sooner, e.g. after confirming with the member that their key
+// is active again.
+export async function reenableApiKey(request, env, user) {
+  try {
+    const { tornUserId } = new URL(request.url).pathname.match(
+      /\/api\/admin\/users\/(?<tornUserId>\d+)\/api-key\/reenable/
+    )?.groups ?? {};
+
+    const result = await env.DB.prepare(
+      `UPDATE users SET api_key_disabled = 0, api_key_disabled_at = NULL, api_key_disabled_reason = NULL
+       WHERE torn_user_id = ?`
+    ).bind(tornUserId).run();
+
+    if (!result.meta?.changes) return errorResponse('User not found', 404);
+
+    return jsonResponse({ message: 'API key re-enabled' });
+  } catch (error) {
+    console.error('reenableApiKey error:', error);
+    return errorResponse('Failed to re-enable API key', 500);
   }
 }
 

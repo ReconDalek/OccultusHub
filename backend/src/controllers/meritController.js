@@ -137,7 +137,8 @@ export async function recordChainBonusHits(env, tornChainId, factionId) {
 
     const data = await fetchWithRetry(
       `${TORN_API_BASE}/faction/${tornChainId}/chainreport?comment=OccHub`,
-      () => getRandomUserApiKey(env)
+      () => getRandomUserApiKey(env),
+      env
     );
     const bonuses = data.chainreport?.bonuses || [];
     return await recordBonusHitEntries(env, tornChainId, factionId, bonuses);

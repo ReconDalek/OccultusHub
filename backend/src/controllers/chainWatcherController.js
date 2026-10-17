@@ -36,7 +36,8 @@ async function fetchLiveChainFromTorn(env, factionId) {
 
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/faction/${factionId}/chain`,
-    () => getRandomUserApiKey(env)
+    () => getRandomUserApiKey(env),
+    env
   );
 
   const chain = data.chain || {};

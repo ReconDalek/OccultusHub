@@ -73,7 +73,10 @@ export async function login(request, env) {
              image_url = ?,
              api_key = ?,
              calendar_start_time = COALESCE(?, calendar_start_time),
-             last_login = CURRENT_TIMESTAMP
+             last_login = CURRENT_TIMESTAMP,
+             api_key_disabled = 0,
+             api_key_disabled_at = NULL,
+             api_key_disabled_reason = NULL
          WHERE id = ?`
       )
         .bind(tornUsername, tornFactionId, tornFactionPosition, tornImage, encryptedApiKey, calendarStartTime, user.id)

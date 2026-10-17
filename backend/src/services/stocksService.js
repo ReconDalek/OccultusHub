@@ -5,10 +5,13 @@ const STOCK_IDS = Array.from({ length: 35 }, (_, i) => i + 1);
 
 async function getApiKey(env) {
   const row = await env.DB.prepare(
-    `SELECT api_key FROM users WHERE api_key IS NOT NULL ORDER BY RANDOM() LIMIT 1`
+    `SELECT api_key, torn_user_id, username FROM users
+     WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)
+     ORDER BY RANDOM() LIMIT 1`
   ).first();
   if (!row?.api_key) return null;
-  try { return atob(row.api_key); } catch { return row.api_key; }
+  try { return { key: atob(row.api_key), tornUserId: row.torn_user_id, username: row.username }; }
+  catch { return null; }
 }
 
 export async function fetchAndCacheStockList(env) {
@@ -17,7 +20,8 @@ export async function fetchAndCacheStockList(env) {
 
   const json = await fetchWithRetry(
     `${TORN_API_BASE}/torn/stocks?selections=stocks`,
-    async () => { const key = await getApiKey(env); return key ? { key } : null; }
+    () => getApiKey(env),
+    env
   );
 
   if (!json?.stocks) throw new Error('Unexpected Torn stocks response');
@@ -42,7 +46,8 @@ export async function fetchAndCacheStockDetail(env) {
     try {
       const json = await fetchWithRetry(
         `${TORN_API_BASE}/torn/${stockId}/stocks`,
-        async () => { const key = await getApiKey(env); return key ? { key } : null; }
+        () => getApiKey(env),
+        env
       );
 
       // Response: { stocks: { id, name, market, bonus, chart: { performance, history } } }

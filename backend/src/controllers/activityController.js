@@ -231,7 +231,8 @@ const TORN_API_BASE = 'https://api.torn.com/v2';
 async function fetchGymEnergy(env, factionId) {
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/faction/contributors?stat=gymenergy&cat=all&comment=OccHub`,
-    () => getStaffApiKeyForFaction(env, factionId)
+    () => getStaffApiKeyForFaction(env, factionId),
+    env
   );
   return data.contributors || [];
 }
@@ -1337,7 +1338,8 @@ export async function generateEnergyWarningReport(request, env) {
 async function fetchAndStoreMemberStats(env, member, pool, date, now) {
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`,
-    () => pool.getKey()
+    () => pool.getKey(),
+    env
   );
   await env.DB.prepare(`
     INSERT INTO personal_stats_snapshots (torn_user_id, username, faction_id, snapshot_date, stats, created_at)
@@ -1387,7 +1389,7 @@ export async function takePersonalStatsSnapshot(env) {
 
   // Load all registered API keys
   const keyRows = await env.DB.prepare(
-    `SELECT api_key, torn_user_id, username FROM users WHERE api_key IS NOT NULL`
+    `SELECT api_key, torn_user_id, username FROM users WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)`
   ).all();
   const keys = (keyRows.results || []).map(r => {
     try { return { key: atob(r.api_key), tornUserId: r.torn_user_id, username: r.username }; }
@@ -1778,7 +1780,7 @@ export async function backfillPersonalStats(request, env, user) {
 
     for (let i = 0; i < allUrls.length; i++) {
       try {
-        const data = await fetchWithRetry(allUrls[i], () => getRandomUserApiKey(env));
+        const data = await fetchWithRetry(allUrls[i], () => getRandomUserApiKey(env), env);
         if (Array.isArray(data?.personalstats)) {
           for (const entry of data.personalstats) {
             if (entry?.name) flatByStatName[entry.name] = entry.value ?? 0;
