@@ -482,21 +482,28 @@ const VISIBLE = 5
 const CENTER_OFFSET = Math.floor(VISIBLE / 2)
 
 function SlotMachineReel({ pool, winner, onDone, isTest }) {
-  const reel = useMemo(() => {
+  // The winner sits in the MIDDLE of a long shuffled strip, with full
+  // shuffle blocks both before and after it — not appended as the very
+  // last item — so once the reel lands, it still looks like a continuous
+  // strip of names running both above and below the highlighted winner,
+  // not like it simply ran out of names and stopped at the end.
+  const { reel, winnerIndex } = useMemo(() => {
     const names = pool.length ? pool : [winner]
     const arr = []
-    for (let i = 0; i < 4; i++) arr.push(...[...names].sort(() => Math.random() - 0.5))
+    for (let i = 0; i < 6; i++) arr.push(...[...names].sort(() => Math.random() - 0.5))
+    const idx = arr.length
     arr.push(winner)
-    return arr
+    for (let i = 0; i < 3; i++) arr.push(...[...names].sort(() => Math.random() - 0.5))
+    return { reel: arr, winnerIndex: idx }
   }, [pool, winner])
 
-  const finalTranslate = -(reel.length - 1 - CENTER_OFFSET) * ITEM_H
+  const finalTranslate = -(winnerIndex - CENTER_OFFSET) * ITEM_H
   const [translateY, setTranslateY] = useState(0)
   const [phase, setPhase] = useState('spin')
 
   useEffect(() => {
     const spin = setTimeout(() => setTranslateY(finalTranslate), 50)
-    const reveal = setTimeout(() => setPhase('reveal'), 3100)
+    const reveal = setTimeout(() => setPhase('reveal'), 5100)
     return () => { clearTimeout(spin); clearTimeout(reveal) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -508,7 +515,7 @@ function SlotMachineReel({ pool, winner, onDone, isTest }) {
           position: 'absolute', top: ITEM_H * CENTER_OFFSET, left: 0, right: 0, height: ITEM_H,
           background: 'rgba(179,18,63,0.2)', borderTop: '2px solid #b3123f', borderBottom: '2px solid #b3123f', zIndex: 2, pointerEvents: 'none',
         }} />
-        <div style={{ transform: `translateY(${translateY}px)`, transition: 'transform 3s cubic-bezier(0.08,0.75,0.15,1)' }}>
+        <div style={{ transform: `translateY(${translateY}px)`, transition: 'transform 5s cubic-bezier(0.08,0.75,0.15,1)' }}>
           {reel.map((p, i) => (
             <div key={i} style={{ height: ITEM_H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#f4f4f5' }}>
               {p.username || p.torn_user_id}
@@ -549,13 +556,13 @@ function SpinWheel({ pool, winner, onDone, isTest }) {
 
   const winnerSeg = segments.find(s => s.torn_user_id === winner.torn_user_id) || segments[0]
   const winnerMid = winnerSeg ? (winnerSeg.startAngle + winnerSeg.endAngle) / 2 : 0
-  const finalRotation = 5 * 360 + (360 - winnerMid)
+  const finalRotation = 9 * 360 + (360 - winnerMid)
 
   const [rotation, setRotation] = useState(0)
   const [phase, setPhase] = useState('spin')
   useEffect(() => {
     const spin = setTimeout(() => setRotation(finalRotation), 50)
-    const reveal = setTimeout(() => setPhase('reveal'), 3900)
+    const reveal = setTimeout(() => setPhase('reveal'), 6100)
     return () => { clearTimeout(spin); clearTimeout(reveal) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -651,7 +658,7 @@ function useBallTumble(tickets, winnerIdx, chamberRadius, ballSize, exitPos) {
       }, 150 + i * 55))
     })
     timers.push(setTimeout(() => setPhase('mixing'), 150 + tickets.length * 55 + 450))
-    ;[1500, 2000, 2500].forEach(t => {
+    ;[1500, 2000, 2500, 3000, 3500, 4000, 4500].forEach(t => {
       timers.push(setTimeout(() => setPositions(() => tickets.map(() => randomCirclePos(chamberRadius, ballSize))), t))
     })
     timers.push(setTimeout(() => {
@@ -661,8 +668,8 @@ function useBallTumble(tickets, winnerIdx, chamberRadius, ballSize, exitPos) {
         if (winnerIdx >= 0) next[winnerIdx] = exitPos
         return next
       })
-    }, 3100))
-    timers.push(setTimeout(() => setPhase('revealed'), 3850))
+    }, 5100))
+    timers.push(setTimeout(() => setPhase('revealed'), 5850))
     return () => timers.forEach(clearTimeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

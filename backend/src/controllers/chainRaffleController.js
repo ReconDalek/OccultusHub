@@ -148,12 +148,17 @@ export async function reviewEntry(request, env, user) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/chain-watcher/raffle/rounds/:id/draw — leadership-only
-// { removal_mode, animation_style } — runs exactly ONE weighted draw against
-// whatever tickets are still live (not excluded, and not already removed by
-// an earlier draw this round — see `remove` below), records the winner, and
-// applies removal_mode. Frontend calls this once per draw so each one gets
-// its own animation beat; draw_count is just the round's stated intent, not
-// enforced here (a leader can stop early or run extra draws if they want).
+// { removal_mode, animation_style } — runs exactly ONE draw against whatever
+// tickets are still live (not excluded, and not already removed by an
+// earlier draw this round), records the winner, and applies removal_mode.
+// The pick itself is a single Math.random() index into the flat, unweighted
+// list of individual tickets below (one row = one watched hour, duplicates
+// and all) — there is no second weighting pass, multiplier, or tie-break on
+// top of that; someone's only advantage is literally having more rows in
+// that list, i.e. having watched more hours. Frontend calls this once per
+// draw so each one gets its own animation beat; draw_count is just the
+// round's stated intent, not enforced here (a leader can stop early or run
+// extra draws if they want).
 // ─────────────────────────────────────────────────────────────────────────────
 export async function drawWinner(request, env, user) {
   try {
