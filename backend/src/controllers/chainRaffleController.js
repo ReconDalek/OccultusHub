@@ -2,7 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 
 const FACTION_IDS = [33097, 9728, 9171];
 const REMOVAL_MODES = ['all_tickets', 'single_ticket'];
-const ANIMATION_STYLES = ['slot_machine', 'wheel', 'lotto_balls'];
+const ANIMATION_STYLES = ['slot_machine', 'wheel', 'lotto_balls', 'gumball_machine'];
 
 function validFactionId(raw) {
   const id = parseInt(raw, 10);

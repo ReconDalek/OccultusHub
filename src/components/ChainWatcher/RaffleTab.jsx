@@ -20,7 +20,8 @@ const REMOVAL_MODES = [
 const ANIMATION_STYLES = [
   { value: 'slot_machine', label: 'Slot machine' },
   { value: 'wheel', label: 'Spinning wheel' },
-  { value: 'lotto_balls', label: 'Lotto balls' },
+  { value: 'lotto_balls', label: 'Lotto machine' },
+  { value: 'gumball_machine', label: 'Gumball machine' },
 ]
 
 export default function RaffleTab() {
@@ -438,8 +439,10 @@ function DrawAnimation({ style, pool, winner, onDone, isTest }) {
   const inner = style === 'wheel'
     ? <SpinWheel pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
     : style === 'lotto_balls'
-      ? <LottoBalls pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
-      : <SlotMachineReel pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
+      ? <LottoDrum pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
+      : style === 'gumball_machine'
+        ? <GumballMachine pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
+        : <SlotMachineReel pool={pool} winner={winner} onDone={onDone} isTest={isTest} />
 
   if (!isTest) return inner
   return (
@@ -578,7 +581,7 @@ function SpinWheel({ pool, winner, onDone, isTest }) {
             return (
               <div key={s.torn_user_id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `rotate(${mid}deg)` }}>
                 <span style={{
-                  position: 'absolute', left: 0, top: -labelRadius, transform: 'translate(-50%,-50%)',
+                  position: 'absolute', left: 0, top: -labelRadius, transform: 'translate(-50%,-50%) rotate(90deg)',
                   width: 86, textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#fff',
                   textShadow: '0 1px 4px rgba(0,0,0,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
@@ -599,106 +602,212 @@ function SpinWheel({ pool, winner, onDone, isTest }) {
   )
 }
 
-// ── Lotto balls ──────────────────────────────────────────────────────────────
+// ── Lotto drum / gumball machine ─────────────────────────────────────────────
 // Tickets (one ball per entry, not deduped by person — a bigger pool means
-// more balls in the drum, same as more tickets means better real odds) drop
-// into a drum, tumble around for a bit, then the actual winning ticket's
-// ball slides down out of the drum and the name is revealed below it.
-const MACHINE_W = 320
-const MACHINE_H = 210
-const BALL_SIZE = 42
+// more balls in the machine, same as more tickets means better real odds)
+// drop into a round glass chamber, tumble around for a bit (the whole
+// chamber rocks too, not just the balls), then the actual winning ticket's
+// ball exits through the bottom and the name is revealed below it. Both
+// styles share this same ticket-sampling + tumble-physics logic — they only
+// differ in how the chamber/stand/balls are drawn.
 const MAX_BALLS = 40
 
-function randomBallPos() {
-  const pad = BALL_SIZE / 2 + 6
-  return {
-    x: pad + Math.random() * (MACHINE_W - pad * 2),
-    y: pad + Math.random() * (MACHINE_H - pad * 2),
+function sampleTickets(pool, winner) {
+  let list = pool.length ? pool : [winner]
+  const isWinnerTicket = (t) => (winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id)
+  if (!list.some(isWinnerTicket)) list = [...list, winner]
+  if (list.length > MAX_BALLS) {
+    const winnerTicket = list.find(isWinnerTicket)
+    const rest = list.filter(t => t !== winnerTicket)
+    const sample = [...rest].sort(() => Math.random() - 0.5).slice(0, MAX_BALLS - 1)
+    list = winnerTicket ? [...sample, winnerTicket] : sample
   }
+  return list
 }
 
-function LottoBalls({ pool, winner, onDone, isTest }) {
-  const tickets = useMemo(() => {
-    let list = pool.length ? pool : [winner]
-    const isWinnerTicket = (t) => (winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id)
-    if (!list.some(isWinnerTicket)) list = [...list, winner]
-    if (list.length > MAX_BALLS) {
-      const winnerTicket = list.find(isWinnerTicket)
-      const rest = list.filter(t => t !== winnerTicket)
-      const sample = [...rest].sort(() => Math.random() - 0.5).slice(0, MAX_BALLS - 1)
-      list = winnerTicket ? [...sample, winnerTicket] : sample
-    }
-    return list
-  }, [pool, winner])
+// Positions are relative to the chamber's own centre (0,0), uniformly
+// distributed within a circle (sqrt-scaled radius, not a naive r*random()
+// which would bunch points toward the centre) so balls spread convincingly
+// across the whole glass rather than clustering in the middle.
+function randomCirclePos(chamberRadius, ballSize) {
+  const maxR = Math.max(0, chamberRadius - ballSize / 2 - 4)
+  const r = maxR * Math.sqrt(Math.random())
+  const theta = Math.random() * Math.PI * 2
+  return { x: r * Math.cos(theta), y: r * Math.sin(theta) }
+}
 
-  const winnerIdx = useMemo(() => tickets.findIndex(t =>
-    winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id
-  ), [tickets, winner])
-
-  const [positions, setPositions] = useState(() => tickets.map(() => ({ x: MACHINE_W / 2, y: -60 })))
-  const [phase, setPhase] = useState('dropping') // dropping -> mixing -> selecting -> revealed
+// Shared phase/position timeline: dropping (balls fall in, staggered) ->
+// mixing (re-shuffled a few times) -> selecting (winner's ball moves to the
+// exit point, everyone else fades) -> revealed (WinnerReveal takes over).
+function useBallTumble(tickets, winnerIdx, chamberRadius, ballSize, exitPos) {
+  const [positions, setPositions] = useState(() => tickets.map(() => ({ x: 0, y: -(chamberRadius + 120) })))
+  const [phase, setPhase] = useState('dropping')
 
   useEffect(() => {
     const timers = []
     tickets.forEach((_, i) => {
       timers.push(setTimeout(() => {
-        setPositions(prev => { const next = [...prev]; next[i] = randomBallPos(); return next })
-      }, 150 + i * 60))
+        setPositions(prev => { const next = [...prev]; next[i] = randomCirclePos(chamberRadius, ballSize); return next })
+      }, 150 + i * 55))
     })
-    timers.push(setTimeout(() => setPhase('mixing'), 150 + tickets.length * 60 + 500))
-    ;[1600, 2150, 2700].forEach(t => {
-      timers.push(setTimeout(() => setPositions(() => tickets.map(() => randomBallPos())), t))
+    timers.push(setTimeout(() => setPhase('mixing'), 150 + tickets.length * 55 + 450))
+    ;[1500, 2000, 2500].forEach(t => {
+      timers.push(setTimeout(() => setPositions(() => tickets.map(() => randomCirclePos(chamberRadius, ballSize))), t))
     })
     timers.push(setTimeout(() => {
       setPhase('selecting')
       setPositions(prev => {
         const next = [...prev]
-        if (winnerIdx >= 0) next[winnerIdx] = { x: MACHINE_W / 2, y: MACHINE_H + 60 }
+        if (winnerIdx >= 0) next[winnerIdx] = exitPos
         return next
       })
-    }, 3250))
-    timers.push(setTimeout(() => setPhase('revealed'), 4000))
+    }, 3100))
+    timers.push(setTimeout(() => setPhase('revealed'), 3850))
     return () => timers.forEach(clearTimeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  return { positions, phase }
+}
+
+const GUMBALL_PALETTE = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ec4899', '#a855f7', '#14b8a6', '#eab308']
+
+// Renders the chamber's balls — identical mechanics for both machines, only
+// the per-ball fill/text colour differs (ivory numbered balls for the lotto
+// drum, bright candy colours for the gumball machine).
+function TumbleBalls({ tickets, positions, phase, winnerIdx, ballSize, ballStyle }) {
+  return tickets.map((t, i) => {
+    const pos = positions[i] || { x: 0, y: -9999 }
+    const isWinnerBall = i === winnerIdx
+    const fadeOut = phase === 'selecting' && !isWinnerBall
+    return (
+      <div key={t.id ?? t.torn_user_id} style={{
+        position: 'absolute', width: ballSize, height: ballSize, borderRadius: '50%',
+        left: `calc(50% + ${pos.x}px - ${ballSize / 2}px)`, top: `calc(50% + ${pos.y}px - ${ballSize / 2}px)`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800,
+        opacity: fadeOut ? 0.08 : 1,
+        transition: 'left 0.75s cubic-bezier(0.32,0.6,0.3,1), top 0.75s cubic-bezier(0.32,0.6,0.3,1), opacity 0.6s ease',
+        ...ballStyle(i),
+      }}>
+        {i + 1}
+      </div>
+    )
+  })
+}
+
+const DRUM_D = 280
+const DRUM_BALL = 36
+
+function LottoDrum({ pool, winner, onDone, isTest }) {
+  const tickets = useMemo(() => sampleTickets(pool, winner), [pool, winner])
+  const winnerIdx = useMemo(() => tickets.findIndex(t =>
+    winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id
+  ), [tickets, winner])
+  const { positions, phase } = useBallTumble(tickets, winnerIdx, DRUM_D / 2, DRUM_BALL, { x: 0, y: DRUM_D / 2 + 70 })
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
-      <div style={{ position: 'relative', width: MACHINE_W, height: MACHINE_H + 110 }}>
+      <div style={{ position: 'relative', width: DRUM_D + 40, height: DRUM_D + 150 }}>
+        {/* Stand: post + base */}
+        <div style={{ position: 'absolute', left: '50%', top: DRUM_D - 10, transform: 'translateX(-50%)', width: 10, height: 60, background: 'linear-gradient(90deg,#52525b,#a1a1aa,#52525b)', borderRadius: 3 }} />
+        <div style={{ position: 'absolute', left: '50%', top: DRUM_D + 46, transform: 'translateX(-50%)', width: 140, height: 14, background: 'linear-gradient(90deg,#3f3f46,#71717a,#3f3f46)', borderRadius: 7, boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }} />
+        {/* Side axle supports */}
+        <div style={{ position: 'absolute', left: 6, top: DRUM_D / 2 - 30, width: 14, height: 60, background: 'linear-gradient(90deg,#3f3f46,#71717a)', borderRadius: 4 }} />
+        <div style={{ position: 'absolute', right: 6, top: DRUM_D / 2 - 30, width: 14, height: 60, background: 'linear-gradient(90deg,#71717a,#3f3f46)', borderRadius: 4 }} />
+
+        {/* Glass drum — rocks back and forth while mixing, like a hand-cranked bingo cage */}
         <div style={{
-          position: 'absolute', top: 0, left: 0, width: MACHINE_W, height: MACHINE_H, borderRadius: 24,
-          border: '3px solid rgba(255,255,255,0.16)',
-          background: 'radial-gradient(ellipse at 50% 25%, rgba(255,255,255,0.06), rgba(0,0,0,0.4))',
-          overflow: 'hidden', boxShadow: 'inset 0 10px 24px rgba(0,0,0,0.4)',
+          position: 'absolute', left: 20, top: 0, width: DRUM_D, height: DRUM_D, borderRadius: '50%',
+          animation: phase === 'mixing' ? 'raffleDrumRock 0.7s ease-in-out infinite' : 'none',
+          transformOrigin: '50% 50%',
         }}>
-          {tickets.map((t, i) => {
-            const pos = positions[i] || { x: MACHINE_W / 2, y: -60 }
-            const isWinnerBall = i === winnerIdx
-            const fadeOut = phase === 'selecting' && !isWinnerBall
-            return (
-              <div key={t.id ?? t.torn_user_id} style={{
-                position: 'absolute', width: BALL_SIZE, height: BALL_SIZE, borderRadius: '50%',
-                left: pos.x - BALL_SIZE / 2, top: pos.y - BALL_SIZE / 2,
-                background: 'linear-gradient(135deg,#f4f4f5,#a1a1aa)',
-                boxShadow: 'inset -4px -4px 7px rgba(0,0,0,0.3), inset 3px 3px 5px rgba(255,255,255,0.5)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 800, color: '#27272a',
-                opacity: fadeOut ? 0.1 : 1,
-                transition: 'left 0.8s cubic-bezier(0.32,0.6,0.3,1), top 0.8s cubic-bezier(0.32,0.6,0.3,1), opacity 0.6s ease',
-              }}>
-                {i + 1}
-              </div>
-            )
-          })}
+          <style>{`@keyframes raffleDrumRock { 0%,100%{transform:rotate(-7deg)} 50%{transform:rotate(7deg)} }`}</style>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%', overflow: 'hidden',
+            border: '7px solid #94a3b8', boxShadow: 'inset 0 0 36px rgba(0,0,0,0.55), 0 12px 26px rgba(0,0,0,0.5)',
+            background: 'radial-gradient(circle at 32% 24%, rgba(255,255,255,0.45), rgba(200,210,230,0.12) 38%, rgba(10,15,25,0.5) 78%, rgba(5,8,15,0.65) 100%)',
+          }}>
+            {/* wire cage lines for a bit of "cage" texture */}
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', margin: 14 }} />
+            <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,0.1)' }} />
+            <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: 'rgba(255,255,255,0.1)' }} />
+            <TumbleBalls tickets={tickets} positions={positions} phase={phase} winnerIdx={winnerIdx} ballSize={DRUM_BALL} ballStyle={() => ({
+              background: 'radial-gradient(circle at 35% 30%, #fff, #fef3c7 45%, #e9d8a6 100%)',
+              boxShadow: 'inset -3px -3px 6px rgba(0,0,0,0.25), inset 3px 3px 4px rgba(255,255,255,0.6)',
+              color: '#78350f', fontSize: 12,
+            })} />
+          </div>
+        </div>
+        {/* Exit chute + tray */}
+        <div style={{ position: 'absolute', left: '50%', top: DRUM_D - 6, transform: 'translateX(-50%)', width: 26, height: 34, background: 'linear-gradient(180deg,#71717a,#3f3f46)', clipPath: 'polygon(20% 0,80% 0,100% 100%,0% 100%)' }} />
+        {(phase === 'selecting' || phase === 'revealed') && winnerIdx >= 0 && (
+          <div style={{
+            position: 'absolute', left: '50%', top: DRUM_D + 60,
+            transform: `translate(-50%,-50%) scale(${phase === 'revealed' ? 1.7 : 1})`,
+            width: DRUM_BALL, height: DRUM_BALL, borderRadius: '50%',
+            background: 'radial-gradient(circle at 35% 30%, #fff, #fde68a 45%, #d4af37 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800, color: '#78350f',
+            boxShadow: '0 8px 22px rgba(0,0,0,0.5)',
+            transition: 'transform 0.6s cubic-bezier(0.34,1.56,0.64,1)',
+          }}>
+            {winnerIdx + 1}
+          </div>
+        )}
+      </div>
+      {phase === 'revealed' && <WinnerReveal winner={winner} onDone={onDone} isTest={isTest} />}
+    </div>
+  )
+}
+
+const GLOBE_D = 220
+const GUM_BALL = 28
+
+function GumballMachine({ pool, winner, onDone, isTest }) {
+  const tickets = useMemo(() => sampleTickets(pool, winner), [pool, winner])
+  const winnerIdx = useMemo(() => tickets.findIndex(t =>
+    winner.winning_entry_id != null ? t.id === winner.winning_entry_id : t.torn_user_id === winner.torn_user_id
+  ), [tickets, winner])
+  const { positions, phase } = useBallTumble(tickets, winnerIdx, GLOBE_D / 2, GUM_BALL, { x: 0, y: GLOBE_D / 2 + 95 })
+  const ballColors = useMemo(() => tickets.map((_, i) => GUMBALL_PALETTE[i % GUMBALL_PALETTE.length]), [tickets])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+      <div style={{ position: 'relative', width: GLOBE_D + 20, height: GLOBE_D + 190 }}>
+        {/* Glass globe */}
+        <div style={{
+          position: 'absolute', left: 10, top: 0, width: GLOBE_D, height: GLOBE_D, borderRadius: '50%', overflow: 'hidden',
+          border: '6px solid #c4b5a0', boxShadow: 'inset 0 0 30px rgba(0,0,0,0.4), 0 10px 22px rgba(0,0,0,0.45)',
+          background: 'radial-gradient(circle at 32% 22%, rgba(255,255,255,0.5), rgba(255,255,255,0.08) 40%, rgba(0,0,0,0.12) 80%)',
+        }}>
+          <TumbleBalls tickets={tickets} positions={positions} phase={phase} winnerIdx={winnerIdx} ballSize={GUM_BALL} ballStyle={(i) => ({
+            background: `radial-gradient(circle at 35% 28%, rgba(255,255,255,0.8), ${ballColors[i]} 45%, ${ballColors[i]} 100%)`,
+            boxShadow: 'inset -2px -2px 4px rgba(0,0,0,0.3), inset 2px 2px 3px rgba(255,255,255,0.5)',
+            color: '#fff', fontSize: 10, textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+          })} />
+        </div>
+        {/* Neck */}
+        <div style={{ position: 'absolute', left: '50%', top: GLOBE_D - 14, transform: 'translateX(-50%)', width: 36, height: 18, background: '#c4b5a0', borderRadius: '0 0 6px 6px' }} />
+        {/* Red pedestal base, classic gumball-machine shape */}
+        <div style={{
+          position: 'absolute', left: '50%', top: GLOBE_D, transform: 'translateX(-50%)',
+          width: 150, height: 150, clipPath: 'polygon(30% 0, 70% 0, 92% 88%, 8% 88%)',
+          background: 'linear-gradient(135deg,#ef4444,#b3123f 60%,#7f0e2d)',
+          boxShadow: '0 10px 24px rgba(0,0,0,0.5)',
+        }}>
+          {/* coin slot */}
+          <div style={{ position: 'absolute', left: '50%', top: 28, transform: 'translateX(-50%)', width: 22, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.5)' }} />
+          {/* dispensing door */}
+          <div style={{ position: 'absolute', left: '50%', bottom: 18, transform: 'translateX(-50%)', width: 60, height: 26, borderRadius: 5, background: 'rgba(0,0,0,0.35)', border: '2px solid rgba(255,255,255,0.15)' }} />
         </div>
         {(phase === 'selecting' || phase === 'revealed') && winnerIdx >= 0 && (
           <div style={{
-            position: 'absolute', left: MACHINE_W / 2, top: MACHINE_H + 55,
-            transform: `translate(-50%,-50%) scale(${phase === 'revealed' ? 1.6 : 1})`,
-            width: BALL_SIZE, height: BALL_SIZE, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#fbbf24,#b3123f)',
+            position: 'absolute', left: '50%', top: GLOBE_D + 85,
+            transform: `translate(-50%,-50%) scale(${phase === 'revealed' ? 1.8 : 1})`,
+            width: GUM_BALL, height: GUM_BALL, borderRadius: '50%',
+            background: `radial-gradient(circle at 35% 28%, rgba(255,255,255,0.9), ${winnerIdx >= 0 ? ballColors[winnerIdx] : '#fbbf24'} 60%)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 800, color: '#fff',
+            fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.5)',
             boxShadow: '0 8px 22px rgba(0,0,0,0.5)',
             transition: 'transform 0.6s cubic-bezier(0.34,1.56,0.64,1)',
           }}>
