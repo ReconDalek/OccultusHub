@@ -5,6 +5,7 @@ import ChainSessionCard from '../components/ChainWatcher/ChainSessionCard'
 import WatcherBanner from '../components/ChainWatcher/WatcherBanner'
 import MeritTracker from '../components/ChainWatcher/MeritTracker'
 import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
+import RaffleTab from '../components/ChainWatcher/RaffleTab'
 
 const SHIFTS_REFRESH_MS = 30000
 const SESSION_REFRESH_MS = 20000
@@ -12,9 +13,11 @@ const WINDOW_SECONDS = 7 * 86400
 
 export default function ChainWatcher() {
   const { user } = useSession()
+  const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
   const [factionId, setFactionId] = useState(() =>
     OCC_FACTIONS.some(f => f.id === user?.factionId) ? user.factionId : OCC_FACTIONS[0].id
   )
+  const [showRaffle, setShowRaffle] = useState(false)
   const [shifts, setShifts] = useState([])
   const [error, setError] = useState(null)
   // Single source of truth for the chain-watch session — shared by
@@ -78,25 +81,44 @@ export default function ChainWatcher() {
         {tabs.map(f => (
           <button
             key={f.id}
-            onClick={() => setFactionId(f.id)}
+            onClick={() => { setShowRaffle(false); setFactionId(f.id) }}
             style={{
               padding: '10px 18px', background: 'transparent', border: 'none', whiteSpace: 'nowrap',
-              borderBottom: factionId === f.id ? '2px solid #b3123f' : '2px solid transparent',
-              color: factionId === f.id ? '#f4f4f5' : 'var(--text-secondary)',
-              fontWeight: factionId === f.id ? 600 : 400, fontSize: 14, cursor: 'pointer',
+              borderBottom: !showRaffle && factionId === f.id ? '2px solid #b3123f' : '2px solid transparent',
+              color: !showRaffle && factionId === f.id ? '#f4f4f5' : 'var(--text-secondary)',
+              fontWeight: !showRaffle && factionId === f.id ? 600 : 400, fontSize: 14, cursor: 'pointer',
             }}
           >
             {f.label}
           </button>
         ))}
+        {isLeader && (
+          <button
+            onClick={() => setShowRaffle(true)}
+            style={{
+              padding: '10px 18px', background: 'transparent', border: 'none', whiteSpace: 'nowrap',
+              borderBottom: showRaffle ? '2px solid #b3123f' : '2px solid transparent',
+              color: showRaffle ? '#f4f4f5' : 'var(--text-secondary)',
+              fontWeight: showRaffle ? 600 : 400, fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            Raffle
+          </button>
+        )}
       </div>
 
-      {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+      {error && !showRaffle && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
-      <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} shifts={shifts} />
-      <WatcherBanner shifts={shifts} />
-      <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
-      <MeritTracker factionId={factionId} />
+      {showRaffle ? (
+        <RaffleTab />
+      ) : (
+        <>
+          <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} shifts={shifts} />
+          <WatcherBanner shifts={shifts} />
+          <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
+          <MeritTracker factionId={factionId} />
+        </>
+      )}
     </div>
   )
 }

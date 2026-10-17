@@ -46,6 +46,7 @@ import * as factionActivityController from './controllers/factionActivityControl
 import * as rankRewardsController from './controllers/rankRewardsController.js';
 import * as chainWatcherController from './controllers/chainWatcherController.js';
 import * as meritController from './controllers/meritController.js';
+import * as chainRaffleController from './controllers/chainRaffleController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -504,6 +505,43 @@ export async function handleRequest(request, env, ctx) {
     if (!user) return errorResponse('Authentication required', 401);
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return meritController.revokeMerit(request, env);
+  }
+
+  // Chain watcher — raffle (leadership-only throughout)
+  if (pathname === '/api/chain-watcher/raffle/rounds' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.createRound(request, env, user);
+  }
+  if (pathname === '/api/chain-watcher/raffle/rounds' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.listRounds(request, env);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/raffle\/rounds\/\d+$/) && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.getRound(request, env);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/raffle\/rounds\/\d+$/) && method === 'DELETE') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.deleteRound(request, env);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/raffle\/rounds\/\d+\/draw$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.drawWinner(request, env, user);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/raffle\/rounds\/\d+\/complete$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.completeRound(request, env);
+  }
+  if (pathname.match(/^\/api\/chain-watcher\/raffle\/entries\/\d+\/review$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainRaffleController.reviewEntry(request, env, user);
   }
 
   // Forums endpoints (member auth required)
