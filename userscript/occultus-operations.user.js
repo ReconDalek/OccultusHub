@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.7.0
+// @version      1.7.1
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -1577,10 +1577,14 @@ transform: translateY(3px);
         window.location.href = RAFFLE_ITEM_URL;
     }
 
-    // Best-effort auto-fill on the player's own item page, mirroring
-    // autoFillXanax's armoury flow — Torn's "give/send" widget markup may
-    // differ there, so this degrades to a no-op (leaving the manual send
-    // available) if the expected elements aren't found.
+    // Auto-fill on the player's own item page. The item row here uses
+    // data-item (not data-itemid like the faction armoury) and its Send
+    // control is a <button class="option-send"> inside a sibling
+    // <li data-action="send">, not an <a data-role="give"> — confirmed from
+    // the actual Supply Pack tab markup. Clicking it opens Torn's own send
+    // dialog; exactly what fields that dialog exposes isn't confirmed yet,
+    // so the recipient/quantity fill below tries several likely selectors
+    // and falls back to "opened, fill in manually" if none match.
     async function autoFillRaffleItem() {
         if (isFilling) return;
         const taskData = sessionStorage.getItem(RAFFLE_ITEM_TASK_STORAGE);
@@ -1592,25 +1596,27 @@ transform: translateY(3px);
             return;
         }
 
-        const itemRow = document.querySelector(`li [data-itemid="${task.itemId}"]`)?.closest('li');
-        if (!itemRow || !itemRow.querySelector('a[data-role="give"]')) return;
+        const itemRow = document.querySelector(`li[data-item="${task.itemId}"]`);
+        const sendBtn = itemRow?.querySelector('li[data-action="send"] button.option-send');
+        if (!sendBtn) return;
 
         isFilling = true;
 
         try {
-            if (!itemRow.classList.contains('item-give-act')) {
-                const giveBtn = itemRow.querySelector('a[data-role="give"]');
-                if (giveBtn) giveBtn.click();
-                await new Promise(r => setTimeout(r, 500));
-            }
+            sendBtn.click();
+            await new Promise(r => setTimeout(r, 600));
 
-            const qtyInput = itemRow.querySelector('.give-cont .quantity[type="text"]');
+            const nameInput = document.querySelector(
+                '.ac-search, input[name="name"], .send-popup input[type="text"], .user-information input[type="text"]'
+            );
+            const qtyInput = document.querySelector(
+                '.quantity[type="text"], input[name="quantity"], .send-popup input[type="number"]'
+            );
+
             if (qtyInput) {
                 qtyInput.value = task.qty;
                 qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
-
-            const nameInput = itemRow.querySelector('.give-cont .ac-search');
             if (nameInput) {
                 nameInput.value = task.id ? `${task.name} [${task.id}]` : task.name;
                 nameInput.focus();
@@ -1620,8 +1626,15 @@ transform: translateY(3px);
                 }, 100);
             }
 
-            sessionStorage.removeItem(RAFFLE_ITEM_TASK_STORAGE);
-            setStatus(`Pre-filled ${RAFFLE_ITEM_NAME} for ${task.name}`);
+            if (nameInput) {
+                sessionStorage.removeItem(RAFFLE_ITEM_TASK_STORAGE);
+                setStatus(`Pre-filled ${RAFFLE_ITEM_NAME} for ${task.name}`);
+            } else {
+                // Dialog opened but its recipient field wasn't recognized —
+                // leave the task in place so this doesn't silently drop it,
+                // and let the leader finish the send by hand this once.
+                setStatus(`Opened Send — enter ${task.name} manually`, true);
+            }
         } catch (e) {
             console.error("Raffle item Auto-fill failed", e);
         } finally {
