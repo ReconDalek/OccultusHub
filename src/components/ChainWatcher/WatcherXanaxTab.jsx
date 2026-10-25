@@ -52,6 +52,12 @@ function computeRange(preset, customFrom, customTo) {
   return { from, to }
 }
 
+// "YYYY-MM-DD" in LOCAL time, the format <input type="date"> expects.
+function toDateInputValue(date) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 export default function WatcherXanaxTab() {
   const [factionId, setFactionId] = useState('all')
   const [preset, setPreset] = useState('month')
@@ -84,6 +90,35 @@ export default function WatcherXanaxTab() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [factionId, preset, customFrom, customTo])
+
+  // Switching to Custom (or changing faction while it's active) auto-suggests
+  // the watch episode (contiguous watched hours, split wherever 3+ days go
+  // with none) closest to now for that faction — falls back to "this month"
+  // if there's nothing to detect from. Still fully editable afterwards.
+  useEffect(() => {
+    if (preset !== 'custom') return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const params = factionId === 'all' ? '' : `?faction_id=${factionId}`
+        const json = await apiGet(`/api/leadership/watcher-xanax/timeframe${params}`)
+        if (cancelled) return
+        if (json.from != null && json.to != null) {
+          setCustomFrom(toDateInputValue(new Date(json.from * 1000)))
+          setCustomTo(toDateInputValue(new Date((json.to - 1) * 1000)))
+          return
+        }
+      } catch {
+        // falls through to the "this month" default below
+      }
+      if (cancelled) return
+      const now = new Date()
+      setCustomFrom(toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)))
+      setCustomTo(toDateInputValue(now))
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset, factionId])
 
   const markPaid = async (m) => {
     setBusyId(m.torn_user_id)

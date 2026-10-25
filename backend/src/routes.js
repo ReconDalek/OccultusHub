@@ -824,6 +824,9 @@ export async function handleRequest(request, env, ctx) {
     }
 
     // Watcher xanax distribution tracking (Chain Watch shift hours → Xanax)
+    if (pathname === '/api/leadership/watcher-xanax/timeframe' && method === 'GET') {
+      return watcherXanaxController.getTimeframe(request, env);
+    }
     if (pathname === '/api/leadership/watcher-xanax' && method === 'GET') {
       return watcherXanaxController.getDistributions(request, env);
     }

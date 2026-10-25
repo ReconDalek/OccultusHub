@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.6.0
+// @version      1.6.1
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -391,7 +391,7 @@ transform: translateY(3px);
         document.getElementById("occ-xan-back").onclick = openCouncil;
         document.getElementById("occ-watcher-xanax").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-watcher-back").onclick = openCouncil;
-        document.getElementById("occ-watcher-faction").onchange = fetchAndShowWatcherXanax;
+        document.getElementById("occ-watcher-faction").onchange = handleWatcherFactionChange;
         document.getElementById("occ-watcher-range").onchange = handleWatcherRangeChange;
         document.getElementById("occ-watcher-apply-range").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-chain-raffle").onclick = fetchAndShowRaffle;
@@ -1157,21 +1157,55 @@ transform: translateY(3px);
         return { from, to };
     }
 
-    // Selecting "Custom Dates…" just reveals the pickers (pre-filled with
-    // this month, for convenience) and waits for Apply — presets fetch
-    // immediately since they need no further input.
-    function handleWatcherRangeChange(e) {
+    // Auto-suggests the Custom From/To by asking the backend for the watch
+    // episode (contiguous watched hours, split wherever 3+ days go with none)
+    // closest to now for this faction — falls back to "this month" if there's
+    // no data to detect from. The dates stay fully editable afterwards.
+    async function applyDetectedWatcherTimeframe(factionValue) {
+        const fromInput = document.getElementById("occ-watcher-from");
+        const toInput = document.getElementById("occ-watcher-to");
+        const jwt = SafeStore.get(JWT_STORAGE);
+        let applied = false;
+
+        if (jwt) {
+            const q = factionValue && factionValue !== "all" ? `?faction_id=${factionValue}` : "";
+            const res = await apiRequest("GET", `/api/leadership/watcher-xanax/timeframe${q}`, null, jwt);
+            if (res.status === 200 && res.data?.from != null && res.data?.to != null) {
+                fromInput.value = toDateInputValue(new Date(res.data.from * 1000));
+                toInput.value = toDateInputValue(new Date((res.data.to - 1) * 1000));
+                applied = true;
+            }
+        }
+
+        if (!applied) {
+            const now = new Date();
+            fromInput.value = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+            toInput.value = toDateInputValue(now);
+        }
+    }
+
+    // Selecting "Custom Dates…" reveals the pickers and auto-detects a
+    // suggested range — presets fetch immediately since they need no
+    // further input.
+    async function handleWatcherRangeChange(e) {
         const customRow = document.getElementById("occ-watcher-custom-range");
         if (e.target.value === "custom") {
             customRow.style.display = "block";
-            if (!document.getElementById("occ-watcher-from").value) {
-                const now = new Date();
-                document.getElementById("occ-watcher-from").value = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
-                document.getElementById("occ-watcher-to").value = toDateInputValue(now);
-            }
+            const factionSelect = document.getElementById("occ-watcher-faction");
+            await applyDetectedWatcherTimeframe(factionSelect ? factionSelect.value : "all");
             return;
         }
         customRow.style.display = "none";
+        fetchAndShowWatcherXanax();
+    }
+
+    // Changing faction while Custom is active re-detects the timeframe for
+    // the newly selected faction (the previous one no longer applies).
+    async function handleWatcherFactionChange(e) {
+        const rangeSelect = document.getElementById("occ-watcher-range");
+        if (rangeSelect && rangeSelect.value === "custom") {
+            await applyDetectedWatcherTimeframe(e.target.value);
+        }
         fetchAndShowWatcherXanax();
     }
 

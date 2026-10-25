@@ -30,6 +30,69 @@ const NOT_ALREADY_PAID = `
   )
 `;
 
+// A gap of 3+ days with no watched hour at all splits one "episode" of
+// chain-watching from the next — e.g. one chain's watch coverage from the
+// next chain's, weeks later.
+const TIMEFRAME_GAP_SECONDS = 3 * 86400;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/leadership/watcher-xanax/timeframe?faction_id= — leadership-only
+// Auto-suggests a date range for the Custom picker: every distinct watched
+// hour for the faction (or all 3 factions combined if omitted) is split into
+// contiguous episodes wherever a 3+ day gap appears, then the episode
+// closest to now (zero if "now" falls inside one, e.g. an in-progress or
+// scheduled watch) is returned as { from, to } — `to` is exclusive, one
+// second past the episode's last watched hour.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getTimeframe(request, env) {
+  try {
+    const url = new URL(request.url);
+    const factionIdParam = url.searchParams.get('faction_id');
+    const factionId = factionIdParam ? validFactionId(factionIdParam) : null;
+    if (factionIdParam && !factionId) return errorResponse('Invalid faction_id', 400);
+
+    let sql = `SELECT DISTINCT slot_start FROM chain_watch_shifts`;
+    const binds = [];
+    if (factionId) {
+      sql += ' WHERE faction_id = ?';
+      binds.push(factionId);
+    }
+    sql += ' ORDER BY slot_start ASC';
+
+    const { results } = await env.DB.prepare(sql).bind(...binds).all();
+    const slots = (results || []).map(r => r.slot_start);
+    if (!slots.length) return jsonResponse({ from: null, to: null });
+
+    const segments = [];
+    let segStart = slots[0];
+    let segEnd = slots[0];
+    for (let i = 1; i < slots.length; i++) {
+      if (slots[i] - segEnd > TIMEFRAME_GAP_SECONDS) {
+        segments.push({ start: segStart, end: segEnd });
+        segStart = slots[i];
+      }
+      segEnd = slots[i];
+    }
+    segments.push({ start: segStart, end: segEnd });
+
+    const nowTs = Math.floor(Date.now() / 1000);
+    let best = segments[0];
+    let bestDist = Infinity;
+    for (const seg of segments) {
+      const dist = nowTs < seg.start ? seg.start - nowTs : nowTs > seg.end ? nowTs - seg.end : 0;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = seg;
+      }
+    }
+
+    return jsonResponse({ from: best.start, to: best.end + 3600 });
+  } catch (err) {
+    console.error('getTimeframe (watcher xanax) error:', err);
+    return errorResponse('Failed to detect timeframe', 500);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/leadership/watcher-xanax?faction_id=&from=&to= — leadership-only
 // Active members with unpaid watched hours (slot_start already in the past,
