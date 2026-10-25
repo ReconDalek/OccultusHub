@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.5.0
+// @version      1.5.1
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -184,7 +184,7 @@ transform: translateY(3px);
 .occ-slider-group input[type="range"] { width: 100%; accent-color: #5865F2; cursor: pointer; }
 #occ-settings-page .nav-btn { margin-top: 16px !important; }
 
-#occ-panel select, #occ-panel input[type="datetime-local"] { width: 100%; margin-top: 4px; padding: 6px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: calc(var(--occ-font-base) - 1px); box-sizing: border-box; }
+#occ-panel select, #occ-panel input[type="datetime-local"], #occ-panel input[type="date"] { width: 100%; margin-top: 4px; padding: 6px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: calc(var(--occ-font-base) - 1px); box-sizing: border-box; }
 
 #occ-panel.occ-sidebar-mode {
     border-radius: 8px 0 0 8px !important;
@@ -268,7 +268,19 @@ transform: translateY(3px);
             <option value="7d">Last 7 Days</option>
             <option value="30d">Last 30 Days</option>
             <option value="all">All Time</option>
+            <option value="custom">Custom Dates…</option>
         </select>
+    </div>
+    <div id="occ-watcher-custom-range" style="display:none;">
+        <div class="occ-slider-group">
+            <label>From</label>
+            <input type="date" id="occ-watcher-from">
+        </div>
+        <div class="occ-slider-group">
+            <label>To</label>
+            <input type="date" id="occ-watcher-to">
+        </div>
+        <button id="occ-watcher-apply-range" class="green-btn">Apply</button>
     </div>
     <div id="occ-watcher-list"></div>
     <button id="occ-watcher-back" class="red-btn nav-btn">⬅ Back</button>
@@ -363,7 +375,8 @@ transform: translateY(3px);
         document.getElementById("occ-xan-back").onclick = openCouncil;
         document.getElementById("occ-watcher-xanax").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-watcher-back").onclick = openCouncil;
-        document.getElementById("occ-watcher-range").onchange = fetchAndShowWatcherXanax;
+        document.getElementById("occ-watcher-range").onchange = handleWatcherRangeChange;
+        document.getElementById("occ-watcher-apply-range").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-chain-raffle").onclick = fetchAndShowRaffle;
         document.getElementById("occ-raffle-back").onclick = openCouncil;
         document.getElementById("occ-raffle-refresh").onclick = () => currentRaffleFactionId && loadRaffleRound(currentRaffleFactionId);
@@ -1085,9 +1098,32 @@ transform: translateY(3px);
     // different source list and a flat (no rank) quantity. Scoped to a date
     // range rather than always showing every unpaid hour ever watched.
     // ─────────────────────────────────────────────────────────────────────
+    // "YYYY-MM-DD" in LOCAL time, the format <input type="date"> expects.
+    function toDateInputValue(date) {
+        const pad = n => String(n).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    }
+
+    // For "custom", reads the two date pickers directly — "to" runs through
+    // the END of that calendar day (midnight of the day after), so picking
+    // the same day for both From and To still covers that whole day.
     function computeWatcherRange(preset) {
         const now = new Date();
         const to = Math.floor(now.getTime() / 1000);
+
+        if (preset === "custom") {
+            const fromVal = document.getElementById("occ-watcher-from").value;
+            const toVal = document.getElementById("occ-watcher-to").value;
+            const from = fromVal ? Math.floor(new Date(`${fromVal}T00:00:00`).getTime() / 1000) : 0;
+            let customTo = to;
+            if (toVal) {
+                const toDate = new Date(`${toVal}T00:00:00`);
+                toDate.setDate(toDate.getDate() + 1);
+                customTo = Math.floor(toDate.getTime() / 1000);
+            }
+            return { from, to: customTo };
+        }
+
         let from = 0;
         if (preset === "month") {
             from = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
@@ -1097,6 +1133,24 @@ transform: translateY(3px);
             from = to - 30 * 86400;
         }
         return { from, to };
+    }
+
+    // Selecting "Custom Dates…" just reveals the pickers (pre-filled with
+    // this month, for convenience) and waits for Apply — presets fetch
+    // immediately since they need no further input.
+    function handleWatcherRangeChange(e) {
+        const customRow = document.getElementById("occ-watcher-custom-range");
+        if (e.target.value === "custom") {
+            customRow.style.display = "block";
+            if (!document.getElementById("occ-watcher-from").value) {
+                const now = new Date();
+                document.getElementById("occ-watcher-from").value = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+                document.getElementById("occ-watcher-to").value = toDateInputValue(now);
+            }
+            return;
+        }
+        customRow.style.display = "none";
+        fetchAndShowWatcherXanax();
     }
 
     async function fetchAndShowWatcherXanax() {
@@ -1112,6 +1166,13 @@ transform: translateY(3px);
         return;
     }
 
+    const rangeSelect = document.getElementById("occ-watcher-range");
+    const preset = rangeSelect ? rangeSelect.value : "month";
+    if (preset === "custom" && (!document.getElementById("occ-watcher-from").value || !document.getElementById("occ-watcher-to").value)) {
+        setStatus("Pick both a From and To date", true);
+        return;
+    }
+
     const watBtn = document.getElementById("occ-watcher-xanax");
     const originalContent = watBtn.innerHTML;
 
@@ -1119,8 +1180,7 @@ transform: translateY(3px);
     watBtn.textContent = "⏳ Loading...";
     setStatus("Fetching watcher hours...");
 
-    const rangeSelect = document.getElementById("occ-watcher-range");
-    currentWatcherRange = computeWatcherRange(rangeSelect ? rangeSelect.value : "month");
+    currentWatcherRange = computeWatcherRange(preset);
 
     const res = await apiRequest("GET", `/api/leadership/watcher-xanax?from=${currentWatcherRange.from}&to=${currentWatcherRange.to}`, null, jwt);
 
