@@ -530,7 +530,16 @@ export async function sendShiftReminders(env) {
      FROM chain_watch_shifts s
      JOIN users u ON u.torn_user_id = s.torn_user_id
      JOIN discord_links dl ON dl.user_id = u.id
-     WHERE s.reminder_sent_at IS NULL AND s.slot_start >= ? AND s.slot_start < ?`
+     WHERE s.reminder_sent_at IS NULL AND s.slot_start >= ? AND s.slot_start < ?
+       AND NOT EXISTS (
+         -- Skip anyone already on shift the hour immediately before this
+         -- one — if they're the current watcher continuing straight into
+         -- the next hour, they're already actively watching and don't
+         -- need a "starts in an hour" heads up.
+         SELECT 1 FROM chain_watch_shifts prev
+         WHERE prev.faction_id = s.faction_id AND prev.torn_user_id = s.torn_user_id
+           AND prev.slot_start = s.slot_start - 3600
+       )`
   ).bind(windowStart, windowEnd).all();
 
   let sent = 0, failed = 0;
