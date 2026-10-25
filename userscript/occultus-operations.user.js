@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.5.1
+// @version      1.6.0
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -34,6 +34,7 @@
     const USER_STORAGE = "occultus_user_data";
     const FACTION_STORAGE = "occultus_faction_data";
     const FACTION_ID_STORAGE = "occultus_faction_id";
+    const PANEL_OPEN_STORAGE = "occultus_panel_open";
     const FACTION_LABELS = { 33097: "Occ1", 9728: "Occ2", 9171: "Occ3" };
     const FACTION_ORDER = [33097, 9728, 9171];
     const PANEL_PREFS_STORAGE = "occultus_panel_prefs";
@@ -43,6 +44,11 @@
     const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13, dockMode: "modal", sidebarSide: "right", sidebarHandleTop: 50 };
     const RAFFLE_REMOVAL_MODE = "all_tickets";
     const RAFFLE_SPIN_MIN_MS = 1400;
+    const RAFFLE_WINNER_LINGER_MS = 4000;
+    const RAFFLE_ITEM_ID = 283;
+    const RAFFLE_ITEM_NAME = "Donator Pack";
+    const RAFFLE_ITEM_URL = "https://www.torn.com/item.php#supply-pck-items";
+    const RAFFLE_ITEM_TASK_STORAGE = "pending_raffle_item_task";
     const COUNCIL_ROLES = ["council", "archon", "leader", "co-leader"];
     // Fallbacks only — the real base quantity, item and per-rank / per-member
     // coefficients now come from occultusHub (Leadership → Ranks → Rank
@@ -220,6 +226,7 @@ transform: translateY(3px);
 #occ-raffle-reel { margin: 10px 0; height: 40px; display: flex; align-items: center; justify-content: center; background: #000; border: 2px solid #5865F2; border-radius: 6px; font-weight: bold; font-size: calc(var(--occ-font-base) + 2px); color: #00ff9c; overflow: hidden; white-space: nowrap; }
 #occ-raffle-reel.spinning { animation: occ-reel-flicker 0.12s linear infinite; }
 @keyframes occ-reel-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.occ-raffle-send-btn { width: auto !important; margin: 0 !important; padding: 3px 8px !important; font-size: calc(var(--occ-font-base) - 3px) !important; }
 
 `;
     document.head.appendChild(style);
@@ -262,6 +269,15 @@ transform: translateY(3px);
 
 <div id="occ-watcher-xanax-page" style="display:none;">
     <div class="occ-slider-group" style="margin-top:0;">
+        <label>Faction</label>
+        <select id="occ-watcher-faction">
+            <option value="all" selected>All Factions</option>
+            <option value="33097">Occ1</option>
+            <option value="9728">Occ2</option>
+            <option value="9171">Occ3</option>
+        </select>
+    </div>
+    <div class="occ-slider-group">
         <label>Range</label>
         <select id="occ-watcher-range">
             <option value="month" selected>This Month</option>
@@ -375,6 +391,7 @@ transform: translateY(3px);
         document.getElementById("occ-xan-back").onclick = openCouncil;
         document.getElementById("occ-watcher-xanax").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-watcher-back").onclick = openCouncil;
+        document.getElementById("occ-watcher-faction").onchange = fetchAndShowWatcherXanax;
         document.getElementById("occ-watcher-range").onchange = handleWatcherRangeChange;
         document.getElementById("occ-watcher-apply-range").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-chain-raffle").onclick = fetchAndShowRaffle;
@@ -389,6 +406,11 @@ transform: translateY(3px);
         document.getElementById("occ-raffle-drawcount").oninput = (e) => {
             document.getElementById("occ-raffle-drawcount-val").textContent = e.target.value;
         };
+        document.getElementById("occ-raffle-body").addEventListener("click", (e) => {
+            const sendBtn = e.target.closest(".occ-raffle-send-btn");
+            if (!sendBtn) return;
+            sendRaffleItem(parseInt(sendBtn.dataset.userId, 10), sendBtn.dataset.username);
+        });
         document.getElementById("occ-update-api").onclick = manualUpdateKey;
         document.getElementById("occ-warnings-btn").onclick = fetchAndShowWarnings;
         document.getElementById("occ-warn-back").onclick = openCouncil;
@@ -1182,7 +1204,10 @@ transform: translateY(3px);
 
     currentWatcherRange = computeWatcherRange(preset);
 
-    const res = await apiRequest("GET", `/api/leadership/watcher-xanax?from=${currentWatcherRange.from}&to=${currentWatcherRange.to}`, null, jwt);
+    const factionSelect = document.getElementById("occ-watcher-faction");
+    const factionFilter = factionSelect && factionSelect.value !== "all" ? `&faction_id=${factionSelect.value}` : "";
+
+    const res = await apiRequest("GET", `/api/leadership/watcher-xanax?from=${currentWatcherRange.from}&to=${currentWatcherRange.to}${factionFilter}`, null, jwt);
 
     watBtn.disabled = false;
     watBtn.innerHTML = originalContent;
@@ -1398,7 +1423,13 @@ transform: translateY(3px);
     if (winners && winners.length) {
         html += `<div style="margin-top:10px; font-weight:bold; font-size:calc(var(--occ-font-base) - 1px);">Winners</div>`;
         winners.forEach(w => {
-            html += `<div class="occ-raffle-row"><span>#${w.draw_number} <span class="occ-raffle-winner">${w.username}</span></span><span>${w.removal_mode === "all_tickets" ? "✔ out" : ""}</span></div>`;
+            html += `<div class="occ-raffle-row">
+                <span>#${w.draw_number} <span class="occ-raffle-winner">${w.username}</span></span>
+                <span style="display:flex; align-items:center; gap:6px;">
+                    ${w.removal_mode === "all_tickets" ? "<span>✔ out</span>" : ""}
+                    <button type="button" class="occ-raffle-send-btn" data-user-id="${w.torn_user_id}" data-username="${w.username}">📦 Send</button>
+                </span>
+            </div>`;
         });
     }
 
@@ -1449,7 +1480,73 @@ transform: translateY(3px);
 
     if (reel) reel.textContent = `🏆 ${res.data.winner.username}`;
     setStatus("Winner drawn ✔");
+
+    // Let the winner's name linger on the reel before the round refresh
+    // replaces it with the updated tickets/winners list.
+    await new Promise(r => setTimeout(r, RAFFLE_WINNER_LINGER_MS));
     await renderRaffleRound(currentRaffleRoundId);
+    }
+
+    // Stashes a pending armoury-style "send" task and jumps to the player's
+    // own Supply Pack Items page — there's no faction-armoury equivalent for
+    // a Donator Pack, so this gifts it from the sender's personal inventory
+    // instead (same send-to-name mechanic, different page).
+    function sendRaffleItem(userId, name) {
+        const task = { name, id: userId, qty: 1, itemId: RAFFLE_ITEM_ID, expiry: Date.now() + 60000 };
+        sessionStorage.setItem(RAFFLE_ITEM_TASK_STORAGE, JSON.stringify(task));
+        window.location.href = RAFFLE_ITEM_URL;
+    }
+
+    // Best-effort auto-fill on the player's own item page, mirroring
+    // autoFillXanax's armoury flow — Torn's "give/send" widget markup may
+    // differ there, so this degrades to a no-op (leaving the manual send
+    // available) if the expected elements aren't found.
+    async function autoFillRaffleItem() {
+        if (isFilling) return;
+        const taskData = sessionStorage.getItem(RAFFLE_ITEM_TASK_STORAGE);
+        if (!taskData) return;
+
+        const task = JSON.parse(taskData);
+        if (Date.now() > task.expiry) {
+            sessionStorage.removeItem(RAFFLE_ITEM_TASK_STORAGE);
+            return;
+        }
+
+        const itemRow = document.querySelector(`li [data-itemid="${task.itemId}"]`)?.closest('li');
+        if (!itemRow || !itemRow.querySelector('a[data-role="give"]')) return;
+
+        isFilling = true;
+
+        try {
+            if (!itemRow.classList.contains('item-give-act')) {
+                const giveBtn = itemRow.querySelector('a[data-role="give"]');
+                if (giveBtn) giveBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+            }
+
+            const qtyInput = itemRow.querySelector('.give-cont .quantity[type="text"]');
+            if (qtyInput) {
+                qtyInput.value = task.qty;
+                qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            const nameInput = itemRow.querySelector('.give-cont .ac-search');
+            if (nameInput) {
+                nameInput.value = task.id ? `${task.name} [${task.id}]` : task.name;
+                nameInput.focus();
+                nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                setTimeout(() => {
+                    nameInput.dispatchEvent(new Event('keydown', { bubbles: true }));
+                }, 100);
+            }
+
+            sessionStorage.removeItem(RAFFLE_ITEM_TASK_STORAGE);
+            setStatus(`Pre-filled ${RAFFLE_ITEM_NAME} for ${task.name}`);
+        } catch (e) {
+            console.error("Raffle item Auto-fill failed", e);
+        } finally {
+            isFilling = false;
+        }
     }
 
     // Formats a Date as "YYYY-MM-DDTHH:mm" in LOCAL time, the format
@@ -1608,14 +1705,24 @@ transform: translateY(3px);
         applyPanelPrefs();
         showMainPage();
         panel.style.display = "block";
-        if (sidebar) panel.classList.add("occ-sidebar-open");
+        if (sidebar) {
+            panel.classList.add("occ-sidebar-open");
+            SafeStore.set(PANEL_OPEN_STORAGE, "1");
+        }
         await checkCouncilStatus();
     }
 
+    // In Sidebar Mode, open/closed state is remembered across page loads
+    // (see reopenSidebarIfAuthenticated in init) — modal mode is unaffected,
+    // it always starts closed as before.
     function closePanel() {
         const panel = document.getElementById("occ-panel");
-        if (panelPrefs.dockMode === "sidebar") panel.classList.remove("occ-sidebar-open");
-        else panel.style.display = "none";
+        if (panelPrefs.dockMode === "sidebar") {
+            panel.classList.remove("occ-sidebar-open");
+            SafeStore.set(PANEL_OPEN_STORAGE, "0");
+        } else {
+            panel.style.display = "none";
+        }
     }
 
     function setStatus(text, error = false) {
@@ -1898,6 +2005,9 @@ transform: translateY(3px);
         if (window.location.href.includes("tab=armoury") && sessionStorage.getItem("pending_xanax_task")) {
             autoFillXanax();
         }
+        if (window.location.href.includes("item.php") && sessionStorage.getItem(RAFFLE_ITEM_TASK_STORAGE)) {
+            autoFillRaffleItem();
+        }
     }, 300);
 
 
@@ -1913,8 +2023,17 @@ transform: translateY(3px);
         if (window.location.href.includes("tab=armoury") && sessionStorage.getItem("pending_xanax_task")) {
             autoFillXanax();
         }
+        if (window.location.href.includes("item.php") && sessionStorage.getItem(RAFFLE_ITEM_TASK_STORAGE)) {
+            autoFillRaffleItem();
+        }
     });
 
+
+    async function reopenSidebarIfAuthenticated() {
+        if (!SafeStore.get(API_KEY_STORAGE)) return;
+        const key = await validateAndSaveKey();
+        if (key) togglePanel();
+    }
 
     function init() {
         createPanel();
@@ -1926,6 +2045,15 @@ transform: translateY(3px);
 
         if (window.location.href.includes("tab=armoury") && sessionStorage.getItem("pending_xanax_task")) {
             autoFillXanax();
+        }
+        if (window.location.href.includes("item.php") && sessionStorage.getItem(RAFFLE_ITEM_TASK_STORAGE)) {
+            autoFillRaffleItem();
+        }
+
+        // Sidebar Mode persists its open/closed state across page loads —
+        // without this, every navigation/refresh would silently re-close it.
+        if (panelPrefs.dockMode === "sidebar" && SafeStore.get(PANEL_OPEN_STORAGE) === "1") {
+            reopenSidebarIfAuthenticated();
         }
     }
 

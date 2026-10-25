@@ -6,6 +6,7 @@ import WatcherBanner from '../components/ChainWatcher/WatcherBanner'
 import MeritTracker from '../components/ChainWatcher/MeritTracker'
 import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
 import RaffleTab from '../components/ChainWatcher/RaffleTab'
+import WatcherXanaxTab from '../components/ChainWatcher/WatcherXanaxTab'
 import WatchTotalsCard from '../components/ChainWatcher/WatchTotalsCard'
 
 const SHIFTS_REFRESH_MS = 30000
@@ -19,6 +20,7 @@ export default function ChainWatcher() {
     OCC_FACTIONS.some(f => f.id === user?.factionId) ? user.factionId : OCC_FACTIONS[0].id
   )
   const [showRaffle, setShowRaffle] = useState(false)
+  const [showWatcherXanax, setShowWatcherXanax] = useState(false)
   const [shifts, setShifts] = useState([])
   const [error, setError] = useState(null)
   // Single source of truth for the chain-watch session — shared by
@@ -85,12 +87,12 @@ export default function ChainWatcher() {
         {tabs.map(f => (
           <button
             key={f.id}
-            onClick={() => { setShowRaffle(false); setFactionId(f.id) }}
+            onClick={() => { setShowRaffle(false); setShowWatcherXanax(false); setFactionId(f.id) }}
             style={{
               padding: '10px 18px', background: 'transparent', border: 'none', whiteSpace: 'nowrap',
-              borderBottom: !showRaffle && factionId === f.id ? '2px solid #b3123f' : '2px solid transparent',
-              color: !showRaffle && factionId === f.id ? '#f4f4f5' : 'var(--text-secondary)',
-              fontWeight: !showRaffle && factionId === f.id ? 600 : 400, fontSize: 14, cursor: 'pointer',
+              borderBottom: !showRaffle && !showWatcherXanax && factionId === f.id ? '2px solid #b3123f' : '2px solid transparent',
+              color: !showRaffle && !showWatcherXanax && factionId === f.id ? '#f4f4f5' : 'var(--text-secondary)',
+              fontWeight: !showRaffle && !showWatcherXanax && factionId === f.id ? 600 : 400, fontSize: 14, cursor: 'pointer',
             }}
           >
             {f.label}
@@ -98,7 +100,20 @@ export default function ChainWatcher() {
         ))}
         {isLeader && (
           <button
-            onClick={() => setShowRaffle(true)}
+            onClick={() => { setShowRaffle(false); setShowWatcherXanax(true) }}
+            style={{
+              padding: '10px 18px', background: 'transparent', border: 'none', whiteSpace: 'nowrap',
+              borderBottom: showWatcherXanax ? '2px solid #b3123f' : '2px solid transparent',
+              color: showWatcherXanax ? '#f4f4f5' : 'var(--text-secondary)',
+              fontWeight: showWatcherXanax ? 600 : 400, fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            Watcher Xanax
+          </button>
+        )}
+        {isLeader && (
+          <button
+            onClick={() => { setShowWatcherXanax(false); setShowRaffle(true) }}
             style={{
               padding: '10px 18px', background: 'transparent', border: 'none', whiteSpace: 'nowrap',
               borderBottom: showRaffle ? '2px solid #b3123f' : '2px solid transparent',
@@ -111,10 +126,12 @@ export default function ChainWatcher() {
         )}
       </div>
 
-      {error && !showRaffle && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+      {error && !showRaffle && !showWatcherXanax && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
       {showRaffle ? (
         <RaffleTab />
+      ) : showWatcherXanax ? (
+        <WatcherXanaxTab />
       ) : (
         <>
           <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} shifts={shifts} />
