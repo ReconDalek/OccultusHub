@@ -833,6 +833,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/watcher-xanax' && method === 'POST') {
       return watcherXanaxController.markDistribution(request, env, user);
     }
+    if (pathname === '/api/leadership/watcher-xanax/review' && method === 'POST') {
+      return watcherXanaxController.reviewShift(request, env, user);
+    }
 
     // War tracking endpoints
     if (pathname === '/api/leadership/wars' && method === 'GET') {

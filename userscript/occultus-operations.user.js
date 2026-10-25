@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.6.1
+// @version      1.7.0
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -228,6 +228,14 @@ transform: translateY(3px);
 @keyframes occ-reel-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 .occ-raffle-send-btn { width: auto !important; margin: 0 !important; padding: 3px 8px !important; font-size: calc(var(--occ-font-base) - 3px) !important; }
 
+.occ-pending-row { background: #2a1f0a; border-left: 3px solid #fbbf24; border-radius: 4px; padding: 6px 8px; margin-top: 6px; }
+.occ-pending-info { font-size: calc(var(--occ-font-base) - 2px); color: #ddd; }
+.occ-pending-note { color: #fbbf24; font-style: italic; }
+.occ-pending-actions { display: flex; gap: 4px; margin-top: 4px; }
+.occ-pending-btn { width: auto !important; flex: 1; margin: 0 !important; padding: 4px 6px !important; font-size: calc(var(--occ-font-base) - 3px) !important; }
+.occ-pending-include { background: #43b581 !important; }
+.occ-pending-exclude { background: #ff6b6b !important; }
+
 `;
     document.head.appendChild(style);
 
@@ -298,6 +306,7 @@ transform: translateY(3px);
         </div>
         <button id="occ-watcher-apply-range" class="green-btn">Apply</button>
     </div>
+    <div id="occ-watcher-pending"></div>
     <div id="occ-watcher-list"></div>
     <button id="occ-watcher-back" class="red-btn nav-btn">⬅ Back</button>
 </div>
@@ -410,6 +419,11 @@ transform: translateY(3px);
             const sendBtn = e.target.closest(".occ-raffle-send-btn");
             if (!sendBtn) return;
             sendRaffleItem(parseInt(sendBtn.dataset.userId, 10), sendBtn.dataset.username);
+        });
+        document.getElementById("occ-watcher-pending").addEventListener("click", (e) => {
+            const reviewBtn = e.target.closest(".occ-pending-btn");
+            if (!reviewBtn) return;
+            reviewWatcherShift(parseInt(reviewBtn.dataset.shiftId, 10), reviewBtn.dataset.decision);
         });
         document.getElementById("occ-update-api").onclick = manualUpdateKey;
         document.getElementById("occ-warnings-btn").onclick = fetchAndShowWarnings;
@@ -1256,6 +1270,23 @@ transform: translateY(3px);
         return;
     }
 
+    const pendingContainer = document.getElementById("occ-watcher-pending");
+    const pending = res.data.pendingReview || [];
+    if (pending.length) {
+        pendingContainer.innerHTML = `<div style="font-weight:bold; font-size:calc(var(--occ-font-base) - 1px); color:#fbbf24; margin-top:6px;">⚠ Needs Review (${pending.length})</div>` +
+            pending.map(p => `
+                <div class="occ-pending-row">
+                    <div class="occ-pending-info">${p.username} — ${new Date(p.slot_start * 1000).toLocaleString()}<br><span class="occ-pending-note">"${p.note}"</span></div>
+                    <div class="occ-pending-actions">
+                        <button type="button" class="occ-pending-btn occ-pending-include" data-shift-id="${p.shift_id}" data-decision="included">✔ Include</button>
+                        <button type="button" class="occ-pending-btn occ-pending-exclude" data-shift-id="${p.shift_id}" data-decision="excluded">✖ Exclude</button>
+                    </div>
+                </div>
+            `).join("");
+    } else {
+        pendingContainer.innerHTML = "";
+    }
+
     const listContainer = document.getElementById("occ-watcher-list");
     listContainer.innerHTML = "";
 
@@ -1350,6 +1381,21 @@ transform: translateY(3px);
     document.getElementById("occ-watcher-xanax-page").style.display = "block";
     document.getElementById("occ-title").textContent = "Watcher Xanax";
     setStatus("Ready");
+    }
+
+    async function reviewWatcherShift(shiftId, decision) {
+        const jwt = SafeStore.get(JWT_STORAGE);
+        if (!jwt) { setStatus("Not authenticated — reopen panel", true); return; }
+
+        setStatus(decision === "included" ? "Including hour..." : "Excluding hour...");
+        const res = await apiRequest("POST", "/api/leadership/watcher-xanax/review", { shift_id: shiftId, decision }, jwt);
+
+        if (res.status !== 200) {
+            setStatus("Failed to review hour", true);
+            return;
+        }
+        setStatus(decision === "included" ? "Hour included ✔" : "Hour excluded ✔");
+        await fetchAndShowWatcherXanax();
     }
 
     // ─────────────────────────────────────────────────────────────────────

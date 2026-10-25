@@ -64,10 +64,12 @@ export default function WatcherXanaxTab() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [members, setMembers] = useState([])
+  const [pendingReview, setPendingReview] = useState([])
   const [itemName, setItemName] = useState('Xanax')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const [reviewingId, setReviewingId] = useState(null)
 
   const range = computeRange(preset, customFrom, customTo)
 
@@ -80,6 +82,7 @@ export default function WatcherXanaxTab() {
       if (factionId !== 'all') params.set('faction_id', factionId)
       const json = await apiGet(`/api/leadership/watcher-xanax?${params.toString()}`)
       setMembers(json.members || [])
+      setPendingReview(json.pendingReview || [])
       setItemName(json.settings?.item_name || 'Xanax')
     } catch (err) {
       setError(err.message)
@@ -135,6 +138,19 @@ export default function WatcherXanaxTab() {
     }
   }
 
+  const reviewShift = async (shiftId, decision) => {
+    setReviewingId(shiftId)
+    setError('')
+    try {
+      await apiSend('/api/leadership/watcher-xanax/review', 'POST', { shift_id: shiftId, decision })
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setReviewingId(null)
+    }
+  }
+
   const factionLabel = (id) => OCC_FACTIONS.find(f => f.id === id)?.label || id
 
   return (
@@ -180,6 +196,48 @@ export default function WatcherXanaxTab() {
         </div>
 
         {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+
+        {pendingReview.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>
+              Needs Review ({pendingReview.length})
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pendingReview.map(p => (
+                <div key={p.shift_id} style={{
+                  padding: '10px 12px', borderRadius: 8, borderLeft: '3px solid #fbbf24',
+                  background: 'rgba(251,191,36,0.08)', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', flexWrap: 'wrap', gap: 8,
+                }}>
+                  <span style={{ fontSize: 13 }}>
+                    {p.username} <span style={{ color: 'var(--text-faint)' }}>({factionLabel(p.faction_id)})</span>
+                    {' '}&mdash; {new Date(p.slot_start * 1000).toLocaleString()}
+                    <br />
+                    <span style={{ color: '#fbbf24', fontStyle: 'italic', fontSize: 12 }}>&ldquo;{p.note}&rdquo;</span>
+                  </span>
+                  <span style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      disabled={reviewingId === p.shift_id}
+                      onClick={() => reviewShift(p.shift_id, 'included')}
+                      style={{ ...btn, background: '#43b581', color: '#fff', padding: '6px 10px', opacity: reviewingId === p.shift_id ? 0.6 : 1 }}
+                    >
+                      Include
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reviewingId === p.shift_id}
+                      onClick={() => reviewShift(p.shift_id, 'excluded')}
+                      style={{ ...btn, background: '#f87171', color: '#fff', padding: '6px 10px', opacity: reviewingId === p.shift_id ? 0.6 : 1 }}
+                    >
+                      Exclude
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {preset === 'custom' && (!customFrom || !customTo) ? (
           <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Pick a From and To date.</p>

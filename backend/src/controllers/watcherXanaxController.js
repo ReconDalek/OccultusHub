@@ -16,19 +16,23 @@ function validFactionId(raw) {
   return FACTION_IDS.includes(id) ? id : null;
 }
 
-// Each payout row records the [paid_from_slot_start, paid_up_to_slot_start]
-// interval it covered, so arbitrary (and possibly out-of-order or
-// overlapping) date-range payouts never double-pay or silently skip a gap —
-// a slot only counts as paid if some prior payout's interval actually
-// contains it, not just "anything before the newest payout".
+// Exact per-hour paid tracking (one row per paid slot) rather than a
+// [from, to] interval — an interval can't coexist correctly with review
+// gating below: a noted hour sitting inside an otherwise-paid interval
+// would look "already paid" (and so permanently skip future checks) the
+// moment it's later included or excluded, even though it was never
+// actually counted.
 const NOT_ALREADY_PAID = `
   NOT EXISTS (
-    SELECT 1 FROM watcher_xanax_distributions d
-    WHERE d.torn_user_id = s.torn_user_id
-      AND s.slot_start >= d.paid_from_slot_start
-      AND s.slot_start <= d.paid_up_to_slot_start
+    SELECT 1 FROM watcher_xanax_paid_slots p
+    WHERE p.torn_user_id = s.torn_user_id AND p.slot_start = s.slot_start
   )
 `;
+
+// A shift with a leader's note (e.g. "late", "no-show") doesn't count until
+// a leader reviews it — same idea as the raffle's per-entry review. No note
+// at all auto-counts, same as before this existed.
+const NOT_PENDING_REVIEW = `(s.note IS NULL OR s.xanax_review_decision = 'included')`;
 
 // A gap of 3+ days with no watched hour at all splits one "episode" of
 // chain-watching from the next — e.g. one chain's watch coverage from the
@@ -95,11 +99,12 @@ export async function getTimeframe(request, env) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/leadership/watcher-xanax?faction_id=&from=&to= — leadership-only
-// Active members with unpaid watched hours (slot_start already in the past,
-// and not already covered by a prior payout) within [from, to) — from/to are
-// unix seconds; omitting them covers all time, same as before this filter
-// existed. Across all 3 factions when faction_id is omitted — same shape the
-// userscript's Monthly Xanax call uses.
+// Active members with unpaid, non-pending watched hours within [from, to) —
+// unix seconds; omitting them covers all time. Across all 3 factions when
+// faction_id is omitted — same shape the userscript's Monthly Xanax call
+// uses. Also returns any noted hour in the same window still awaiting a
+// leader's include/exclude decision (pendingReview) — those are excluded
+// from quantity until resolved.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getDistributions(request, env) {
   try {
@@ -114,25 +119,36 @@ export async function getDistributions(request, env) {
     const rangeFrom = Number.isFinite(fromParam) ? fromParam : 0;
     const rangeTo = Number.isFinite(toParam) ? Math.min(toParam, cutoff) : cutoff;
 
-    let sql = `
+    const factionFilter = factionId ? ' AND fm.faction_id = ?' : '';
+    const factionBind = factionId ? [factionId] : [];
+
+    const { results } = await env.DB.prepare(`
       SELECT fm.torn_user_id, fm.username, fm.faction_id, COUNT(s.id) AS quantity
       FROM faction_members fm
       JOIN chain_watch_shifts s ON s.torn_user_id = fm.torn_user_id AND s.faction_id = fm.faction_id
       WHERE fm.is_active = 1
         AND s.slot_start >= ? AND s.slot_start < ?
         AND ${NOT_ALREADY_PAID}
-    `;
-    const binds = [rangeFrom, rangeTo];
-    if (factionId) {
-      sql += ' AND fm.faction_id = ?';
-      binds.push(factionId);
-    }
-    sql += ' GROUP BY fm.torn_user_id, fm.username, fm.faction_id HAVING quantity > 0 ORDER BY quantity DESC';
+        AND ${NOT_PENDING_REVIEW}
+        ${factionFilter}
+      GROUP BY fm.torn_user_id, fm.username, fm.faction_id HAVING quantity > 0 ORDER BY quantity DESC
+    `).bind(rangeFrom, rangeTo, ...factionBind).all();
 
-    const { results } = await env.DB.prepare(sql).bind(...binds).all();
+    const { results: pending } = await env.DB.prepare(`
+      SELECT s.id AS shift_id, s.torn_user_id, fm.username, s.faction_id, s.slot_start, s.note
+      FROM chain_watch_shifts s
+      JOIN faction_members fm ON fm.torn_user_id = s.torn_user_id AND fm.faction_id = s.faction_id
+      WHERE fm.is_active = 1
+        AND s.slot_start >= ? AND s.slot_start < ?
+        AND s.note IS NOT NULL AND s.xanax_review_decision IS NULL
+        AND ${NOT_ALREADY_PAID}
+        ${factionFilter}
+      ORDER BY s.slot_start ASC
+    `).bind(rangeFrom, rangeTo, ...factionBind).all();
 
     return jsonResponse({
       members: results || [],
+      pendingReview: pending || [],
       settings: { ...ITEM, base_quantity: 1 },
       range: { from: rangeFrom, to: rangeTo },
     });
@@ -143,11 +159,40 @@ export async function getDistributions(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/leadership/watcher-xanax/review — leadership-only
+// Body: { shift_id, decision: 'included' | 'excluded' } — resolves one
+// noted shift so it (stops) counting toward payable hours.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function reviewShift(request, env, user) {
+  try {
+    const body = await request.json();
+    const shiftId = parseInt(body.shift_id, 10);
+    const decision = body.decision;
+    if (!shiftId) return errorResponse('Missing shift_id', 400);
+    if (!['included', 'excluded'].includes(decision)) {
+      return errorResponse('decision must be "included" or "excluded"', 400);
+    }
+
+    const result = await env.DB.prepare(`
+      UPDATE chain_watch_shifts
+      SET xanax_review_decision = ?, xanax_reviewed_by = ?, xanax_reviewed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(decision, user.tornUserId, shiftId).run();
+
+    if (!result.meta.changes) return errorResponse('Shift not found', 404);
+    return jsonResponse({ success: true });
+  } catch (err) {
+    console.error('reviewShift (watcher xanax) error:', err);
+    return errorResponse('Failed to review shift', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/leadership/watcher-xanax — leadership-only
 // Body: { torn_user_id, from?, to? }. Recomputes exactly what's owed for that
 // member within [from, to) server-side (rather than trusting a client-sent
-// quantity) and records that exact interval as paid — so a payout always
-// matches exactly what's owed, scoped to the same range the client was shown.
+// quantity) — noted-but-unreviewed hours are left out, same as the GET —
+// and records exactly those slots as paid.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function markDistribution(request, env, user) {
   try {
@@ -161,24 +206,34 @@ export async function markDistribution(request, env, user) {
     const rangeFrom = Number.isFinite(fromParam) ? fromParam : 0;
     const rangeTo = Number.isFinite(toParam) ? Math.min(toParam, cutoff) : cutoff;
 
-    const owed = await env.DB.prepare(`
-      SELECT COUNT(*) AS cnt, MIN(slot_start) AS min_slot, MAX(slot_start) AS max_slot
-      FROM chain_watch_shifts s
+    const { results: owedRows } = await env.DB.prepare(`
+      SELECT s.slot_start FROM chain_watch_shifts s
       WHERE s.torn_user_id = ?
         AND s.slot_start >= ? AND s.slot_start < ?
         AND ${NOT_ALREADY_PAID}
-    `).bind(tornUserId, rangeFrom, rangeTo).first();
+        AND ${NOT_PENDING_REVIEW}
+    `).bind(tornUserId, rangeFrom, rangeTo).all();
 
-    if (!owed?.cnt) return errorResponse('No unpaid watched hours in that range for this member', 400);
+    const slots = (owedRows || []).map(r => r.slot_start);
+    if (!slots.length) return errorResponse('No unpaid watched hours in that range for this member', 400);
 
     const now = Math.floor(Date.now() / 1000);
-    await env.DB.prepare(`
+    const dist = await env.DB.prepare(`
       INSERT INTO watcher_xanax_distributions
         (torn_user_id, hours_paid, paid_from_slot_start, paid_up_to_slot_start, given_by, given_by_username, given_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(tornUserId, owed.cnt, owed.min_slot, owed.max_slot, user.tornUserId, user.username, now).run();
+      RETURNING id
+    `).bind(tornUserId, slots.length, slots[0], slots[slots.length - 1], user.tornUserId, user.username, now).first();
 
-    return jsonResponse({ message: 'Watcher xanax marked complete', quantity: owed.cnt });
+    const insertSlot = env.DB.prepare(
+      `INSERT OR IGNORE INTO watcher_xanax_paid_slots (torn_user_id, slot_start, distribution_id) VALUES (?, ?, ?)`
+    );
+    const CHUNK = 50;
+    for (let i = 0; i < slots.length; i += CHUNK) {
+      await env.DB.batch(slots.slice(i, i + CHUNK).map(slotStart => insertSlot.bind(tornUserId, slotStart, dist.id)));
+    }
+
+    return jsonResponse({ message: 'Watcher xanax marked complete', quantity: slots.length });
   } catch (err) {
     console.error('markDistribution (watcher xanax) error:', err);
     return errorResponse('Failed to mark watcher xanax distribution', 500);
