@@ -586,7 +586,7 @@ export async function getWatchTotals(request, env) {
     if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
 
     const { results } = await env.DB.prepare(
-      `SELECT s.slot_start, s.torn_user_id,
+      `SELECT s.slot_start, s.torn_user_id, s.note,
          COALESCE(
            (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id AND faction_id = s.faction_id LIMIT 1),
            (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id ORDER BY is_active DESC LIMIT 1)
@@ -624,11 +624,12 @@ export async function getWatchTotals(request, env) {
       activeGroup = pastGroups.length ? pastGroups[pastGroups.length - 1] : groups[0];
     }
 
-    const totals = new Map(); // torn_user_id -> { username, completed, upcoming }
+    const totals = new Map(); // torn_user_id -> { username, completed, upcoming, notes }
     for (const s of activeGroup) {
-      const entry = totals.get(s.torn_user_id) || { torn_user_id: s.torn_user_id, username: s.username, completed: 0, upcoming: 0 };
+      const entry = totals.get(s.torn_user_id) || { torn_user_id: s.torn_user_id, username: s.username, completed: 0, upcoming: 0, notes: [] };
       if (s.slot_start + HOUR <= nowSecs) entry.completed++;
       else entry.upcoming++;
+      if (s.note) entry.notes.push({ slot_start: s.slot_start, note: s.note });
       totals.set(s.torn_user_id, entry);
     }
 
