@@ -128,6 +128,13 @@ export default {
     // "*/10 * * * *" — every 10 minutes: check for new war matches + track active/matched wars
     if (event.cron === '*/10 * * * *') {
       try {
+        const { sendShiftReminders } = await import('./controllers/chainWatcherController.js');
+        ctx.waitUntil(
+          sendShiftReminders(env)
+            .then(r => { if (r.sent > 0 || r.failed > 0) console.log(`[cron] chain watch reminders: ${r.sent} sent, ${r.failed} failed`); })
+            .catch(e => console.error('[cron] chain watch reminders failed:', e))
+        );
+
         const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
         ctx.waitUntil((async () => {
           // Always run checkWarMatches — it discovers new matches and must not be gated

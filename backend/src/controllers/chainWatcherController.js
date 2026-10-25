@@ -4,7 +4,10 @@ import { recordBonusHitEntries, MERIT_THRESHOLDS } from './meritController.js';
 import { TARGET_LENGTHS, estimateChainDuration } from './chainController.js';
 
 const TORN_API_BASE = 'https://api.torn.com/v2';
+const DISCORD_API = 'https://discord.com/api/v10';
 const FACTION_IDS = [33097, 9728, 9171];
+const FACTION_NAMES = { 33097: 'Occultus', 9728: 'Occul2us', 9171: 'Occul3us' };
+const HOUR = 3600;
 
 function validFactionId(raw) {
   const id = parseInt(raw, 10);
@@ -503,5 +506,144 @@ export async function setShiftNote(request, env) {
   } catch (err) {
     console.error('setShiftNote error:', err);
     return errorResponse('Failed to save note', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cron: DMs anyone signed up for a chain-watch shift starting in about an
+// hour, if they've linked Discord. Runs every 10 min; the check window (50-70
+// min out) is wider than the cron interval so a shift can never slip through
+// between two ticks, and reminder_sent_at stops the same shift firing twice.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sendShiftReminders(env) {
+  if (!env.DISCORD_BOT_TOKEN) {
+    console.warn('[chain-watch reminders] no DISCORD_BOT_TOKEN configured, skipping');
+    return { sent: 0, failed: 0 };
+  }
+
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const windowStart = nowSecs + 50 * 60;
+  const windowEnd = nowSecs + 70 * 60;
+
+  const { results } = await env.DB.prepare(
+    `SELECT s.id, s.faction_id, s.slot_start, dl.discord_id
+     FROM chain_watch_shifts s
+     JOIN users u ON u.torn_user_id = s.torn_user_id
+     JOIN discord_links dl ON dl.user_id = u.id
+     WHERE s.reminder_sent_at IS NULL AND s.slot_start >= ? AND s.slot_start < ?`
+  ).bind(windowStart, windowEnd).all();
+
+  let sent = 0, failed = 0;
+  for (const shift of (results || [])) {
+    try {
+      const dmRes = await fetch(`${DISCORD_API}/users/@me/channels`, {
+        method: 'POST',
+        headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipient_id: shift.discord_id }),
+      });
+      if (!dmRes.ok) throw new Error(`open DM channel: HTTP ${dmRes.status}`);
+      const dmChannel = await dmRes.json();
+
+      const factionName = FACTION_NAMES[shift.faction_id] || `faction ${shift.faction_id}`;
+      // Discord's <t:...> timestamp renders in each viewer's own local time/format automatically.
+      const content = `⏰ Your ${factionName} chain watch shift starts <t:${shift.slot_start}:t> (in about an hour). Thanks for covering it!`;
+
+      const msgRes = await fetch(`${DISCORD_API}/channels/${dmChannel.id}/messages`, {
+        method: 'POST',
+        headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      if (!msgRes.ok) throw new Error(`send DM: HTTP ${msgRes.status}`);
+      sent++;
+    } catch (err) {
+      failed++;
+      console.error(`[chain-watch reminders] failed for shift ${shift.id}:`, err.message);
+    } finally {
+      // Mark attempted either way — a failure (e.g. DMs closed, not linked
+      // properly) isn't worth retrying every 10 minutes for the same shift.
+      await env.DB.prepare(`UPDATE chain_watch_shifts SET reminder_sent_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(shift.id).run();
+    }
+  }
+
+  console.log(`[chain-watch reminders] ${sent} sent, ${failed} failed`);
+  return { sent, failed };
+}
+
+const WATCH_GAP_SECONDS = 3 * 86400; // 3+ days with nothing claimed = a separate watch
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/chain-watcher/watch-totals?faction_id=X — leadership-only
+// Groups every claimed shift for this faction into separate "watches" by
+// gap — a run of claimed hours broken by 3+ days with nothing claimed is
+// treated as a different (future) watch rather than lumped into the current
+// one's totals, picks whichever group is "current", and returns per-member
+// completed/upcoming/total counts for just that group.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getWatchTotals(request, env) {
+  try {
+    const url = new URL(request.url);
+    const factionId = validFactionId(url.searchParams.get('faction_id'));
+    if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+
+    const { results } = await env.DB.prepare(
+      `SELECT s.slot_start, s.torn_user_id,
+         COALESCE(
+           (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id AND faction_id = s.faction_id LIMIT 1),
+           (SELECT username FROM faction_members WHERE torn_user_id = s.torn_user_id ORDER BY is_active DESC LIMIT 1)
+         ) AS username
+       FROM chain_watch_shifts s
+       WHERE s.faction_id = ?
+       ORDER BY s.slot_start ASC`
+    ).bind(factionId).all();
+
+    const shifts = results || [];
+    if (!shifts.length) {
+      return jsonResponse({ watchStart: null, watchEnd: null, totalShifts: 0, members: [] });
+    }
+
+    // Split into groups wherever two consecutive claimed hours are more
+    // than WATCH_GAP_SECONDS apart.
+    const groups = [];
+    let current = [shifts[0]];
+    for (let i = 1; i < shifts.length; i++) {
+      if (shifts[i].slot_start - shifts[i - 1].slot_start > WATCH_GAP_SECONDS) {
+        groups.push(current);
+        current = [];
+      }
+      current.push(shifts[i]);
+    }
+    groups.push(current);
+
+    const nowSecs = Math.floor(Date.now() / 1000);
+    // Prefer the group that actually brackets "now"; otherwise the most
+    // recently-started group that's already underway; otherwise (nothing
+    // has started yet) the earliest upcoming one.
+    let activeGroup = groups.find(g => g[0].slot_start <= nowSecs && nowSecs < g[g.length - 1].slot_start + HOUR);
+    if (!activeGroup) {
+      const pastGroups = groups.filter(g => g[0].slot_start <= nowSecs);
+      activeGroup = pastGroups.length ? pastGroups[pastGroups.length - 1] : groups[0];
+    }
+
+    const totals = new Map(); // torn_user_id -> { username, completed, upcoming }
+    for (const s of activeGroup) {
+      const entry = totals.get(s.torn_user_id) || { torn_user_id: s.torn_user_id, username: s.username, completed: 0, upcoming: 0 };
+      if (s.slot_start + HOUR <= nowSecs) entry.completed++;
+      else entry.upcoming++;
+      totals.set(s.torn_user_id, entry);
+    }
+
+    const members = [...totals.values()]
+      .map(m => ({ ...m, total: m.completed + m.upcoming }))
+      .sort((a, b) => b.total - a.total);
+
+    return jsonResponse({
+      watchStart: activeGroup[0].slot_start,
+      watchEnd: activeGroup[activeGroup.length - 1].slot_start + HOUR,
+      totalShifts: activeGroup.length,
+      members,
+    });
+  } catch (err) {
+    console.error('getWatchTotals error:', err);
+    return errorResponse('Failed to compute watch totals', 500);
   }
 }

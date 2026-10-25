@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from '../hooks/useSession'
-import { apiGet, OCC_FACTIONS } from '../components/ChainWatcher/chainWatcherUtils'
+import { apiGet, OCC_FACTIONS, dayStart } from '../components/ChainWatcher/chainWatcherUtils'
 import ChainSessionCard from '../components/ChainWatcher/ChainSessionCard'
 import WatcherBanner from '../components/ChainWatcher/WatcherBanner'
 import MeritTracker from '../components/ChainWatcher/MeritTracker'
 import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
 import RaffleTab from '../components/ChainWatcher/RaffleTab'
+import WatchTotalsCard from '../components/ChainWatcher/WatchTotalsCard'
 
 const SHIFTS_REFRESH_MS = 30000
 const SESSION_REFRESH_MS = 20000
@@ -44,7 +45,10 @@ export default function ChainWatcher() {
     try {
       const now = Math.floor(Date.now() / 1000)
       const to = scheduledStart != null ? Math.max(now + WINDOW_SECONDS, scheduledStart + WINDOW_SECONDS) : now + WINDOW_SECONDS
-      const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${now - 3600}&to=${to}`)
+      // From the start of today (not just an hour back) — the calendar's
+      // day-tabs only ever show today onward, so today's earlier hours need
+      // real data too, to show who actually watched them instead of a blank.
+      const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${dayStart(now)}&to=${to}`)
       setShifts(json.shifts || [])
       setError(null)
     } catch (e) {
@@ -116,6 +120,7 @@ export default function ChainWatcher() {
           <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} shifts={shifts} />
           <WatcherBanner shifts={shifts} />
           <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
+          {isLeader && <WatchTotalsCard factionId={factionId} />}
           <MeritTracker factionId={factionId} />
         </>
       )}

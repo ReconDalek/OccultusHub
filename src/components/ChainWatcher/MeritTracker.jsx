@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../../hooks/useSession'
-import { apiGet, apiSend, card, sectionTitle, sectionSub, fmtLongDuration } from './chainWatcherUtils'
+import { apiGet, apiSend, sectionSub, fmtLongDuration } from './chainWatcherUtils'
+import CollapsibleCard from './CollapsibleCard'
 
 const REFRESH_MS = 300000
 const ACCENT = '#8b5cf6'
@@ -62,19 +63,17 @@ export default function MeritTracker({ factionId }) {
 
   if (error) {
     return (
-      <div style={card}>
-        <p style={sectionTitle}>Merit Tracker</p>
+      <CollapsibleCard title="Merit Tracker">
         <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>
-      </div>
+      </CollapsibleCard>
     )
   }
 
   if (!data) {
     return (
-      <div style={card}>
-        <p style={sectionTitle}>Merit Tracker</p>
+      <CollapsibleCard title="Merit Tracker">
         <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Loading…</p>
-      </div>
+      </CollapsibleCard>
     )
   }
 
@@ -82,9 +81,7 @@ export default function MeritTracker({ factionId }) {
   const awardedCount = data.awardedCounts?.[activeType] || 0
 
   return (
-    <div style={card}>
-      <p style={sectionTitle}>Merit Tracker</p>
-
+    <CollapsibleCard title="Merit Tracker">
       {isSimple ? (
         <p style={sectionSub}>{data.simpleMeritNote}</p>
       ) : (
@@ -155,7 +152,7 @@ export default function MeritTracker({ factionId }) {
       ) : (
         <RankedMeritList candidates={data.candidates[activeType] || []} />
       )}
-    </div>
+    </CollapsibleCard>
   )
 }
 

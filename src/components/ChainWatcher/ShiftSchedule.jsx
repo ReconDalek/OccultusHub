@@ -1,12 +1,13 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
-  apiGet, apiSend, card, sectionTitle, sectionSub,
+  apiGet, apiSend, sectionSub,
   upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
   currentHourStart, HOUR,
 } from './chainWatcherUtils'
 import SignUpConfirmModal from './SignUpConfirmModal'
 import NoteModal from './NoteModal'
+import CollapsibleCard from './CollapsibleCard'
 
 const DAYS_AHEAD = 7
 const ACCENT = '#8b5cf6'
@@ -121,8 +122,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
   const curHour = currentHourStart()
 
   return (
-    <div style={card}>
-      <p style={sectionTitle}>Shift Sign-Ups</p>
+    <CollapsibleCard title="Shift Sign-Ups">
       <p style={sectionSub}>Times in TCT, with your local time underneath.</p>
 
       {myShifts.length > 0 && (
@@ -301,6 +301,6 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           onClose={() => setEditingShift(null)}
         />
       )}
-    </div>
+    </CollapsibleCard>
   )
 }
