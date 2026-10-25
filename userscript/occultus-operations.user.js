@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.4.0
+// @version      1.5.0
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -33,13 +33,16 @@
     const JWT_STORAGE = "occultus_jwt";
     const USER_STORAGE = "occultus_user_data";
     const FACTION_STORAGE = "occultus_faction_data";
+    const FACTION_ID_STORAGE = "occultus_faction_id";
     const FACTION_LABELS = { 33097: "Occ1", 9728: "Occ2", 9171: "Occ3" };
     const FACTION_ORDER = [33097, 9728, 9171];
     const PANEL_PREFS_STORAGE = "occultus_panel_prefs";
     const PANEL_BASE_TOP = 60;
     const PANEL_BASE_WIDTH = 260;
     const PANEL_BASE_HEIGHT = 500;
-    const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13 };
+    const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13, dockMode: "modal" };
+    const RAFFLE_REMOVAL_MODE = "all_tickets";
+    const RAFFLE_SPIN_MIN_MS = 1400;
     const COUNCIL_ROLES = ["council", "archon", "leader", "co-leader"];
     // Fallbacks only — the real base quantity, item and per-rank / per-member
     // coefficients now come from occultusHub (Leadership → Ranks → Rank
@@ -58,6 +61,8 @@
     let botBusy = false;
     let isFilling = false;
     let lastCheck = 0;
+    let currentRaffleFactionId = null;
+    let currentRaffleRoundId = null;
 
     /**********************************************************
      * STYLES
@@ -178,6 +183,41 @@ transform: translateY(3px);
 .occ-slider-group input[type="range"] { width: 100%; accent-color: #5865F2; cursor: pointer; }
 #occ-settings-page .nav-btn { margin-top: 16px !important; }
 
+#occ-panel.occ-sidebar-mode {
+    border-radius: 8px 0 0 8px !important;
+    transform: translateX(105%) !important;
+    transition: transform 0.25s ease !important;
+}
+#occ-panel.occ-sidebar-mode.occ-sidebar-open { transform: translateX(0) !important; }
+
+#occ-edge-tab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    background: #005774;
+    color: #fff;
+    padding: 14px 4px;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    z-index: 9999999;
+    writing-mode: vertical-rl;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    user-select: none;
+    box-shadow: -2px 0 6px rgba(0,0,0,0.5);
+    display: none;
+}
+#occ-edge-tab:hover { background: #007ea0; }
+
+#occ-raffle-info { font-size: calc(var(--occ-font-base) - 1px); color: #bbb; text-align: center; margin-bottom: 6px; }
+.occ-raffle-row { display: flex; justify-content: space-between; padding: 4px 8px; background: #1a1a1a; border-radius: 3px; margin-top: 4px; font-size: calc(var(--occ-font-base) - 2px); }
+.occ-raffle-winner { color: #ffd700; font-weight: bold; }
+#occ-raffle-reel { margin: 10px 0; height: 40px; display: flex; align-items: center; justify-content: center; background: #000; border: 2px solid #5865F2; border-radius: 6px; font-weight: bold; font-size: calc(var(--occ-font-base) + 2px); color: #00ff9c; overflow: hidden; white-space: nowrap; }
+#occ-raffle-reel.spinning { animation: occ-reel-flicker 0.12s linear infinite; }
+@keyframes occ-reel-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
 `;
     document.head.appendChild(style);
 
@@ -206,6 +246,8 @@ transform: translateY(3px);
 
 <div id="occ-council-page" style="display:none;">
     <button id="occ-monthly-xanax"><img src="${XANAX_ICON}" class="xan-icon">Monthly Xanax</button>
+    <button id="occ-watcher-xanax"><img src="${XANAX_ICON}" class="xan-icon">Watcher Xanax</button>
+    <button id="occ-chain-raffle">🎰 Chain Raffle</button>
     <button id="occ-warnings-btn">⚠️ Warnings</button>
     <button id="occ-back-to-main" class="red-btn nav-btn">⬅ Back</button>
 </div>
@@ -213,6 +255,18 @@ transform: translateY(3px);
 <div id="occ-xanax-page" style="display:none;">
     <div id="occ-member-list"></div>
     <button id="occ-xan-back" class="red-btn nav-btn">⬅ Back</button>
+</div>
+
+<div id="occ-watcher-xanax-page" style="display:none;">
+    <div id="occ-watcher-list"></div>
+    <button id="occ-watcher-back" class="red-btn nav-btn">⬅ Back</button>
+</div>
+
+<div id="occ-raffle-page" style="display:none;">
+    <div id="occ-raffle-body"></div>
+    <button id="occ-raffle-draw-btn" class="green-btn">🎰 Draw Winner</button>
+    <button id="occ-raffle-refresh">🔄 Refresh</button>
+    <button id="occ-raffle-back" class="red-btn nav-btn">⬅ Back</button>
 </div>
 
 <div id="occ-warnings-page" style="display:none;">
@@ -225,21 +279,25 @@ transform: translateY(3px);
         <label>Width <span id="occ-width-val">100%</span></label>
         <input type="range" id="occ-width-slider" min="50" max="300" step="5" value="100">
     </div>
-    <div class="occ-slider-group">
+    <div class="occ-slider-group" id="occ-height-group">
         <label>Height <span id="occ-height-val">100%</span></label>
         <input type="range" id="occ-height-slider" min="50" max="300" step="5" value="100">
     </div>
-    <div class="occ-slider-group">
+    <div class="occ-slider-group" id="occ-x-group">
         <label>Horizontal Position <span id="occ-x-val">0</span></label>
         <input type="range" id="occ-x-slider" min="-200" max="200" step="5" value="0">
     </div>
-    <div class="occ-slider-group">
+    <div class="occ-slider-group" id="occ-y-group">
         <label>Vertical Position <span id="occ-y-val">0</span></label>
         <input type="range" id="occ-y-slider" min="-50" max="400" step="5" value="0">
     </div>
     <div class="occ-slider-group">
         <label>Font Size <span id="occ-font-val">13px</span></label>
         <input type="range" id="occ-font-slider" min="10" max="20" step="1" value="13">
+    </div>
+    <div class="occ-slider-group">
+        <label>Popout Sidebar Mode</label>
+        <button id="occ-dockmode-toggle" type="button">Enable Sidebar Mode</button>
     </div>
     <button id="occ-reset-layout" class="red-btn">Reset Size/Position</button>
     <button id="occ-update-api">Update API Key</button>
@@ -256,6 +314,15 @@ transform: translateY(3px);
             document.body.appendChild(outline);
         }
 
+        // Edge tab — sibling of the panel, always present but only shown
+        // (via CSS) once Sidebar Mode is enabled in Settings.
+        if (!document.getElementById("occ-edge-tab")) {
+            const edgeTab = document.createElement("div");
+            edgeTab.id = "occ-edge-tab";
+            edgeTab.textContent = "⟨ OPS ⟩";
+            document.body.appendChild(edgeTab);
+        }
+
         document.getElementById("occ-close").onclick = closePanel;
         document.getElementById("occ-assist").onclick = assistAttack;
         document.getElementById("occ-withdraw").onclick = withdrawFunds;
@@ -265,10 +332,18 @@ transform: translateY(3px);
         document.getElementById("occ-save-settings").onclick = showMainPage;
         document.getElementById("occ-monthly-xanax").onclick = fetchAndShowMembers;
         document.getElementById("occ-xan-back").onclick = openCouncil;
+        document.getElementById("occ-watcher-xanax").onclick = fetchAndShowWatcherXanax;
+        document.getElementById("occ-watcher-back").onclick = openCouncil;
+        document.getElementById("occ-chain-raffle").onclick = fetchAndShowRaffle;
+        document.getElementById("occ-raffle-back").onclick = openCouncil;
+        document.getElementById("occ-raffle-refresh").onclick = () => currentRaffleFactionId && loadRaffleRound(currentRaffleFactionId);
+        document.getElementById("occ-raffle-draw-btn").onclick = drawRaffleWinner;
         document.getElementById("occ-update-api").onclick = manualUpdateKey;
         document.getElementById("occ-warnings-btn").onclick = fetchAndShowWarnings;
         document.getElementById("occ-warn-back").onclick = openCouncil;
         document.getElementById("occ-reset-layout").onclick = resetPanelPrefs;
+        document.getElementById("occ-dockmode-toggle").onclick = toggleDockMode;
+        setupEdgeTabGestures();
 
         const widthSlider = document.getElementById("occ-width-slider");
         const heightSlider = document.getElementById("occ-height-slider");
@@ -276,8 +351,8 @@ transform: translateY(3px);
         const ySlider = document.getElementById("occ-y-slider");
         const fontSlider = document.getElementById("occ-font-slider");
 
-        widthSlider.oninput = (e) => { updateLivePanelPref("widthScale", parseInt(e.target.value, 10)); showResizeOutline(); };
-        heightSlider.oninput = (e) => { updateLivePanelPref("heightScale", parseInt(e.target.value, 10)); showResizeOutline(); };
+        widthSlider.oninput = (e) => { updateLivePanelPref("widthScale", parseInt(e.target.value, 10)); if (panelPrefs.dockMode !== "sidebar") showResizeOutline(); };
+        heightSlider.oninput = (e) => { updateLivePanelPref("heightScale", parseInt(e.target.value, 10)); if (panelPrefs.dockMode !== "sidebar") showResizeOutline(); };
         xSlider.oninput = (e) => updateLivePanelPref("offsetX", parseInt(e.target.value, 10));
         ySlider.oninput = (e) => updateLivePanelPref("offsetY", parseInt(e.target.value, 10));
         fontSlider.oninput = (e) => updateLivePanelPref("fontSize", parseInt(e.target.value, 10));
@@ -314,18 +389,29 @@ transform: translateY(3px);
 
     // Clamps the target size to the viewport (minus a small margin) so an
     // oversized panel can never itself force scrolling/overflow of the page.
+    // Sidebar mode ignores heightScale — it always runs the full viewport
+    // height, docked to an edge, rather than a centered fixed-height box.
     function panelTargetBox(prefs) {
         const idealWidth = Math.round(PANEL_BASE_WIDTH * prefs.widthScale / 100);
+        const width = Math.min(idealWidth, window.innerWidth - 20);
+        if (prefs.dockMode === "sidebar") {
+            return { width, height: window.innerHeight };
+        }
         const idealHeight = Math.round(PANEL_BASE_HEIGHT * prefs.heightScale / 100);
         return {
-            width: Math.min(idealWidth, window.innerWidth - 20),
+            width,
             height: Math.min(idealHeight, window.innerHeight - 20)
         };
     }
 
     // Plain pixel left/top clamped so the box can never sit past any edge
-    // of the window, however far the position sliders are pushed.
+    // of the window, however far the position sliders are pushed. Sidebar
+    // mode docks flush to the right edge, full height, ignoring offsetX/Y
+    // (open/closed state is handled separately via the .occ-sidebar-open class).
     function panelClampedPosition(prefs, box) {
+        if (prefs.dockMode === "sidebar") {
+            return { left: window.innerWidth - box.width, top: 0 };
+        }
         const left = Math.max(0, Math.min((window.innerWidth - box.width) / 2 + prefs.offsetX, window.innerWidth - box.width));
         const top = Math.max(0, Math.min(PANEL_BASE_TOP + prefs.offsetY, window.innerHeight - box.height));
         return { left, top };
@@ -334,6 +420,9 @@ transform: translateY(3px);
     function applyPanelPrefs() {
         const panel = document.getElementById("occ-panel");
         if (!panel) return;
+        const sidebar = panelPrefs.dockMode === "sidebar";
+        panel.classList.toggle("occ-sidebar-mode", sidebar);
+
         const box = panelTargetBox(panelPrefs);
         const pos = panelClampedPosition(panelPrefs, box);
 
@@ -342,7 +431,11 @@ transform: translateY(3px);
         // against the box's own width on every tick during a drag).
         panel.style.top = `${pos.top}px`;
         panel.style.left = `${pos.left}px`;
-        panel.style.transform = "none";
+        // Sidebar mode's open/closed slide is owned by the .occ-sidebar-mode /
+        // .occ-sidebar-open CSS classes (!important) — an inline transform
+        // here would just fight that, so leave it unset.
+        if (sidebar) panel.style.removeProperty("transform");
+        else panel.style.transform = "none";
 
         // Size changes the panel's actual box (width + scrollable max-height)
         // rather than a CSS scale, so content reflows/scrolls instead of stretching.
@@ -353,6 +446,9 @@ transform: translateY(3px);
         // the base keep their fixed calc() offset from it, so relative hierarchy
         // (e.g. a heading 2px bigger than body text) is preserved as it scales.
         panel.style.setProperty("--occ-font-base", `${panelPrefs.fontSize}px`);
+
+        const edgeTab = document.getElementById("occ-edge-tab");
+        if (edgeTab) edgeTab.style.display = sidebar ? "block" : "none";
     }
 
     // Live preview while dragging: updates the in-memory value + the panel's
@@ -381,15 +477,81 @@ transform: translateY(3px);
         document.getElementById("occ-y-val").textContent = panelPrefs.offsetY;
         document.getElementById("occ-font-slider").value = panelPrefs.fontSize;
         document.getElementById("occ-font-val").textContent = `${panelPrefs.fontSize}px`;
+        updateDockModeUI();
     }
 
+    // Reset Size/Position intentionally leaves dockMode alone — Sidebar Mode
+    // is a feature opt-in, not part of the size/position layout it resets.
     function resetPanelPrefs() {
-        panelPrefs = { ...DEFAULT_PANEL_PREFS };
+        const dockMode = panelPrefs.dockMode;
+        panelPrefs = { ...DEFAULT_PANEL_PREFS, dockMode };
         persistPanelPrefs();
         applyPanelPrefs();
         syncPanelPrefSliders();
         hideResizeOutline();
         setStatus("Layout reset to default");
+    }
+
+    function toggleDockMode() {
+        panelPrefs.dockMode = panelPrefs.dockMode === "sidebar" ? "modal" : "sidebar";
+        persistPanelPrefs();
+        applyPanelPrefs();
+        updateDockModeUI();
+        setStatus(panelPrefs.dockMode === "sidebar" ? "Sidebar Mode enabled" : "Sidebar Mode disabled");
+    }
+
+    // The position/height sliders don't apply once docked to an edge at full
+    // height, so hide them rather than let them silently do nothing.
+    function updateDockModeUI() {
+        const sidebar = panelPrefs.dockMode === "sidebar";
+        const btn = document.getElementById("occ-dockmode-toggle");
+        if (btn) {
+            btn.textContent = sidebar ? "Sidebar Mode: ON" : "Enable Sidebar Mode";
+            btn.className = sidebar ? "green-btn" : "";
+        }
+        ["occ-height-group", "occ-x-group", "occ-y-group"].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = sidebar ? "none" : "";
+        });
+    }
+
+    // Edge tab: tap to toggle the sidebar, or swipe it left (towards the
+    // screen's center) to open and swipe the open panel right to close —
+    // only meaningful while Sidebar Mode is on (the tab is hidden otherwise).
+    function setupEdgeTabGestures() {
+        const tab = document.getElementById("occ-edge-tab");
+        const panel = document.getElementById("occ-panel");
+        if (!tab || !panel || tab.dataset.bound) return;
+        tab.dataset.bound = "1";
+
+        tab.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const key = await validateAndSaveKey();
+            if (key) togglePanel();
+        });
+
+        let tabStartX = null;
+        tab.addEventListener("touchstart", (e) => { tabStartX = e.touches[0].clientX; }, { passive: true });
+        tab.addEventListener("touchend", async (e) => {
+            if (tabStartX == null) return;
+            const dx = tabStartX - e.changedTouches[0].clientX;
+            tabStartX = null;
+            if (dx > 30 && !panel.classList.contains("occ-sidebar-open")) {
+                const key = await validateAndSaveKey();
+                if (key) togglePanel();
+            }
+        }, { passive: true });
+
+        let panelStartX = null;
+        panel.addEventListener("touchstart", (e) => { panelStartX = e.touches[0].clientX; }, { passive: true });
+        panel.addEventListener("touchend", (e) => {
+            if (panelStartX == null) return;
+            const dx = e.changedTouches[0].clientX - panelStartX;
+            panelStartX = null;
+            if (dx > 60 && panelPrefs.dockMode === "sidebar" && panel.classList.contains("occ-sidebar-open")) {
+                closePanel();
+            }
+        }, { passive: true });
     }
 
     /**********************************************************
@@ -437,7 +599,7 @@ transform: translateY(3px);
     }
 
     function hideAllPages() {
-    ["occ-main-page", "occ-council-page", "occ-xanax-page", "occ-warnings-page", "occ-settings-page"].forEach(id => {
+    ["occ-main-page", "occ-council-page", "occ-xanax-page", "occ-watcher-xanax-page", "occ-raffle-page", "occ-warnings-page", "occ-settings-page"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = "none";
     });
@@ -816,6 +978,298 @@ transform: translateY(3px);
     setStatus("Ready");
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Watcher Xanax — 1 Xanax per watched Chain Watch hour, same armoury
+    // auto-fill flow as Monthly Xanax (see autoFillXanax below), just a
+    // different source list and a flat (no rank) quantity.
+    // ─────────────────────────────────────────────────────────────────────
+    async function fetchAndShowWatcherXanax() {
+    const globalCooldown = sessionStorage.getItem("occ_global_cooldown");
+    if (globalCooldown && Date.now() < parseInt(globalCooldown)) {
+        setStatus("System Cooling Down...", true);
+        return;
+    }
+
+    const jwt = SafeStore.get(JWT_STORAGE);
+    if (!jwt) {
+        setStatus("Not authenticated — reopen panel", true);
+        return;
+    }
+
+    const watBtn = document.getElementById("occ-watcher-xanax");
+    const originalContent = watBtn.innerHTML;
+
+    watBtn.disabled = true;
+    watBtn.textContent = "⏳ Loading...";
+    setStatus("Fetching watcher hours...");
+
+    const res = await apiRequest("GET", "/api/leadership/watcher-xanax", null, jwt);
+
+    watBtn.disabled = false;
+    watBtn.innerHTML = originalContent;
+
+    if (res.status === 429) {
+        sessionStorage.setItem("occ_global_cooldown", Date.now() + (5 * 60 * 1000));
+        setStatus("Rate Limited - 5m Cooldown", true);
+        return;
+    }
+    if (res.status !== 200 || !res.data?.members) {
+        setStatus("Fetch Error: " + res.status, true);
+        return;
+    }
+
+    const listContainer = document.getElementById("occ-watcher-list");
+    listContainer.innerHTML = "";
+
+    const settings = { ...DEFAULT_ITEM, ...(res.data.settings || {}) };
+    const itemName = settings.item_name;
+
+    const factionMap = {};
+    res.data.members.forEach(m => {
+        if (!factionMap[m.faction_id]) factionMap[m.faction_id] = [];
+        factionMap[m.faction_id].push(m);
+    });
+
+    let totalFound = 0;
+
+    FACTION_ORDER.forEach(factionId => {
+        const members = factionMap[factionId];
+        if (!members || !members.length) return;
+
+        const factionLabel = FACTION_LABELS[factionId] || factionId;
+
+        const factionHeader = document.createElement("div");
+        factionHeader.className = "occ-faction-header";
+        factionHeader.innerHTML = `
+            <span>${factionLabel} <span style="color:#888; font-weight:normal;">(${members.length})</span></span>
+            <span class="faction-arrow">▶</span>
+        `;
+
+        const factionBody = document.createElement("div");
+        factionBody.className = "occ-faction-body";
+
+        factionHeader.addEventListener("click", () => {
+            factionHeader.classList.toggle("open");
+            factionBody.classList.toggle("open");
+        });
+
+        members.sort((a, b) => b.quantity - a.quantity).forEach(m => {
+            const userId = m.torn_user_id;
+            const name = m.username;
+            const calcQty = m.quantity;
+
+            const rowWrapper = document.createElement("div");
+            rowWrapper.className = "member-row";
+
+            const btn = document.createElement("button");
+            btn.className = "member-btn";
+            btn.textContent = `${name} — ${calcQty}h → ${calcQty} ${itemName}`;
+
+            const checkBtn = document.createElement("button");
+            checkBtn.className = "check-btn";
+            checkBtn.innerHTML = "✔";
+
+            btn.onclick = () => {
+                if (calcQty <= 0) { setStatus("Nothing owed", true); return; }
+                const task = { name: name, id: userId, qty: calcQty, itemId: settings.item_id, expiry: Date.now() + 60000 };
+                sessionStorage.setItem("pending_xanax_task", JSON.stringify(task));
+                window.location.href = `https://www.torn.com/factions.php?step=your&type=1#/tab=armoury&start=0&sub=${settings.armory_tab}`;
+            };
+
+            checkBtn.onclick = async () => {
+                if (confirm(`Mark ${name} [${userId}] watcher xanax (${calcQty}) as paid?`)) {
+                    const originalIcon = checkBtn.innerHTML;
+                    checkBtn.innerHTML = "⏳";
+                    const markRes = await apiRequest("POST", "/api/leadership/watcher-xanax", {
+                        torn_user_id: userId, username: name, quantity: calcQty
+                    }, jwt);
+                    if (markRes.status === 200) {
+                        rowWrapper.classList.add("status-complete");
+                        setStatus("Marked complete ✔");
+                    } else {
+                        setStatus("Failed to mark complete", true);
+                    }
+                    checkBtn.innerHTML = originalIcon;
+                }
+            };
+
+            rowWrapper.appendChild(btn);
+            rowWrapper.appendChild(checkBtn);
+            factionBody.appendChild(rowWrapper);
+            totalFound++;
+        });
+
+        listContainer.appendChild(factionHeader);
+        listContainer.appendChild(factionBody);
+    });
+
+    if (totalFound === 0) {
+        listContainer.innerHTML = "<p style='text-align:center; padding:10px;'>No unpaid watch hours found.</p>";
+    }
+
+    hideAllPages();
+    document.getElementById("occ-watcher-xanax-page").style.display = "block";
+    document.getElementById("occ-title").textContent = "Watcher Xanax";
+    setStatus("Ready");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Chain Raffle — mirrors the website's raffle tab (same backend, same
+    // DB), so a draw made on either side shows up on the other via Refresh.
+    // The on-screen reel is a single simplified cosmetic animation rather
+    // than a port of the website's four distinct animations, but the draw
+    // itself hits the exact same endpoint, so odds and results are identical.
+    // ─────────────────────────────────────────────────────────────────────
+    async function fetchAndShowRaffle() {
+    const jwt = SafeStore.get(JWT_STORAGE);
+    if (!jwt) {
+        setStatus("Not authenticated — reopen panel", true);
+        return;
+    }
+
+    let factionId = parseInt(SafeStore.get(FACTION_ID_STORAGE), 10);
+    if (!factionId) {
+        // First run after this update — existing sessions won't have this
+        // cached yet (it's only set on login/re-auth), so derive it now.
+        const apiKey = SafeStore.get(API_KEY_STORAGE);
+        factionId = apiKey ? await verifyFactionAccess(apiKey) : null;
+    }
+    if (!factionId) {
+        setStatus("Unknown faction — reopen panel", true);
+        return;
+    }
+
+    const raffleBtn = document.getElementById("occ-chain-raffle");
+    const originalContent = raffleBtn.innerHTML;
+    raffleBtn.disabled = true;
+    raffleBtn.textContent = "⏳ Loading...";
+    setStatus("Fetching raffle...");
+
+    await loadRaffleRound(factionId);
+
+    raffleBtn.disabled = false;
+    raffleBtn.innerHTML = originalContent;
+
+    hideAllPages();
+    document.getElementById("occ-raffle-page").style.display = "block";
+    document.getElementById("occ-title").textContent = "Chain Raffle";
+    setStatus("Ready");
+    }
+
+    async function loadRaffleRound(factionId) {
+    currentRaffleFactionId = factionId;
+    const jwt = SafeStore.get(JWT_STORAGE);
+    const container = document.getElementById("occ-raffle-body");
+
+    const res = await apiRequest("GET", `/api/chain-watcher/raffle/rounds?faction_id=${factionId}`, null, jwt);
+    if (res.status !== 200 || !res.data?.rounds) {
+        currentRaffleRoundId = null;
+        container.innerHTML = "<p style='text-align:center; padding:10px;'>Failed to load raffle rounds.</p>";
+        document.getElementById("occ-raffle-draw-btn").disabled = true;
+        return;
+    }
+
+    const active = res.data.rounds.find(r => r.status !== "completed");
+    if (!active) {
+        currentRaffleRoundId = null;
+        container.innerHTML = "<p style='text-align:center; padding:10px;'>No active raffle round.<br>Start one on the website.</p>";
+        document.getElementById("occ-raffle-draw-btn").disabled = true;
+        return;
+    }
+
+    currentRaffleRoundId = active.id;
+    await renderRaffleRound(active.id);
+    }
+
+    async function renderRaffleRound(roundId) {
+    const jwt = SafeStore.get(JWT_STORAGE);
+    const container = document.getElementById("occ-raffle-body");
+    const drawBtn = document.getElementById("occ-raffle-draw-btn");
+
+    const res = await apiRequest("GET", `/api/chain-watcher/raffle/rounds/${roundId}`, null, jwt);
+    if (res.status !== 200 || !res.data?.round) {
+        container.innerHTML = "<p style='text-align:center; padding:10px;'>Failed to load round details.</p>";
+        drawBtn.disabled = true;
+        return;
+    }
+
+    const { round, overview, winners, entries } = res.data;
+    const pendingCount = (entries || []).filter(e => e.review_status === "pending").length;
+
+    let html = `<div id="occ-raffle-info">Round #${round.id} — ${new Date(round.period_start * 1000).toLocaleDateString()} → ${new Date(round.period_end * 1000).toLocaleDateString()}<br>Status: ${round.status}</div>`;
+
+    if (pendingCount > 0) {
+        html += `<div style="color:#ff6b6b; text-align:center; font-size:calc(var(--occ-font-base) - 2px); margin-bottom:6px;">${pendingCount} entr${pendingCount === 1 ? "y" : "ies"} need review on the website</div>`;
+    }
+
+    html += `<div id="occ-raffle-reel">🎲 Ready</div>`;
+    html += `<div style="margin-top:6px; font-weight:bold; font-size:calc(var(--occ-font-base) - 1px);">Tickets</div>`;
+
+    if (overview && overview.length) {
+        overview.forEach(o => {
+            html += `<div class="occ-raffle-row"><span>${o.username}</span><span>${o.slots}</span></div>`;
+        });
+    } else {
+        html += `<p style='text-align:center; padding:6px; color:#888;'>No tickets in the pool.</p>`;
+    }
+
+    if (winners && winners.length) {
+        html += `<div style="margin-top:10px; font-weight:bold; font-size:calc(var(--occ-font-base) - 1px);">Winners</div>`;
+        winners.forEach(w => {
+            html += `<div class="occ-raffle-row"><span>#${w.draw_number} <span class="occ-raffle-winner">${w.username}</span></span><span>${w.removal_mode === "all_tickets" ? "✔ out" : ""}</span></div>`;
+        });
+    }
+
+    container.innerHTML = html;
+
+    const names = (overview || []).map(o => o.username);
+    drawBtn.disabled = round.status === "completed" || names.length === 0;
+    drawBtn.dataset.names = JSON.stringify(names);
+    }
+
+    async function drawRaffleWinner() {
+    if (!currentRaffleRoundId) return;
+
+    const jwt = SafeStore.get(JWT_STORAGE);
+    const drawBtn = document.getElementById("occ-raffle-draw-btn");
+    const reel = document.getElementById("occ-raffle-reel");
+    const names = JSON.parse(drawBtn.dataset.names || "[]");
+
+    if (!names.length) { setStatus("No tickets in the pool", true); return; }
+
+    drawBtn.disabled = true;
+    if (reel) reel.classList.add("spinning");
+
+    let spinTimer = null;
+    let delay = 80;
+    (function spinTick() {
+        if (reel) reel.textContent = names[Math.floor(Math.random() * names.length)];
+        delay = Math.min(delay * 1.08, 260);
+        spinTimer = setTimeout(spinTick, delay);
+    })();
+
+    const resPromise = apiRequest("POST", `/api/chain-watcher/raffle/rounds/${currentRaffleRoundId}/draw`, {
+        removal_mode: RAFFLE_REMOVAL_MODE, animation_style: "slot_machine"
+    }, jwt);
+
+    // Keeps the reel spinning for a minimum beat even if the response is instant.
+    const [res] = await Promise.all([resPromise, new Promise(r => setTimeout(r, RAFFLE_SPIN_MIN_MS))]);
+
+    clearTimeout(spinTimer);
+    if (reel) reel.classList.remove("spinning");
+
+    if (res.status !== 200 || !res.data?.winner) {
+        if (reel) reel.textContent = res.data?.error || "No tickets left";
+        setStatus("Draw failed", true);
+        await renderRaffleRound(currentRaffleRoundId);
+        return;
+    }
+
+    if (reel) reel.textContent = `🏆 ${res.data.winner.username}`;
+    setStatus("Winner drawn ✔");
+    await renderRaffleRound(currentRaffleRoundId);
+    }
+
     /**********************************************************
      * API & HELPERS
      **********************************************************/
@@ -905,18 +1359,25 @@ transform: translateY(3px);
 
     async function togglePanel() {
         const panel = document.getElementById("occ-panel");
-        if (panel.style.display === "block") {
-            panel.style.display = "none";
+        const sidebar = panelPrefs.dockMode === "sidebar";
+        const isOpen = sidebar ? panel.classList.contains("occ-sidebar-open") : panel.style.display === "block";
+        if (isOpen) {
+            closePanel();
             return;
         }
         setStatus("Ready");
         applyPanelPrefs();
         showMainPage();
         panel.style.display = "block";
+        if (sidebar) panel.classList.add("occ-sidebar-open");
         await checkCouncilStatus();
     }
 
-    function closePanel() { document.getElementById("occ-panel").style.display = "none"; }
+    function closePanel() {
+        const panel = document.getElementById("occ-panel");
+        if (panelPrefs.dockMode === "sidebar") panel.classList.remove("occ-sidebar-open");
+        else panel.style.display = "none";
+    }
 
     function setStatus(text, error = false) {
         const el = document.getElementById("occ-status");
@@ -939,6 +1400,7 @@ transform: translateY(3px);
             SafeStore.remove(USER_STORAGE);
             SafeStore.remove(LAST_AUTH_STORAGE);
             SafeStore.remove(JWT_STORAGE);
+            SafeStore.remove(FACTION_ID_STORAGE);
             //const launcher = document.getElementById("occ-launcher");
             //if (launcher) launcher.style.display = "none";
             const panel = document.getElementById("occ-panel");
@@ -949,6 +1411,7 @@ transform: translateY(3px);
         }
 
         SafeStore.set(LAST_AUTH_STORAGE, Date.now());
+        SafeStore.set(FACTION_ID_STORAGE, String(factionId));
         return factionId;
     } catch (e) {
         console.error("Auth check failed", e);
@@ -1216,6 +1679,7 @@ transform: translateY(3px);
 
     function init() {
         createPanel();
+        applyPanelPrefs();
         addFactionOperationsButton();
         addSettingsOperationsEntry();
 

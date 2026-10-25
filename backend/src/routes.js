@@ -47,6 +47,7 @@ import * as rankRewardsController from './controllers/rankRewardsController.js';
 import * as chainWatcherController from './controllers/chainWatcherController.js';
 import * as meritController from './controllers/meritController.js';
 import * as chainRaffleController from './controllers/chainRaffleController.js';
+import * as watcherXanaxController from './controllers/watcherXanaxController.js';
 
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -815,6 +816,14 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname.match(/^\/api\/leadership\/xanax\/\d+$/) && method === 'DELETE') {
       return xanaxController.deleteDistribution(request, env);
+    }
+
+    // Watcher xanax distribution tracking (Chain Watch shift hours → Xanax)
+    if (pathname === '/api/leadership/watcher-xanax' && method === 'GET') {
+      return watcherXanaxController.getDistributions(request, env);
+    }
+    if (pathname === '/api/leadership/watcher-xanax' && method === 'POST') {
+      return watcherXanaxController.markDistribution(request, env, user);
     }
 
     // War tracking endpoints
