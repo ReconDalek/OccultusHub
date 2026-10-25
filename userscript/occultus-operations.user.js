@@ -40,7 +40,7 @@
     const PANEL_BASE_TOP = 60;
     const PANEL_BASE_WIDTH = 260;
     const PANEL_BASE_HEIGHT = 500;
-    const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13, dockMode: "modal" };
+    const DEFAULT_PANEL_PREFS = { widthScale: 100, heightScale: 100, offsetX: 0, offsetY: 0, fontSize: 13, dockMode: "modal", sidebarSide: "right", sidebarHandleTop: 50 };
     const RAFFLE_REMOVAL_MODE = "all_tickets";
     const RAFFLE_SPIN_MIN_MS = 1400;
     const COUNCIL_ROLES = ["council", "archon", "leader", "co-leader"];
@@ -63,6 +63,7 @@
     let lastCheck = 0;
     let currentRaffleFactionId = null;
     let currentRaffleRoundId = null;
+    let currentWatcherRange = null;
 
     /**********************************************************
      * STYLES
@@ -183,30 +184,32 @@ transform: translateY(3px);
 .occ-slider-group input[type="range"] { width: 100%; accent-color: #5865F2; cursor: pointer; }
 #occ-settings-page .nav-btn { margin-top: 16px !important; }
 
+#occ-panel select, #occ-panel input[type="datetime-local"] { width: 100%; margin-top: 4px; padding: 6px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 4px; font-size: calc(var(--occ-font-base) - 1px); box-sizing: border-box; }
+
 #occ-panel.occ-sidebar-mode {
     border-radius: 8px 0 0 8px !important;
     transform: translateX(105%) !important;
     transition: transform 0.25s ease !important;
 }
+#occ-panel.occ-sidebar-mode.occ-side-left {
+    border-radius: 0 8px 8px 0 !important;
+    transform: translateX(-105%) !important;
+}
 #occ-panel.occ-sidebar-mode.occ-sidebar-open { transform: translateX(0) !important; }
 
 #occ-edge-tab {
     position: fixed;
-    top: 50%;
-    right: 0;
-    transform: translateY(-50%);
     background: #005774;
     color: #fff;
     padding: 14px 4px;
-    border-radius: 6px 0 0 6px;
-    cursor: pointer;
+    cursor: grab;
+    touch-action: none;
     z-index: 9999999;
     writing-mode: vertical-rl;
     font-size: 12px;
     font-weight: bold;
     letter-spacing: 1px;
     user-select: none;
-    box-shadow: -2px 0 6px rgba(0,0,0,0.5);
     display: none;
 }
 #occ-edge-tab:hover { background: #007ea0; }
@@ -258,6 +261,15 @@ transform: translateY(3px);
 </div>
 
 <div id="occ-watcher-xanax-page" style="display:none;">
+    <div class="occ-slider-group" style="margin-top:0;">
+        <label>Range</label>
+        <select id="occ-watcher-range">
+            <option value="month" selected>This Month</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="all">All Time</option>
+        </select>
+    </div>
     <div id="occ-watcher-list"></div>
     <button id="occ-watcher-back" class="red-btn nav-btn">⬅ Back</button>
 </div>
@@ -265,6 +277,23 @@ transform: translateY(3px);
 <div id="occ-raffle-page" style="display:none;">
     <div id="occ-raffle-body"></div>
     <button id="occ-raffle-draw-btn" class="green-btn">🎰 Draw Winner</button>
+    <button id="occ-raffle-new-btn">➕ New Round</button>
+    <div id="occ-raffle-create-form" style="display:none;">
+        <div class="occ-slider-group">
+            <label>Period Start</label>
+            <input type="datetime-local" id="occ-raffle-start">
+        </div>
+        <div class="occ-slider-group">
+            <label>Period End</label>
+            <input type="datetime-local" id="occ-raffle-end">
+        </div>
+        <div class="occ-slider-group">
+            <label>Draws <span id="occ-raffle-drawcount-val">1</span></label>
+            <input type="range" id="occ-raffle-drawcount" min="1" max="10" step="1" value="1">
+        </div>
+        <button id="occ-raffle-create-confirm" class="green-btn">Create Round</button>
+        <button id="occ-raffle-create-cancel" class="red-btn">Cancel</button>
+    </div>
     <button id="occ-raffle-refresh">🔄 Refresh</button>
     <button id="occ-raffle-back" class="red-btn nav-btn">⬅ Back</button>
 </div>
@@ -334,10 +363,19 @@ transform: translateY(3px);
         document.getElementById("occ-xan-back").onclick = openCouncil;
         document.getElementById("occ-watcher-xanax").onclick = fetchAndShowWatcherXanax;
         document.getElementById("occ-watcher-back").onclick = openCouncil;
+        document.getElementById("occ-watcher-range").onchange = fetchAndShowWatcherXanax;
         document.getElementById("occ-chain-raffle").onclick = fetchAndShowRaffle;
         document.getElementById("occ-raffle-back").onclick = openCouncil;
         document.getElementById("occ-raffle-refresh").onclick = () => currentRaffleFactionId && loadRaffleRound(currentRaffleFactionId);
         document.getElementById("occ-raffle-draw-btn").onclick = drawRaffleWinner;
+        document.getElementById("occ-raffle-new-btn").onclick = openRaffleCreateForm;
+        document.getElementById("occ-raffle-create-cancel").onclick = () => {
+            document.getElementById("occ-raffle-create-form").style.display = "none";
+        };
+        document.getElementById("occ-raffle-create-confirm").onclick = createRaffleRound;
+        document.getElementById("occ-raffle-drawcount").oninput = (e) => {
+            document.getElementById("occ-raffle-drawcount-val").textContent = e.target.value;
+        };
         document.getElementById("occ-update-api").onclick = manualUpdateKey;
         document.getElementById("occ-warnings-btn").onclick = fetchAndShowWarnings;
         document.getElementById("occ-warn-back").onclick = openCouncil;
@@ -351,8 +389,8 @@ transform: translateY(3px);
         const ySlider = document.getElementById("occ-y-slider");
         const fontSlider = document.getElementById("occ-font-slider");
 
-        widthSlider.oninput = (e) => { updateLivePanelPref("widthScale", parseInt(e.target.value, 10)); if (panelPrefs.dockMode !== "sidebar") showResizeOutline(); };
-        heightSlider.oninput = (e) => { updateLivePanelPref("heightScale", parseInt(e.target.value, 10)); if (panelPrefs.dockMode !== "sidebar") showResizeOutline(); };
+        widthSlider.oninput = (e) => { updateLivePanelPref("widthScale", parseInt(e.target.value, 10)); showResizeOutline(); };
+        heightSlider.oninput = (e) => { updateLivePanelPref("heightScale", parseInt(e.target.value, 10)); showResizeOutline(); };
         xSlider.oninput = (e) => updateLivePanelPref("offsetX", parseInt(e.target.value, 10));
         ySlider.oninput = (e) => updateLivePanelPref("offsetY", parseInt(e.target.value, 10));
         fontSlider.oninput = (e) => updateLivePanelPref("fontSize", parseInt(e.target.value, 10));
@@ -389,32 +427,53 @@ transform: translateY(3px);
 
     // Clamps the target size to the viewport (minus a small margin) so an
     // oversized panel can never itself force scrolling/overflow of the page.
-    // Sidebar mode ignores heightScale — it always runs the full viewport
-    // height, docked to an edge, rather than a centered fixed-height box.
+    // Sidebar mode uses the same width/height sliders as modal mode — only
+    // its position differs (docked to an edge, centered on the handle).
     function panelTargetBox(prefs) {
         const idealWidth = Math.round(PANEL_BASE_WIDTH * prefs.widthScale / 100);
-        const width = Math.min(idealWidth, window.innerWidth - 20);
-        if (prefs.dockMode === "sidebar") {
-            return { width, height: window.innerHeight };
-        }
         const idealHeight = Math.round(PANEL_BASE_HEIGHT * prefs.heightScale / 100);
         return {
-            width,
+            width: Math.min(idealWidth, window.innerWidth - 20),
             height: Math.min(idealHeight, window.innerHeight - 20)
         };
     }
 
-    // Plain pixel left/top clamped so the box can never sit past any edge
-    // of the window, however far the position sliders are pushed. Sidebar
-    // mode docks flush to the right edge, full height, ignoring offsetX/Y
-    // (open/closed state is handled separately via the .occ-sidebar-open class).
+    // Plain pixel left/top clamped so the box can never sit past any edge of
+    // the window. Sidebar mode docks flush to whichever edge the handle is
+    // on, vertically centered on the handle's own position (sidebarHandleTop,
+    // a % of viewport height) — open/closed state is handled separately via
+    // the .occ-sidebar-open class.
     function panelClampedPosition(prefs, box) {
         if (prefs.dockMode === "sidebar") {
-            return { left: window.innerWidth - box.width, top: 0 };
+            const handleCenterY = (prefs.sidebarHandleTop / 100) * window.innerHeight;
+            const top = Math.max(0, Math.min(handleCenterY - box.height / 2, window.innerHeight - box.height));
+            const left = prefs.sidebarSide === "left" ? 0 : window.innerWidth - box.width;
+            return { left, top };
         }
         const left = Math.max(0, Math.min((window.innerWidth - box.width) / 2 + prefs.offsetX, window.innerWidth - box.width));
         const top = Math.max(0, Math.min(PANEL_BASE_TOP + prefs.offsetY, window.innerHeight - box.height));
         return { left, top };
+    }
+
+    // Positions the edge tab/handle itself — independent of whether the panel
+    // is currently open, so it stays put (and draggable) either way.
+    function applyEdgeTabPosition() {
+        const tab = document.getElementById("occ-edge-tab");
+        if (!tab) return;
+        const top = Math.max(0, Math.min((panelPrefs.sidebarHandleTop / 100) * window.innerHeight, window.innerHeight));
+        tab.style.top = `${top}px`;
+        tab.style.transform = "translateY(-50%)";
+        if (panelPrefs.sidebarSide === "left") {
+            tab.style.left = "0";
+            tab.style.right = "auto";
+            tab.style.borderRadius = "0 6px 6px 0";
+            tab.style.boxShadow = "2px 0 6px rgba(0,0,0,0.5)";
+        } else {
+            tab.style.right = "0";
+            tab.style.left = "auto";
+            tab.style.borderRadius = "6px 0 0 6px";
+            tab.style.boxShadow = "-2px 0 6px rgba(0,0,0,0.5)";
+        }
     }
 
     function applyPanelPrefs() {
@@ -422,6 +481,7 @@ transform: translateY(3px);
         if (!panel) return;
         const sidebar = panelPrefs.dockMode === "sidebar";
         panel.classList.toggle("occ-sidebar-mode", sidebar);
+        panel.classList.toggle("occ-side-left", sidebar && panelPrefs.sidebarSide === "left");
 
         const box = panelTargetBox(panelPrefs);
         const pos = panelClampedPosition(panelPrefs, box);
@@ -448,7 +508,10 @@ transform: translateY(3px);
         panel.style.setProperty("--occ-font-base", `${panelPrefs.fontSize}px`);
 
         const edgeTab = document.getElementById("occ-edge-tab");
-        if (edgeTab) edgeTab.style.display = sidebar ? "block" : "none";
+        if (edgeTab) {
+            edgeTab.style.display = sidebar ? "block" : "none";
+            if (sidebar) applyEdgeTabPosition();
+        }
     }
 
     // Live preview while dragging: updates the in-memory value + the panel's
@@ -480,11 +543,12 @@ transform: translateY(3px);
         updateDockModeUI();
     }
 
-    // Reset Size/Position intentionally leaves dockMode alone — Sidebar Mode
-    // is a feature opt-in, not part of the size/position layout it resets.
+    // Reset Size/Position intentionally leaves dockMode/sidebarSide/
+    // sidebarHandleTop alone — Sidebar Mode and where its handle sits are
+    // feature opt-ins, not part of the size/position layout being reset.
     function resetPanelPrefs() {
-        const dockMode = panelPrefs.dockMode;
-        panelPrefs = { ...DEFAULT_PANEL_PREFS, dockMode };
+        const { dockMode, sidebarSide, sidebarHandleTop } = panelPrefs;
+        panelPrefs = { ...DEFAULT_PANEL_PREFS, dockMode, sidebarSide, sidebarHandleTop };
         persistPanelPrefs();
         applyPanelPrefs();
         syncPanelPrefSliders();
@@ -500,8 +564,9 @@ transform: translateY(3px);
         setStatus(panelPrefs.dockMode === "sidebar" ? "Sidebar Mode enabled" : "Sidebar Mode disabled");
     }
 
-    // The position/height sliders don't apply once docked to an edge at full
-    // height, so hide them rather than let them silently do nothing.
+    // The horizontal position sliders don't apply once docked to an edge
+    // (the handle drag owns that), so hide just those. Height still matters
+    // — the panel is centered on the handle at whatever height is set.
     function updateDockModeUI() {
         const sidebar = panelPrefs.dockMode === "sidebar";
         const btn = document.getElementById("occ-dockmode-toggle");
@@ -509,38 +574,73 @@ transform: translateY(3px);
             btn.textContent = sidebar ? "Sidebar Mode: ON" : "Enable Sidebar Mode";
             btn.className = sidebar ? "green-btn" : "";
         }
-        ["occ-height-group", "occ-x-group", "occ-y-group"].forEach(id => {
+        ["occ-x-group", "occ-y-group"].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = sidebar ? "none" : "";
         });
     }
 
-    // Edge tab: tap to toggle the sidebar, or swipe it left (towards the
-    // screen's center) to open and swipe the open panel right to close —
-    // only meaningful while Sidebar Mode is on (the tab is hidden otherwise).
+    // Edge tab: tap (no real movement) toggles the sidebar open/closed.
+    // Drag it to relocate — vertical movement repositions it along the edge
+    // (the panel re-centers on it), and dragging far enough across the
+    // screen flips it (and the panel) to the opposite edge. Swiping the open
+    // panel back towards its edge closes it. All only relevant once Sidebar
+    // Mode is on (the tab is hidden otherwise).
     function setupEdgeTabGestures() {
         const tab = document.getElementById("occ-edge-tab");
         const panel = document.getElementById("occ-panel");
         if (!tab || !panel || tab.dataset.bound) return;
         tab.dataset.bound = "1";
 
-        tab.addEventListener("click", async (e) => {
-            e.preventDefault();
-            const key = await validateAndSaveKey();
-            if (key) togglePanel();
+        let dragging = false;
+        let moved = false;
+        let startX = 0, startY = 0, startTop = 50;
+
+        tab.addEventListener("pointerdown", (e) => {
+            dragging = true;
+            moved = false;
+            startX = e.clientX;
+            startY = e.clientY;
+            startTop = panelPrefs.sidebarHandleTop;
+            tab.style.cursor = "grabbing";
+            tab.setPointerCapture?.(e.pointerId);
         });
 
-        let tabStartX = null;
-        tab.addEventListener("touchstart", (e) => { tabStartX = e.touches[0].clientX; }, { passive: true });
-        tab.addEventListener("touchend", async (e) => {
-            if (tabStartX == null) return;
-            const dx = tabStartX - e.changedTouches[0].clientX;
-            tabStartX = null;
-            if (dx > 30 && !panel.classList.contains("occ-sidebar-open")) {
+        tab.addEventListener("pointermove", (e) => {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (!moved && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) moved = true;
+            if (!moved) return;
+
+            panelPrefs.sidebarHandleTop = Math.max(4, Math.min(96, startTop + (dy / window.innerHeight) * 100));
+
+            // Checked against the CURRENT side (not frozen at drag-start), so
+            // reversing direction mid-drag can flip it back before release.
+            const flipThreshold = window.innerWidth * 0.35;
+            if (panelPrefs.sidebarSide === "right" && -dx > flipThreshold) panelPrefs.sidebarSide = "left";
+            else if (panelPrefs.sidebarSide === "left" && dx > flipThreshold) panelPrefs.sidebarSide = "right";
+
+            applyEdgeTabPosition();
+            if (panel.classList.contains("occ-sidebar-open")) applyPanelPrefs();
+        });
+
+        const endDrag = () => {
+            if (!dragging) return;
+            dragging = false;
+            tab.style.cursor = "grab";
+            if (moved) { persistPanelPrefs(); applyPanelPrefs(); }
+        };
+
+        tab.addEventListener("pointerup", async () => {
+            const wasMoved = moved;
+            endDrag();
+            if (!wasMoved) {
                 const key = await validateAndSaveKey();
                 if (key) togglePanel();
             }
-        }, { passive: true });
+        });
+        tab.addEventListener("pointercancel", endDrag);
 
         let panelStartX = null;
         panel.addEventListener("touchstart", (e) => { panelStartX = e.touches[0].clientX; }, { passive: true });
@@ -548,7 +648,8 @@ transform: translateY(3px);
             if (panelStartX == null) return;
             const dx = e.changedTouches[0].clientX - panelStartX;
             panelStartX = null;
-            if (dx > 60 && panelPrefs.dockMode === "sidebar" && panel.classList.contains("occ-sidebar-open")) {
+            const closedTowardsEdge = panelPrefs.sidebarSide === "left" ? dx < -60 : dx > 60;
+            if (closedTowardsEdge && panelPrefs.dockMode === "sidebar" && panel.classList.contains("occ-sidebar-open")) {
                 closePanel();
             }
         }, { passive: true });
@@ -981,8 +1082,23 @@ transform: translateY(3px);
     // ─────────────────────────────────────────────────────────────────────
     // Watcher Xanax — 1 Xanax per watched Chain Watch hour, same armoury
     // auto-fill flow as Monthly Xanax (see autoFillXanax below), just a
-    // different source list and a flat (no rank) quantity.
+    // different source list and a flat (no rank) quantity. Scoped to a date
+    // range rather than always showing every unpaid hour ever watched.
     // ─────────────────────────────────────────────────────────────────────
+    function computeWatcherRange(preset) {
+        const now = new Date();
+        const to = Math.floor(now.getTime() / 1000);
+        let from = 0;
+        if (preset === "month") {
+            from = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+        } else if (preset === "7d") {
+            from = to - 7 * 86400;
+        } else if (preset === "30d") {
+            from = to - 30 * 86400;
+        }
+        return { from, to };
+    }
+
     async function fetchAndShowWatcherXanax() {
     const globalCooldown = sessionStorage.getItem("occ_global_cooldown");
     if (globalCooldown && Date.now() < parseInt(globalCooldown)) {
@@ -1003,7 +1119,10 @@ transform: translateY(3px);
     watBtn.textContent = "⏳ Loading...";
     setStatus("Fetching watcher hours...");
 
-    const res = await apiRequest("GET", "/api/leadership/watcher-xanax", null, jwt);
+    const rangeSelect = document.getElementById("occ-watcher-range");
+    currentWatcherRange = computeWatcherRange(rangeSelect ? rangeSelect.value : "month");
+
+    const res = await apiRequest("GET", `/api/leadership/watcher-xanax?from=${currentWatcherRange.from}&to=${currentWatcherRange.to}`, null, jwt);
 
     watBtn.disabled = false;
     watBtn.innerHTML = originalContent;
@@ -1081,7 +1200,8 @@ transform: translateY(3px);
                     const originalIcon = checkBtn.innerHTML;
                     checkBtn.innerHTML = "⏳";
                     const markRes = await apiRequest("POST", "/api/leadership/watcher-xanax", {
-                        torn_user_id: userId, username: name, quantity: calcQty
+                        torn_user_id: userId, username: name, quantity: calcQty,
+                        from: currentWatcherRange?.from, to: currentWatcherRange?.to
                     }, jwt);
                     if (markRes.status === 200) {
                         rowWrapper.classList.add("status-complete");
@@ -1139,6 +1259,8 @@ transform: translateY(3px);
         return;
     }
 
+    document.getElementById("occ-raffle-create-form").style.display = "none";
+
     const raffleBtn = document.getElementById("occ-chain-raffle");
     const originalContent = raffleBtn.innerHTML;
     raffleBtn.disabled = true;
@@ -1172,7 +1294,7 @@ transform: translateY(3px);
     const active = res.data.rounds.find(r => r.status !== "completed");
     if (!active) {
         currentRaffleRoundId = null;
-        container.innerHTML = "<p style='text-align:center; padding:10px;'>No active raffle round.<br>Start one on the website.</p>";
+        container.innerHTML = "<p style='text-align:center; padding:10px;'>No active raffle round.<br>Tap ➕ New Round to start one.</p>";
         document.getElementById("occ-raffle-draw-btn").disabled = true;
         return;
     }
@@ -1268,6 +1390,63 @@ transform: translateY(3px);
     if (reel) reel.textContent = `🏆 ${res.data.winner.username}`;
     setStatus("Winner drawn ✔");
     await renderRaffleRound(currentRaffleRoundId);
+    }
+
+    // Formats a Date as "YYYY-MM-DDTHH:mm" in LOCAL time, the format
+    // <input type="datetime-local"> expects — and round-trips correctly
+    // since `new Date(thatString)` also parses it as local time.
+    function toDatetimeLocal(date) {
+        const pad = n => String(n).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    // Defaults the new-round form to the last 24 hours — leadership adjusts
+    // from there to match whatever chain/window they're actually running
+    // the raffle for.
+    function openRaffleCreateForm() {
+        const now = new Date();
+        const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        document.getElementById("occ-raffle-start").value = toDatetimeLocal(dayAgo);
+        document.getElementById("occ-raffle-end").value = toDatetimeLocal(now);
+        document.getElementById("occ-raffle-drawcount").value = 1;
+        document.getElementById("occ-raffle-drawcount-val").textContent = "1";
+        document.getElementById("occ-raffle-create-form").style.display = "block";
+    }
+
+    async function createRaffleRound() {
+        const jwt = SafeStore.get(JWT_STORAGE);
+        const factionId = currentRaffleFactionId;
+        if (!factionId) { setStatus("Unknown faction", true); return; }
+
+        const startInput = document.getElementById("occ-raffle-start").value;
+        const endInput = document.getElementById("occ-raffle-end").value;
+        if (!startInput || !endInput) { setStatus("Pick a start and end date/time", true); return; }
+
+        const periodStart = Math.floor(new Date(startInput).getTime() / 1000);
+        const periodEnd = Math.floor(new Date(endInput).getTime() / 1000);
+        if (!(periodEnd > periodStart)) { setStatus("End must be after start", true); return; }
+
+        const drawCount = parseInt(document.getElementById("occ-raffle-drawcount").value, 10) || 1;
+
+        const confirmBtn = document.getElementById("occ-raffle-create-confirm");
+        confirmBtn.disabled = true;
+        setStatus("Creating round...");
+
+        const res = await apiRequest("POST", "/api/chain-watcher/raffle/rounds", {
+            faction_id: factionId, period_start: periodStart, period_end: periodEnd, draw_count: drawCount
+        }, jwt);
+
+        confirmBtn.disabled = false;
+
+        if (res.status !== 200 || !res.data?.round) {
+            setStatus("Failed to create round", true);
+            return;
+        }
+
+        document.getElementById("occ-raffle-create-form").style.display = "none";
+        currentRaffleRoundId = res.data.round.id;
+        setStatus(`Round created — ${res.data.entriesPulled || 0} ticket(s) pulled ✔`);
+        await renderRaffleRound(currentRaffleRoundId);
     }
 
     /**********************************************************
