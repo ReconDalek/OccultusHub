@@ -298,7 +298,16 @@ export async function getLiveStatusForBot(request, env) {
 // next" while the hour right after this one sits silently unclaimed.
 async function computeCurrentWatcher(env, factionId) {
   const hour = 3600;
-  const nowSecs = Math.floor(Date.now() / 1000);
+  // The bot's ping fires 5 minutes BEFORE each hour (see startChainWatcher),
+  // to announce the handoff just ahead of it happening — so "current" here
+  // means the slot about to start, not the one about to end. Plain wall-
+  // clock `now` at :55 still falls inside the ending hour, which produced
+  // exactly that bug: at 00:55, it announced the 00:00 watcher as "current"
+  // (already finishing) and the 01:00 watcher as "next" (already starting).
+  // A small forward offset — comfortably past the 5-minute early-fire
+  // window but nowhere near the following hour's own early-fire window —
+  // pushes `now` past the boundary so curSlot resolves to the upcoming hour.
+  const nowSecs = Math.floor(Date.now() / 1000) + 10 * 60;
   const curSlot = Math.floor(nowSecs / hour) * hour;
   const nextSlot = curSlot + hour;
 
