@@ -244,7 +244,7 @@ export async function endSession(request, env, user) {
 // Only actually calls Torn while a session is active; otherwise this is a
 // cheap no-op so a stray/old client polling this can't burn API quota.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function getLiveStatus(request, env) {
+export async function getLiveStatus(request, env, user) {
   const url = new URL(request.url);
   const factionId = validFactionId(url.searchParams.get('faction_id'));
   if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
@@ -255,13 +255,78 @@ export async function getLiveStatus(request, env) {
       return jsonResponse({ factionId, status: 'no_session', fetchedAt: Math.floor(Date.now() / 1000) });
     }
 
-    if (session.is_test) return jsonResponse(generateTestChainData(factionId, session));
+    // Only counts as "watching" once there's an actual live timer to watch —
+    // a stray/old tab polling with no active session doesn't count. Best
+    // effort: never let a tracking hiccup break the actual poll response.
+    const viewers = await trackViewer(env, user.tornUserId, factionId).catch((e) => {
+      console.error('trackViewer error:', e);
+      return null;
+    });
 
-    return jsonResponse(await fetchLiveChainFromTorn(env, factionId));
+    if (session.is_test) return jsonResponse({ ...generateTestChainData(factionId, session), viewers });
+
+    return jsonResponse({ ...(await fetchLiveChainFromTorn(env, factionId)), viewers });
   } catch (err) {
     console.error('getLiveStatus error:', err);
     return errorResponse(err.status ? err.message : `Torn API error: ${err.message}`, err.status || 502);
   }
+}
+
+const VIEWER_ACTIVE_WINDOW_SECONDS = 15; // a little more than the 10s client poll interval
+
+// Upserts this user's "last polled" timestamp, then returns how many
+// viewers are currently active (polled within the last 15s) for this
+// faction and overall (all factions combined), bumping the all-time peak(s)
+// if this moment's count is a new high.
+async function trackViewer(env, tornUserId, factionId) {
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const cutoff = nowSecs - VIEWER_ACTIVE_WINDOW_SECONDS;
+
+  await env.DB.prepare(
+    `INSERT INTO chain_watch_viewers (torn_user_id, faction_id, last_polled_at) VALUES (?, ?, ?)
+     ON CONFLICT(torn_user_id, faction_id) DO UPDATE SET last_polled_at = excluded.last_polled_at`
+  ).bind(tornUserId, factionId, nowSecs).run();
+
+  const { count: current } = await env.DB.prepare(
+    `SELECT COUNT(*) AS count FROM chain_watch_viewers WHERE faction_id = ? AND last_polled_at >= ?`
+  ).bind(factionId, cutoff).first();
+
+  const { count: currentOverall } = await env.DB.prepare(
+    `SELECT COUNT(*) AS count FROM chain_watch_viewers WHERE last_polled_at >= ?`
+  ).bind(cutoff).first();
+
+  const [perFaction, overall] = await Promise.all([
+    bumpViewerPeak(env, factionId, current),
+    bumpViewerPeak(env, 0, currentOverall),
+  ]);
+
+  return {
+    current, peak: perFaction.peak_count, peakAt: perFaction.peak_at,
+    currentOverall, peakOverall: overall.peak_count, peakOverallAt: overall.peak_at,
+  };
+}
+
+// faction_id = 0 is the combined/overall peak across all factions at once.
+async function bumpViewerPeak(env, factionId, currentCount) {
+  const existing = await env.DB.prepare(
+    `SELECT peak_count, peak_at FROM chain_watch_viewer_peaks WHERE faction_id = ?`
+  ).bind(factionId).first();
+
+  if (!existing) {
+    await env.DB.prepare(
+      `INSERT INTO chain_watch_viewer_peaks (faction_id, peak_count, peak_at) VALUES (?, ?, CURRENT_TIMESTAMP)`
+    ).bind(factionId, currentCount).run();
+    return { peak_count: currentCount, peak_at: new Date().toISOString() };
+  }
+
+  if (currentCount > existing.peak_count) {
+    await env.DB.prepare(
+      `UPDATE chain_watch_viewer_peaks SET peak_count = ?, peak_at = CURRENT_TIMESTAMP WHERE faction_id = ?`
+    ).bind(currentCount, factionId).run();
+    return { peak_count: currentCount, peak_at: new Date().toISOString() };
+  }
+
+  return existing;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

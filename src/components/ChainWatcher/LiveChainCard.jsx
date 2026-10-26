@@ -471,6 +471,15 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
         </div>
       )}
 
+      {data.status === 'active' && data.viewers && (
+        <p
+          title={`Peak for this faction: ${data.viewers.peak}${data.viewers.peakAt ? ` (${new Date(data.viewers.peakAt).toLocaleString()})` : ''} • Peak overall: ${data.viewers.peakOverall}`}
+          style={{ fontSize: 11.5, color: 'var(--text-faint)', margin: '6px 0 0' }}
+        >
+          👀 {data.viewers.current} watching now (peak {data.viewers.peak})
+        </p>
+      )}
+
       {isLeader && (
         <div style={{ marginTop: 12 }}>
           <MailerButton />
