@@ -472,7 +472,7 @@ export async function getMerits(request, env) {
   if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
 
   try {
-    const [{ pool, simplePool }, awardedResult] = await Promise.all([
+    const [{ pool, simplePool }, awardedResult, activeSession] = await Promise.all([
       getCachedPools(env, factionId),
       env.DB.prepare(
         `SELECT mm.torn_user_id, mm.merit_type, fm.username
@@ -480,7 +480,30 @@ export async function getMerits(request, env) {
          JOIN faction_members fm ON fm.torn_user_id = mm.torn_user_id
          WHERE fm.faction_id = ? AND fm.is_active = 1`
       ).bind(factionId).all(),
+      env.DB.prepare(
+        `SELECT id FROM chain_watch_sessions WHERE faction_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`
+      ).bind(factionId).first(),
     ]);
+
+    // Who's landed a bonus hit on the chain CURRENTLY being watched (if
+    // any) — distinct from "already has this merit" generally, which could
+    // be from any past chain. Surfaced separately so the ranked "who's
+    // next" list isn't the only signal (a member vanishing from it reads as
+    // ambiguous — could mean anything — rather than "they already got it
+    // this chain").
+    const currentChainAwards = {};
+    if (activeSession) {
+      const { results } = await env.DB.prepare(
+        `SELECT d.merit_type, d.torn_user_id, d.chain_position, COALESCE(fm.username, 'Unknown') AS username
+         FROM chain_watch_bonus_detections d
+         LEFT JOIN faction_members fm ON fm.torn_user_id = d.torn_user_id
+         WHERE d.session_id = ?
+         ORDER BY d.chain_position ASC`
+      ).bind(activeSession.id).all();
+      for (const row of (results || [])) {
+        (currentChainAwards[row.merit_type] ||= []).push(row);
+      }
+    }
 
     const awardedSet = new Set((awardedResult.results || []).map(r => `${r.torn_user_id}:${r.merit_type}`));
     const sorted = [...pool].sort((a, b) => b.score - a.score);
@@ -520,6 +543,7 @@ export async function getMerits(request, env) {
       simpleCandidates,
       awardedMembers,
       awardedCounts,
+      currentChainAwards,
     });
   } catch (err) {
     console.error('getMerits error:', err);
