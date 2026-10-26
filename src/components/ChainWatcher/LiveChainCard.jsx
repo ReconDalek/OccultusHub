@@ -6,6 +6,7 @@ import {
   OVERLAY_FONT_MIN, OVERLAY_FONT_MAX, OVERLAY_FONT_STEP,
 } from './chainAlerts'
 import ChainAlertSettingsModal from './ChainAlertSettingsModal'
+import QuickTargetButton from './QuickTargetButton'
 
 const POLL_MS = 10000
 const FAST_POLL_MS = 5000
@@ -484,6 +485,12 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
               Chain is about to drop — attack now!
             </div>
           )}
+        </div>
+      )}
+
+      {data.status === 'active' && (
+        <div style={{ marginTop: 10 }}>
+          <QuickTargetButton isLeader={isLeader} />
         </div>
       )}
 

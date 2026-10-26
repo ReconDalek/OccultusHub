@@ -880,3 +880,109 @@ export async function getWatchTotals(request, env) {
     return errorResponse('Failed to compute watch totals', 500);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quick Target — mirrors OccultusBot's findChainUser (the "attack this
+// hospital-out target" suggestion it posts when a chain is about to drop):
+// a small shared pool of arranged chain-saving accounts, not regular faction
+// members. Shared across all three factions, same as the bot's own
+// hardcoded list, rather than split per faction. Any member can check it;
+// only leadership can edit the pool.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchTornUserProfile(env, tornUserId) {
+  const data = await fetchWithRetry(
+    `${TORN_API_BASE}/user/${tornUserId}/profile?striptags=true&comment=OccHub`,
+    () => getRandomUserApiKey(env),
+    env
+  );
+  return data?.profile || null;
+}
+
+// GET /api/chain-watcher/quick-target-pool — leadership-only
+export async function listQuickTargets(request, env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT torn_user_id, username, added_at FROM chain_save_targets ORDER BY added_at DESC`
+    ).all();
+    return jsonResponse({ targets: results || [] });
+  } catch (err) {
+    console.error('listQuickTargets error:', err);
+    return errorResponse('Failed to fetch the quick target pool', 500);
+  }
+}
+
+// POST /api/chain-watcher/quick-target-pool  { torn_user_id } — leadership-only
+export async function addQuickTarget(request, env, user) {
+  try {
+    const body = await request.json();
+    const tornUserId = parseInt(body.torn_user_id, 10);
+    if (!tornUserId) return errorResponse('Invalid or missing torn_user_id', 400);
+
+    let username = null;
+    try {
+      const profile = await fetchTornUserProfile(env, tornUserId);
+      username = profile?.name || null;
+    } catch (e) {
+      console.error('addQuickTarget: profile lookup failed:', e.message);
+    }
+
+    const { meta } = await env.DB.prepare(
+      `INSERT OR IGNORE INTO chain_save_targets (torn_user_id, username, added_by) VALUES (?, ?, ?)`
+    ).bind(tornUserId, username, user.userId).run();
+
+    if (!meta?.changes) return errorResponse('That user is already in the pool', 409);
+    return jsonResponse({ success: true, username });
+  } catch (err) {
+    console.error('addQuickTarget error:', err);
+    return errorResponse('Failed to add quick target', 500);
+  }
+}
+
+// DELETE /api/chain-watcher/quick-target-pool?torn_user_id=X — leadership-only
+export async function removeQuickTarget(request, env) {
+  try {
+    const url = new URL(request.url);
+    const tornUserId = parseInt(url.searchParams.get('torn_user_id'), 10);
+    if (!tornUserId) return errorResponse('Invalid or missing torn_user_id', 400);
+
+    await env.DB.prepare(`DELETE FROM chain_save_targets WHERE torn_user_id = ?`).bind(tornUserId).run();
+    return jsonResponse({ success: true });
+  } catch (err) {
+    console.error('removeQuickTarget error:', err);
+    return errorResponse('Failed to remove quick target', 500);
+  }
+}
+
+// GET /api/chain-watcher/quick-target — any member. Shuffles the pool and
+// returns the first account currently out of hospital, not travelling/
+// jailed (Torn's `status.state === 'Okay'`) — the exact same check the
+// bot's findChainUser uses. Best-effort: a dead/rate-limited key or a
+// lookup failure on one candidate just moves on to the next rather than
+// failing the whole request.
+export async function getQuickTarget(request, env) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT torn_user_id, username FROM chain_save_targets`
+    ).all();
+    const pool = [...(results || [])].sort(() => Math.random() - 0.5);
+
+    for (const candidate of pool) {
+      try {
+        const profile = await fetchTornUserProfile(env, candidate.torn_user_id);
+        if (profile?.status?.state === 'Okay') {
+          return jsonResponse({
+            target: { torn_user_id: candidate.torn_user_id, username: profile.name || candidate.username },
+          });
+        }
+      } catch (e) {
+        console.error(`getQuickTarget: check failed for ${candidate.torn_user_id}:`, e.message);
+      }
+    }
+
+    return jsonResponse({ target: null });
+  } catch (err) {
+    console.error('getQuickTarget error:', err);
+    return errorResponse('Failed to find a quick target', 500);
+  }
+}

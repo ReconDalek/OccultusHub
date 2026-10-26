@@ -498,6 +498,25 @@ export async function handleRequest(request, env, ctx) {
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.getWatchTotals(request, env);
   }
+  if (pathname === '/api/chain-watcher/quick-target' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.getQuickTarget(request, env);
+  }
+  if (pathname === '/api/chain-watcher/quick-target-pool' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.listQuickTargets(request, env);
+  }
+  if (pathname === '/api/chain-watcher/quick-target-pool' && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.addQuickTarget(request, env, user);
+  }
+  if (pathname === '/api/chain-watcher/quick-target-pool' && method === 'DELETE') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.removeQuickTarget(request, env);
+  }
 
   // Chain watcher — merit tracking (member auth required to view; leadership to revoke)
   // Merits are now tracked automatically from chain bonus hits (see
