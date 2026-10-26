@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.9.1
+// @version      1.9.2
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -497,6 +497,15 @@ transform: translateY(3px);
         SafeStore.set(PANEL_PREFS_STORAGE, JSON.stringify(panelPrefs));
     }
 
+    // window.innerWidth includes the vertical scrollbar's own width on most
+    // browsers; clientWidth is the actual visible/usable area — which is
+    // also what CSS "right: 0" on a fixed element aligns against. Using the
+    // same reference everywhere keeps the panel's right edge and the edge
+    // tab perfectly flush, with neither drifting under the scrollbar.
+    function viewportWidth() {
+        return document.documentElement.clientWidth;
+    }
+
     // Clamps the target size to the viewport (minus a small margin) so an
     // oversized panel can never itself force scrolling/overflow of the page.
     // Sidebar mode uses the same width/height sliders as modal mode — only
@@ -505,7 +514,7 @@ transform: translateY(3px);
         const idealWidth = Math.round(PANEL_BASE_WIDTH * prefs.widthScale / 100);
         const idealHeight = Math.round(PANEL_BASE_HEIGHT * prefs.heightScale / 100);
         return {
-            width: Math.min(idealWidth, window.innerWidth - 20),
+            width: Math.min(idealWidth, viewportWidth() - 20),
             height: Math.min(idealHeight, window.innerHeight - 20)
         };
     }
@@ -519,10 +528,10 @@ transform: translateY(3px);
         if (prefs.dockMode === "sidebar") {
             const handleCenterY = (prefs.sidebarHandleTop / 100) * window.innerHeight;
             const top = Math.max(0, Math.min(handleCenterY - box.height / 2, window.innerHeight - box.height));
-            const left = prefs.sidebarSide === "left" ? 0 : window.innerWidth - box.width;
+            const left = prefs.sidebarSide === "left" ? 0 : viewportWidth() - box.width;
             return { left, top };
         }
-        const left = Math.max(0, Math.min((window.innerWidth - box.width) / 2 + prefs.offsetX, window.innerWidth - box.width));
+        const left = Math.max(0, Math.min((viewportWidth() - box.width) / 2 + prefs.offsetX, viewportWidth() - box.width));
         const top = Math.max(0, Math.min(PANEL_BASE_TOP + prefs.offsetY, window.innerHeight - box.height));
         return { left, top };
     }
@@ -541,7 +550,11 @@ transform: translateY(3px);
             tab.style.borderRadius = "0 6px 6px 0";
             tab.style.boxShadow = "2px 0 6px rgba(0,0,0,0.5)";
         } else {
-            tab.style.right = "0";
+            // A couple px clear of the edge, not flush to "0" — scrollbar
+            // width isn't always fully excluded from a fixed element's own
+            // "right: 0" in every browser/zoom combination, so this leaves
+            // a small safety margin rather than relying on exact alignment.
+            tab.style.right = "2px";
             tab.style.left = "auto";
             tab.style.borderRadius = "6px 0 0 6px";
             tab.style.boxShadow = "-2px 0 6px rgba(0,0,0,0.5)";
