@@ -485,24 +485,18 @@ export async function getMerits(request, env) {
       ).bind(factionId).first(),
     ]);
 
-    // Who's landed a bonus hit on the chain CURRENTLY being watched (if
-    // any) — distinct from "already has this merit" generally, which could
-    // be from any past chain. Surfaced separately so the ranked "who's
-    // next" list isn't the only signal (a member vanishing from it reads as
-    // ambiguous — could mean anything — rather than "they already got it
-    // this chain").
-    const currentChainAwards = {};
+    // Positions detected live on the chain CURRENTLY being watched (if any)
+    // — a member who lands one of these stays on the ranked list (rather
+    // than disappearing the moment they're awarded) until the chain
+    // actually ends and gets saved, since the list is also how leaders see
+    // who's just landed their bonus hit. Once the session ends, they drop
+    // off like any other already-awarded member on the next chain.
+    const detectedThisChainSet = new Set();
     if (activeSession) {
       const { results } = await env.DB.prepare(
-        `SELECT d.merit_type, d.torn_user_id, d.chain_position, COALESCE(fm.username, 'Unknown') AS username
-         FROM chain_watch_bonus_detections d
-         LEFT JOIN faction_members fm ON fm.torn_user_id = d.torn_user_id
-         WHERE d.session_id = ?
-         ORDER BY d.chain_position ASC`
+        `SELECT merit_type, torn_user_id FROM chain_watch_bonus_detections WHERE session_id = ?`
       ).bind(activeSession.id).all();
-      for (const row of (results || [])) {
-        (currentChainAwards[row.merit_type] ||= []).push(row);
-      }
+      for (const row of (results || [])) detectedThisChainSet.add(`${row.torn_user_id}:${row.merit_type}`);
     }
 
     const awardedSet = new Set((awardedResult.results || []).map(r => `${r.torn_user_id}:${r.merit_type}`));
@@ -512,9 +506,10 @@ export async function getMerits(request, env) {
     for (const type of MERIT_TYPES) {
       const prereqs = MERIT_PREREQUISITES[type];
       candidates[type] = sorted
-        .filter(m => !awardedSet.has(`${m.torn_user_id}:${type}`))
+        .filter(m => !awardedSet.has(`${m.torn_user_id}:${type}`) || detectedThisChainSet.has(`${m.torn_user_id}:${type}`))
         .filter(m => prereqs.every(p => awardedSet.has(`${m.torn_user_id}:${p}`)))
-        .slice(0, CANDIDATE_LIMIT);
+        .slice(0, CANDIDATE_LIMIT)
+        .map(m => ({ ...m, receivedThisChain: detectedThisChainSet.has(`${m.torn_user_id}:${type}`) }));
     }
 
     const simpleCandidates = {};
@@ -543,7 +538,6 @@ export async function getMerits(request, env) {
       simpleCandidates,
       awardedMembers,
       awardedCounts,
-      currentChainAwards,
     });
   } catch (err) {
     console.error('getMerits error:', err);

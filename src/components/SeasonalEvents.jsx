@@ -897,9 +897,22 @@ export default function SeasonalEvents() {
     return () => { window.removeEventListener('storage', sync); window.removeEventListener('occultus_preview_change', sync) }
   }, [])
 
-  const activeEvents = EVENT_DEFS.filter(ev =>
-    ev.id === previewId || (seasonalEvents[ev.id] !== false && ev.isActive())
-  )
+  // Only ever show ONE theme at a time — multiple can genuinely be "active"
+  // on the same day (Blood Moon is lunar, independent of the calendar, and
+  // can land during any other event; Halloween/Samhain/Day of the Dead
+  // deliberately overlap at the edges) but stacking their vignettes,
+  // particles and banners together looked like a bug, not a feature.
+  // Priority: an admin preview always wins outright; otherwise prefer the
+  // most specific calendar event over Blood Moon (EVENT_DEFS lists broader
+  // events before the narrower ones they overlap with, e.g. halloween then
+  // samhain then day_of_dead, so the LAST non-lunar match is the most
+  // specific one); Blood Moon only shows when nothing else qualifies.
+  const previewEvent = previewId ? EVENT_DEFS.find(ev => ev.id === previewId) : null
+  const liveMatches = EVENT_DEFS.filter(ev => seasonalEvents[ev.id] !== false && ev.isActive())
+  const nonLunarMatches = liveMatches.filter(ev => ev.id !== 'blood_moon')
+  const winner = previewEvent || nonLunarMatches[nonLunarMatches.length - 1]
+    || liveMatches.find(ev => ev.id === 'blood_moon') || null
+  const activeEvents = winner ? [winner] : []
 
   // Inject / remove body background theme
   useEffect(() => {

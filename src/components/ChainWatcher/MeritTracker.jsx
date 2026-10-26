@@ -147,10 +147,6 @@ export default function MeritTracker({ factionId, sessionActive = false }) {
         />
       )}
 
-      {!isSimple && (data.currentChainAwards?.[activeType]?.length || 0) > 0 && (
-        <CurrentChainAwards awards={data.currentChainAwards[activeType]} />
-      )}
-
       {isSimple ? (
         <SimpleMeritList
           members={data.simpleCandidates?.[activeType] || []}
@@ -177,8 +173,8 @@ function RankedMeritList({ candidates }) {
           className="flex items-center"
           style={{
             gap: 10, padding: '8px 10px', borderRadius: 8,
-            background: i === 0 ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${i === 0 ? 'rgba(139,92,246,0.3)' : 'var(--border-subtle)'}`,
+            background: c.receivedThisChain ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${c.receivedThisChain ? 'rgba(34,197,94,0.35)' : 'var(--border-subtle)'}`,
           }}
         >
           <div style={{ width: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>
@@ -187,12 +183,12 @@ function RankedMeritList({ candidates }) {
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#f4f4f5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {c.username}
-              {i === 0 && (
+              {c.receivedThisChain && (
                 <span style={{
-                  marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#c4b5fd', background: 'rgba(139,92,246,0.15)',
+                  marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#86efac', background: 'rgba(34,197,94,0.15)',
                   borderRadius: 4, padding: '1px 6px', letterSpacing: '0.04em', textTransform: 'uppercase', verticalAlign: 'middle',
                 }}>
-                  Next in line
+                  Received
                 </span>
               )}
             </div>
@@ -212,29 +208,6 @@ function RankedMeritList({ candidates }) {
             {Math.round(c.score).toLocaleString()}
           </div>
         </div>
-      ))}
-    </div>
-  )
-}
-
-// Who's actually landed this merit's bonus hit on the chain CURRENTLY being
-// watched — separate from "already has this merit" generally (which could
-// be from any past chain, and is where the ranked list's own exclusion
-// already sends them). This is the explicit, unambiguous "yes, this
-// happened, on this chain" signal.
-function CurrentChainAwards({ awards }) {
-  return (
-    <div style={{
-      marginBottom: 12, padding: '8px 10px', borderRadius: 8,
-      background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)',
-    }}>
-      <p style={{ fontSize: 11, color: '#86efac', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 4px', fontWeight: 700 }}>
-        Already landed on this chain
-      </p>
-      {awards.map((a) => (
-        <p key={a.torn_user_id} style={{ fontSize: 13, color: '#f4f4f5', margin: '2px 0' }}>
-          ✓ {a.username} — {a.chain_position.toLocaleString()}th hit
-        </p>
       ))}
     </div>
   )
