@@ -71,7 +71,7 @@ function MailerButton({ fontSize = 12 }) {
 // based scaling (clamp()+vmin) didn't track window resizes the way the user
 // wanted, so sizing is manual via the A−/A+ buttons instead, persisted like
 // the other alert settings.
-function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flashOn, fontSize, onFontSizeChange, reconnecting, isLeader }) {
+function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flashOn, fontSize, onFontSizeChange, reconnecting, isLeader, status }) {
   const labelSize = Math.round(fontSize * 0.18)
   const nameLabelSize = Math.round(fontSize * 0.16)
   const nameSize = Math.round(fontSize * 0.2)
@@ -129,9 +129,10 @@ function OverlayContent({ liveTimeout, urgent, hits, target, current, next, flas
           <ReconnectBlip fontSize={labelSize} />
         </div>
       )}
-      {isLeader && (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <MailerButton fontSize={labelSize} />
+      {(status === 'active' || isLeader) && (
+        <div className="flex items-center" style={{ justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {status === 'active' && <QuickTargetButton isLeader={isLeader} fontSize={labelSize} />}
+          {isLeader && <MailerButton fontSize={labelSize} />}
         </div>
       )}
       {flashOn && <RedFlash />}
@@ -488,12 +489,6 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
         </div>
       )}
 
-      {data.status === 'active' && (
-        <div style={{ marginTop: 10 }}>
-          <QuickTargetButton isLeader={isLeader} />
-        </div>
-      )}
-
       {bonusBanner && (
         <p style={{
           fontSize: 12.5, color: '#c4b5fd', background: 'rgba(139,92,246,0.12)',
@@ -512,9 +507,10 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
         </p>
       )}
 
-      {isLeader && (
-        <div style={{ marginTop: 12 }}>
-          <MailerButton />
+      {(data.status === 'active' || isLeader) && (
+        <div className="flex items-center" style={{ gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          {data.status === 'active' && <QuickTargetButton isLeader={isLeader} />}
+          {isLeader && <MailerButton />}
         </div>
       )}
 
@@ -534,7 +530,7 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
           liveTimeout={liveTimeout} urgent={urgent} hits={data?.current ?? 0} target={target}
           current={current} next={next} flashOn={flashOn}
           fontSize={settings.overlayFontSize} onFontSizeChange={adjustOverlayFontSize}
-          reconnecting={reconnecting} isLeader={isLeader}
+          reconnecting={reconnecting} isLeader={isLeader} status={data?.status}
         />,
         overlayWindow.document.body
       )}

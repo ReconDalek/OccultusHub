@@ -3,7 +3,7 @@ import { apiGet, apiSend } from './chainWatcherUtils'
 import Modal from './Modal'
 
 const btnBase = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
+  display: 'inline-flex', alignItems: 'center', gap: 6,
   padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.14)',
   background: 'rgba(255,255,255,0.05)', color: '#d4d4d8', cursor: 'pointer', whiteSpace: 'nowrap',
   textDecoration: 'none', fontFamily: 'inherit',
@@ -12,10 +12,11 @@ const btnBase = {
 // Mirrors OccultusBot's findChainUser — a shared pool of arranged chain-
 // saving accounts any member can check for availability when a chain's
 // about to drop, rather than scrambling to find someone out of hospital.
-export default function QuickTargetButton({ isLeader = false }) {
+export default function QuickTargetButton({ isLeader = false, fontSize = 12 }) {
   const [state, setState] = useState('idle') // idle | loading | found | none | error
   const [target, setTarget] = useState(null)
   const [showManage, setShowManage] = useState(false)
+  const base = { ...btnBase, fontSize }
 
   const check = useCallback(async () => {
     setState('loading')
@@ -32,24 +33,24 @@ export default function QuickTargetButton({ isLeader = false }) {
       {state === 'found' && target ? (
         <>
           <a
-            href={`https://www.torn.com/loader.php?sid=attack&user2ID=${target.torn_user_id}`}
+            href={`https://www.torn.com/page.php?sid=attack&user2ID=${target.torn_user_id}`}
             target="_blank" rel="noopener noreferrer"
-            style={{ ...btnBase, background: 'rgba(34,197,94,0.12)', color: '#86efac', border: '1px solid rgba(34,197,94,0.35)' }}
+            style={{ ...base, background: 'rgba(34,197,94,0.12)', color: '#86efac', border: '1px solid rgba(34,197,94,0.35)' }}
           >
             ⚔ Attack {target.username || target.torn_user_id}
           </a>
-          <button onClick={check} title="Find another" style={{ ...btnBase, padding: '6px 9px' }}>↻</button>
+          <button onClick={check} title="Find another" style={{ ...base, padding: '6px 9px' }}>↻</button>
         </>
       ) : (
-        <button onClick={check} disabled={state === 'loading'} style={{ ...btnBase, opacity: state === 'loading' ? 0.6 : 1 }}>
-          {state === 'loading' ? 'Checking…' : state === 'none' ? '🎯 Quick Target — nobody free right now' : '🎯 Quick Target'}
+        <button onClick={check} disabled={state === 'loading'} style={{ ...base, opacity: state === 'loading' ? 0.6 : 1 }}>
+          {state === 'loading' ? 'Checking…' : state === 'none' ? 'Quick Target — nobody free right now' : 'Quick Target'}
         </button>
       )}
       {state === 'error' && (
-        <span style={{ fontSize: 11.5, color: '#f87171' }}>Couldn't check — try again.</span>
+        <span style={{ fontSize: Math.max(10, fontSize - 1), color: '#f87171' }}>Couldn't check — try again.</span>
       )}
       {isLeader && (
-        <button onClick={() => setShowManage(true)} title="Manage the Quick Target pool" style={{ ...btnBase, padding: '6px 9px', fontSize: 11 }}>
+        <button onClick={() => setShowManage(true)} title="Manage the Quick Target pool" style={{ ...base, padding: '6px 9px', fontSize: Math.max(10, fontSize - 1) }}>
           ⚙
         </button>
       )}
