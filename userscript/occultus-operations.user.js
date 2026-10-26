@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.7.1
+// @version      1.8.0
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -244,7 +244,7 @@ transform: translateY(3px);
      **********************************************************/
 
     function createPanel() {
-    if (document.getElementById("occ-panel")) return;
+    if (!document.getElementById("occ-panel")) {
 
     const panel = document.createElement("div");
     panel.id = "occ-panel";
@@ -372,22 +372,11 @@ transform: translateY(3px);
 `;
         document.body.appendChild(panel);
 
-        // Sibling of the panel (not a child) so it isn't clipped by the
-        // panel's own overflow:auto when the target size exceeds it.
-        if (!document.getElementById("occ-resize-outline")) {
-            const outline = document.createElement("div");
-            outline.id = "occ-resize-outline";
-            document.body.appendChild(outline);
-        }
-
-        // Edge tab — sibling of the panel, always present but only shown
-        // (via CSS) once Sidebar Mode is enabled in Settings.
-        if (!document.getElementById("occ-edge-tab")) {
-            const edgeTab = document.createElement("div");
-            edgeTab.id = "occ-edge-tab";
-            edgeTab.textContent = "⟨ OPS ⟩";
-            document.body.appendChild(edgeTab);
-        }
+        // If the edge tab survived while the panel itself got rebuilt, its
+        // gesture handlers below would still be bound to the OLD (now
+        // detached) panel reference — clear the flag so they rebind fresh.
+        const survivingTab = document.getElementById("occ-edge-tab");
+        if (survivingTab) delete survivingTab.dataset.bound;
 
         document.getElementById("occ-close").onclick = closePanel;
         document.getElementById("occ-assist").onclick = assistAttack;
@@ -418,7 +407,7 @@ transform: translateY(3px);
         document.getElementById("occ-raffle-body").addEventListener("click", (e) => {
             const sendBtn = e.target.closest(".occ-raffle-send-btn");
             if (!sendBtn) return;
-            sendRaffleItem(parseInt(sendBtn.dataset.userId, 10), sendBtn.dataset.username);
+            sendRaffleItem(parseInt(sendBtn.dataset.userId, 10), sendBtn.dataset.username, sendBtn.dataset.message);
         });
         document.getElementById("occ-watcher-pending").addEventListener("click", (e) => {
             const reviewBtn = e.target.closest(".occ-pending-btn");
@@ -430,7 +419,6 @@ transform: translateY(3px);
         document.getElementById("occ-warn-back").onclick = openCouncil;
         document.getElementById("occ-reset-layout").onclick = resetPanelPrefs;
         document.getElementById("occ-dockmode-toggle").onclick = toggleDockMode;
-        setupEdgeTabGestures();
 
         const widthSlider = document.getElementById("occ-width-slider");
         const heightSlider = document.getElementById("occ-height-slider");
@@ -450,6 +438,33 @@ transform: translateY(3px);
         });
         widthSlider.addEventListener("change", hideResizeOutline);
         heightSlider.addEventListener("change", hideResizeOutline);
+
+    }
+
+    // These three run every time createPanel() is called (not just the first
+    // time) — each is independently idempotent, so this re-creates anything
+    // that went missing (e.g. the host page's own re-render touched
+    // document.body and silently dropped our appended nodes) without
+    // rebuilding the whole panel.
+    //
+    // Sibling of the panel (not a child) so it isn't clipped by the panel's
+    // own overflow:auto when the target size exceeds it.
+    if (!document.getElementById("occ-resize-outline")) {
+        const outline = document.createElement("div");
+        outline.id = "occ-resize-outline";
+        document.body.appendChild(outline);
+    }
+
+    // Edge tab — sibling of the panel, always present but only shown (via
+    // CSS) once Sidebar Mode is enabled in Settings.
+    if (!document.getElementById("occ-edge-tab")) {
+        const edgeTab = document.createElement("div");
+        edgeTab.id = "occ-edge-tab";
+        edgeTab.textContent = "⟨ OPS ⟩";
+        document.body.appendChild(edgeTab);
+    }
+
+    setupEdgeTabGestures();
     }
 
     /**********************************************************
@@ -1507,7 +1522,7 @@ transform: translateY(3px);
                 <span>#${w.draw_number} <span class="occ-raffle-winner">${w.username}</span></span>
                 <span style="display:flex; align-items:center; gap:6px;">
                     ${w.removal_mode === "all_tickets" ? "<span>✔ out</span>" : ""}
-                    <button type="button" class="occ-raffle-send-btn" data-user-id="${w.torn_user_id}" data-username="${w.username}">📦 Send</button>
+                    <button type="button" class="occ-raffle-send-btn" data-user-id="${w.torn_user_id}" data-username="${w.username}" data-message="Chain Raffle Round #${round.id}, Draw #${w.draw_number} winner - enjoy your Donator Pack!">📦 Send</button>
                 </span>
             </div>`;
         });
@@ -1567,24 +1582,27 @@ transform: translateY(3px);
     await renderRaffleRound(currentRaffleRoundId);
     }
 
-    // Stashes a pending armoury-style "send" task and jumps to the player's
-    // own Supply Pack Items page — there's no faction-armoury equivalent for
-    // a Donator Pack, so this gifts it from the sender's personal inventory
-    // instead (same send-to-name mechanic, different page).
-    function sendRaffleItem(userId, name) {
-        const task = { name, id: userId, qty: 1, itemId: RAFFLE_ITEM_ID, expiry: Date.now() + 60000 };
+    // Stashes a pending "send" task and jumps to the player's own Supply
+    // Pack Items page — there's no faction-armoury equivalent for a Donator
+    // Pack, so this gifts it from the sender's personal inventory instead
+    // (same send-to-name mechanic, different page).
+    function sendRaffleItem(userId, name, message) {
+        const task = { name, id: userId, qty: 1, itemId: RAFFLE_ITEM_ID, message: message || "", expiry: Date.now() + 60000 };
         sessionStorage.setItem(RAFFLE_ITEM_TASK_STORAGE, JSON.stringify(task));
         window.location.href = RAFFLE_ITEM_URL;
     }
 
-    // Auto-fill on the player's own item page. The item row here uses
-    // data-item (not data-itemid like the faction armoury) and its Send
-    // control is a <button class="option-send"> inside a sibling
-    // <li data-action="send">, not an <a data-role="give"> — confirmed from
-    // the actual Supply Pack tab markup. Clicking it opens Torn's own send
-    // dialog; exactly what fields that dialog exposes isn't confirmed yet,
-    // so the recipient/quantity fill below tries several likely selectors
-    // and falls back to "opened, fill in manually" if none match.
+    // Auto-fill on the player's own item page — confirmed from the actual
+    // Supply Pack tab markup. The item row uses data-item (not data-itemid
+    // like the faction armoury); its Send control is button.option-send
+    // inside a sibling li[data-action="send"]; clicking it toggles
+    // display:block on that same row's own .action-wrap.send-act panel,
+    // which holds a <form act="send"> with the recipient search
+    // (input.user-id.ac-search[name="userID"]), two linked amount inputs
+    // (input.amount.input-money — a visible text one and the actual hidden
+    // "amount" one, both need setting), and a message field
+    // (input.message[name="tag"]) that only becomes active once
+    // a.action-message is clicked.
     async function autoFillRaffleItem() {
         if (isFilling) return;
         const taskData = sessionStorage.getItem(RAFFLE_ITEM_TASK_STORAGE);
@@ -1597,26 +1615,25 @@ transform: translateY(3px);
         }
 
         const itemRow = document.querySelector(`li[data-item="${task.itemId}"]`);
-        const sendBtn = itemRow?.querySelector('li[data-action="send"] button.option-send');
-        if (!sendBtn) return;
+        if (!itemRow) return;
 
         isFilling = true;
 
         try {
-            sendBtn.click();
-            await new Promise(r => setTimeout(r, 600));
-
-            const nameInput = document.querySelector(
-                '.ac-search, input[name="name"], .send-popup input[type="text"], .user-information input[type="text"]'
-            );
-            const qtyInput = document.querySelector(
-                '.quantity[type="text"], input[name="quantity"], .send-popup input[type="number"]'
-            );
-
-            if (qtyInput) {
-                qtyInput.value = task.qty;
-                qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+            let panel = itemRow.querySelector('.action-wrap.send-act');
+            if (!panel || panel.style.display !== 'block') {
+                const sendBtn = itemRow.querySelector('li[data-action="send"] button.option-send');
+                if (!sendBtn) return;
+                sendBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+                panel = itemRow.querySelector('.action-wrap.send-act');
             }
+            if (!panel) {
+                setStatus(`Couldn't open Send — do it manually for ${task.name}`, true);
+                return;
+            }
+
+            const nameInput = panel.querySelector('input.user-id[name="userID"]');
             if (nameInput) {
                 nameInput.value = task.id ? `${task.name} [${task.id}]` : task.name;
                 nameInput.focus();
@@ -1624,6 +1641,24 @@ transform: translateY(3px);
                 setTimeout(() => {
                     nameInput.dispatchEvent(new Event('keydown', { bubbles: true }));
                 }, 100);
+            }
+
+            panel.querySelectorAll('input.amount.input-money').forEach(inp => {
+                inp.value = task.qty;
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            if (task.message) {
+                if (!panel.classList.contains('msg-active')) {
+                    const addMsgLink = panel.querySelector('a.action-message');
+                    if (addMsgLink) addMsgLink.click();
+                }
+                const msgInput = panel.querySelector('input.message[name="tag"]');
+                if (msgInput) {
+                    msgInput.value = task.message;
+                    msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             }
 
             if (nameInput) {
@@ -2091,7 +2126,25 @@ transform: translateY(3px);
         };
     }
 
+    // Several of Torn's own pages are internally React/SPA-routed (hash-based
+    // tab switches with no real navigation) — if that page's own re-render
+    // happens to touch document.body's children, our appended panel/edge tab
+    // can get silently removed without any navigation or reload happening at
+    // all, and neither init() nor the reopen logic below would ever re-run to
+    // notice. This re-creates them (and restores an open Sidebar) whenever
+    // that's detected, independent of real page loads.
+    function ensurePanelExists() {
+        if (document.getElementById("occ-panel") && document.getElementById("occ-edge-tab")) return;
+        console.warn("Occultus: panel/edge tab missing from DOM — recreating");
+        createPanel();
+        applyPanelPrefs();
+        if (panelPrefs.dockMode === "sidebar" && SafeStore.get(PANEL_OPEN_STORAGE) === "1") {
+            reopenSidebarIfAuthenticated();
+        }
+    }
+
     const runLightChecks = debounce(() => {
+        ensurePanelExists();
         addFactionOperationsButton();
         addSettingsOperationsEntry();
 
@@ -2110,6 +2163,7 @@ transform: translateY(3px);
 
         lastCheck = now;
 
+        ensurePanelExists();
         addFactionOperationsButton();
         addSettingsOperationsEntry();
 
@@ -2123,9 +2177,16 @@ transform: translateY(3px);
 
 
     async function reopenSidebarIfAuthenticated() {
-        if (!SafeStore.get(API_KEY_STORAGE)) return;
+        if (!SafeStore.get(API_KEY_STORAGE)) {
+            console.warn("Occultus: Sidebar Mode was open, but no saved API key to silently re-auth with");
+            return;
+        }
         const key = await validateAndSaveKey();
-        if (key) togglePanel();
+        if (key) {
+            togglePanel();
+        } else {
+            console.warn("Occultus: Sidebar Mode re-open aborted — validateAndSaveKey() returned no key");
+        }
     }
 
     function init() {
