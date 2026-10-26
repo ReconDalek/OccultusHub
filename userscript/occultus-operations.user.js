@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.9.0
+// @version      1.9.1
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -2202,6 +2202,7 @@ transform: translateY(3px);
         // The real load (see the placeholder declaration above) — confirmed
         // more reliable here than at top-level script evaluation.
         panelPrefs = loadStoredPanelPrefs();
+        console.log("Occultus: init() loaded dockMode=%s panelOpenFlag=%s", panelPrefs.dockMode, SafeStore.get(PANEL_OPEN_STORAGE));
         createPanel();
         applyPanelPrefs();
         addFactionOperationsButton();
