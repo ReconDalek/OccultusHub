@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.8.2
+// @version      1.8.3
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
+// @noframes
 // @run-at       document-end
 // @icon         https://i.ibb.co/NZzxmfk/OccPent.png
 // @grant        GM_xmlhttpRequest
