@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.8.3
+// @version      1.8.4
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -2193,7 +2193,7 @@ transform: translateY(3px);
     }
 
     function init() {
-        console.log("Occultus: init() — dockMode=%s panelOpenFlag=%s", panelPrefs.dockMode, SafeStore.get(PANEL_OPEN_STORAGE));
+        console.log("Occultus: init() — panelOpenFlag=%s raw PANEL_PREFS_STORAGE=%s parsed panelPrefs=%s", SafeStore.get(PANEL_OPEN_STORAGE), SafeStore.get(PANEL_PREFS_STORAGE), JSON.stringify(panelPrefs));
         createPanel();
         applyPanelPrefs();
         addFactionOperationsButton();
