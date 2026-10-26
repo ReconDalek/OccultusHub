@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.8.4
+// @version      1.9.0
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -476,7 +476,14 @@ transform: translateY(3px);
     // (on release) instead of on every 'input' tick — JSON parsing +
     // synchronous localStorage writes dozens of times a second during a
     // drag is what was causing the position/size jank.
-    let panelPrefs = loadStoredPanelPrefs();
+    //
+    // Loaded from storage in init(), not here — confirmed (via logging) that
+    // reading PANEL_PREFS_STORAGE this early, at top-level script
+    // evaluation, intermittently returns the default/empty state even when
+    // the exact same key reads back correctly moments later inside init().
+    // A placeholder here avoids a brief window of undefined behavior before
+    // init() assigns the real value.
+    let panelPrefs = { ...DEFAULT_PANEL_PREFS };
 
     function loadStoredPanelPrefs() {
         try {
@@ -624,7 +631,6 @@ transform: translateY(3px);
     function toggleDockMode() {
         panelPrefs.dockMode = panelPrefs.dockMode === "sidebar" ? "modal" : "sidebar";
         persistPanelPrefs();
-        console.log("Occultus: toggled dockMode to '%s' — stored value is now: %s", panelPrefs.dockMode, SafeStore.get(PANEL_PREFS_STORAGE));
         applyPanelPrefs();
         updateDockModeUI();
         setStatus(panelPrefs.dockMode === "sidebar" ? "Sidebar Mode enabled" : "Sidebar Mode disabled");
@@ -2193,7 +2199,9 @@ transform: translateY(3px);
     }
 
     function init() {
-        console.log("Occultus: init() — panelOpenFlag=%s raw PANEL_PREFS_STORAGE=%s parsed panelPrefs=%s", SafeStore.get(PANEL_OPEN_STORAGE), SafeStore.get(PANEL_PREFS_STORAGE), JSON.stringify(panelPrefs));
+        // The real load (see the placeholder declaration above) — confirmed
+        // more reliable here than at top-level script evaluation.
+        panelPrefs = loadStoredPanelPrefs();
         createPanel();
         applyPanelPrefs();
         addFactionOperationsButton();
