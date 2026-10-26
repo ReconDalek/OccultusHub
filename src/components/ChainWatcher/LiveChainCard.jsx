@@ -7,7 +7,7 @@ import {
 } from './chainAlerts'
 import ChainAlertSettingsModal from './ChainAlertSettingsModal'
 
-const POLL_MS = 20000
+const POLL_MS = 10000
 const FAST_POLL_MS = 5000
 const FAST_POLL_THRESHOLD = 120 // seconds left before a chain drops — poll tighter once attacks matter most
 const PIP_SUPPORTED = typeof window !== 'undefined' && 'documentPictureInPicture' in window
