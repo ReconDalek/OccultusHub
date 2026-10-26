@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.8.0
+// @version      1.8.1
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -2183,6 +2183,7 @@ transform: translateY(3px);
         }
         const key = await validateAndSaveKey();
         if (key) {
+            console.log("Occultus: reopening sidebar panel");
             togglePanel();
         } else {
             console.warn("Occultus: Sidebar Mode re-open aborted — validateAndSaveKey() returned no key");
@@ -2190,6 +2191,7 @@ transform: translateY(3px);
     }
 
     function init() {
+        console.log("Occultus: init() — dockMode=%s panelOpenFlag=%s", panelPrefs.dockMode, SafeStore.get(PANEL_OPEN_STORAGE));
         createPanel();
         applyPanelPrefs();
         addFactionOperationsButton();
@@ -2209,6 +2211,18 @@ transform: translateY(3px);
         if (panelPrefs.dockMode === "sidebar" && SafeStore.get(PANEL_OPEN_STORAGE) === "1") {
             reopenSidebarIfAuthenticated();
         }
+
+        // Belt-and-suspenders against Torn's own page swapping out
+        // document.body wholesale (some of its sections are React-routed) —
+        // that would silently detach our MutationObserver (it watches a
+        // specific node, not "whatever body currently is") without firing
+        // any event we could react to. Re-pointing it at the CURRENT body
+        // every tick, and independently re-checking/recreating our own
+        // elements, catches that regardless of how it happened.
+        setInterval(() => {
+            observer.observe(document.body, { childList: true, subtree: true });
+            ensurePanelExists();
+        }, 2000);
     }
 
 
