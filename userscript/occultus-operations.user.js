@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Occultus Operations
 // @namespace    Recon.Occultus.Operations
-// @version      1.8.1
+// @version      1.8.2
 // @description  Occultus Faction Additions
 // @author       Recon-
 // @match        *://www.torn.com/*
@@ -623,6 +623,7 @@ transform: translateY(3px);
     function toggleDockMode() {
         panelPrefs.dockMode = panelPrefs.dockMode === "sidebar" ? "modal" : "sidebar";
         persistPanelPrefs();
+        console.log("Occultus: toggled dockMode to '%s' — stored value is now: %s", panelPrefs.dockMode, SafeStore.get(PANEL_PREFS_STORAGE));
         applyPanelPrefs();
         updateDockModeUI();
         setStatus(panelPrefs.dockMode === "sidebar" ? "Sidebar Mode enabled" : "Sidebar Mode disabled");
