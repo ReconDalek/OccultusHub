@@ -546,24 +546,44 @@ export async function getMerits(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/chain-watcher/merits/award  { torn_user_id, merit_type } — leadership-only
-// Only for merit types that aren't auto-tracked (currently just Chain
-// Saver) — Massacre/Genocide/Wishful Thinking stay fully automatic.
+// POST /api/chain-watcher/merits/award  { torn_user_id, merit_type, faction_id? } — leadership-only
+// Massacre/Genocide/Wishful Thinking are auto-tracked from live chain bonus
+// hits (see chainWatcherController's checkBonusHitsLive) or, failing that,
+// from the chain's own chainreport once it ends — this is the manual
+// fallback for when both of those miss (e.g. nobody had the chain watch
+// page open when the threshold was actually crossed). Chain Saver has no
+// automatic path at all and is always manual.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function awardMerit(request, env, user) {
   try {
     const body = await request.json();
     const tornUserId = parseInt(body.torn_user_id, 10);
     const meritType = body.merit_type;
+    const factionId = validFactionId(body.faction_id);
 
     if (!tornUserId) return errorResponse('Invalid or missing torn_user_id', 400);
-    if (!SIMPLE_MERIT_TYPES.includes(meritType)) {
-      return errorResponse('This merit is tracked automatically and cannot be manually awarded', 400);
-    }
+    if (!ALL_MERIT_TYPES.includes(meritType)) return errorResponse('Invalid merit_type', 400);
 
     await env.DB.prepare(
       `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type, awarded_by) VALUES (?, ?, ?)`
     ).bind(tornUserId, meritType, user.userId).run();
+
+    // For a ranked type, also credit it against the faction's currently
+    // active chain watch session (if any) so the Merit Tracker's
+    // "Received" tag shows immediately, the same as a live-detected hit —
+    // without this the member would just vanish from the ranked list
+    // instead of showing as received until the chain ends and saves.
+    if (MERIT_TYPES.includes(meritType) && factionId) {
+      const activeSession = await env.DB.prepare(
+        `SELECT id FROM chain_watch_sessions WHERE faction_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1`
+      ).bind(factionId).first();
+      if (activeSession) {
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO chain_watch_bonus_detections (session_id, torn_user_id, merit_type, source, detected_at)
+           VALUES (?, ?, ?, 'manual', ?)`
+        ).bind(activeSession.id, tornUserId, meritType, Math.floor(Date.now() / 1000)).run();
+      }
+    }
 
     return jsonResponse({ success: true });
   } catch (err) {
@@ -588,6 +608,11 @@ export async function revokeMerit(request, env) {
 
     await env.DB.prepare(
       `DELETE FROM member_merits WHERE torn_user_id = ? AND merit_type = ?`
+    ).bind(tornUserId, meritType).run();
+    // Clears the "received this chain" tag too, in case the live/manual
+    // detection itself was the mistake being corrected, not just the award.
+    await env.DB.prepare(
+      `DELETE FROM chain_watch_bonus_detections WHERE torn_user_id = ? AND merit_type = ?`
     ).bind(tornUserId, meritType).run();
 
     return jsonResponse({ success: true });

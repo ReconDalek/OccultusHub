@@ -339,7 +339,7 @@ async function bumpViewerPeak(env, factionId, currentCount) {
 }
 
 const BONUS_CHECK_INTERVAL_SECONDS = 8; // throttles the /faction/attacks lookup to roughly once per poll cycle, regardless of viewer count
-const BONUS_LOOKBACK_PAGES = 3; // up to 300 recent attacks — plenty to find a threshold that just landed
+const BONUS_LOOKBACK_PAGES = 10; // up to 1,000 attacks per check — a generous budget for the gap since the last check, not a fixed "recent window"
 const BONUS_NOTICE_WINDOW_SECONDS = 20; // how long a freshly-detected bonus hit stays visible to pollers that didn't win the check
 
 // Claims the "check for new bonus hits" job for this poll tick (first poll
@@ -351,6 +351,20 @@ const BONUS_NOTICE_WINDOW_SECONDS = 20; // how long a freshly-detected bonus hit
 // available until the chain itself has ended). Best-effort throughout: a
 // missing staff key or a Torn hiccup just means the real chainreport-based
 // award after the chain ends catches it instead.
+//
+// Confirmed live (2026-10-26): a fixed "last 300 attacks from now" window
+// only works right after a threshold is crossed — once a chain has run long
+// enough without anyone's poll happening to trigger a check in between, the
+// attack that landed an earlier threshold falls permanently out of that
+// window (a chain at position 14734 could no longer find position 10000,
+// hours in the past). Fixed with a per-session watermark (`session.
+// bonus_watermark_attack_id`, the highest attack id already scanned): each
+// check only has to cover the gap since the LAST check, not a fixed recent
+// slice, so it keeps up under normal viewing. If a gap builds up anyway
+// (nobody watched for a while) the watermark still advances to whatever was
+// actually scanned this run, trading "never catches up" for "makes steady
+// forward progress" — any threshold left behind in an unwatched gap just
+// falls back to the existing chainreport-based award once the chain ends.
 async function checkBonusHitsLive(env, session, factionId, currentPosition) {
   const nowSecs = Math.floor(Date.now() / 1000);
   const claim = await env.DB.prepare(
@@ -370,7 +384,10 @@ async function checkBonusHitsLive(env, session, factionId, currentPosition) {
   const keyProbe = await getStaffApiKeyForFaction(env, factionId);
   if (!keyProbe?.key) return;
 
+  const watermark = session.bonus_watermark_attack_id || 0;
   let url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
+  let maxIdSeen = watermark;
+
   for (let page = 0; page < BONUS_LOOKBACK_PAGES && pending.size; page++) {
     let data;
     try {
@@ -383,9 +400,10 @@ async function checkBonusHitsLive(env, session, factionId, currentPosition) {
     const attacks = data.attacks || [];
     if (!attacks.length) break;
 
-    let reachedSessionStart = false;
+    let stop = false;
     for (const attack of attacks) {
-      if (attack.started < session.started_at) { reachedSessionStart = true; break; }
+      if (attack.id <= watermark || attack.started < session.started_at) { stop = true; break; }
+      if (attack.id > maxIdSeen) maxIdSeen = attack.id;
       if (pending.has(attack.chain) && attack.attacker?.id && attack.attacker?.faction?.id === factionId) {
         const meritType = meritTypeForChainPosition(attack.chain);
         if (!meritType) continue;
@@ -397,13 +415,20 @@ async function checkBonusHitsLive(env, session, factionId, currentPosition) {
            VALUES (?, ?, ?, ?, ?)`
         ).bind(session.id, attack.chain, attack.attacker.id, meritType, nowSecs).run();
         pending.delete(attack.chain);
+        console.log(`[checkBonusHitsLive] session=${session.id} matched position ${attack.chain} -> attacker ${attack.attacker.id}`);
       }
     }
-    if (reachedSessionStart) break;
+    if (stop) break;
 
     const prevUrl = data._metadata?.links?.prev;
     if (!prevUrl) break;
     url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub&to=${new URL(prevUrl).searchParams.get('to')}`;
+  }
+
+  if (maxIdSeen > watermark) {
+    await env.DB.prepare(
+      `UPDATE chain_watch_sessions SET bonus_watermark_attack_id = ? WHERE id = ?`
+    ).bind(maxIdSeen, session.id).run();
   }
 }
 
@@ -413,11 +438,11 @@ async function checkBonusHitsLive(env, session, factionId, currentPosition) {
 async function fetchRecentBonusAwards(env, sessionId) {
   const cutoff = Math.floor(Date.now() / 1000) - BONUS_NOTICE_WINDOW_SECONDS;
   const { results } = await env.DB.prepare(
-    `SELECT d.chain_position, d.torn_user_id, d.merit_type, COALESCE(fm.username, 'Unknown') AS username
+    `SELECT d.chain_position, d.torn_user_id, d.merit_type, d.source, COALESCE(fm.username, 'Unknown') AS username
      FROM chain_watch_bonus_detections d
      LEFT JOIN faction_members fm ON fm.torn_user_id = d.torn_user_id
      WHERE d.session_id = ? AND d.detected_at >= ?
-     ORDER BY d.chain_position ASC`
+     ORDER BY d.detected_at ASC`
   ).bind(sessionId, cutoff).all();
   return results || [];
 }

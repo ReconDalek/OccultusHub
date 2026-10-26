@@ -210,10 +210,11 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
 
         // Every viewer polling within ~20s of the award sees this, not just
         // whoever's request happened to detect it server-side — dedupe
-        // locally by chain position so it only banners once per viewer.
-        const freshAwards = (json.bonusAwards || []).filter((a) => !bonusShownRef.current.has(a.chain_position))
+        // locally per user+merit (not chain position, which is null for a
+        // leader's manual mark) so it only banners once per viewer.
+        const freshAwards = (json.bonusAwards || []).filter((a) => !bonusShownRef.current.has(`${a.torn_user_id}:${a.merit_type}`))
         if (freshAwards.length) {
-          freshAwards.forEach((a) => bonusShownRef.current.add(a.chain_position))
+          freshAwards.forEach((a) => bonusShownRef.current.add(`${a.torn_user_id}:${a.merit_type}`))
           setBonusBanner(freshAwards[freshAwards.length - 1])
           if (bonusBannerTimerRef.current) clearTimeout(bonusBannerTimerRef.current)
           bonusBannerTimerRef.current = setTimeout(() => setBonusBanner(null), 7000)
@@ -494,7 +495,9 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
           fontSize: 12.5, color: '#c4b5fd', background: 'rgba(139,92,246,0.12)',
           border: '1px solid rgba(139,92,246,0.3)', borderRadius: 7, padding: '6px 10px', margin: '10px 0 0',
         }}>
-          🎉 {bonusBanner.username} landed the {bonusBanner.chain_position.toLocaleString()}th hit — earned {bonusBanner.merit_type}!
+          🎉 {bonusBanner.username} {bonusBanner.chain_position != null
+            ? `landed the ${bonusBanner.chain_position.toLocaleString()}th hit`
+            : 'was marked as having landed the bonus hit'} — earned {bonusBanner.merit_type}!
         </p>
       )}
 

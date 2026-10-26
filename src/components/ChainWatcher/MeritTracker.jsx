@@ -44,14 +44,14 @@ export default function MeritTracker({ factionId, sessionActive = false }) {
   const markReceived = useCallback(async (tornUserId) => {
     setMarkingId(tornUserId)
     try {
-      await apiSend('/api/chain-watcher/merits/award', 'POST', { torn_user_id: tornUserId, merit_type: activeType })
+      await apiSend('/api/chain-watcher/merits/award', 'POST', { torn_user_id: tornUserId, merit_type: activeType, faction_id: factionId })
       await load()
     } catch (e) {
       setError(e.message)
     } finally {
       setMarkingId(null)
     }
-  }, [activeType, load])
+  }, [activeType, factionId, load])
 
   const revokeMerit = useCallback(async (tornUserId) => {
     if (!window.confirm(`Revoke ${activeType} from this member?`)) return
@@ -155,13 +155,18 @@ export default function MeritTracker({ factionId, sessionActive = false }) {
           onMark={markReceived}
         />
       ) : (
-        <RankedMeritList candidates={data.candidates[activeType] || []} />
+        <RankedMeritList
+          candidates={data.candidates[activeType] || []}
+          isLeader={isLeader}
+          markingId={markingId}
+          onMark={markReceived}
+        />
       )}
     </CollapsibleCard>
   )
 }
 
-function RankedMeritList({ candidates }) {
+function RankedMeritList({ candidates, isLeader, markingId, onMark }) {
   if (candidates.length === 0) {
     return <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members.</p>
   }
@@ -207,6 +212,20 @@ function RankedMeritList({ candidates }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
             {Math.round(c.score).toLocaleString()}
           </div>
+          {isLeader && !c.receivedThisChain && (
+            <button
+              onClick={() => onMark(c.torn_user_id)}
+              disabled={markingId === c.torn_user_id}
+              title="Mark as having received this on the chain currently being watched — a fallback for when live detection misses it"
+              style={{
+                fontSize: 11, padding: '5px 10px', borderRadius: 6, background: 'rgba(34,197,94,0.1)',
+                color: '#86efac', border: '1px solid rgba(34,197,94,0.3)', cursor: 'pointer', flexShrink: 0,
+                opacity: markingId === c.torn_user_id ? 0.6 : 1,
+              }}
+            >
+              Mark
+            </button>
+          )}
         </div>
       ))}
     </div>
