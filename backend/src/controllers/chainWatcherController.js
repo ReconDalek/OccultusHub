@@ -584,6 +584,62 @@ export async function setShiftNote(request, env) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/chain-watcher/shifts/:id/reassign  { torn_user_id, reason }
+// Leadership-only. Changes who gets credit for an ALREADY-COMPLETED shift —
+// e.g. the signed-up member never showed and someone else actually covered
+// it. Only works on a past shift (an upcoming one is still just Remove +
+// re-sign-up); a reason is mandatory and becomes the shift's note, since
+// that's exactly what it's explaining. original_torn_user_id is set once
+// (COALESCE) so it keeps pointing at who was there first even if a shift
+// gets reassigned more than once.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function reassignShift(request, env, user) {
+  try {
+    if (!user.isLeader && !user.isAdmin && !user.isOwner) {
+      return errorResponse('Leadership access required', 403);
+    }
+
+    const match = new URL(request.url).pathname.match(/\/api\/chain-watcher\/shifts\/(?<id>\d+)\/reassign/);
+    const id = match?.groups?.id;
+    if (!id) return errorResponse('Invalid shift id', 400);
+
+    const body = await request.json();
+    const newUserId = parseInt(body.torn_user_id, 10);
+    const reason = (body.reason || '').trim();
+    if (!newUserId) return errorResponse('torn_user_id is required', 400);
+    if (!reason) return errorResponse('A reason is required to reassign a past shift', 400);
+
+    const shift = await env.DB.prepare(
+      `SELECT faction_id, slot_start, torn_user_id FROM chain_watch_shifts WHERE id = ?`
+    ).bind(id).first();
+    if (!shift) return errorResponse('Shift not found', 404);
+
+    const currentHour = Math.floor(Date.now() / 3600000) * 3600;
+    if (shift.slot_start >= currentHour) {
+      return errorResponse('This shift hasn’t completed yet — remove and re-assign it instead', 400);
+    }
+
+    const target = await env.DB.prepare(
+      `SELECT torn_user_id FROM faction_members WHERE torn_user_id = ? AND faction_id = ? AND is_active = 1`
+    ).bind(newUserId, shift.faction_id).first();
+    if (!target) return errorResponse('That member is not an active member of this faction', 400);
+
+    await env.DB.prepare(
+      `UPDATE chain_watch_shifts
+       SET torn_user_id = ?, note = ?,
+           original_torn_user_id = COALESCE(original_torn_user_id, ?),
+           reassigned_by = ?, reassigned_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(newUserId, reason, shift.torn_user_id, user.userId, id).run();
+
+    return jsonResponse({ success: true });
+  } catch (err) {
+    console.error('reassignShift error:', err);
+    return errorResponse('Failed to reassign shift', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cron: DMs anyone signed up for a chain-watch shift starting in about an
 // hour, if they've linked Discord. Runs every 10 min; the check window (50-70
 // min out) is wider than the cron interval so a shift can never slip through

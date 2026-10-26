@@ -483,6 +483,11 @@ export async function handleRequest(request, env, ctx) {
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.setShiftNote(request, env);
   }
+  if (pathname.match(/^\/api\/chain-watcher\/shifts\/\d+\/reassign$/) && method === 'POST') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.reassignShift(request, env, user);
+  }
   if (pathname === '/api/chain-watcher/members' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);

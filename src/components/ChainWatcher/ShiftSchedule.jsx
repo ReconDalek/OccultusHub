@@ -7,6 +7,7 @@ import {
 } from './chainWatcherUtils'
 import SignUpConfirmModal from './SignUpConfirmModal'
 import NoteModal from './NoteModal'
+import ReassignShiftModal from './ReassignShiftModal'
 import CollapsibleCard from './CollapsibleCard'
 
 const DAYS_AHEAD = 7
@@ -34,6 +35,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
   const [editingShift, setEditingShift] = useState(null) // shift object whose note is being edited
+  const [reassigningShift, setReassigningShift] = useState(null) // shift object being reassigned (past shifts only)
   const [members, setMembers] = useState([]) // active roster, for leaders assigning a shift to someone else
   const jumpedForRef = useRef(null)
 
@@ -118,6 +120,20 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
       setBusySlot(null)
     }
   }, [editingShift, onChanged])
+
+  const saveReassign = useCallback(async (newUserId, reason) => {
+    if (!reassigningShift) return
+    setBusySlot(reassigningShift.slot_start); setError(null)
+    try {
+      await apiSend(`/api/chain-watcher/shifts/${reassigningShift.id}/reassign`, 'POST', { torn_user_id: newUserId, reason })
+      setReassigningShift(null)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusySlot(null)
+    }
+  }, [reassigningShift, onChanged])
 
   const curHour = currentHourStart()
 
@@ -271,7 +287,23 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
                 </div>
               )}
 
-              {!isDisabled && taken && isLeader && taken.note && (
+              {isPast && taken && isLeader && (
+                <div className="flex" style={{ gap: 6, marginTop: 6 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setReassigningShift(taken) }}
+                    disabled={busy}
+                    title="Credit this shift to whoever actually watched it"
+                    style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'rgba(139,92,246,0.1)',
+                      color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.3)', cursor: 'pointer',
+                    }}
+                  >
+                    Reassign
+                  </button>
+                </div>
+              )}
+
+              {taken && isLeader && taken.note && (
                 <div style={{ fontSize: 10.5, color: '#f87171', marginTop: 5, fontStyle: 'italic' }}>
                   {taken.note}
                 </div>
@@ -299,6 +331,16 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           busy={busySlot === editingShift.slot_start}
           onSave={saveNote}
           onClose={() => setEditingShift(null)}
+        />
+      )}
+
+      {reassigningShift && (
+        <ReassignShiftModal
+          shift={reassigningShift}
+          members={members}
+          busy={busySlot === reassigningShift.slot_start}
+          onSave={saveReassign}
+          onClose={() => setReassigningShift(null)}
         />
       )}
     </CollapsibleCard>
