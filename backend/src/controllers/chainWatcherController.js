@@ -1,6 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
-import { recordBonusHitEntries, MERIT_THRESHOLDS } from './meritController.js';
+import { getRandomUserApiKey, getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
+import { recordBonusHitEntries, MERIT_THRESHOLDS, ALL_BONUS_POSITIONS, meritTypeForChainPosition } from './meritController.js';
 import { TARGET_LENGTHS, estimateChainDuration } from './chainController.js';
 
 const TORN_API_BASE = 'https://api.torn.com/v2';
@@ -263,9 +263,18 @@ export async function getLiveStatus(request, env, user) {
       return null;
     });
 
-    if (session.is_test) return jsonResponse({ ...generateTestChainData(factionId, session), viewers });
+    if (session.is_test) return jsonResponse({ ...generateTestChainData(factionId, session), viewers, bonusAwards: [] });
 
-    return jsonResponse({ ...(await fetchLiveChainFromTorn(env, factionId)), viewers });
+    const liveData = await fetchLiveChainFromTorn(env, factionId);
+
+    if (liveData.current > 0) {
+      await checkBonusHitsLive(env, session, factionId, liveData.current).catch((e) => {
+        console.error('checkBonusHitsLive error:', e);
+      });
+    }
+    const bonusAwards = await fetchRecentBonusAwards(env, session.id).catch(() => []);
+
+    return jsonResponse({ ...liveData, viewers, bonusAwards });
   } catch (err) {
     console.error('getLiveStatus error:', err);
     return errorResponse(err.status ? err.message : `Torn API error: ${err.message}`, err.status || 502);
@@ -327,6 +336,90 @@ async function bumpViewerPeak(env, factionId, currentCount) {
   }
 
   return existing;
+}
+
+const BONUS_CHECK_INTERVAL_SECONDS = 8; // throttles the /faction/attacks lookup to roughly once per poll cycle, regardless of viewer count
+const BONUS_LOOKBACK_PAGES = 3; // up to 300 recent attacks — plenty to find a threshold that just landed
+const BONUS_NOTICE_WINDOW_SECONDS = 20; // how long a freshly-detected bonus hit stays visible to pollers that didn't win the check
+
+// Claims the "check for new bonus hits" job for this poll tick (first poll
+// past the throttle window wins; everyone else skips it this tick — same
+// claim pattern as a single-winner optimistic UPDATE), then looks for any
+// bonus-threshold position the chain has already passed but hasn't been
+// attributed to an attacker yet, via the faction's own attack log (the only
+// live source with a per-attack chain position — Torn's chainreport isn't
+// available until the chain itself has ended). Best-effort throughout: a
+// missing staff key or a Torn hiccup just means the real chainreport-based
+// award after the chain ends catches it instead.
+async function checkBonusHitsLive(env, session, factionId, currentPosition) {
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const claim = await env.DB.prepare(
+    `UPDATE chain_watch_sessions SET last_bonus_check_at = ?
+     WHERE id = ? AND (last_bonus_check_at IS NULL OR last_bonus_check_at <= ?)`
+  ).bind(nowSecs, session.id, nowSecs - BONUS_CHECK_INTERVAL_SECONDS).run();
+  if (!claim.meta?.changes) return;
+
+  const { results: already } = await env.DB.prepare(
+    `SELECT chain_position FROM chain_watch_bonus_detections WHERE session_id = ?`
+  ).bind(session.id).all();
+  const pending = new Set(
+    ALL_BONUS_POSITIONS.filter(p => p <= currentPosition && !(already || []).some(r => r.chain_position === p))
+  );
+  if (!pending.size) return;
+
+  const keyProbe = await getStaffApiKeyForFaction(env, factionId);
+  if (!keyProbe?.key) return;
+
+  let url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
+  for (let page = 0; page < BONUS_LOOKBACK_PAGES && pending.size; page++) {
+    let data;
+    try {
+      data = await fetchWithRetry(url, () => getStaffApiKeyForFaction(env, factionId), env);
+    } catch (e) {
+      console.error('checkBonusHitsLive attacks fetch failed:', e.message);
+      break;
+    }
+
+    const attacks = data.attacks || [];
+    if (!attacks.length) break;
+
+    let reachedSessionStart = false;
+    for (const attack of attacks) {
+      if (attack.started < session.started_at) { reachedSessionStart = true; break; }
+      if (pending.has(attack.chain) && attack.attacker?.id && attack.attacker?.faction?.id === factionId) {
+        const meritType = meritTypeForChainPosition(attack.chain);
+        if (!meritType) continue;
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type) VALUES (?, ?)`
+        ).bind(attack.attacker.id, meritType).run();
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO chain_watch_bonus_detections (session_id, chain_position, torn_user_id, merit_type, detected_at)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(session.id, attack.chain, attack.attacker.id, meritType, nowSecs).run();
+        pending.delete(attack.chain);
+      }
+    }
+    if (reachedSessionStart) break;
+
+    const prevUrl = data._metadata?.links?.prev;
+    if (!prevUrl) break;
+    url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub&to=${new URL(prevUrl).searchParams.get('to')}`;
+  }
+}
+
+// Every viewer's poll (not just whichever one won the check above) gets to
+// see a just-landed bonus hit, so the "notifier" isn't limited to the one
+// request that happened to detect it.
+async function fetchRecentBonusAwards(env, sessionId) {
+  const cutoff = Math.floor(Date.now() / 1000) - BONUS_NOTICE_WINDOW_SECONDS;
+  const { results } = await env.DB.prepare(
+    `SELECT d.chain_position, d.torn_user_id, d.merit_type, COALESCE(fm.username, 'Unknown') AS username
+     FROM chain_watch_bonus_detections d
+     LEFT JOIN faction_members fm ON fm.torn_user_id = d.torn_user_id
+     WHERE d.session_id = ? AND d.detected_at >= ?
+     ORDER BY d.chain_position ASC`
+  ).bind(sessionId, cutoff).all();
+  return results || [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

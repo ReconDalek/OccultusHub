@@ -20,6 +20,9 @@ export const MERIT_THRESHOLDS = {
   'Wishful Thinking': [25000, 50000, 100000],
 };
 const MERIT_TYPES = Object.keys(MERIT_THRESHOLDS);
+// Flat list of every bonus-hit position across all three merit types, used
+// by the live chain-watch detector to know which positions to look out for.
+export const ALL_BONUS_POSITIONS = Object.values(MERIT_THRESHOLDS).flat();
 
 // Chain Saver isn't scored/ranked like the three above — just a plain list
 // of members who still need it, most-recently-active first. Torn's merit is
@@ -83,7 +86,7 @@ function rankModFor(factionPosition, lifetimeHits) {
   return RANK_MOD[getDerivedRank(lifetimeHits)] ?? RANK_MOD.Acolyte;
 }
 
-function meritTypeForChainPosition(position) {
+export function meritTypeForChainPosition(position) {
   for (const [type, thresholds] of Object.entries(MERIT_THRESHOLDS)) {
     if (thresholds.includes(position)) return type;
   }

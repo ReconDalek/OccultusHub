@@ -160,12 +160,15 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
   const [showSettings, setShowSettings] = useState(false)
   const [flashOn, setFlashOn] = useState(false)
   const [overlayWindow, setOverlayWindow] = useState(null)
+  const [bonusBanner, setBonusBanner] = useState(null)
 
   const chainKeyRef = useRef(null)
   const firedThresholdsRef = useRef(new Set())
   const prevTimeoutRef = useRef(null)
   const prevPolledTimeoutRef = useRef(null)
   const reconnectTimerRef = useRef(null)
+  const bonusShownRef = useRef(new Set())
+  const bonusBannerTimerRef = useRef(null)
 
   // Self-scheduling rather than a fixed interval, so the poll rate can tighten
   // up as a chain gets close to timing out — each attack resets Torn's own
@@ -202,6 +205,17 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
         setReconnecting(false)
         if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
         if (json.status === 'active' && json.timeout <= FAST_POLL_THRESHOLD) nextDelay = FAST_POLL_MS
+
+        // Every viewer polling within ~20s of the award sees this, not just
+        // whoever's request happened to detect it server-side — dedupe
+        // locally by chain position so it only banners once per viewer.
+        const freshAwards = (json.bonusAwards || []).filter((a) => !bonusShownRef.current.has(a.chain_position))
+        if (freshAwards.length) {
+          freshAwards.forEach((a) => bonusShownRef.current.add(a.chain_position))
+          setBonusBanner(freshAwards[freshAwards.length - 1])
+          if (bonusBannerTimerRef.current) clearTimeout(bonusBannerTimerRef.current)
+          bonusBannerTimerRef.current = setTimeout(() => setBonusBanner(null), 7000)
+        }
       } catch (e) {
         if (cancelled) return
         setError(e.message)
@@ -218,6 +232,7 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
       cancelled = true
       if (timer) clearTimeout(timer)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      if (bonusBannerTimerRef.current) clearTimeout(bonusBannerTimerRef.current)
     }
   }, [factionId])
 
@@ -241,6 +256,7 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
       firedThresholdsRef.current = new Set()
       prevTimeoutRef.current = null
       prevPolledTimeoutRef.current = null
+      bonusShownRef.current = new Set()
     }
   }, [data?.start, data?.status])
 
@@ -469,6 +485,15 @@ export default function LiveChainCard({ factionId, target, shifts = [], isLeader
             </div>
           )}
         </div>
+      )}
+
+      {bonusBanner && (
+        <p style={{
+          fontSize: 12.5, color: '#c4b5fd', background: 'rgba(139,92,246,0.12)',
+          border: '1px solid rgba(139,92,246,0.3)', borderRadius: 7, padding: '6px 10px', margin: '10px 0 0',
+        }}>
+          🎉 {bonusBanner.username} landed the {bonusBanner.chain_position.toLocaleString()}th hit — earned {bonusBanner.merit_type}!
+        </p>
       )}
 
       {data.status === 'active' && data.viewers && (

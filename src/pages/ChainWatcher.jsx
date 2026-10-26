@@ -138,7 +138,7 @@ export default function ChainWatcher() {
           <WatcherBanner shifts={shifts} />
           <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
           {isLeader && <WatchTotalsCard factionId={factionId} />}
-          <MeritTracker factionId={factionId} />
+          <MeritTracker factionId={factionId} sessionActive={session?.status === 'active'} />
         </>
       )}
     </div>

@@ -4,9 +4,14 @@ import { apiGet, apiSend, sectionSub, fmtLongDuration } from './chainWatcherUtil
 import CollapsibleCard from './CollapsibleCard'
 
 const REFRESH_MS = 300000
+// While a chain is actively being watched, bonus hits can now get awarded
+// live (see chainWatcherController's checkBonusHitsLive) — refresh often
+// enough that the ranked "who's next" list drops a freshly-awarded member
+// before a leader calls on them again for the next threshold.
+const ACTIVE_REFRESH_MS = 15000
 const ACCENT = '#8b5cf6'
 
-export default function MeritTracker({ factionId }) {
+export default function MeritTracker({ factionId, sessionActive = false }) {
   const { user } = useSession()
   const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
 
@@ -32,9 +37,9 @@ export default function MeritTracker({ factionId }) {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, REFRESH_MS)
+    const t = setInterval(load, sessionActive ? ACTIVE_REFRESH_MS : REFRESH_MS)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, sessionActive])
 
   const markReceived = useCallback(async (tornUserId) => {
     setMarkingId(tornUserId)
