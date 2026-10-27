@@ -2,7 +2,8 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useSession } from '../../hooks/useSession'
 import {
   apiGet, apiSend, sectionSub,
-  upcomingDays, dayStart, fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, fmtSlotDayLocal, localDayDiffers,
+  upcomingDays, dayStart, fmtSlotDay, fmtSlotDayLocal, localDayDiffers,
+  fmtClockTime, fmtLongDuration,
   currentHourStart, HOUR,
 } from './chainWatcherUtils'
 import SignUpConfirmModal from './SignUpConfirmModal'
@@ -13,6 +14,8 @@ import CollapsibleCard from './CollapsibleCard'
 const DAYS_AHEAD = 7
 const ACCENT = '#8b5cf6'
 const MY_SHIFTS_TZ_KEY = 'chainWatch.myShiftsLocalTime'
+const TIME_FORMAT_KEY = 'chainWatch.use12hFormat'
+const NOW_TICK_MS = 30000
 
 export default function ShiftSchedule({ factionId, shifts, onChanged, session }) {
   const { user } = useSession()
@@ -31,6 +34,25 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
       return next
     })
   }
+  // 12h/24h display toggle — every time shown in this panel (grid + "Your
+  // shifts" + the sign-up/note/reassign modals), remembered per-browser.
+  const [use12h, setUse12h] = useState(() => {
+    try { return localStorage.getItem(TIME_FORMAT_KEY) === '1' } catch { return false }
+  })
+  function toggleUse12h() {
+    setUse12h((prev) => {
+      const next = !prev
+      try { localStorage.setItem(TIME_FORMAT_KEY, next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }
+  // Drives "Your shifts" greying out a completed shift and the countdown to
+  // the next one — a light 30s tick is plenty for an hourly-granularity grid.
+  const [nowTick, setNowTick] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Math.floor(Date.now() / 1000)), NOW_TICK_MS)
+    return () => clearInterval(t)
+  }, [])
   const [busySlot, setBusySlot] = useState(null)
   const [error, setError] = useState(null)
   const [pendingSlot, setPendingSlot] = useState(null) // slot_start awaiting sign-up confirmation
@@ -77,6 +99,10 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
   const myShifts = useMemo(
     () => shifts.filter(s => s.torn_user_id === user?.tornUserId).sort((a, b) => a.slot_start - b.slot_start),
     [shifts, user]
+  )
+  const nextMyShift = useMemo(
+    () => myShifts.find(s => s.slot_start > nowTick),
+    [myShifts, nowTick]
   )
 
   const confirmSignUp = useCallback(async (assigneeId) => {
@@ -145,32 +171,55 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
         <div style={{ marginBottom: 14, padding: '8px 10px', borderRadius: 8, background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}>
           <div className="flex items-center" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your shifts</span>
-            <button
-              onClick={toggleMyShiftsLocal}
-              title="Switch between TCT and your local time"
-              style={{
-                fontSize: 10.5, padding: '2px 8px', borderRadius: 10, cursor: 'pointer',
-                background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
-              }}
-            >
-              {myShiftsLocal ? 'Local' : 'TCT'}
-            </button>
-          </div>
-          <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
-            {myShifts.map(s => (
-              <span
-                key={s.id}
+            <div className="flex items-center" style={{ gap: 6 }}>
+              <button
+                onClick={toggleUse12h}
+                title="Switch between 12h and 24h time"
                 style={{
-                  fontSize: 12, padding: '4px 10px', borderRadius: 6,
-                  background: 'rgba(139,92,246,0.15)', color: '#c4b5fd',
-                  border: '1px solid rgba(139,92,246,0.4)',
+                  fontSize: 10.5, padding: '2px 8px', borderRadius: 10, cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
                 }}
               >
-                {myShiftsLocal
-                  ? `${fmtSlotDayLocal(s.slot_start)} ${fmtSlotTimeLocal(s.slot_start)}`
-                  : `${fmtSlotDay(s.slot_start)} ${fmtSlotTime(s.slot_start)}`}
-              </span>
-            ))}
+                {use12h ? '12h' : '24h'}
+              </button>
+              <button
+                onClick={toggleMyShiftsLocal}
+                title="Switch between TCT and your local time"
+                style={{
+                  fontSize: 10.5, padding: '2px 8px', borderRadius: 10, cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
+                }}
+              >
+                {myShiftsLocal ? 'Local' : 'TCT'}
+              </button>
+            </div>
+          </div>
+
+          {nextMyShift && (
+            <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: '0 0 8px' }}>
+              Next shift in {fmtLongDuration(nextMyShift.slot_start - nowTick)}
+            </p>
+          )}
+
+          <div className="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {myShifts.map(s => {
+              const completed = s.slot_start + HOUR <= nowTick
+              return (
+                <span
+                  key={s.id}
+                  style={{
+                    fontSize: 12, padding: '4px 10px', borderRadius: 6,
+                    background: completed ? 'rgba(255,255,255,0.04)' : 'rgba(139,92,246,0.15)',
+                    color: completed ? 'var(--text-faint)' : '#c4b5fd',
+                    border: `1px solid ${completed ? 'var(--border-subtle)' : 'rgba(139,92,246,0.4)'}`,
+                  }}
+                >
+                  {myShiftsLocal
+                    ? `${fmtSlotDayLocal(s.slot_start)} ${fmtClockTime(s.slot_start, { local: true, use12h })}`
+                    : `${fmtSlotDay(s.slot_start)} ${fmtClockTime(s.slot_start, { use12h })}`}
+                </span>
+              )
+            })}
           </div>
         </div>
       )}
@@ -178,7 +227,29 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
       {error && <p style={{ color: '#f87171', fontSize: 13, marginBottom: 10 }}>{error}</p>}
 
       <div className="flex items-center" style={{ gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Showing {fmtSlotDay(selectedDay)}</span>
+        <div className="flex items-center" style={{ gap: 6 }}>
+          <button
+            onClick={() => setSelectedDay(d => d - 86400)}
+            title="Previous day"
+            style={{
+              fontSize: 12, width: 24, height: 24, borderRadius: 6, cursor: 'pointer', lineHeight: 1,
+              background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
+            }}
+          >
+            ‹
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Showing {fmtSlotDay(selectedDay)}</span>
+          <button
+            onClick={() => setSelectedDay(d => d + 86400)}
+            title="Next day"
+            style={{
+              fontSize: 12, width: 24, height: 24, borderRadius: 6, cursor: 'pointer', lineHeight: 1,
+              background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
+            }}
+          >
+            ›
+          </button>
+        </div>
         {scheduledStart != null && dayStart(scheduledStart) !== selectedDay && (
           <button
             onClick={() => setSelectedDay(dayStart(scheduledStart))}
@@ -235,8 +306,8 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           }
 
           const openAndClickable = !isDisabled && !taken
-          const localTime = fmtSlotTimeLocal(slot)
-          const tctTime = fmtSlotTime(slot)
+          const localTime = fmtClockTime(slot, { local: true, use12h })
+          const tctTime = fmtClockTime(slot, { use12h })
           const showLocal = localTime !== tctTime
           const dayShift = showLocal && localDayDiffers(slot)
 
@@ -300,6 +371,17 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
                   >
                     Reassign
                   </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRemove(taken.id, slot) }}
+                    disabled={busy}
+                    title="Remove this watcher from the completed shift"
+                    style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 5, background: 'rgba(248,113,113,0.1)',
+                      color: '#f87171', border: '1px solid rgba(248,113,113,0.3)', cursor: 'pointer',
+                    }}
+                  >
+                    Remove
+                  </button>
                 </div>
               )}
 
@@ -322,6 +404,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           isLeader={isLeader}
           members={members}
           currentUserId={user?.tornUserId}
+          use12h={use12h}
         />
       )}
 
@@ -331,6 +414,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           busy={busySlot === editingShift.slot_start}
           onSave={saveNote}
           onClose={() => setEditingShift(null)}
+          use12h={use12h}
         />
       )}
 
@@ -341,6 +425,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
           busy={busySlot === reassigningShift.slot_start}
           onSave={saveReassign}
           onClose={() => setReassigningShift(null)}
+          use12h={use12h}
         />
       )}
     </CollapsibleCard>

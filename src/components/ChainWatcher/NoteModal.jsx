@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import Modal from './Modal'
-import { fmtSlotDay, fmtSlotTime } from './chainWatcherUtils'
+import { fmtSlotDay, fmtClockTime } from './chainWatcherUtils'
 
-export default function NoteModal({ shift, busy, onSave, onClose }) {
+export default function NoteModal({ shift, busy, onSave, onClose, use12h = false }) {
   const [text, setText] = useState(shift.note || '')
 
   return (
@@ -11,7 +11,7 @@ export default function NoteModal({ shift, busy, onSave, onClose }) {
         Shift Note
       </h3>
       <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 14px' }}>
-        {fmtSlotDay(shift.slot_start)} {fmtSlotTime(shift.slot_start)} TCT — {shift.username}
+        {fmtSlotDay(shift.slot_start)} {fmtClockTime(shift.slot_start, { use12h })} TCT — {shift.username}
       </p>
 
       <textarea

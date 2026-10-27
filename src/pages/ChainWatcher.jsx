@@ -13,6 +13,7 @@ import ChainEconomicsCard from '../components/ChainWatcher/ChainEconomicsCard'
 const SHIFTS_REFRESH_MS = 30000
 const SESSION_REFRESH_MS = 20000
 const WINDOW_SECONDS = 7 * 86400
+const PAST_WINDOW_SECONDS = 7 * 86400
 
 export default function ChainWatcher() {
   const { user } = useSession()
@@ -48,10 +49,11 @@ export default function ChainWatcher() {
     try {
       const now = Math.floor(Date.now() / 1000)
       const to = scheduledStart != null ? Math.max(now + WINDOW_SECONDS, scheduledStart + WINDOW_SECONDS) : now + WINDOW_SECONDS
-      // From the start of today (not just an hour back) — the calendar's
-      // day-tabs only ever show today onward, so today's earlier hours need
-      // real data too, to show who actually watched them instead of a blank.
-      const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${dayStart(now)}&to=${to}`)
+      // Reaches back a week before today too — leaders can now step the
+      // calendar back with the prev/next day arrows to review past watchers,
+      // not just today's earlier hours.
+      const from = dayStart(now) - PAST_WINDOW_SECONDS
+      const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${from}&to=${to}`)
       setShifts(json.shifts || [])
       setError(null)
     } catch (e) {

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import Modal from './Modal'
-import { fmtSlotDay, fmtSlotTime } from './chainWatcherUtils'
+import { fmtSlotDay, fmtClockTime } from './chainWatcherUtils'
 
 // Leadership-only — changes who gets credit for an already-completed shift
 // (e.g. the signed-up member never showed, someone else covered it
 // manually). A reason is mandatory, since it's the only record of why a
 // finished shift's watcher changed.
-export default function ReassignShiftModal({ shift, members = [], busy, onSave, onClose }) {
+export default function ReassignShiftModal({ shift, members = [], busy, onSave, onClose, use12h = false }) {
   const [newUserId, setNewUserId] = useState(() => {
     const first = members.find((m) => m.torn_user_id !== shift.torn_user_id)
     return first?.torn_user_id ?? null
@@ -21,7 +21,7 @@ export default function ReassignShiftModal({ shift, members = [], busy, onSave, 
         Reassign Completed Shift
       </h3>
       <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 14px' }}>
-        {fmtSlotDay(shift.slot_start)} {fmtSlotTime(shift.slot_start)} TCT — currently credited to {shift.username}
+        {fmtSlotDay(shift.slot_start)} {fmtClockTime(shift.slot_start, { use12h })} TCT — currently credited to {shift.username}
       </p>
 
       <div style={{ marginBottom: 14 }}>

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import Modal from './Modal'
-import { fmtSlotDay, fmtSlotTime, fmtSlotTimeLocal, localDayDiffers, fmtSlotDayLocal } from './chainWatcherUtils'
+import { fmtSlotDay, fmtClockTime, localDayDiffers, fmtSlotDayLocal } from './chainWatcherUtils'
 
-export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId }) {
+export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId, use12h = false }) {
   const dayShift = localDayDiffers(slotStart)
   const [assigneeId, setAssigneeId] = useState(currentUserId ?? null)
   const assigningOther = assigneeId != null && assigneeId !== currentUserId
@@ -14,8 +14,8 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
       </h3>
 
       <p style={{ color: 'var(--text-secondary)', fontSize: 14, margin: '0 0 12px' }}>
-        <strong>{fmtSlotDay(slotStart)} {fmtSlotTime(slotStart)} TCT</strong>
-        {' '}(<strong>{dayShift ? `${fmtSlotDayLocal(slotStart)} ` : ''}{fmtSlotTimeLocal(slotStart)}</strong> local)
+        <strong>{fmtSlotDay(slotStart)} {fmtClockTime(slotStart, { use12h })} TCT</strong>
+        {' '}(<strong>{dayShift ? `${fmtSlotDayLocal(slotStart)} ` : ''}{fmtClockTime(slotStart, { local: true, use12h })}</strong> local)
       </p>
 
       {isLeader && members.length > 0 && (

@@ -103,6 +103,22 @@ export function localDayDiffers(slotStart) {
   return fmtSlotDayLocal(slotStart) !== fmtSlotDay(slotStart)
 }
 
+// Shift Sign-Ups' own clock-time formatter — kept separate from fmtSlotTime/
+// fmtSlotTimeLocal above (always 24h) since its 12h/24h toggle is scoped to
+// that one panel, not a site-wide default. Slot starts are always exactly on
+// the hour, so minutes are always "00".
+export function fmtClockTime(slotStart, { local = false, use12h = false } = {}) {
+  const d = new Date(slotStart * 1000)
+  const hours = local ? d.getHours() : d.getUTCHours()
+  const minutes = local ? d.getMinutes() : d.getUTCMinutes()
+  if (use12h) {
+    const period = hours >= 12 ? 'pm' : 'am'
+    const h12 = hours % 12 === 0 ? 12 : hours % 12
+    return `${h12}:${String(minutes).padStart(2, '0')}${period}`
+  }
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
 export function dayStart(ts) {
   const d = new Date(ts * 1000)
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000)

@@ -3,6 +3,7 @@ import { useSession } from '../../hooks/useSession'
 import { apiGet, apiSend, sectionSub, fmtLongDuration } from './chainWatcherUtils'
 import CollapsibleCard from './CollapsibleCard'
 
+const SHOW_CALC_KEY = 'chainWatch.meritShowCalc'
 const REFRESH_MS = 300000
 // While a chain is actively being watched, bonus hits can now get awarded
 // live (see chainWatcherController's checkBonusHitsLive) — refresh often
@@ -22,6 +23,19 @@ export default function MeritTracker({ factionId, sessionActive = false }) {
   const [showAwarded, setShowAwarded] = useState(false)
   const [markingId, setMarkingId] = useState(null)
   const [revokingId, setRevokingId] = useState(null)
+  // Rank/hits/activity breakdown and score are leadership calculation
+  // detail, not something members need by default — leader-only toggle,
+  // remembered per-browser.
+  const [showCalcDetails, setShowCalcDetails] = useState(() => {
+    try { return localStorage.getItem(SHOW_CALC_KEY) === '1' } catch { return false }
+  })
+  function toggleShowCalcDetails() {
+    setShowCalcDetails((prev) => {
+      const next = !prev
+      try { localStorage.setItem(SHOW_CALC_KEY, next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }
 
   const load = useCallback(async () => {
     try {
@@ -155,18 +169,32 @@ export default function MeritTracker({ factionId, sessionActive = false }) {
           onMark={markReceived}
         />
       ) : (
-        <RankedMeritList
-          candidates={data.candidates[activeType] || []}
-          isLeader={isLeader}
-          markingId={markingId}
-          onMark={markReceived}
-        />
+        <>
+          {isLeader && (
+            <button
+              onClick={toggleShowCalcDetails}
+              style={{
+                fontSize: 11, padding: '3px 10px', borderRadius: 6, marginBottom: 8, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
+              }}
+            >
+              {showCalcDetails ? 'Hide' : 'Show'} details
+            </button>
+          )}
+          <RankedMeritList
+            candidates={data.candidates[activeType] || []}
+            isLeader={isLeader}
+            markingId={markingId}
+            onMark={markReceived}
+            showDetails={isLeader && showCalcDetails}
+          />
+        </>
       )}
     </CollapsibleCard>
   )
 }
 
-function RankedMeritList({ candidates, isLeader, markingId, onMark }) {
+function RankedMeritList({ candidates, isLeader, markingId, onMark, showDetails }) {
   if (candidates.length === 0) {
     return <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No eligible members.</p>
   }
@@ -197,21 +225,25 @@ function RankedMeritList({ candidates, isLeader, markingId, onMark }) {
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
-              <span title="Hits vs. faction average + energy/presence bonus">
-                {c.activity_factor.toFixed(2)}x activity
-              </span>
-              {c.penalty_multiplier < 1 && (
-                <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) in the window`}>
-                  {' '}· -{Math.round((1 - c.penalty_multiplier) * 100)}%
+            {showDetails && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
+                <span title="Hits vs. faction average + energy/presence bonus">
+                  {c.activity_factor.toFixed(2)}x activity
                 </span>
-              )}
+                {c.penalty_multiplier < 1 && (
+                  <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) in the window`}>
+                    {' '}· -{Math.round((1 - c.penalty_multiplier) * 100)}%
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          {showDetails && (
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
+              {Math.round(c.score).toLocaleString()}
             </div>
-          </div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', flexShrink: 0 }}>
-            {Math.round(c.score).toLocaleString()}
-          </div>
+          )}
           {isLeader && !c.receivedThisChain && (
             <button
               onClick={() => onMark(c.torn_user_id)}
