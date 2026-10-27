@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import { useSite } from '../contexts/SiteContext'
 
 // ── Lunar phase ──────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ export const EVENT_DEFS = [
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(50,10,80,0.22) 0%, rgba(20,5,35,0.12) 65%, transparent 88%)',
     pulseAnim: 'evHexPulse 6s ease-in-out infinite',
     banner: { text: 'THE VEIL THINS',          color: '#d8b4fe', bg: 'rgba(20,5,35,0.7)',  border: 'rgba(109,40,217,0.6)' },
-    extras: ['halloween', 'batScare'], textVars: TV.purple,
+    extras: ['halloween', 'batScare', 'webDropSpider'], textVars: TV.purple,
   },
   {
     id: 'samhain',
@@ -253,6 +253,11 @@ const KEYFRAMES = `
   @keyframes evSpiderDrop  { 0%{transform:translateY(-120px)} 100%{transform:translateY(0)} }
   @keyframes evSpiderSway  { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
   @keyframes evSpiderSwing { 0%{transform:translateX(0) rotate(-12deg)} 50%{transform:translateX(var(--swing)) rotate(12deg)} 100%{transform:translateX(0) rotate(-12deg)} }
+  @keyframes evLegClimb    { 0%,100%{transform:rotate(-15deg)} 50%{transform:rotate(15deg)} }
+  @keyframes evThreadGrow  { from{transform:scaleY(0)} to{transform:scaleY(1)} }
+  @keyframes evThreadShrink{ from{transform:scaleY(1)} to{transform:scaleY(0)} }
+  @keyframes evSpiderDescend{ from{transform:translateY(0)} to{transform:translateY(var(--drop))} }
+  @keyframes evSpiderClimb { from{transform:translateY(var(--drop))} to{transform:translateY(0)} }
   @keyframes evSkullBob    { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-5px) rotate(2deg)} }
   @keyframes evGarlandSway { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.04)} }
   @keyframes evSigilPulse  { 0%,100%{opacity:.18;filter:drop-shadow(0 0 6px rgba(200,30,60,0.4))} 50%{opacity:.32;filter:drop-shadow(0 0 14px rgba(220,40,70,0.7))} }
@@ -435,14 +440,51 @@ function BloodMoonOrb() {
 // actually comes from), with the cephalothorax and legs below it — a solid
 // black silhouette, no colour, legs bent at a "knee" like a real spider
 // rather than straight spokes.
-function Spider({ x, y, swingPx, delay, size = 1 }) {
+function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.5, noEntranceDrop = false }) {
   const s = size
   const ink = 'rgba(6,2,12,0.95)'
+  const gradId = useId()
+  // Three-segment legs (hip → knee → ankle → foot) read as proper jointed
+  // spider legs rather than a single bent spoke.
   const legs = [0,1,2,3].map(i => ({
-    hip:  [4*s,  15*s],
-    knee: [(12+i*3)*s, (2+i*2)*s],
-    foot: [(30+i*6)*s, (26+i*6)*s],
+    hip:   [4*s,  13*s],
+    knee:  [(9+i*3)*s,  (0+i*1.6)*s],
+    ankle: [(19+i*4.5)*s, (9+i*3.6)*s],
+    foot:  [(31+i*6)*s, (27+i*6)*s],
   }))
+  const body = (
+    <>
+      <defs>
+        <radialGradient id={gradId} cx="35%" cy="28%" r="75%">
+          <stop offset="0%"   stopColor="rgba(72,58,85,0.95)"/>
+          <stop offset="45%"  stopColor="rgba(18,10,26,0.97)"/>
+          <stop offset="100%" stopColor="rgba(3,1,7,1)"/>
+        </radialGradient>
+      </defs>
+      {/* Legs — behind the body, jointed hip → knee → ankle → foot, both sides.
+          Each leg is its own group so a climbing gait can rotate it about the
+          hip independently, staggered per leg for an alternating gait. */}
+      {[-1,1].map(sd => legs.map((leg, i) => (
+        <g key={`${sd}${i}`}
+          style={legWalk ? {
+            transformOrigin:`${sd*leg.hip[0]}px ${leg.hip[1]}px`,
+            animation:`evLegClimb ${legCycle}s ${(i%2===0?0:legCycle/2)}s ease-in-out infinite`,
+          } : undefined}>
+          <polyline
+            points={`${sd*leg.hip[0]},${leg.hip[1]} ${sd*leg.knee[0]},${leg.knee[1]} ${sd*leg.ankle[0]},${leg.ankle[1]} ${sd*leg.foot[0]},${leg.foot[1]}`}
+            fill="none" stroke={ink} strokeWidth={1.1*s} strokeLinecap="round"/>
+        </g>
+      )))}
+      {/* Abdomen — sits right where the thread ends, glossy gradient fill */}
+      <ellipse cx="0" cy={6*s} rx={7*s} ry={9*s} fill={`url(#${gradId})`}/>
+      <ellipse cx={-1.5*s} cy={2.5*s} rx={2.2*s} ry={3*s} fill="rgba(110,90,125,0.35)"/>
+      {/* Cephalothorax — below the abdomen */}
+      <circle cx="0" cy={20*s} r={4.5*s} fill={`url(#${gradId})`}/>
+      {/* Glowing red eyes */}
+      <circle cx={-1.7*s} cy={18.4*s} r={0.9*s} fill="#ff2a2a"/>
+      <circle cx={1.7*s}  cy={18.4*s} r={0.9*s} fill="#ff2a2a"/>
+    </>
+  )
   return (
     <g style={{ '--swing':`${swingPx}px`, animation:`evSpiderSwing ${5+Math.abs(swingPx)*0.04}s ${delay}s ease-in-out infinite`, transformOrigin:`${x}px 0` }}>
       <line x1={x} y1="0" x2={x} y2={y} stroke="rgba(200,180,230,0.55)" strokeWidth="0.7"/>
@@ -452,20 +494,79 @@ function Spider({ x, y, swingPx, delay, size = 1 }) {
           (0,0) once the drop-in animation finished. The entrance animation
           lives on the nested group below instead, so the two compose. */}
       <g transform={`translate(${x},${y})`}>
-        <g style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>
-          {/* Legs — behind the body, bent hip → knee → foot, both sides */}
-          {[-1,1].map(sd => legs.map((leg, i) => (
-            <polyline key={`${sd}${i}`}
-              points={`${sd*leg.hip[0]},${leg.hip[1]} ${sd*leg.knee[0]},${leg.knee[1]} ${sd*leg.foot[0]},${leg.foot[1]}`}
-              fill="none" stroke={ink} strokeWidth={1.1*s} strokeLinecap="round"/>
-          )))}
-          {/* Abdomen — sits right where the thread ends */}
-          <ellipse cx="0" cy={6*s} rx={7*s} ry={9*s} fill={ink}/>
-          {/* Cephalothorax — below the abdomen */}
-          <circle cx="0" cy={20*s} r={4.5*s} fill={ink}/>
-        </g>
+        {noEntranceDrop ? <g>{body}</g> : <g style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>{body}</g>}
       </g>
     </g>
+  )
+}
+
+// ── Spider that spins its own web down the page and climbs back up ──────────
+// Fires at a random interval: drops from near the nav, reeling out a silk
+// thread as it descends, pauses at the bottom, then climbs the same thread
+// back up (reeling it in) before vanishing. Thread length tracks the
+// spider's position via a scaleY tied to the same duration/easing as the
+// spider's own translateY, so the two stay visually attached. Legs run a
+// climbing gait throughout.
+function WebDropSpider() {
+  const [run, setRun] = useState(null)
+
+  useEffect(() => {
+    let t
+    function schedule() {
+      t = setTimeout(startRun, 15000 + Math.random() * 25000)
+    }
+    function startRun() {
+      const leftPct = 8 + Math.random() * 84
+      const drop = 140 + Math.random() * 320
+      const dur = 1.8 + drop / 170
+      setRun({ leftPct, drop, dur, phase: 'descend' })
+
+      t = setTimeout(() => {
+        setRun(r => r && { ...r, phase: 'pause' })
+        t = setTimeout(() => {
+          setRun(r => r && { ...r, phase: 'climb' })
+          t = setTimeout(() => {
+            setRun(null)
+            schedule()
+          }, dur * 1000)
+        }, 1300 + Math.random() * 1400)
+      }, dur * 1000)
+    }
+    schedule()
+    return () => clearTimeout(t)
+  }, [])
+
+  if (!run) return null
+  const { leftPct, drop, dur, phase } = run
+  const threadStyle = phase === 'descend'
+    ? { animation: `evThreadGrow ${dur}s linear forwards` }
+    : phase === 'climb'
+      ? { animation: `evThreadShrink ${dur}s linear forwards` }
+      : { transform: 'scaleY(1)' }
+  const spiderStyle = {
+    '--drop': `${drop}px`,
+    ...(phase === 'descend'
+      ? { animation: `evSpiderDescend ${dur}s linear forwards` }
+      : phase === 'climb'
+        ? { animation: `evSpiderClimb ${dur}s linear forwards` }
+        : { transform: `translateY(${drop}px)` }),
+  }
+
+  return (
+    <div style={{
+      position:'fixed', top:'var(--ev-header-h, 64px)', left:`${leftPct}%`,
+      zIndex:3, pointerEvents:'none', width:1, height:drop+50,
+    }}>
+      <svg viewBox={`-40 0 80 ${drop+50}`} width="80" height={drop+50} style={{ overflow:'visible' }}>
+        <g style={{ transformOrigin:'0px 0px', ...threadStyle }}>
+          <line x1="0" y1="0" x2="0" y2={drop} stroke="rgba(200,180,230,0.55)" strokeWidth="0.8"/>
+        </g>
+        <g style={spiderStyle}>
+          <Spider x={0} y={0} swingPx={0} delay={0} size={0.62}
+            legWalk legCycle={phase === 'pause' ? 1.1 : 0.42} noEntranceDrop/>
+        </g>
+      </svg>
+    </div>
   )
 }
 
@@ -976,6 +1077,7 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
           {x === 'bonfire'     && <Bonfire/>}
           {x === 'flicker'     && <Flicker/>}
           {x === 'batScare'    && <BatScare/>}
+          {x === 'webDropSpider' && <WebDropSpider/>}
         </span>
       ))}
 
