@@ -689,30 +689,58 @@ function FlyOnWeb({ fly }) {
 }
 
 // ── Spider that lives on the corner web, walking its actual strands ─────────
-// Wanders the lattice in continuous multi-hop treks — each trek is a single
-// animateMotion across several real nodes at once (constant pace along the
-// whole path), so the walk reads as one fluid traverse that only occasionally
-// pauses, the same way the dropping spiders' descend/climb is one unbroken
-// motion rather than a string of little restarts. It's only ever out of view
-// by having walked off the web's own rim (clipped by the SVG's bounds, same
-// as walking behind the edge of the screen) and later walks back in from a
-// different point on the rim — never a pop-in/pop-out mid-strand. Very
-// rarely a fly blunders into the web; the spider breaks off whatever it's
-// doing, rushes it, wraps it, and carries it off before resuming.
+// Wanders the lattice in continuous multi-hop treks. Position is driven by
+// the Web Animations API straight on the DOM node — compositor-driven, same
+// as the dropping spiders' CSS descend/climb, just built from a dynamic list
+// of keyframes instead of a fixed one, since each trek's path is different
+// every time. (SVG's own SMIL animateMotion was tried first and reliably
+// looked stuttery; a hand-rolled requestAnimationFrame loop was tried next
+// and looked worse still, because it's gated to the main thread and stutters
+// under exactly the kind of throttling a background-ish decorative effect
+// actually runs under. WAAPI keyframes avoid both.) It's only ever out of
+// view by having walked off the web's own rim (clipped by the SVG's bounds,
+// same as walking behind the edge of the screen) and later walks back in
+// from a different point on the rim — never a pop-in/pop-out mid-strand.
+// Very rarely a fly blunders into the web; the spider breaks off whatever
+// it's doing, rushes it, wraps it, and carries it off before resuming.
 const FLY_CHECK_MS = 10000
 const FLY_CHANCE   = 1 / 12 // rolled every FLY_CHECK_MS — ~2min average wait, per corner
 
 function WebCrawlSpider() {
-  const [seg, setSeg]     = useState(null)
   const [fly, setFly]     = useState(null)
   const [carry, setCarry] = useState(false)
+  const [legCycle, setLegCycle] = useState(0.5)
+  const [ready, setReady] = useState(false)
+  const gRef = useRef(null)
   const node = useRef(null)
   const prev = useRef(null)
   const hunting = useRef(false)
   const flyActive = useRef(false)
+  const anim = useRef(null)
 
   useEffect(() => {
     let t, flyT, flyCheckId
+
+    // Walks the <g> smoothly along a multi-point path over `dur` seconds —
+    // one WAAPI animation with a keyframe per waypoint, offsets proportional
+    // to distance along the path for constant speed, heading tracking each
+    // leg — then calls onDone with where it ended up.
+    function walkPath(pts, dur, onDone) {
+      if (anim.current) anim.current.cancel()
+      if (!gRef.current) { onDone(); return }
+      const cum = [0]
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i-1] + Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]))
+      const total = cum[cum.length-1] || 1
+      const keyframes = pts.map(([x,y], i) => {
+        const [nx,ny] = i < pts.length-1 ? pts[i+1] : pts[i]
+        const [px,py] = i > 0 ? pts[i-1] : pts[i]
+        const angle = Math.atan2(ny-py, nx-px) * 180/Math.PI
+        return { transform: `translate(${x}px,${y}px) rotate(${angle}deg)`, offset: cum[i]/total }
+      })
+      const a = gRef.current.animate(keyframes, { duration: Math.max(1, dur*1000), easing: 'linear', fill: 'forwards' })
+      anim.current = a
+      a.onfinish = () => { if (anim.current === a) onDone() }
+    }
 
     // Picks `hops` real strands in a row from the current node (stopping
     // early if it reaches the rim) and returns the point list for a single
@@ -732,25 +760,23 @@ function WebCrawlSpider() {
       return { pts, endAi: ai, endRi: ri, endPrev: p }
     }
 
-    function startChain(hops, lo, hi) {
+    function startChain(hops, lo, hi, onDone) {
       const { pts, endAi, endRi, endPrev } = buildChain(hops)
       let dist = 0
       for (let i = 1; i < pts.length; i++) dist += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1])
       const speed = lo + Math.random() * (hi - lo)
       const dur = Math.max(0.6, dist / speed)
-      const legCycle = Math.min(0.85, Math.max(0.14, 16 / speed))
-      const d = 'M' + pts.map(([x,y]) => `${x},${y}`).join(' L')
+      setLegCycle(Math.min(0.85, Math.max(0.14, 16 / speed)))
       prev.current = endPrev
       node.current = { ai: endAi, ri: endRi }
-      setSeg({ d, dur, legCycle, key: Math.random() })
-      return { dur, endAi, endRi }
+      setReady(true)
+      walkPath(pts, dur, () => onDone(endAi, endRi))
     }
 
     function wanderStep() {
       if (hunting.current) return
       const hops = 3 + Math.floor(Math.random()*4)
-      const { dur, endAi, endRi } = startChain(hops, 46, 110)
-      t = setTimeout(() => afterWander(endAi, endRi), dur*1000)
+      startChain(hops, 46, 110, afterWander)
     }
 
     function afterWander(ai, ri) {
@@ -763,8 +789,7 @@ function WebCrawlSpider() {
           node.current = { ai: reAi, ri: WEB_RADII.length }
           prev.current = null
           const hops = 3 + Math.floor(Math.random()*3)
-          const { dur, endAi, endRi } = startChain(hops, 46, 110)
-          t = setTimeout(() => afterWander(endAi, endRi), dur*1000)
+          startChain(hops, 46, 110, afterWander)
         }, 9000 + Math.random()*18000)
         return
       }
@@ -813,11 +838,10 @@ function WebCrawlSpider() {
       const dist = Math.hypot(tx-x1, ty-y1)
       const speed = 95 + Math.random()*55
       const dur = Math.max(0.4, dist/speed)
-      const legCycle = Math.min(0.5, Math.max(0.12, 14/speed))
+      setLegCycle(Math.min(0.5, Math.max(0.12, 14/speed)))
       prev.current = node.current
       node.current = { ai, ri }
-      setSeg({ d:`M${x1},${y1} L${tx},${ty}`, dur, legCycle, key: Math.random() })
-      flyT = setTimeout(() => wrapFly(tx, ty), dur*1000)
+      walkPath([[x1,y1],[tx,ty]], dur, () => wrapFly(tx, ty))
     }
 
     function wrapFly(tx, ty) {
@@ -833,17 +857,16 @@ function WebCrawlSpider() {
       const dist = Math.hypot(ex-tx, ey-ty)
       const speed = 55 + Math.random()*35
       const dur = Math.max(0.5, dist/speed)
-      const legCycle = Math.min(0.7, Math.max(0.2, 16/speed))
+      setLegCycle(Math.min(0.7, Math.max(0.2, 16/speed)))
       prev.current = node.current
       node.current = { ai: reAi, ri: WEB_RADII.length }
-      setSeg({ d:`M${tx},${ty} L${ex},${ey}`, dur, legCycle, key: Math.random() })
-      flyT = setTimeout(() => {
+      walkPath([[tx,ty],[ex,ey]], dur, () => {
         setCarry(false)
         hunting.current = false
         flyActive.current = false
         afterWander(reAi, WEB_RADII.length) // folds into the normal rim pause + re-entry
         scheduleFly()
-      }, dur*1000)
+      })
     }
 
     const startAi = Math.floor(Math.random()*WEB_ANGLES.length)
@@ -852,16 +875,15 @@ function WebCrawlSpider() {
     t = setTimeout(wanderStep, 1200 + Math.random()*4000)
     scheduleFly()
 
-    return () => { clearTimeout(t); clearTimeout(flyT); clearInterval(flyCheckId) }
+    return () => { clearTimeout(t); clearTimeout(flyT); clearInterval(flyCheckId); anim.current?.cancel() }
   }, [])
 
   return (
     <>
       {fly && <FlyOnWeb fly={fly}/>}
-      {seg && (
-        <g key="crawler">
-          <animateMotion key={seg.key} dur={`${seg.dur}s`} fill="freeze" rotate="auto" path={seg.d}/>
-          <Spider bare legWalk legCycle={seg.legCycle} size={CRAWL_SIZE}/>
+      {ready && (
+        <g ref={gRef}>
+          <Spider bare legWalk legCycle={legCycle} size={CRAWL_SIZE}/>
           {carry && <g transform={`translate(${26*CRAWL_SIZE},0)`}><Cocoon/></g>}
         </g>
       )}
