@@ -623,11 +623,27 @@ function webNeighbors(ai, ri) {
   if (ri === -1) return WEB_ANGLES.map((_, i) => [i, 0])
   const out = [ri === 0 ? [ai, -1] : [ai, ri - 1]]
   if (ri < WEB_RADII.length) {
-    out.push([ai, ri + 1])
+    // Only the two edges of this quarter-circle lattice actually run along a
+    // screen edge — angle 0° along the top, angle 90° along the side nearest
+    // the hub (left for the left web, right for the right web, thanks to the
+    // horizontal mirror the right-side copy already uses). Anywhere in
+    // between is the open middle of the page, so the outermost ring only
+    // leads to the exit ring from one of those two edges — the spider can
+    // still walk the rim to reach one, it just can't pop out through the
+    // middle.
+    const atEdge = ai === 0 || ai === WEB_ANGLES.length - 1
+    if (ri < WEB_RADII.length - 1 || atEdge) out.push([ai, ri + 1])
     if (ai > 0) out.push([ai - 1, ri])
     if (ai < WEB_ANGLES.length - 1) out.push([ai + 1, ri])
   }
   return out
+}
+
+// The only two angle indices that run along a screen edge (see webNeighbors
+// above) — used anywhere the spider re-enters or exits the lattice, so it
+// only ever appears/disappears at the top or the side, never the middle.
+function pickEdgeAi() {
+  return Math.random() < 0.5 ? 0 : WEB_ANGLES.length - 1
 }
 
 const CRAWL_SIZE = 0.85
@@ -704,7 +720,7 @@ function FlyOnWeb({ fly }) {
 // Very rarely a fly blunders into the web; the spider breaks off whatever
 // it's doing, rushes it, wraps it, and carries it off before resuming.
 const FLY_CHECK_MS = 10000
-const FLY_CHANCE   = 1 / 12 // rolled every FLY_CHECK_MS — ~2min average wait, per corner
+const FLY_CHANCE   = 1 / 24 // rolled every FLY_CHECK_MS — ~4min average wait, per corner
 
 function WebCrawlSpider() {
   const [fly, setFly]     = useState(null)
@@ -785,7 +801,7 @@ function WebCrawlSpider() {
         // reached the rim — out of view for a while, then re-enters elsewhere
         t = setTimeout(() => {
           if (hunting.current) return
-          const reAi = Math.floor(Math.random()*WEB_ANGLES.length)
+          const reAi = pickEdgeAi()
           node.current = { ai: reAi, ri: WEB_RADII.length }
           prev.current = null
           const hops = 3 + Math.floor(Math.random()*3)
@@ -852,7 +868,7 @@ function WebCrawlSpider() {
     function carryOff(tx, ty) {
       setFly(null)
       setCarry(true)
-      const reAi = Math.floor(Math.random()*WEB_ANGLES.length)
+      const reAi = pickEdgeAi()
       const [ex, ey] = webNodePos(reAi, WEB_RADII.length)
       const dist = Math.hypot(ex-tx, ey-ty)
       const speed = 55 + Math.random()*35
