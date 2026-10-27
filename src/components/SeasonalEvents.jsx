@@ -257,6 +257,9 @@ const KEYFRAMES = `
   @keyframes evThreadShrink{ from{transform:scaleY(1)} to{transform:scaleY(0)} }
   @keyframes evSpiderDescend{ from{transform:translateY(0)} to{transform:translateY(var(--drop))} }
   @keyframes evSpiderClimb { from{transform:translateY(var(--drop))} to{transform:translateY(0)} }
+  @keyframes evImpactRipple{ 0%{transform:scale(0.3);opacity:0.9} 100%{transform:scale(2.4);opacity:0} }
+  @keyframes evFlyStruggle { 0%,100%{transform:translate(0,0) rotate(0deg)} 25%{transform:translate(0.6px,-0.4px) rotate(-7deg)} 50%{transform:translate(-0.5px,0.5px) rotate(6deg)} 75%{transform:translate(0.4px,0.3px) rotate(-4deg)} }
+  @keyframes evWrapRing   { 0%{transform:scale(0);opacity:0} 55%{opacity:1} 100%{transform:scale(1);opacity:0.85} }
   @keyframes evSkullBob    { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-5px) rotate(2deg)} }
   @keyframes evGarlandSway { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.04)} }
   @keyframes evSigilPulse  { 0%,100%{opacity:.18;filter:drop-shadow(0 0 6px rgba(200,30,60,0.4))} 50%{opacity:.32;filter:drop-shadow(0 0 14px rgba(220,40,70,0.7))} }
@@ -434,60 +437,67 @@ function BloodMoonOrb() {
   )
 }
 
-// ── Halloween cobwebs ────────────────────────────────────────────────────────
-// Hangs from the thread's own end, abdomen first (that's where the silk
-// actually comes from), with the cephalothorax and legs below it — a solid
-// black silhouette, no colour, legs bent at a "knee" like a real spider
-// rather than straight spokes.
-function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.5, noEntranceDrop = false, bare = false }) {
+// ── Halloween spider ─────────────────────────────────────────────────────────
+// Authored facing +x (head/eyes lead toward positive x, abdomen trails
+// behind toward negative x) so it composes directly with SVG's
+// animateMotion rotate="auto", which assumes that same convention and turns
+// the whole shape to match whatever direction it's travelling. Each of the
+// 8 legs has its own hip point along the body and its own outward fan
+// angle (steeper forward up front, swept back at the rear) so they read as
+// separate jointed limbs rather than one fused wing shape.
+const SPIDER_LEGS = [
+  [[5.5,1.8],  [11.23,5.82], [15.25,11.56],[17.32,19.29]],
+  [[3,1.8],    [6.5,7.86],   [7.72,14.75], [6.33,22.63]],
+  [[0.5,1.8],  [-0.11,8.77], [-3.07,15.11],[-8.73,20.77]],
+  [[-2,1.8],   [-6.02,7.53], [-11.75,11.55],[-19.48,13.62]],
+]
+
+function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.5, noEntranceDrop = false, bare = false, hanging = false }) {
   const s = size
   const ink = 'rgba(6,2,12,0.95)'
   const gradId = useId()
-  // Three-segment legs (hip → knee → ankle → foot) read as proper jointed
-  // spider legs rather than a single bent spoke.
-  const legs = [0,1,2,3].map(i => ({
-    hip:   [4*s,  13*s],
-    knee:  [(9+i*3)*s,  (0+i*1.6)*s],
-    ankle: [(19+i*4.5)*s, (9+i*3.6)*s],
-    foot:  [(31+i*6)*s, (27+i*6)*s],
-  }))
   const body = (
-    <>
+    // A soft lavender rim-glow (matching the web silk's own colour) is the
+    // only thing that separates a near-black spider from the near-black
+    // page background — without it the silhouette all but disappears.
+    <g style={{ filter:`drop-shadow(0 0 ${1.3*s}px rgba(195,178,225,0.85))` }}>
       <defs>
-        <radialGradient id={gradId} cx="35%" cy="28%" r="75%">
+        <radialGradient id={gradId} cx="38%" cy="32%" r="75%">
           <stop offset="0%"   stopColor="rgba(72,58,85,0.95)"/>
           <stop offset="45%"  stopColor="rgba(18,10,26,0.97)"/>
           <stop offset="100%" stopColor="rgba(3,1,7,1)"/>
         </radialGradient>
       </defs>
-      {/* Legs — behind the body, jointed hip → knee → ankle → foot, both sides.
-          Each leg is its own group so a climbing gait can rotate it about the
-          hip independently, staggered per leg for an alternating gait. */}
-      {[-1,1].map(sd => legs.map((leg, i) => (
+      {/* Legs — behind the body. Each is its own group so a climbing gait can
+          rotate it about its hip independently; diagonal (checkerboard)
+          phase groups swing opposite corners together, tripod-style. */}
+      {[-1,1].map(sd => SPIDER_LEGS.map((leg, i) => (
         <g key={`${sd}${i}`}
           style={legWalk ? {
-            transformOrigin:`${sd*leg.hip[0]}px ${leg.hip[1]}px`,
-            animation:`evLegClimb ${legCycle}s ${(i%2===0?0:legCycle/2)}s ease-in-out infinite`,
+            transformOrigin:`${leg[0][0]*s}px ${sd*leg[0][1]*s}px`,
+            animation:`evLegClimb ${legCycle}s ${((i%2===0)===(sd===-1) ? 0 : legCycle/2)}s ease-in-out infinite`,
           } : undefined}>
           <polyline
-            points={`${sd*leg.hip[0]},${leg.hip[1]} ${sd*leg.knee[0]},${leg.knee[1]} ${sd*leg.ankle[0]},${leg.ankle[1]} ${sd*leg.foot[0]},${leg.foot[1]}`}
-            fill="none" stroke={ink} strokeWidth={1.1*s} strokeLinecap="round"/>
+            points={leg.map(([lx,ly]) => `${lx*s},${sd*ly*s}`).join(' ')}
+            fill="none" stroke={ink} strokeWidth={1.2*s} strokeLinecap="round"/>
         </g>
       )))}
-      {/* Abdomen — sits right where the thread ends, glossy gradient fill */}
-      <ellipse cx="0" cy={6*s} rx={7*s} ry={9*s} fill={`url(#${gradId})`}/>
-      <ellipse cx={-1.5*s} cy={2.5*s} rx={2.2*s} ry={3*s} fill="rgba(110,90,125,0.35)"/>
-      {/* Cephalothorax — below the abdomen */}
-      <circle cx="0" cy={20*s} r={4.5*s} fill={`url(#${gradId})`}/>
-      {/* Glowing red eyes */}
-      <circle cx={-1.7*s} cy={18.4*s} r={0.9*s} fill="#ff2a2a"/>
-      <circle cx={1.7*s}  cy={18.4*s} r={0.9*s} fill="#ff2a2a"/>
-    </>
+      {/* Abdomen trails behind, cephalothorax/head leads toward +x */}
+      <ellipse cx={-5*s} cy="0" rx={6.5*s} ry={5*s} fill={`url(#${gradId})`}/>
+      <ellipse cx={-6.5*s} cy={-1.3*s} rx={2*s} ry={2.4*s} fill="rgba(110,90,125,0.3)"/>
+      <circle cx={9*s} cy="0" r={3.2*s} fill={`url(#${gradId})`}/>
+      <circle cx={11.5*s} cy={-1.1*s} r={0.9*s} fill="#ff2a2a"/>
+      <circle cx={11.5*s} cy={1.1*s}  r={0.9*s} fill="#ff2a2a"/>
+    </g>
   )
-  // bare — just the body/legs, no thread line, no outer swing, no translate.
-  // Used wherever positioning and motion are driven externally (a motion
-  // path, or a separately-animated wrapper), e.g. spiders walking the web.
+  // bare — just the body/legs, forward-facing, no thread, no translate, no
+  // extra rotation. Used wherever positioning/orientation are driven
+  // externally (an animateMotion rotate="auto"), e.g. spiders on the web.
   if (bare) return <g>{body}</g>
+  // hanging — dangling from a thread, so "forward" (head) should point
+  // down the thread rather than sideways; a static 90° turn does that
+  // without needing a second set of hand-authored coordinates.
+  const facing = hanging ? <g transform="rotate(90)">{body}</g> : body
   return (
     <g style={{ '--swing':`${swingPx}px`, animation:`evSpiderSwing ${5+Math.abs(swingPx)*0.04}s ${delay}s ease-in-out infinite`, transformOrigin:`${x}px 0` }}>
       <line x1={x} y1="0" x2={x} y2={y} stroke="rgba(200,180,230,0.55)" strokeWidth="0.7"/>
@@ -497,7 +507,7 @@ function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.
           (0,0) once the drop-in animation finished. The entrance animation
           lives on the nested group below instead, so the two compose. */}
       <g transform={`translate(${x},${y})`}>
-        {noEntranceDrop ? <g>{body}</g> : <g style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>{body}</g>}
+        {noEntranceDrop ? <g>{facing}</g> : <g style={{ animation:'evSpiderDrop 1.4s ease-out both' }}>{facing}</g>}
       </g>
     </g>
   )
@@ -571,7 +581,7 @@ function WebDropSpider({ minInterval = 9000, maxInterval = 20000, initialDelay =
           <line x1="0" y1="0" x2="0" y2={drop} stroke="rgba(200,180,230,0.55)" strokeWidth="0.8"/>
         </g>
         <g style={spiderStyle}>
-          <Spider x={0} y={0} swingPx={0} delay={0} size={0.62}
+          <Spider x={0} y={0} swingPx={0} delay={0} size={0.62} hanging
             legWalk legCycle={phase === 'pause' ? 1.1 : 0.42} noEntranceDrop/>
         </g>
       </svg>
@@ -592,53 +602,235 @@ function WebDropSpiders() {
   )
 }
 
-// ── Spider that wanders the corner web's own strands ─────────────────────────
-// Picks a random stretch of one radial spoke or one concentric ring and
-// walks it via an SVG motion path, then rests and picks a fresh one. Each
-// corner mounts its own instance with independently random choices, so the
-// two corners never move in step with each other.
+// ── The corner web's own lattice, as a graph the spider actually walks ──────
+// Nodes are the same spoke/ring intersections the web is drawn from, plus a
+// shared hub at the centre and a ring of "exit" points just past the outer
+// rim. Walking is always node-to-node along a real strand, so the spider's
+// path is always literally silk it's standing on — never a shortcut through
+// empty space (except the one deliberate exception noted on huntFly below).
+const WEB_ANGLES = [0,15,30,45,60,75,90]
+const WEB_RADII  = [35,70,105,145,185,225,265]
+const WEB_EXIT_R = 345
+
+function webNodePos(ai, ri) {
+  if (ri === -1) return [0, 0]
+  const rad = WEB_ANGLES[ai] * Math.PI / 180
+  const r = ri === WEB_RADII.length ? WEB_EXIT_R : WEB_RADII[ri]
+  return [r * Math.cos(rad), r * Math.sin(rad)]
+}
+
+function webNeighbors(ai, ri) {
+  if (ri === -1) return WEB_ANGLES.map((_, i) => [i, 0])
+  const out = [ri === 0 ? [ai, -1] : [ai, ri - 1]]
+  if (ri < WEB_RADII.length) {
+    out.push([ai, ri + 1])
+    if (ai > 0) out.push([ai - 1, ri])
+    if (ai < WEB_ANGLES.length - 1) out.push([ai + 1, ri])
+  }
+  return out
+}
+
+const CRAWL_SIZE = 0.85
+
+// ── A fly, from first flutter to silk-wrapped bundle ────────────────────────
+function FlyArt({ wingSpeed = 0.08, opacity = 1 }) {
+  return (
+    <g opacity={opacity}>
+      <ellipse cx="-1.5" cy="-0.5" rx="2.6" ry="1.3" fill="rgba(215,224,232,0.4)"
+        style={wingSpeed ? { transformOrigin:'1px -0.3px', animation:`evBatFlap ${wingSpeed}s ease-in-out infinite` } : undefined}/>
+      <ellipse cx="1.5" cy="-0.5" rx="2.6" ry="1.3" fill="rgba(215,224,232,0.4)"
+        style={wingSpeed ? { transformOrigin:'-1px -0.3px', animation:`evBatFlap ${wingSpeed}s ease-in-out infinite reverse` } : undefined}/>
+      <ellipse rx="2.2" ry="1.3" fill="rgba(10,6,14,0.92)"/>
+      <circle cx="2.6" cy="0" r="1" fill="rgba(10,6,14,0.92)"/>
+      <circle cx="3.1" cy="-0.3" r="0.4" fill="#b03030"/>
+      <circle cx="3.1" cy="0.3" r="0.4" fill="#b03030"/>
+    </g>
+  )
+}
+
+function Cocoon() {
+  return <ellipse rx="3.6" ry="2.1" fill="rgba(226,221,236,0.92)" stroke="rgba(180,170,195,0.6)" strokeWidth="0.4"/>
+}
+
+function FlyOnWeb({ fly }) {
+  const { phase, d, dur, key, tx, ty } = fly
+  if (phase === 'approach') {
+    return (
+      <g key={key}>
+        <animateMotion dur={`${dur}s`} fill="freeze" rotate="auto" path={d}/>
+        <g transform="scale(1.3)"><FlyArt wingSpeed={0.07}/></g>
+      </g>
+    )
+  }
+  return (
+    <g transform={`translate(${tx},${ty}) scale(1.3)`}>
+      {phase === 'stuck' && (
+        <>
+          <circle r="2" style={{ transformOrigin:'0px 0px', animation:'evImpactRipple 0.6s ease-out forwards' }}
+            fill="none" stroke="rgba(200,180,230,0.5)" strokeWidth="0.6"/>
+          <g style={{ animation:'evFlyStruggle 0.4s ease-in-out infinite' }}>
+            <FlyArt wingSpeed={0.22}/>
+          </g>
+        </>
+      )}
+      {phase === 'wrap' && (
+        <g>
+          <FlyArt wingSpeed={0} opacity={0.45}/>
+          {[0,1,2,3,4].map(i => (
+            <g key={i} transform={`rotate(${i*35})`}>
+              <ellipse rx="5" ry="3" fill="none" stroke="rgba(225,220,235,0.8)" strokeWidth="0.7"
+                style={{ transformOrigin:'0px 0px', animation:`evWrapRing 1.3s ${i*0.18}s ease-out forwards` }}/>
+            </g>
+          ))}
+        </g>
+      )}
+    </g>
+  )
+}
+
+// ── Spider that lives on the corner web, walking its actual strands ─────────
+// Wanders node to node indefinitely along the lattice; it's only ever out of
+// view by having walked off the web's own rim (clipped by the SVG's bounds,
+// same as walking behind the edge of the screen) and later walks back in
+// from a different point on the rim — never a pop-in/pop-out mid-strand.
+// Very rarely a fly blunders into the web; the spider breaks off whatever
+// it's doing, rushes it, wraps it, and carries it off before resuming.
 function WebCrawlSpider() {
-  const [run, setRun] = useState(null)
+  const [seg, setSeg]     = useState(null)
+  const [fly, setFly]     = useState(null)
+  const [carry, setCarry] = useState(false)
+  const node = useRef(null)
+  const prev = useRef(null)
+  const hunting = useRef(false)
 
   useEffect(() => {
-    let t
-    const angles = [0,15,30,45,60,75,90]
-    const radii  = [35,70,105,145,185,225,265]
-    function schedule(first) {
-      t = setTimeout(start, first ? 1500 + Math.random()*5500 : 4000 + Math.random()*11000)
+    let t, flyT
+
+    function moveTo(nextAi, nextRi, lo, hi) {
+      const [x1, y1] = webNodePos(node.current.ai, node.current.ri)
+      const [x2, y2] = webNodePos(nextAi, nextRi)
+      const dist = Math.hypot(x2 - x1, y2 - y1)
+      const speed = lo + Math.random() * (hi - lo)
+      const dur = Math.max(0.3, dist / speed)
+      const legCycle = Math.min(0.85, Math.max(0.14, 16 / speed))
+      prev.current = node.current
+      node.current = { ai: nextAi, ri: nextRi }
+      setSeg({ d: `M${x1},${y1} L${x2},${y2}`, dur, legCycle, key: Math.random() })
+      return dur
     }
-    function start() {
-      let x1,y1,x2,y2
-      if (Math.random() < 0.5) {
-        // along a spoke
-        const a = angles[Math.floor(Math.random()*angles.length)] * Math.PI/180
-        const r1 = radii[Math.floor(Math.random()*4)]
-        const r2 = r1 + 55 + Math.random()*130
-        x1 = r1*Math.cos(a); y1 = r1*Math.sin(a)
-        x2 = r2*Math.cos(a); y2 = r2*Math.sin(a)
-      } else {
-        // along a ring, between two neighbouring spokes
-        const r = radii[Math.floor(Math.random()*radii.length)]
-        const ai = Math.floor(Math.random()*(angles.length-2))
-        const a1 = angles[ai]*Math.PI/180, a2 = angles[ai+2]*Math.PI/180
-        x1 = r*Math.cos(a1); y1 = r*Math.sin(a1)
-        x2 = r*Math.cos(a2); y2 = r*Math.sin(a2)
+
+    function wanderStep() {
+      if (hunting.current) return
+      const { ai, ri } = node.current
+      const opts = webNeighbors(ai, ri).filter(([a,r]) => !(prev.current && a===prev.current.ai && r===prev.current.ri))
+      const pool = opts.length ? opts : webNeighbors(ai, ri)
+      const [na, nr] = pool[Math.floor(Math.random()*pool.length)]
+      const dur = moveTo(na, nr, 42, 120)
+      t = setTimeout(() => afterWander(na, nr), dur*1000)
+    }
+
+    function afterWander(ai, ri) {
+      if (hunting.current) return
+      if (ri === WEB_RADII.length) {
+        // reached the rim — out of view for a while, then re-enters elsewhere
+        t = setTimeout(() => {
+          if (hunting.current) return
+          const reAi = Math.floor(Math.random()*WEB_ANGLES.length)
+          node.current = { ai: reAi, ri: WEB_RADII.length }
+          prev.current = null
+          const dur = moveTo(reAi, WEB_RADII.length-1, 42, 120)
+          t = setTimeout(() => afterWander(reAi, WEB_RADII.length-1), dur*1000)
+        }, 9000 + Math.random()*18000)
+        return
       }
-      const dist = Math.hypot(x2-x1, y2-y1)
-      const dur = 2 + dist/50 + Math.random()*1.8
-      setRun({ d:`M${x1},${y1} L${x2},${y2}`, dur, id: Math.random() })
-      t = setTimeout(() => { setRun(null); schedule(false) }, dur*1000 + 500)
+      const resting = Math.random() < 0.22
+      t = setTimeout(wanderStep, resting ? 2200 + Math.random()*4200 : 250 + Math.random()*900)
     }
-    schedule(true)
-    return () => clearTimeout(t)
+
+    function scheduleFly() {
+      flyT = setTimeout(startFly, 230000 + Math.random()*280000) // every ~4-8.5 minutes
+    }
+
+    function startFly() {
+      if (hunting.current) { scheduleFly(); return }
+      const ai = Math.floor(Math.random()*WEB_ANGLES.length)
+      const ri = Math.floor(Math.random()*WEB_RADII.length)
+      const [tx, ty] = webNodePos(ai, ri)
+      const edgeAngle = Math.random()*Math.PI/2
+      const ex = (WEB_EXIT_R+40)*Math.cos(edgeAngle), ey = (WEB_EXIT_R+40)*Math.sin(edgeAngle)
+      const mx = tx + (Math.random()-0.5)*90, my = ty + (Math.random()-0.5)*90
+      const approachDur = 2 + Math.random()*1.4
+      setFly({ phase:'approach', d:`M${ex},${ey} Q${mx},${my} ${tx},${ty}`, dur:approachDur, key:Math.random(), tx, ty })
+      flyT = setTimeout(() => stickFly(ai, ri, tx, ty), approachDur*1000)
+    }
+
+    function stickFly(ai, ri, tx, ty) {
+      setFly(f => f && ({ ...f, phase:'stuck' }))
+      flyT = setTimeout(() => huntFly(ai, ri, tx, ty), 700)
+    }
+
+    // The one deliberate exception to "only ever moves along a strand" — a
+    // short urgent dash straight to the fly, the way a real spider will
+    // cross a gap once it feels prey struggling.
+    function huntFly(ai, ri, tx, ty) {
+      hunting.current = true
+      clearTimeout(t)
+      const [x1, y1] = webNodePos(node.current.ai, node.current.ri)
+      const dist = Math.hypot(tx-x1, ty-y1)
+      const speed = 95 + Math.random()*55
+      const dur = Math.max(0.4, dist/speed)
+      const legCycle = Math.min(0.5, Math.max(0.12, 14/speed))
+      prev.current = node.current
+      node.current = { ai, ri }
+      setSeg({ d:`M${x1},${y1} L${tx},${ty}`, dur, legCycle, key: Math.random() })
+      flyT = setTimeout(() => wrapFly(tx, ty), dur*1000)
+    }
+
+    function wrapFly(tx, ty) {
+      setFly(f => f && ({ ...f, phase:'wrap' }))
+      flyT = setTimeout(() => carryOff(tx, ty), 1300)
+    }
+
+    function carryOff(tx, ty) {
+      setFly(null)
+      setCarry(true)
+      const reAi = Math.floor(Math.random()*WEB_ANGLES.length)
+      const [ex, ey] = webNodePos(reAi, WEB_RADII.length)
+      const dist = Math.hypot(ex-tx, ey-ty)
+      const speed = 55 + Math.random()*35
+      const dur = Math.max(0.5, dist/speed)
+      const legCycle = Math.min(0.7, Math.max(0.2, 16/speed))
+      prev.current = node.current
+      node.current = { ai: reAi, ri: WEB_RADII.length }
+      setSeg({ d:`M${tx},${ty} L${ex},${ey}`, dur, legCycle, key: Math.random() })
+      flyT = setTimeout(() => {
+        setCarry(false)
+        hunting.current = false
+        afterWander(reAi, WEB_RADII.length) // folds into the normal rim pause + re-entry
+        scheduleFly()
+      }, dur*1000)
+    }
+
+    const startAi = Math.floor(Math.random()*WEB_ANGLES.length)
+    const startRi = Math.floor(Math.random()*6) - 1
+    node.current = { ai: startAi, ri: startRi }
+    t = setTimeout(wanderStep, 1200 + Math.random()*4000)
+    scheduleFly()
+
+    return () => { clearTimeout(t); clearTimeout(flyT) }
   }, [])
 
-  if (!run) return null
   return (
-    <g key={run.id}>
-      <animateMotion dur={`${run.dur}s`} fill="freeze" path={run.d}/>
-      <Spider bare legWalk legCycle={0.4}/>
-    </g>
+    <>
+      {fly && <FlyOnWeb fly={fly}/>}
+      {seg && (
+        <g key="crawler">
+          <animateMotion key={seg.key} dur={`${seg.dur}s`} fill="freeze" rotate="auto" path={seg.d}/>
+          <Spider bare legWalk legCycle={seg.legCycle} size={CRAWL_SIZE}/>
+          {carry && <g transform={`translate(${26*CRAWL_SIZE},0)`}><Cocoon/></g>}
+        </g>
+      )}
+    </>
   )
 }
 
@@ -664,6 +856,11 @@ function SpiderWeb({ side }) {
           })
           return <polyline key={r} points={pts.join(' ')} fill="none" stroke="rgba(200,180,230,0.4)" strokeWidth="0.8"/>
         })}
+      </svg>
+      {/* Spider rendered at full opacity in its own layer on top — the
+          lattice stays faint/atmospheric, but the spider itself (the
+          actual focal point) stays crisp and readable against it. */}
+      <svg viewBox="0 0 290 290" width="100%" height="100%" style={{ position:'absolute', inset:0 }}>
         <WebCrawlSpider/>
       </svg>
     </div>
