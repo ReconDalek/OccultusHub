@@ -31,7 +31,7 @@ export default function WatchTotalsCard({ factionId }) {
 
   if (error) {
     return (
-      <CollapsibleCard title="Watch Totals">
+      <CollapsibleCard title="Watch Totals" defaultCollapsed>
         <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>
       </CollapsibleCard>
     )
@@ -39,7 +39,7 @@ export default function WatchTotalsCard({ factionId }) {
 
   if (!data) {
     return (
-      <CollapsibleCard title="Watch Totals">
+      <CollapsibleCard title="Watch Totals" defaultCollapsed>
         <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>Loading…</p>
       </CollapsibleCard>
     )
@@ -47,14 +47,14 @@ export default function WatchTotalsCard({ factionId }) {
 
   if (!data.totalShifts) {
     return (
-      <CollapsibleCard title="Watch Totals">
+      <CollapsibleCard title="Watch Totals" defaultCollapsed>
         <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No shifts signed up yet.</p>
       </CollapsibleCard>
     )
   }
 
   return (
-    <CollapsibleCard title="Watch Totals">
+    <CollapsibleCard title="Watch Totals" defaultCollapsed>
       <p style={sectionSub}>
         {data.totalShifts} shift{data.totalShifts === 1 ? '' : 's'} for the current watch
         {' '}({new Date(data.watchStart * 1000).toLocaleDateString()} &ndash; {new Date(data.watchEnd * 1000).toLocaleDateString()})

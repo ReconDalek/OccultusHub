@@ -17,10 +17,9 @@ const MY_SHIFTS_TZ_KEY = 'chainWatch.myShiftsLocalTime'
 const TIME_FORMAT_KEY = 'chainWatch.use12hFormat'
 const NOW_TICK_MS = 30000
 
-export default function ShiftSchedule({ factionId, shifts, onChanged, session }) {
+export default function ShiftSchedule({ factionId, shifts, onChanged, session, selectedDay, setSelectedDay }) {
   const { user } = useSession()
   const isLeader = !!(user?.isLeader || user?.isAdmin || user?.isOwner)
-  const [selectedDay, setSelectedDay] = useState(() => dayStart(Math.floor(Date.now() / 1000)))
   // "Your shifts" badges are too small to show both TCT and local at once —
   // a toggle instead of the grid's two-line layout. Personal display
   // preference, so it's remembered per-browser rather than reset every visit.
@@ -91,9 +90,28 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
     }
   }, [scheduledStart])
 
+  // The visible 7-day tab window follows selectedDay as the prev/next day
+  // arrows move it — shifting only once selectedDay would otherwise fall
+  // outside the window, so a single step doesn't redraw the whole row, but
+  // stepping far enough (or jumping straight to a day) slides it along
+  // instead of leaving it frozen on the original week.
+  const [viewAnchor, setViewAnchor] = useState(() => dayStart(Math.floor(Date.now() / 1000)))
+  useEffect(() => {
+    if (scheduledStart != null) return // the scheduled-day view below takes over instead
+    setViewAnchor((prev) => {
+      const windowEnd = prev + (DAYS_AHEAD - 1) * 86400
+      if (selectedDay < prev) return selectedDay
+      if (selectedDay > windowEnd) return selectedDay - (DAYS_AHEAD - 1) * 86400
+      return prev
+    })
+  }, [selectedDay, scheduledStart])
+
   // The whole 7-day window starts from the scheduled day when one exists,
   // instead of always starting from today with the scheduled day spliced in.
-  const days = useMemo(() => upcomingDays(DAYS_AHEAD, scheduledStart), [scheduledStart])
+  const days = useMemo(
+    () => upcomingDays(DAYS_AHEAD, scheduledStart != null ? scheduledStart : viewAnchor),
+    [scheduledStart, viewAnchor]
+  )
   const byStart = useMemo(() => new Map(shifts.map(s => [s.slot_start, s])), [shifts])
   const hoursForDay = useMemo(() => Array.from({ length: 24 }, (_, h) => selectedDay + h * HOUR), [selectedDay])
   const myShifts = useMemo(
@@ -284,6 +302,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
         {hoursForDay.map(slot => {
           const taken = byStart.get(slot)
           const isPast = slot < curHour
+          const isCurrent = slot === curHour
           const isBeforeScheduledStart = scheduledStart != null && slot < scheduledStart
           const isDisabled = isPast || isBeforeScheduledStart
           const isMine = !!taken && taken.torn_user_id === user?.tornUserId
@@ -305,6 +324,13 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
             border = isMine ? 'rgba(139,92,246,0.4)' : 'var(--border-subtle)'
           }
 
+          // The hour actually happening right now — flagged regardless of
+          // whose shift it is, same weight as the "mine" purple highlight.
+          if (isCurrent) {
+            bg = 'rgba(34,197,94,0.12)'
+            border = 'rgba(34,197,94,0.4)'
+          }
+
           const openAndClickable = !isDisabled && !taken
           const localTime = fmtClockTime(slot, { local: true, use12h })
           const tctTime = fmtClockTime(slot, { use12h })
@@ -323,7 +349,7 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session })
             >
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{tctTime} TCT</div>
               {showLocal && (
-                <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                   {localTime} local{dayShift ? ` (${fmtSlotDayLocal(slot).slice(0, 3)})` : ''}
                 </div>
               )}

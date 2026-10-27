@@ -30,6 +30,9 @@ export default function ChainWatcher() {
   // shows up in the other immediately instead of waiting on separate polls.
   const [session, setSession] = useState(undefined) // undefined = still loading
   const [sessionError, setSessionError] = useState(null)
+  // Lifted here (not local to ShiftSchedule) so the shift fetch window can
+  // expand to cover wherever the prev/next day arrows have navigated to.
+  const [selectedDay, setSelectedDay] = useState(() => dayStart(Math.floor(Date.now() / 1000)))
 
   const loadSession = useCallback(async () => {
     try {
@@ -48,18 +51,21 @@ export default function ChainWatcher() {
   const loadShifts = useCallback(async () => {
     try {
       const now = Math.floor(Date.now() / 1000)
-      const to = scheduledStart != null ? Math.max(now + WINDOW_SECONDS, scheduledStart + WINDOW_SECONDS) : now + WINDOW_SECONDS
-      // Reaches back a week before today too — leaders can now step the
-      // calendar back with the prev/next day arrows to review past watchers,
-      // not just today's earlier hours.
-      const from = dayStart(now) - PAST_WINDOW_SECONDS
+      let to = scheduledStart != null ? Math.max(now + WINDOW_SECONDS, scheduledStart + WINDOW_SECONDS) : now + WINDOW_SECONDS
+      // Reaches back a week before today, and further either way if the
+      // prev/next day arrows have navigated outside that range — otherwise
+      // stepping far enough away from today would show a blank day even
+      // when real shift data exists out there.
+      let from = dayStart(now) - PAST_WINDOW_SECONDS
+      if (selectedDay < from) from = selectedDay
+      if (selectedDay + 86400 > to) to = selectedDay + 86400
       const json = await apiGet(`/api/chain-watcher/shifts?faction_id=${factionId}&from=${from}&to=${to}`)
       setShifts(json.shifts || [])
       setError(null)
     } catch (e) {
       setError(e.message)
     }
-  }, [factionId, scheduledStart])
+  }, [factionId, scheduledStart, selectedDay])
 
   useEffect(() => {
     loadShifts()
@@ -139,7 +145,10 @@ export default function ChainWatcher() {
         <>
           <ChainSessionCard factionId={factionId} session={session} error={sessionError} onChanged={loadSession} shifts={shifts} />
           <WatcherBanner shifts={shifts} />
-          <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
+          <ShiftSchedule
+            factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session}
+            selectedDay={selectedDay} setSelectedDay={setSelectedDay}
+          />
           {isLeader && <WatchTotalsCard factionId={factionId} />}
           <MeritTracker factionId={factionId} sessionActive={session?.status === 'active'} />
           <ChainEconomicsCard factionId={factionId} isLeader={isLeader} />
