@@ -251,7 +251,6 @@ const KEYFRAMES = `
   @keyframes evIcicleGrow  { 0%{transform:scaleY(0);opacity:0} 100%{transform:scaleY(1);opacity:0.7} }
   @keyframes evBonfireWave { 0%,100%{transform:scaleX(1) scaleY(1)} 33%{transform:scaleX(1.06) scaleY(1.1)} 66%{transform:scaleX(0.94) scaleY(0.95)} }
   @keyframes evSpiderDrop  { 0%{transform:translateY(-120px)} 100%{transform:translateY(0)} }
-  @keyframes evSpiderSway  { 0%,100%{transform:rotate(-8deg)} 50%{transform:rotate(8deg)} }
   @keyframes evSpiderSwing { 0%{transform:translateX(0) rotate(-12deg)} 50%{transform:translateX(var(--swing)) rotate(12deg)} 100%{transform:translateX(0) rotate(-12deg)} }
   @keyframes evLegClimb    { 0%,100%{transform:rotate(-15deg)} 50%{transform:rotate(15deg)} }
   @keyframes evThreadGrow  { from{transform:scaleY(0)} to{transform:scaleY(1)} }
@@ -440,7 +439,7 @@ function BloodMoonOrb() {
 // actually comes from), with the cephalothorax and legs below it — a solid
 // black silhouette, no colour, legs bent at a "knee" like a real spider
 // rather than straight spokes.
-function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.5, noEntranceDrop = false }) {
+function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.5, noEntranceDrop = false, bare = false }) {
   const s = size
   const ink = 'rgba(6,2,12,0.95)'
   const gradId = useId()
@@ -485,6 +484,10 @@ function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.
       <circle cx={1.7*s}  cy={18.4*s} r={0.9*s} fill="#ff2a2a"/>
     </>
   )
+  // bare — just the body/legs, no thread line, no outer swing, no translate.
+  // Used wherever positioning and motion are driven externally (a motion
+  // path, or a separately-animated wrapper), e.g. spiders walking the web.
+  if (bare) return <g>{body}</g>
   return (
     <g style={{ '--swing':`${swingPx}px`, animation:`evSpiderSwing ${5+Math.abs(swingPx)*0.04}s ${delay}s ease-in-out infinite`, transformOrigin:`${x}px 0` }}>
       <line x1={x} y1="0" x2={x} y2={y} stroke="rgba(200,180,230,0.55)" strokeWidth="0.7"/>
@@ -507,18 +510,24 @@ function Spider({ x, y, swingPx, delay, size = 1, legWalk = false, legCycle = 0.
 // spider's position via a scaleY tied to the same duration/easing as the
 // spider's own translateY, so the two stay visually attached. Legs run a
 // climbing gait throughout.
-function WebDropSpider() {
+function WebDropSpider({ minInterval = 9000, maxInterval = 20000, initialDelay = 0 }) {
   const [run, setRun] = useState(null)
 
   useEffect(() => {
     let t
-    function schedule() {
-      t = setTimeout(startRun, 15000 + Math.random() * 25000)
+    function schedule(first) {
+      const wait = first
+        ? initialDelay + Math.random() * 5000
+        : minInterval + Math.random() * (maxInterval - minInterval)
+      t = setTimeout(startRun, wait)
     }
     function startRun() {
-      const leftPct = 8 + Math.random() * 84
-      const drop = 140 + Math.random() * 320
-      const dur = 1.8 + drop / 170
+      const leftPct = 6 + Math.random() * 88
+      const drop = 120 + Math.random() * 340
+      // Random px/sec per run (not fixed per spider) so speed varies run to
+      // run as well as spider to spider — part of the randomly-timed feel.
+      const speed = 90 + Math.random() * 190
+      const dur = 1.1 + drop / speed
       setRun({ leftPct, drop, dur, phase: 'descend' })
 
       t = setTimeout(() => {
@@ -527,14 +536,14 @@ function WebDropSpider() {
           setRun(r => r && { ...r, phase: 'climb' })
           t = setTimeout(() => {
             setRun(null)
-            schedule()
+            schedule(false)
           }, dur * 1000)
-        }, 1300 + Math.random() * 1400)
+        }, 1000 + Math.random() * 1800)
       }, dur * 1000)
     }
-    schedule()
+    schedule(true)
     return () => clearTimeout(t)
-  }, [])
+  }, [minInterval, maxInterval, initialDelay])
 
   if (!run) return null
   const { leftPct, drop, dur, phase } = run
@@ -570,19 +579,66 @@ function WebDropSpider() {
   )
 }
 
-// ── Spider hanging from the nav bar itself, not from either corner web ──────
-// Offset right of dead-centre rather than perfectly centred, on its own
-// thread straight down from the nav.
-function NavbarSpider() {
+// ── Several climbing spiders at once, each on its own randomised clock ──────
+// Staggered starts + independent min/max intervals keep them from ever
+// feeling synced to one another.
+function WebDropSpiders() {
   return (
-    <div style={{
-      position:'fixed', top:'var(--ev-header-h, 64px)', left:'calc(50% + 90px)',
-      zIndex:3, pointerEvents:'none', width:70, height:150,
-    }}>
-      <svg viewBox="0 0 70 150" width="70" height="150" opacity="0.6">
-        <Spider x={25} y={95} swingPx={30} delay={1} size={0.55}/>
-      </svg>
-    </div>
+    <>
+      <WebDropSpider minInterval={7000}  maxInterval={15000} initialDelay={0}/>
+      <WebDropSpider minInterval={9000}  maxInterval={18000} initialDelay={3200}/>
+      <WebDropSpider minInterval={11000} maxInterval={21000} initialDelay={6800}/>
+    </>
+  )
+}
+
+// ── Spider that wanders the corner web's own strands ─────────────────────────
+// Picks a random stretch of one radial spoke or one concentric ring and
+// walks it via an SVG motion path, then rests and picks a fresh one. Each
+// corner mounts its own instance with independently random choices, so the
+// two corners never move in step with each other.
+function WebCrawlSpider() {
+  const [run, setRun] = useState(null)
+
+  useEffect(() => {
+    let t
+    const angles = [0,15,30,45,60,75,90]
+    const radii  = [35,70,105,145,185,225,265]
+    function schedule(first) {
+      t = setTimeout(start, first ? 1500 + Math.random()*5500 : 4000 + Math.random()*11000)
+    }
+    function start() {
+      let x1,y1,x2,y2
+      if (Math.random() < 0.5) {
+        // along a spoke
+        const a = angles[Math.floor(Math.random()*angles.length)] * Math.PI/180
+        const r1 = radii[Math.floor(Math.random()*4)]
+        const r2 = r1 + 55 + Math.random()*130
+        x1 = r1*Math.cos(a); y1 = r1*Math.sin(a)
+        x2 = r2*Math.cos(a); y2 = r2*Math.sin(a)
+      } else {
+        // along a ring, between two neighbouring spokes
+        const r = radii[Math.floor(Math.random()*radii.length)]
+        const ai = Math.floor(Math.random()*(angles.length-2))
+        const a1 = angles[ai]*Math.PI/180, a2 = angles[ai+2]*Math.PI/180
+        x1 = r*Math.cos(a1); y1 = r*Math.sin(a1)
+        x2 = r*Math.cos(a2); y2 = r*Math.sin(a2)
+      }
+      const dist = Math.hypot(x2-x1, y2-y1)
+      const dur = 2 + dist/50 + Math.random()*1.8
+      setRun({ d:`M${x1},${y1} L${x2},${y2}`, dur, id: Math.random() })
+      t = setTimeout(() => { setRun(null); schedule(false) }, dur*1000 + 500)
+    }
+    schedule(true)
+    return () => clearTimeout(t)
+  }, [])
+
+  if (!run) return null
+  return (
+    <g key={run.id}>
+      <animateMotion dur={`${run.dur}s`} fill="freeze" path={run.d}/>
+      <Spider bare legWalk legCycle={0.4}/>
+    </g>
   )
 }
 
@@ -595,10 +651,7 @@ function SpiderWeb({ side }) {
       transform: flip,
       width:'clamp(160px,24vw,290px)', height:'clamp(160px,24vw,290px)',
     }}>
-      {/* overflow:visible — the left web's low-hanging spider drops its
-          thread past the web's own 290-unit box on purpose; a clipped SVG
-          would otherwise cut it off at the box edge. */}
-      <svg viewBox="0 0 290 290" width="100%" height="100%" opacity="0.6" style={{ overflow:'visible' }}>
+      <svg viewBox="0 0 290 290" width="100%" height="100%" opacity="0.6">
         {[0,15,30,45,60,75,90].map(angle => {
           const rad = (angle * Math.PI) / 180
           return <line key={angle} x1="0" y1="0" x2={290*Math.cos(rad)} y2={290*Math.sin(rad)}
@@ -611,19 +664,7 @@ function SpiderWeb({ side }) {
           })
           return <polyline key={r} points={pts.join(' ')} fill="none" stroke="rgba(200,180,230,0.4)" strokeWidth="0.8"/>
         })}
-        {side === 'left' ? (
-          <>
-            {/* Stationary sway spider near the corner */}
-            <g style={{ transformOrigin:'22px 0', animation:'evSpiderSway 4.5s ease-in-out infinite' }}>
-              <Spider x={22} y={58} swingPx={0} delay={0} size={0.45}/>
-            </g>
-            {/* Hangs well past the web's own bottom edge, on a long thread */}
-            <Spider x={80} y={320} swingPx={30} delay={1.8} size={0.55}/>
-          </>
-        ) : (
-          /* Right web's second spider moved to the nav bar instead — see NavbarSpider */
-          <Spider x={80} y={105} swingPx={55} delay={1.8} size={0.55}/>
-        )}
+        <WebCrawlSpider/>
       </svg>
     </div>
   )
@@ -1068,7 +1109,7 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
       {[ev.extras].flat().filter(Boolean).map(x => (
         <span key={x}>
           {x === 'bloodMoon'   && <BloodMoonOrb/>}
-          {x === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/><NavbarSpider/></>}
+          {x === 'halloween'   && <><SpiderWeb side="left"/><SpiderWeb side="right"/></>}
           {x === 'candles'     && <Candles/>}
           {x === 'anniversary' && <AnniversaryOrb/>}
           {x === 'sigil'       && <Sigil/>}
@@ -1077,7 +1118,7 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
           {x === 'bonfire'     && <Bonfire/>}
           {x === 'flicker'     && <Flicker/>}
           {x === 'batScare'    && <BatScare/>}
-          {x === 'webDropSpider' && <WebDropSpider/>}
+          {x === 'webDropSpider' && <WebDropSpiders/>}
         </span>
       ))}
 
