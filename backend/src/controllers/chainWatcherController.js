@@ -864,6 +864,12 @@ export async function continueChainEconomicsBackfills(env) {
   const { results: sessions } = await env.DB.prepare(
     `SELECT * FROM chain_watch_sessions WHERE backfill_status = 'running'`
   ).all();
+  // Unconditional (unlike most cron sub-logs here, which only log when
+  // there's something to report) — kept deliberately so this line's mere
+  // presence or absence in a tail is itself the signal for whether this
+  // cron tick ran at all, given */10 * * * * going silent was hard to
+  // confirm any other way (2026-10-28).
+  console.log(`[continueChainEconomicsBackfills] tick — ${sessions?.length ?? 0} running session(s)`);
   for (const session of (sessions || [])) {
     await processOneBackfillChunk(env, session, session.faction_id).catch((e) => {
       console.error(`continueChainEconomicsBackfills: session ${session.id} failed:`, e);
