@@ -360,10 +360,11 @@ async function bumpViewerPeak(env, factionId, currentCount) {
 
 const SYNC_CHECK_INTERVAL_SECONDS = 8; // throttles the /faction/attacks lookup to roughly once per poll cycle, regardless of viewer count
 const SYNC_LOOKBACK_PAGES = 10; // up to 1,000 attacks per routine check — a generous budget for the gap since the last check, not a fixed "recent window"
-const BACKFILL_LOOKBACK_PAGES = 300; // up to 30,000 attacks for a one-off manual backfill from chain start
+const BACKFILL_LOOKBACK_PAGES = 300; // up to 30,000 attacks per backfill pass
+const BACKFILL_MAX_PASSES = 10; // up to 300,000 attacks total across passes — the feed includes every attack by/against the faction, not just chain hits, so a long/high-member-count chain can run well past its own hit count
 const BONUS_NOTICE_WINDOW_SECONDS = 20; // how long a freshly-detected bonus hit stays visible to pollers that didn't win the check
 const ARMORY_SYNC_LOOKBACK_PAGES = 5;
-const ARMORY_BACKFILL_LOOKBACK_PAGES = 100;
+const ARMORY_BACKFILL_LOOKBACK_PAGES = 200;
 
 // Claims the "sync" job for this poll tick (first poll past the throttle
 // window wins; everyone else skips it this tick — same claim pattern as a
@@ -388,7 +389,7 @@ const ARMORY_BACKFILL_LOOKBACK_PAGES = 100;
 // trading "never catches up" for "makes steady forward progress" — call
 // with `force`/a larger `maxPages` (see backfillChainEconomics) to
 // deliberately close a big gap in one go instead.
-async function syncChainAttacks(env, session, factionId, currentPosition, { force = false, maxPages = SYNC_LOOKBACK_PAGES } = {}) {
+async function syncChainAttacks(env, session, factionId, currentPosition, { force = false, maxPages = SYNC_LOOKBACK_PAGES, resumeFromTs = null } = {}) {
   const nowSecs = Math.floor(Date.now() / 1000);
   if (!force) {
     const claim = await env.DB.prepare(
@@ -409,9 +410,11 @@ async function syncChainAttacks(env, session, factionId, currentPosition, { forc
   if (!keyProbe?.key) return { error: 'no staff key available' };
 
   const watermark = force ? 0 : (session.attack_sync_watermark || 0);
-  let url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
+  let url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub` + (resumeFromTs ? `&to=${resumeFromTs}` : '');
   let maxIdSeen = watermark;
   let newAttacks = 0;
+  let oldestTsSeen = null;
+  let reachedSessionStart = false;
 
   for (let page = 0; page < maxPages; page++) {
     let data;
@@ -423,11 +426,12 @@ async function syncChainAttacks(env, session, factionId, currentPosition, { forc
     }
 
     const attacks = data.attacks || [];
-    if (!attacks.length) break;
+    if (!attacks.length) { reachedSessionStart = true; break; }
 
     let stop = false;
     for (const attack of attacks) {
-      if (attack.id <= watermark || attack.started < session.started_at) { stop = true; break; }
+      oldestTsSeen = attack.started;
+      if (attack.id <= watermark || attack.started < session.started_at) { stop = true; reachedSessionStart = true; break; }
       if (attack.id > maxIdSeen) maxIdSeen = attack.id;
       if (!(attack.chain > 0 && attack.attacker?.id && attack.attacker?.faction?.id === factionId)) continue;
 
@@ -454,7 +458,7 @@ async function syncChainAttacks(env, session, factionId, currentPosition, { forc
     if (stop) break;
 
     const prevUrl = data._metadata?.links?.prev;
-    if (!prevUrl) break;
+    if (!prevUrl) { reachedSessionStart = true; break; }
     url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub&to=${new URL(prevUrl).searchParams.get('to')}`;
   }
 
@@ -463,7 +467,7 @@ async function syncChainAttacks(env, session, factionId, currentPosition, { forc
       `UPDATE chain_watch_sessions SET attack_sync_watermark = ? WHERE id = ?`
     ).bind(maxIdSeen, session.id).run();
   }
-  return { newAttacks };
+  return { newAttacks, reachedSessionStart, oldestTsSeen };
 }
 
 // Mirrors war tracking's armory-usage ingestion (same news feed, same
@@ -714,19 +718,51 @@ export async function getChainEconomics(request, env) {
 // fields (backfillStatus/backfillNote).
 async function runChainEconomicsBackfill(env, session, factionId) {
   try {
-    const attackResult = await syncChainAttacks(env, session, factionId, Number.MAX_SAFE_INTEGER, {
-      force: true, maxPages: BACKFILL_LOOKBACK_PAGES,
-    });
-    await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
-      .bind(`Scanned attacks (${attackResult.newAttacks ?? 0} new) — checking armory…`, session.id).run();
+    // A single syncChainAttacks call is capped at BACKFILL_LOOKBACK_PAGES —
+    // not enough on its own for a long, high-volume chain (the attack feed
+    // includes every attack by/against the faction, not just chain hits, so
+    // a 48h/95-member chain can have far more rows than its own hit count).
+    // Resuming across passes (via resumeFromTs, persisted as
+    // backfill_oldest_ts between passes) instead of one fixed-size scan
+    // means this either reaches the actual chain start or says plainly that
+    // it didn't, rather than silently stopping partway through.
+    let resumeFromTs = session.backfill_oldest_ts || null;
+    let attacksTotal = 0;
+    let reachedStart = false;
+    for (let pass = 0; pass < BACKFILL_MAX_PASSES; pass++) {
+      const result = await syncChainAttacks(env, session, factionId, Number.MAX_SAFE_INTEGER, {
+        force: true, maxPages: BACKFILL_LOOKBACK_PAGES, resumeFromTs,
+      });
+      attacksTotal += result.newAttacks ?? 0;
+      await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
+        .bind(`Scanning attacks… ${attacksTotal} new so far (pass ${pass + 1}/${BACKFILL_MAX_PASSES})`, session.id).run();
+      if (result.reachedSessionStart) { reachedStart = true; break; }
+      if (!result.oldestTsSeen) break;
+      resumeFromTs = result.oldestTsSeen;
+      await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_oldest_ts = ? WHERE id = ?`)
+        .bind(resumeFromTs, session.id).run();
+    }
+
+    if (!reachedStart) {
+      await env.DB.prepare(
+        `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_note = ? WHERE id = ?`
+      ).bind(`Stopped before reaching chain start — ${attacksTotal} attacks scanned. Run Backfill again to continue from there.`, session.id).run();
+      return;
+    }
+
+    await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_oldest_ts = NULL, backfill_note = ? WHERE id = ?`)
+      .bind(`Reached chain start (${attacksTotal} attacks) — checking armory…`, session.id).run();
 
     const armoryResult = await syncChainArmory(env, session, factionId, {
       force: true, maxPages: ARMORY_BACKFILL_LOOKBACK_PAGES,
     });
+    const armoryNote = armoryResult.reachedStart
+      ? `${armoryResult.newUsage ?? 0} armory action(s)`
+      : `${armoryResult.newUsage ?? 0} armory action(s) (didn't reach chain start — run Backfill again)`;
 
     await env.DB.prepare(
       `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_note = ? WHERE id = ?`
-    ).bind(`Done — ${attackResult.newAttacks ?? 0} attacks, ${armoryResult.newUsage ?? 0} armory action(s) scanned from chain start.`, session.id).run();
+    ).bind(`Done — ${attacksTotal} attacks, ${armoryNote} scanned from chain start.`, session.id).run();
   } catch (err) {
     console.error('runChainEconomicsBackfill error:', err);
     await env.DB.prepare(

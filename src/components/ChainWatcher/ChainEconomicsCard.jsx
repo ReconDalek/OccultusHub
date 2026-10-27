@@ -179,13 +179,6 @@ function ChainEconomicsBody({ factionId, isLeader }) {
 
       <MemberTable members={data.members} />
 
-      <p style={{ fontSize: 10.5, color: 'var(--text-ghost)', marginTop: 10, lineHeight: 1.5 }}>
-        Faction In = Xanax/energy cans withdrawn from the faction armory. Personal In = Xanax/energy drinks from each
-        member's own personal stats, minus whatever's already counted as Faction In. Personal figures only update once
-        a day (personal stats snapshot once daily) — a chain that starts and ends the same day may show 0 there until
-        the next day's snapshot lands.
-      </p>
-
       {isLeader && (
         <BackfillButton
           factionId={factionId}
