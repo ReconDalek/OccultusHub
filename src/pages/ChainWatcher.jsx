@@ -8,6 +8,7 @@ import ShiftSchedule from '../components/ChainWatcher/ShiftSchedule'
 import RaffleTab from '../components/ChainWatcher/RaffleTab'
 import WatcherXanaxTab from '../components/ChainWatcher/WatcherXanaxTab'
 import WatchTotalsCard from '../components/ChainWatcher/WatchTotalsCard'
+import ChainEconomicsCard from '../components/ChainWatcher/ChainEconomicsCard'
 
 const SHIFTS_REFRESH_MS = 30000
 const SESSION_REFRESH_MS = 20000
@@ -139,6 +140,7 @@ export default function ChainWatcher() {
           <ShiftSchedule factionId={factionId} shifts={shifts} onChanged={loadShifts} session={session} />
           {isLeader && <WatchTotalsCard factionId={factionId} />}
           <MeritTracker factionId={factionId} sessionActive={session?.status === 'active'} />
+          <ChainEconomicsCard factionId={factionId} isLeader={isLeader} />
         </>
       )}
     </div>

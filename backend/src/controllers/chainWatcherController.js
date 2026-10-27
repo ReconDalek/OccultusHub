@@ -2,6 +2,7 @@ import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { getRandomUserApiKey, getStaffApiKeyForFaction, fetchWithRetry } from '../services/tornApiService.js';
 import { recordBonusHitEntries, MERIT_THRESHOLDS, ALL_BONUS_POSITIONS, meritTypeForChainPosition } from './meritController.js';
 import { TARGET_LENGTHS, estimateChainDuration } from './chainController.js';
+import { parseArmoryEntry } from './warController.js';
 
 const TORN_API_BASE = 'https://api.torn.com/v2';
 const DISCORD_API = 'https://discord.com/api/v10';
@@ -268,9 +269,18 @@ export async function getLiveStatus(request, env, user) {
     const liveData = await fetchLiveChainFromTorn(env, factionId);
 
     if (liveData.current > 0) {
-      await checkBonusHitsLive(env, session, factionId, liveData.current).catch((e) => {
-        console.error('checkBonusHitsLive error:', e);
+      const syncResult = await syncChainAttacks(env, session, factionId, liveData.current).catch((e) => {
+        console.error('syncChainAttacks error:', e);
+        return { skipped: true };
       });
+      // Armory sync piggybacks on the same throttle claim as the attack
+      // sync (whichever poll wins that tick does both) rather than its own
+      // separate claim — no reason to double the Torn API traffic per tick.
+      if (!syncResult.skipped) {
+        await syncChainArmory(env, session, factionId).catch((e) => {
+          console.error('syncChainArmory error:', e);
+        });
+      }
     }
     const bonusAwards = await fetchRecentBonusAwards(env, session.id).catch(() => []);
 
@@ -338,62 +348,67 @@ async function bumpViewerPeak(env, factionId, currentCount) {
   return existing;
 }
 
-const BONUS_CHECK_INTERVAL_SECONDS = 8; // throttles the /faction/attacks lookup to roughly once per poll cycle, regardless of viewer count
-const BONUS_LOOKBACK_PAGES = 10; // up to 1,000 attacks per check — a generous budget for the gap since the last check, not a fixed "recent window"
+const SYNC_CHECK_INTERVAL_SECONDS = 8; // throttles the /faction/attacks lookup to roughly once per poll cycle, regardless of viewer count
+const SYNC_LOOKBACK_PAGES = 10; // up to 1,000 attacks per routine check — a generous budget for the gap since the last check, not a fixed "recent window"
+const BACKFILL_LOOKBACK_PAGES = 300; // up to 30,000 attacks for a one-off manual backfill from chain start
 const BONUS_NOTICE_WINDOW_SECONDS = 20; // how long a freshly-detected bonus hit stays visible to pollers that didn't win the check
+const ARMORY_SYNC_LOOKBACK_PAGES = 5;
+const ARMORY_BACKFILL_LOOKBACK_PAGES = 100;
 
-// Claims the "check for new bonus hits" job for this poll tick (first poll
-// past the throttle window wins; everyone else skips it this tick — same
-// claim pattern as a single-winner optimistic UPDATE), then looks for any
-// bonus-threshold position the chain has already passed but hasn't been
-// attributed to an attacker yet, via the faction's own attack log (the only
-// live source with a per-attack chain position — Torn's chainreport isn't
-// available until the chain itself has ended). Best-effort throughout: a
-// missing staff key or a Torn hiccup just means the real chainreport-based
-// award after the chain ends catches it instead.
+// Claims the "sync" job for this poll tick (first poll past the throttle
+// window wins; everyone else skips it this tick — same claim pattern as a
+// single-winner optimistic UPDATE), then walks the faction's own attack log
+// (the only live source with a per-attack chain position — Torn's
+// chainreport isn't available until the chain itself has ended) to do two
+// things in one pass: (1) record every chain-counted attack by one of our
+// own members into chain_watch_attacks — the source for the live Attacks/
+// Energy Out economics — and (2) attribute any bonus-threshold position
+// the chain has already passed to whoever landed it, same as before.
 //
 // Confirmed live (2026-10-26): a fixed "last 300 attacks from now" window
 // only works right after a threshold is crossed — once a chain has run long
-// enough without anyone's poll happening to trigger a check in between, the
-// attack that landed an earlier threshold falls permanently out of that
-// window (a chain at position 14734 could no longer find position 10000,
-// hours in the past). Fixed with a per-session watermark (`session.
-// bonus_watermark_attack_id`, the highest attack id already scanned): each
-// check only has to cover the gap since the LAST check, not a fixed recent
-// slice, so it keeps up under normal viewing. If a gap builds up anyway
-// (nobody watched for a while) the watermark still advances to whatever was
-// actually scanned this run, trading "never catches up" for "makes steady
-// forward progress" — any threshold left behind in an unwatched gap just
-// falls back to the existing chainreport-based award once the chain ends.
-async function checkBonusHitsLive(env, session, factionId, currentPosition) {
+// enough without anyone's poll happening to trigger a check in between, an
+// earlier attack falls permanently out of that window (a chain at position
+// 14734 could no longer find position 10000, hours in the past). Fixed with
+// a per-session watermark (`session.attack_sync_watermark`, the highest
+// attack id already scanned): each check only has to cover the gap since
+// the LAST check, not a fixed recent slice, so it keeps up under normal
+// viewing. If a gap builds up anyway (nobody watched for a while) the
+// watermark still advances to whatever was actually scanned this run,
+// trading "never catches up" for "makes steady forward progress" — call
+// with `force`/a larger `maxPages` (see backfillChainEconomics) to
+// deliberately close a big gap in one go instead.
+async function syncChainAttacks(env, session, factionId, currentPosition, { force = false, maxPages = SYNC_LOOKBACK_PAGES } = {}) {
   const nowSecs = Math.floor(Date.now() / 1000);
-  const claim = await env.DB.prepare(
-    `UPDATE chain_watch_sessions SET last_bonus_check_at = ?
-     WHERE id = ? AND (last_bonus_check_at IS NULL OR last_bonus_check_at <= ?)`
-  ).bind(nowSecs, session.id, nowSecs - BONUS_CHECK_INTERVAL_SECONDS).run();
-  if (!claim.meta?.changes) return;
+  if (!force) {
+    const claim = await env.DB.prepare(
+      `UPDATE chain_watch_sessions SET last_bonus_check_at = ?
+       WHERE id = ? AND (last_bonus_check_at IS NULL OR last_bonus_check_at <= ?)`
+    ).bind(nowSecs, session.id, nowSecs - SYNC_CHECK_INTERVAL_SECONDS).run();
+    if (!claim.meta?.changes) return { skipped: true };
+  }
 
   const { results: already } = await env.DB.prepare(
     `SELECT chain_position FROM chain_watch_bonus_detections WHERE session_id = ?`
   ).bind(session.id).all();
-  const pending = new Set(
+  const pendingBonus = new Set(
     ALL_BONUS_POSITIONS.filter(p => p <= currentPosition && !(already || []).some(r => r.chain_position === p))
   );
-  if (!pending.size) return;
 
   const keyProbe = await getStaffApiKeyForFaction(env, factionId);
-  if (!keyProbe?.key) return;
+  if (!keyProbe?.key) return { error: 'no staff key available' };
 
-  const watermark = session.bonus_watermark_attack_id || 0;
+  const watermark = force ? 0 : (session.attack_sync_watermark || 0);
   let url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub`;
   let maxIdSeen = watermark;
+  let newAttacks = 0;
 
-  for (let page = 0; page < BONUS_LOOKBACK_PAGES && pending.size; page++) {
+  for (let page = 0; page < maxPages; page++) {
     let data;
     try {
       data = await fetchWithRetry(url, () => getStaffApiKeyForFaction(env, factionId), env);
     } catch (e) {
-      console.error('checkBonusHitsLive attacks fetch failed:', e.message);
+      console.error('syncChainAttacks attacks fetch failed:', e.message);
       break;
     }
 
@@ -404,18 +419,26 @@ async function checkBonusHitsLive(env, session, factionId, currentPosition) {
     for (const attack of attacks) {
       if (attack.id <= watermark || attack.started < session.started_at) { stop = true; break; }
       if (attack.id > maxIdSeen) maxIdSeen = attack.id;
-      if (pending.has(attack.chain) && attack.attacker?.id && attack.attacker?.faction?.id === factionId) {
+      if (!(attack.chain > 0 && attack.attacker?.id && attack.attacker?.faction?.id === factionId)) continue;
+
+      const { meta } = await env.DB.prepare(
+        `INSERT OR IGNORE INTO chain_watch_attacks (session_id, torn_attack_id, attacker_id, attacker_name, chain_position, respect_gain, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(session.id, attack.id, attack.attacker.id, attack.attacker.name ?? null, attack.chain, attack.respect_gain ?? 0, attack.started).run();
+      if (meta?.changes > 0) newAttacks++;
+
+      if (pendingBonus.has(attack.chain)) {
         const meritType = meritTypeForChainPosition(attack.chain);
-        if (!meritType) continue;
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type) VALUES (?, ?)`
-        ).bind(attack.attacker.id, meritType).run();
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO chain_watch_bonus_detections (session_id, chain_position, torn_user_id, merit_type, detected_at)
-           VALUES (?, ?, ?, ?, ?)`
-        ).bind(session.id, attack.chain, attack.attacker.id, meritType, nowSecs).run();
-        pending.delete(attack.chain);
-        console.log(`[checkBonusHitsLive] session=${session.id} matched position ${attack.chain} -> attacker ${attack.attacker.id}`);
+        if (meritType) {
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO member_merits (torn_user_id, merit_type) VALUES (?, ?)`
+          ).bind(attack.attacker.id, meritType).run();
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO chain_watch_bonus_detections (session_id, chain_position, torn_user_id, merit_type, detected_at)
+             VALUES (?, ?, ?, ?, ?)`
+          ).bind(session.id, attack.chain, attack.attacker.id, meritType, nowSecs).run();
+          pendingBonus.delete(attack.chain);
+        }
       }
     }
     if (stop) break;
@@ -425,10 +448,306 @@ async function checkBonusHitsLive(env, session, factionId, currentPosition) {
     url = `${TORN_API_BASE}/faction/attacks?limit=100&sort=DESC&comment=OccHub&to=${new URL(prevUrl).searchParams.get('to')}`;
   }
 
-  if (maxIdSeen > watermark) {
+  if (maxIdSeen > (session.attack_sync_watermark || 0)) {
     await env.DB.prepare(
-      `UPDATE chain_watch_sessions SET bonus_watermark_attack_id = ? WHERE id = ?`
+      `UPDATE chain_watch_sessions SET attack_sync_watermark = ? WHERE id = ?`
     ).bind(maxIdSeen, session.id).run();
+  }
+  return { newAttacks };
+}
+
+// Mirrors war tracking's armory-usage ingestion (same news feed, same
+// parser) but scoped to a chain watch session instead of a war — the
+// source for "Faction Energy In". Paginates OLDEST-reachable-first via the
+// `to=` cursor same as war tracking, stopping at session.started_at, an
+// already-logged item (once armory_backfilled), running out of pages, or
+// the page cap.
+async function syncChainArmory(env, session, factionId, { force = false, maxPages = ARMORY_SYNC_LOOKBACK_PAGES } = {}) {
+  const keyProbe = await getStaffApiKeyForFaction(env, factionId);
+  if (!keyProbe?.key) return { error: 'no staff key available' };
+
+  const backfilled = !!session.armory_backfilled;
+  const baseUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub&from=${session.started_at}`;
+  let url = baseUrl;
+  let newUsage = 0;
+  let reachedStart = false;
+
+  for (let page = 0; page < maxPages; page++) {
+    let data;
+    try {
+      data = await fetchWithRetry(url, () => getStaffApiKeyForFaction(env, factionId), env);
+    } catch (e) {
+      console.error('syncChainArmory news fetch failed:', e.message);
+      break;
+    }
+
+    const items = data.news || [];
+    if (!items.length) { reachedStart = true; break; }
+
+    let pageDup = 0;
+    for (const item of items) {
+      const parsed = parseArmoryEntry(item.text);
+      if (!parsed) continue;
+      const { meta } = await env.DB.prepare(
+        `INSERT OR IGNORE INTO chain_watch_armory_usage (session_id, torn_news_id, torn_user_id, username, item_name, used_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).bind(session.id, item.id, parsed.torn_user_id, parsed.username, parsed.item_name, item.timestamp).run();
+      if (meta?.changes > 0) newUsage++; else pageDup++;
+    }
+    if (pageDup > 0 && backfilled && !force) break; // caught up with already-logged news
+
+    const oldestTs = items[items.length - 1].timestamp;
+    if (oldestTs <= session.started_at) { reachedStart = true; break; }
+
+    const prevUrl = data._metadata?.links?.prev;
+    if (!prevUrl) { reachedStart = true; break; }
+    url = `${baseUrl}&to=${new URL(prevUrl).searchParams.get('to')}`;
+  }
+
+  if (!backfilled && reachedStart) {
+    await env.DB.prepare(`UPDATE chain_watch_sessions SET armory_backfilled = 1 WHERE id = ?`).bind(session.id).run();
+  }
+  return { newUsage, reachedStart };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live chain economics — Attacks / Energy Out / Energy In (faction + personal,
+// with a combined total) / ODs, per member and faction-wide, for the chain
+// currently (or most recently) being watched.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ENERGY_PER_XANAX = 250;
+const ENERGY_PER_CAN = 150; // every "Can of ___" flavour refills the same 150 energy in Torn
+
+function energyArmoryKind(itemName) {
+  if (itemName === 'Xanax') return 'xanax';
+  if (/^Can of /i.test(itemName)) return 'can';
+  return null; // not an energy item (e.g. Cannabis, First Aid Kit) — ignored for this tracker
+}
+
+// Delta of personal (self-reported, not armory-attributed) xanax/energy-
+// drink/overdose counts over the chain's window, from personal_stats_snapshots
+// — the only source available for a member's OWN usage, since we can't poll
+// everyone's individual attack/item logs. Snapshots are once-daily, so a
+// chain that starts and ends the same calendar day will show 0 here (same
+// known limitation war tracking's own OD delta already has) — this only
+// resolves once a later day's snapshot lands.
+async function fetchPersonalStatDeltas(env, tornUserIds, fromTs, toTs) {
+  if (!tornUserIds.length) return {};
+  const fromDate = new Date(fromTs * 1000).toISOString().slice(0, 10);
+  const toDate = new Date(toTs * 1000).toISOString().slice(0, 10);
+  const ph = tornUserIds.map(() => '?').join(',');
+  const cols = `p.torn_user_id,
+    CAST(json_extract(p.stats, '$.drugs.xanax') AS INTEGER) AS xanax,
+    CAST(json_extract(p.stats, '$.items.used.energy') AS INTEGER) AS energy_drinks,
+    CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS overdoses`;
+
+  const [startRows, endRows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT ${cols}
+      FROM personal_stats_snapshots p
+      INNER JOIN (
+        SELECT torn_user_id, MIN(snapshot_date) AS min_date
+        FROM personal_stats_snapshots WHERE torn_user_id IN (${ph}) AND snapshot_date >= ? AND snapshot_date <= ? GROUP BY torn_user_id
+      ) s ON p.torn_user_id = s.torn_user_id AND p.snapshot_date = s.min_date
+    `).bind(...tornUserIds, fromDate, toDate).all(),
+    env.DB.prepare(`
+      SELECT ${cols}
+      FROM personal_stats_snapshots p
+      INNER JOIN (
+        SELECT torn_user_id, MAX(snapshot_date) AS max_date
+        FROM personal_stats_snapshots WHERE torn_user_id IN (${ph}) AND snapshot_date >= ? AND snapshot_date <= ? GROUP BY torn_user_id
+      ) e ON p.torn_user_id = e.torn_user_id AND p.snapshot_date = e.max_date
+    `).bind(...tornUserIds, fromDate, toDate).all(),
+  ]);
+
+  const start = {};
+  for (const r of startRows.results || []) start[r.torn_user_id] = r;
+  const deltas = {};
+  for (const r of endRows.results || []) {
+    const s = start[r.torn_user_id] || {};
+    deltas[r.torn_user_id] = {
+      xanax: Math.max(0, (r.xanax ?? 0) - (s.xanax ?? 0)),
+      energy_drinks: Math.max(0, (r.energy_drinks ?? 0) - (s.energy_drinks ?? 0)),
+      overdoses: Math.max(0, (r.overdoses ?? 0) - (s.overdoses ?? 0)),
+    };
+  }
+  return deltas;
+}
+
+// Per-member + faction-wide totals. Only covers members who either attacked
+// in the chain or used the faction armory during its window — a member who
+// used ONLY their own personal xanax/cans and never attacked or touched the
+// armory has no signal tying them to this chain at all, so they're out of
+// scope (same boundary war tracking's armory-only-members handling draws).
+async function computeChainEconomics(env, session) {
+  const toTs = session.ended_at ?? Math.floor(Date.now() / 1000);
+
+  const [{ results: attackRows }, { results: armoryRows }] = await Promise.all([
+    env.DB.prepare(
+      `SELECT attacker_id, COALESCE(MAX(attacker_name), '') AS attacker_name, COUNT(*) AS attacks, SUM(COALESCE(respect_gain,0)) AS respect
+       FROM chain_watch_attacks WHERE session_id = ? GROUP BY attacker_id`
+    ).bind(session.id).all(),
+    env.DB.prepare(
+      `SELECT torn_user_id, COALESCE(MAX(username), '') AS username, item_name, COUNT(*) AS used_qty
+       FROM chain_watch_armory_usage WHERE session_id = ? GROUP BY torn_user_id, item_name`
+    ).bind(session.id).all(),
+  ]);
+
+  const memberMap = new Map();
+  function getRow(id, name) {
+    if (!memberMap.has(id)) {
+      memberMap.set(id, {
+        torn_user_id: id, username: name || `#${id}`,
+        attacks: 0, respect: 0, energy_out: 0,
+        faction_xanax: 0, faction_cans: 0, faction_energy_in: 0,
+        personal_energy_in: 0, combined_energy_in: 0, overdoses: 0,
+      });
+    } else if (name) {
+      memberMap.get(id).username = name;
+    }
+    return memberMap.get(id);
+  }
+
+  for (const r of attackRows || []) {
+    const row = getRow(r.attacker_id, r.attacker_name);
+    row.attacks = r.attacks;
+    row.respect = r.respect || 0;
+    row.energy_out = r.attacks * 25;
+  }
+
+  for (const r of armoryRows || []) {
+    const kind = energyArmoryKind(r.item_name);
+    if (!kind) continue;
+    const row = getRow(r.torn_user_id, r.username);
+    if (kind === 'xanax') row.faction_xanax += r.used_qty;
+    else row.faction_cans += r.used_qty;
+  }
+  for (const row of memberMap.values()) {
+    row.faction_energy_in = row.faction_xanax * ENERGY_PER_XANAX + row.faction_cans * ENERGY_PER_CAN;
+  }
+
+  const memberIds = [...memberMap.keys()];
+  const personalDeltas = await fetchPersonalStatDeltas(env, memberIds, session.started_at, toTs);
+  for (const [id, row] of memberMap) {
+    const d = personalDeltas[id] || { xanax: 0, energy_drinks: 0, overdoses: 0 };
+    // Only the portion NOT already counted as faction-armory usage counts as
+    // "personal" — otherwise an armory-sourced Xanax would be counted twice
+    // once the two numbers are added into the combined total.
+    const personalXanax = Math.max(0, d.xanax - row.faction_xanax);
+    const personalCans = Math.max(0, d.energy_drinks - row.faction_cans);
+    row.personal_energy_in = personalXanax * ENERGY_PER_XANAX + personalCans * ENERGY_PER_CAN;
+    row.combined_energy_in = row.faction_energy_in + row.personal_energy_in;
+    row.overdoses = d.overdoses;
+  }
+
+  // Resolve any member who still has no username (armory log sometimes
+  // precedes a faction_members row existing) from the roster as a fallback.
+  const unresolvedIds = [...memberMap.values()].filter(m => !m.username || m.username.startsWith('#')).map(m => m.torn_user_id);
+  if (unresolvedIds.length) {
+    const ph = unresolvedIds.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT torn_user_id, username FROM faction_members WHERE torn_user_id IN (${ph})`
+    ).bind(...unresolvedIds).all();
+    for (const r of results || []) {
+      const row = memberMap.get(r.torn_user_id);
+      if (row) row.username = r.username;
+    }
+  }
+
+  const members = [...memberMap.values()].sort((a, b) => b.attacks - a.attacks);
+  const totals = members.reduce((acc, m) => ({
+    attacks: acc.attacks + m.attacks,
+    energy_out: acc.energy_out + m.energy_out,
+    faction_energy_in: acc.faction_energy_in + m.faction_energy_in,
+    personal_energy_in: acc.personal_energy_in + m.personal_energy_in,
+    combined_energy_in: acc.combined_energy_in + m.combined_energy_in,
+    overdoses: acc.overdoses + m.overdoses,
+  }), { attacks: 0, energy_out: 0, faction_energy_in: 0, personal_energy_in: 0, combined_energy_in: 0, overdoses: 0 });
+
+  return { members, totals };
+}
+
+// GET /api/chain-watcher/economics?faction_id=X — any member. Shows the
+// most recent session for the faction regardless of status, so the numbers
+// don't just disappear the moment a chain ends.
+export async function getChainEconomics(request, env) {
+  const url = new URL(request.url);
+  const factionId = validFactionId(url.searchParams.get('faction_id'));
+  if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+
+  try {
+    const session = await env.DB.prepare(
+      `SELECT * FROM chain_watch_sessions WHERE faction_id = ? ORDER BY id DESC LIMIT 1`
+    ).bind(factionId).first();
+    if (!session) return jsonResponse({ session: null });
+
+    const economics = await computeChainEconomics(env, session);
+    return jsonResponse({
+      session: { id: session.id, status: session.status, started_at: session.started_at, ended_at: session.ended_at },
+      backfillStatus: session.backfill_status,
+      backfillNote: session.backfill_note,
+      ...economics,
+    });
+  } catch (err) {
+    console.error('getChainEconomics error:', err);
+    return errorResponse('Failed to compute chain economics', 500);
+  }
+}
+
+// One-off manual catch-up: pages all the way back through the attack log
+// and armory news from the chain's actual start, instead of waiting for the
+// routine per-poll sync to close the gap incrementally (useful right after
+// turning this feature on, or any time a chain ran mostly unwatched).
+// Runs in the background via ctx.waitUntil — the request returns
+// immediately, progress/result is polled via getChainEconomics' session
+// fields (backfillStatus/backfillNote).
+async function runChainEconomicsBackfill(env, session, factionId) {
+  try {
+    const attackResult = await syncChainAttacks(env, session, factionId, Number.MAX_SAFE_INTEGER, {
+      force: true, maxPages: BACKFILL_LOOKBACK_PAGES,
+    });
+    await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
+      .bind(`Scanned attacks (${attackResult.newAttacks ?? 0} new) — checking armory…`, session.id).run();
+
+    const armoryResult = await syncChainArmory(env, session, factionId, {
+      force: true, maxPages: ARMORY_BACKFILL_LOOKBACK_PAGES,
+    });
+
+    await env.DB.prepare(
+      `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_note = ? WHERE id = ?`
+    ).bind(`Done — ${attackResult.newAttacks ?? 0} attacks, ${armoryResult.newUsage ?? 0} armory action(s) scanned from chain start.`, session.id).run();
+  } catch (err) {
+    console.error('runChainEconomicsBackfill error:', err);
+    await env.DB.prepare(
+      `UPDATE chain_watch_sessions SET backfill_status = 'error', backfill_note = ? WHERE id = ?`
+    ).bind(`Failed: ${err.message}`, session.id).run();
+  }
+}
+
+// POST /api/chain-watcher/economics/backfill  { faction_id } — leadership-only
+export async function backfillChainEconomics(request, env, user, ctx) {
+  try {
+    const body = await request.json();
+    const factionId = validFactionId(body.faction_id);
+    if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
+
+    const session = await env.DB.prepare(
+      `SELECT * FROM chain_watch_sessions WHERE faction_id = ? ORDER BY id DESC LIMIT 1`
+    ).bind(factionId).first();
+    if (!session) return errorResponse('No chain watch session found for this faction', 404);
+    if (session.backfill_status === 'running') return errorResponse('A backfill is already running for this chain', 409);
+
+    await env.DB.prepare(
+      `UPDATE chain_watch_sessions SET backfill_status = 'running', backfill_note = 'Starting…' WHERE id = ?`
+    ).bind(session.id).run();
+
+    ctx.waitUntil(runChainEconomicsBackfill(env, session, factionId));
+
+    return jsonResponse({ success: true });
+  } catch (err) {
+    console.error('backfillChainEconomics error:', err);
+    return errorResponse('Failed to start backfill', 500);
   }
 }
 

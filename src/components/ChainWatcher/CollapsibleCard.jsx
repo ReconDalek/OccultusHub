@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { card, sectionTitle } from './chainWatcherUtils'
 
 // Shared card shell for Chain Watch's panels (Shift Sign-Ups, Merit Tracker,
-// Watch Totals) — collapses down to just the title, expanded by default on
-// every load (not persisted — a fresh page load always starts expanded).
-export default function CollapsibleCard({ title, headerExtra, children }) {
-  const [collapsed, setCollapsed] = useState(false)
+// Watch Totals) — collapses down to just the title. Expanded by default on
+// every load unless defaultCollapsed is set (e.g. Chain Economics, which has
+// enough columns/rows that starting collapsed is the better default) — not
+// persisted either way, a fresh page load always starts at its default.
+export default function CollapsibleCard({ title, headerExtra, children, defaultCollapsed = false }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
   return (
     <div style={card}>
