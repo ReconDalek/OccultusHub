@@ -689,12 +689,19 @@ function FlyOnWeb({ fly }) {
 }
 
 // ── Spider that lives on the corner web, walking its actual strands ─────────
-// Wanders node to node indefinitely along the lattice; it's only ever out of
-// view by having walked off the web's own rim (clipped by the SVG's bounds,
-// same as walking behind the edge of the screen) and later walks back in
-// from a different point on the rim — never a pop-in/pop-out mid-strand.
-// Very rarely a fly blunders into the web; the spider breaks off whatever
-// it's doing, rushes it, wraps it, and carries it off before resuming.
+// Wanders the lattice in continuous multi-hop treks — each trek is a single
+// animateMotion across several real nodes at once (constant pace along the
+// whole path), so the walk reads as one fluid traverse that only occasionally
+// pauses, the same way the dropping spiders' descend/climb is one unbroken
+// motion rather than a string of little restarts. It's only ever out of view
+// by having walked off the web's own rim (clipped by the SVG's bounds, same
+// as walking behind the edge of the screen) and later walks back in from a
+// different point on the rim — never a pop-in/pop-out mid-strand. Very
+// rarely a fly blunders into the web; the spider breaks off whatever it's
+// doing, rushes it, wraps it, and carries it off before resuming.
+const FLY_CHECK_MS = 10000
+const FLY_CHANCE   = 1 / 12 // rolled every FLY_CHECK_MS — ~2min average wait, per corner
+
 function WebCrawlSpider() {
   const [seg, setSeg]     = useState(null)
   const [fly, setFly]     = useState(null)
@@ -702,31 +709,48 @@ function WebCrawlSpider() {
   const node = useRef(null)
   const prev = useRef(null)
   const hunting = useRef(false)
+  const flyActive = useRef(false)
 
   useEffect(() => {
-    let t, flyT
+    let t, flyT, flyCheckId
 
-    function moveTo(nextAi, nextRi, lo, hi) {
-      const [x1, y1] = webNodePos(node.current.ai, node.current.ri)
-      const [x2, y2] = webNodePos(nextAi, nextRi)
-      const dist = Math.hypot(x2 - x1, y2 - y1)
+    // Picks `hops` real strands in a row from the current node (stopping
+    // early if it reaches the rim) and returns the point list for a single
+    // continuous path, plus where that leaves the spider.
+    function buildChain(hops) {
+      let ai = node.current.ai, ri = node.current.ri, p = prev.current
+      const pts = [webNodePos(ai, ri)]
+      for (let i = 0; i < hops; i++) {
+        const opts = webNeighbors(ai, ri).filter(([a,r]) => !(p && a===p.ai && r===p.ri))
+        const pool = opts.length ? opts : webNeighbors(ai, ri)
+        const [na, nr] = pool[Math.floor(Math.random()*pool.length)]
+        p = { ai, ri }
+        ai = na; ri = nr
+        pts.push(webNodePos(ai, ri))
+        if (ri === WEB_RADII.length) break
+      }
+      return { pts, endAi: ai, endRi: ri, endPrev: p }
+    }
+
+    function startChain(hops, lo, hi) {
+      const { pts, endAi, endRi, endPrev } = buildChain(hops)
+      let dist = 0
+      for (let i = 1; i < pts.length; i++) dist += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1])
       const speed = lo + Math.random() * (hi - lo)
-      const dur = Math.max(0.3, dist / speed)
+      const dur = Math.max(0.6, dist / speed)
       const legCycle = Math.min(0.85, Math.max(0.14, 16 / speed))
-      prev.current = node.current
-      node.current = { ai: nextAi, ri: nextRi }
-      setSeg({ d: `M${x1},${y1} L${x2},${y2}`, dur, legCycle, key: Math.random() })
-      return dur
+      const d = 'M' + pts.map(([x,y]) => `${x},${y}`).join(' L')
+      prev.current = endPrev
+      node.current = { ai: endAi, ri: endRi }
+      setSeg({ d, dur, legCycle, key: Math.random() })
+      return { dur, endAi, endRi }
     }
 
     function wanderStep() {
       if (hunting.current) return
-      const { ai, ri } = node.current
-      const opts = webNeighbors(ai, ri).filter(([a,r]) => !(prev.current && a===prev.current.ai && r===prev.current.ri))
-      const pool = opts.length ? opts : webNeighbors(ai, ri)
-      const [na, nr] = pool[Math.floor(Math.random()*pool.length)]
-      const dur = moveTo(na, nr, 42, 120)
-      t = setTimeout(() => afterWander(na, nr), dur*1000)
+      const hops = 3 + Math.floor(Math.random()*4)
+      const { dur, endAi, endRi } = startChain(hops, 46, 110)
+      t = setTimeout(() => afterWander(endAi, endRi), dur*1000)
     }
 
     function afterWander(ai, ri) {
@@ -738,21 +762,31 @@ function WebCrawlSpider() {
           const reAi = Math.floor(Math.random()*WEB_ANGLES.length)
           node.current = { ai: reAi, ri: WEB_RADII.length }
           prev.current = null
-          const dur = moveTo(reAi, WEB_RADII.length-1, 42, 120)
-          t = setTimeout(() => afterWander(reAi, WEB_RADII.length-1), dur*1000)
+          const hops = 3 + Math.floor(Math.random()*3)
+          const { dur, endAi, endRi } = startChain(hops, 46, 110)
+          t = setTimeout(() => afterWander(endAi, endRi), dur*1000)
         }, 9000 + Math.random()*18000)
         return
       }
-      const resting = Math.random() < 0.22
-      t = setTimeout(wanderStep, resting ? 2200 + Math.random()*4200 : 250 + Math.random()*900)
+      // Almost always keep walking straight into the next trek; only rarely
+      // pause, briefly, as if getting its bearings — a stop should read as
+      // an occasional beat, not the spider's resting state.
+      const resting = Math.random() < 0.15
+      t = setTimeout(wanderStep, resting ? 700 + Math.random()*1000 : 30 + Math.random()*150)
     }
 
     function scheduleFly() {
-      flyT = setTimeout(startFly, 230000 + Math.random()*280000) // every ~4-8.5 minutes
+      flyCheckId = setInterval(() => {
+        if (flyActive.current) return
+        if (Math.random() < FLY_CHANCE) {
+          flyActive.current = true
+          clearInterval(flyCheckId)
+          startFly()
+        }
+      }, FLY_CHECK_MS)
     }
 
     function startFly() {
-      if (hunting.current) { scheduleFly(); return }
       const ai = Math.floor(Math.random()*WEB_ANGLES.length)
       const ri = Math.floor(Math.random()*WEB_RADII.length)
       const [tx, ty] = webNodePos(ai, ri)
@@ -806,6 +840,7 @@ function WebCrawlSpider() {
       flyT = setTimeout(() => {
         setCarry(false)
         hunting.current = false
+        flyActive.current = false
         afterWander(reAi, WEB_RADII.length) // folds into the normal rim pause + re-entry
         scheduleFly()
       }, dur*1000)
@@ -817,7 +852,7 @@ function WebCrawlSpider() {
     t = setTimeout(wanderStep, 1200 + Math.random()*4000)
     scheduleFly()
 
-    return () => { clearTimeout(t); clearTimeout(flyT) }
+    return () => { clearTimeout(t); clearTimeout(flyT); clearInterval(flyCheckId) }
   }, [])
 
   return (
