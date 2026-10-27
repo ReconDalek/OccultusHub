@@ -389,7 +389,7 @@ const ARMORY_BACKFILL_LOOKBACK_PAGES = 200;
 // trading "never catches up" for "makes steady forward progress" — call
 // with `force`/a larger `maxPages` (see backfillChainEconomics) to
 // deliberately close a big gap in one go instead.
-async function syncChainAttacks(env, session, factionId, currentPosition, { force = false, maxPages = SYNC_LOOKBACK_PAGES, resumeFromTs = null } = {}) {
+async function syncChainAttacks(env, session, factionId, currentPosition, { force = false, maxPages = SYNC_LOOKBACK_PAGES, resumeFromTs = null, onProgress = null } = {}) {
   const nowSecs = Math.floor(Date.now() / 1000);
   if (!force) {
     const claim = await env.DB.prepare(
@@ -456,6 +456,7 @@ async function syncChainAttacks(env, session, factionId, currentPosition, { forc
       }
     }
     if (stop) break;
+    if (onProgress && page % 10 === 9) await onProgress({ page: page + 1, newAttacks, oldestTsSeen });
 
     const prevUrl = data._metadata?.links?.prev;
     if (!prevUrl) { reachedSessionStart = true; break; }
@@ -749,6 +750,8 @@ async function runChainEconomicsBackfill(env, session, factionId) {
     for (let pass = 0; pass < BACKFILL_MAX_PASSES; pass++) {
       const result = await syncChainAttacks(env, session, factionId, Number.MAX_SAFE_INTEGER, {
         force: true, maxPages: BACKFILL_LOOKBACK_PAGES, resumeFromTs,
+        onProgress: ({ page, newAttacks }) => env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
+          .bind(`Scanning attacks… pass ${pass + 1}/${BACKFILL_MAX_PASSES}, page ${page} — ${attacksTotal + newAttacks} new so far`, session.id).run(),
       });
       attacksTotal += result.newAttacks ?? 0;
       await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
