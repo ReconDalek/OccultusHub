@@ -360,11 +360,8 @@ async function bumpViewerPeak(env, factionId, currentCount) {
 
 const SYNC_CHECK_INTERVAL_SECONDS = 8; // throttles the /faction/attacks lookup to roughly once per poll cycle, regardless of viewer count
 const SYNC_LOOKBACK_PAGES = 10; // up to 1,000 attacks per routine check — a generous budget for the gap since the last check, not a fixed "recent window"
-const BACKFILL_LOOKBACK_PAGES = 300; // up to 30,000 attacks per backfill pass
-const BACKFILL_MAX_PASSES = 10; // up to 300,000 attacks total across passes — the feed includes every attack by/against the faction, not just chain hits, so a long/high-member-count chain can run well past its own hit count
 const BONUS_NOTICE_WINDOW_SECONDS = 20; // how long a freshly-detected bonus hit stays visible to pollers that didn't win the check
 const ARMORY_SYNC_LOOKBACK_PAGES = 5;
-const ARMORY_BACKFILL_LOOKBACK_PAGES = 200;
 
 // Claims the "sync" job for this poll tick (first poll past the throttle
 // window wins; everyone else skips it this tick — same claim pattern as a
@@ -477,15 +474,16 @@ async function syncChainAttacks(env, session, factionId, currentPosition, { forc
 // `to=` cursor same as war tracking, stopping at session.started_at, an
 // already-logged item (once armory_backfilled), running out of pages, or
 // the page cap.
-async function syncChainArmory(env, session, factionId, { force = false, maxPages = ARMORY_SYNC_LOOKBACK_PAGES } = {}) {
+async function syncChainArmory(env, session, factionId, { force = false, maxPages = ARMORY_SYNC_LOOKBACK_PAGES, resumeFromTs = null } = {}) {
   const keyProbe = await getStaffApiKeyForFaction(env, factionId);
   if (!keyProbe?.key) return { error: 'no staff key available' };
 
   const backfilled = !!session.armory_backfilled;
   const baseUrl = `${TORN_API_BASE}/faction/news?striptags=false&limit=100&sort=DESC&cat=armoryAction&comment=OccHub&from=${session.started_at}`;
-  let url = baseUrl;
+  let url = baseUrl + (resumeFromTs ? `&to=${resumeFromTs}` : '');
   let newUsage = 0;
   let reachedStart = false;
+  let oldestTsSeen = null;
 
   for (let page = 0; page < maxPages; page++) {
     let data;
@@ -512,6 +510,7 @@ async function syncChainArmory(env, session, factionId, { force = false, maxPage
     if (pageDup > 0 && backfilled && !force) break; // caught up with already-logged news
 
     const oldestTs = items[items.length - 1].timestamp;
+    oldestTsSeen = oldestTs;
     if (oldestTs <= session.started_at) { reachedStart = true; break; }
 
     const prevUrl = data._metadata?.links?.prev;
@@ -522,7 +521,7 @@ async function syncChainArmory(env, session, factionId, { force = false, maxPage
   if (!backfilled && reachedStart) {
     await env.DB.prepare(`UPDATE chain_watch_sessions SET armory_backfilled = 1 WHERE id = ?`).bind(session.id).run();
   }
-  return { newUsage, reachedStart };
+  return { newUsage, reachedStart, oldestTsSeen };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -618,6 +617,40 @@ async function fetchPersonalStatDeltas(env, tornUserIds, fromTs, toTs) {
   return deltas;
 }
 
+const DONATOR_LOOKUP_PER_CALL = 5; // caps how many NEW live Torn lookups one request can trigger
+
+// Cached donator status (affects the value of an energy refill: 100 vs 150)
+// — looking this up live from Torn on every single page load was the cause
+// of a ~30s load for a large chain (one live call per refill-active member,
+// every time). Reads the cache first; any member not yet cached gets looked
+// up here too, but bounded to a handful per call so a page load is never
+// stuck behind more than a few new lookups — anyone past that bound just
+// gets picked up on a later call once cached.
+async function getCachedDonatorStatus(env, tornUserIds) {
+  if (!tornUserIds.length) return {};
+  const ph = tornUserIds.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT torn_user_id, is_donator FROM member_donator_status WHERE torn_user_id IN (${ph})`
+  ).bind(...tornUserIds).all();
+
+  const status = {};
+  for (const r of results || []) status[r.torn_user_id] = !!r.is_donator;
+
+  const missing = tornUserIds.filter(id => !(id in status));
+  for (const id of missing.slice(0, DONATOR_LOOKUP_PER_CALL)) {
+    const profile = await fetchTornUserProfile(env, id).catch(() => null);
+    const isDonator = !!profile?.donator;
+    status[id] = isDonator;
+    await env.DB.prepare(
+      `INSERT INTO member_donator_status (torn_user_id, is_donator, checked_at) VALUES (?, ?, ?)
+       ON CONFLICT(torn_user_id) DO UPDATE SET is_donator = excluded.is_donator, checked_at = excluded.checked_at`
+    ).bind(id, isDonator ? 1 : 0, Math.floor(Date.now() / 1000)).run();
+  }
+  for (const id of missing.slice(DONATOR_LOOKUP_PER_CALL)) status[id] = false; // picked up on a later call
+
+  return status;
+}
+
 // Per-member + faction-wide totals. Only covers members who either attacked
 // in the chain or used the faction armory during its window — a member who
 // used ONLY their own personal xanax/cans and never attacked or touched the
@@ -675,16 +708,13 @@ async function computeChainEconomics(env, session) {
   const personalDeltas = await fetchPersonalStatDeltas(env, memberIds, session.started_at, toTs);
 
   // Donator status affects the value of an energy refill (100 vs 150) from
-  // either source — fetched live, best-effort, only for members who show
-  // any refill activity at all (faction or personal), not the whole roster.
+  // either source — cached (see getCachedDonatorStatus), only for members
+  // who show any refill activity at all (faction or personal), not the
+  // whole roster.
   const refillUsers = [...memberMap.keys()].filter(
     id => (personalDeltas[id]?.energy_refills || 0) > 0 || memberMap.get(id).faction_refills > 0
   );
-  const donatorStatus = {};
-  for (const id of refillUsers) {
-    const profile = await fetchTornUserProfile(env, id).catch(() => null);
-    donatorStatus[id] = !!profile?.donator;
-  }
+  const donatorStatus = await getCachedDonatorStatus(env, refillUsers);
 
   for (const [id, row] of memberMap) {
     const d = personalDeltas[id] || { xanax: 0, energy_drinks: 0, energy_refills: 0, overdoses: 0 };
@@ -756,68 +786,84 @@ export async function getChainEconomics(request, env) {
   }
 }
 
-// One-off manual catch-up: pages all the way back through the attack log
-// and armory news from the chain's actual start, instead of waiting for the
-// routine per-poll sync to close the gap incrementally (useful right after
-// turning this feature on, or any time a chain ran mostly unwatched).
-// Runs in the background via ctx.waitUntil — the request returns
-// immediately, progress/result is polled via getChainEconomics' session
-// fields (backfillStatus/backfillNote).
-async function runChainEconomicsBackfill(env, session, factionId) {
-  try {
-    // A single syncChainAttacks call is capped at BACKFILL_LOOKBACK_PAGES —
-    // not enough on its own for a long, high-volume chain (the attack feed
-    // includes every attack by/against the faction, not just chain hits, so
-    // a 48h/95-member chain can have far more rows than its own hit count).
-    // Resuming across passes (via resumeFromTs, persisted as
-    // backfill_oldest_ts between passes) instead of one fixed-size scan
-    // means this either reaches the actual chain start or says plainly that
-    // it didn't, rather than silently stopping partway through.
-    let resumeFromTs = session.backfill_oldest_ts || null;
-    let attacksTotal = 0;
-    let reachedStart = false;
-    for (let pass = 0; pass < BACKFILL_MAX_PASSES; pass++) {
-      const result = await syncChainAttacks(env, session, factionId, Number.MAX_SAFE_INTEGER, {
-        force: true, maxPages: BACKFILL_LOOKBACK_PAGES, resumeFromTs,
-        onProgress: ({ page, newAttacks }) => env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
-          .bind(`Scanning attacks… pass ${pass + 1}/${BACKFILL_MAX_PASSES}, page ${page} — ${attacksTotal + newAttacks} new so far`, session.id).run(),
-      });
-      attacksTotal += result.newAttacks ?? 0;
-      await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_note = ? WHERE id = ?`)
-        .bind(`Scanning attacks… ${attacksTotal} new so far (pass ${pass + 1}/${BACKFILL_MAX_PASSES})`, session.id).run();
-      if (result.reachedSessionStart) { reachedStart = true; break; }
-      if (!result.oldestTsSeen) break;
-      resumeFromTs = result.oldestTsSeen;
-      await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_oldest_ts = ? WHERE id = ?`)
-        .bind(resumeFromTs, session.id).run();
-    }
+// Backfill runs as a series of small, bounded chunks instead of trying to
+// page all the way back to the chain's start in one go — confirmed live
+// (2026-10-28): a single ctx.waitUntil trying to do the whole job for a
+// long, high-member-count chain (attack feed rows can run into the tens of
+// thousands — every attack by/against the faction, not just chain hits) got
+// silently killed by Cloudflare partway through, leaving backfill_status
+// stuck on 'running'/'Starting…' for 12+ hours with no progress and no way
+// to tell it had died. Each chunk is small enough to reliably finish within
+// one invocation; backfill_phase ('attacks' | 'armory' | NULL once done)
+// and backfill_oldest_ts (the resume cursor for whichever phase is active)
+// persist across chunks so progress survives between calls. The POST
+// handler below kicks off the first chunk immediately for quick visible
+// feedback; continueChainEconomicsBackfills (wired into the existing
+// */10 * * * * cron) picks up any session still mid-backfill and runs one
+// more chunk every tick until done.
+const BACKFILL_CHUNK_PAGES = 50; // up to 5,000 attacks per chunk
+const ARMORY_BACKFILL_CHUNK_PAGES = 50;
 
-    if (!reachedStart) {
-      await env.DB.prepare(
-        `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_note = ? WHERE id = ?`
-      ).bind(`Stopped before reaching chain start — ${attacksTotal} attacks scanned. Run Backfill again to continue from there.`, session.id).run();
+async function processOneBackfillChunk(env, session, factionId) {
+  try {
+    if (session.backfill_phase !== 'armory') {
+      const result = await syncChainAttacks(env, session, factionId, Number.MAX_SAFE_INTEGER, {
+        force: true, maxPages: BACKFILL_CHUNK_PAGES, resumeFromTs: session.backfill_oldest_ts || null,
+      });
+      if (result.reachedSessionStart) {
+        await env.DB.prepare(
+          `UPDATE chain_watch_sessions SET backfill_phase = 'armory', backfill_oldest_ts = NULL, backfill_note = 'Attacks done — checking armory…' WHERE id = ?`
+        ).bind(session.id).run();
+      } else if (result.oldestTsSeen) {
+        await env.DB.prepare(
+          `UPDATE chain_watch_sessions SET backfill_oldest_ts = ?, backfill_note = ? WHERE id = ?`
+        ).bind(
+          result.oldestTsSeen,
+          `Scanning attacks… reached ${new Date(result.oldestTsSeen * 1000).toISOString().slice(0, 16).replace('T', ' ')} TCT so far`,
+          session.id
+        ).run();
+      } else {
+        // No progress at all this chunk (e.g. no staff key available) —
+        // move on rather than retrying the same stuck chunk forever.
+        await env.DB.prepare(
+          `UPDATE chain_watch_sessions SET backfill_phase = 'armory', backfill_oldest_ts = NULL, backfill_note = 'Attacks stalled (no staff key available?) — checking armory…' WHERE id = ?`
+        ).bind(session.id).run();
+      }
       return;
     }
 
-    await env.DB.prepare(`UPDATE chain_watch_sessions SET backfill_oldest_ts = NULL, backfill_note = ? WHERE id = ?`)
-      .bind(`Reached chain start (${attacksTotal} attacks) — checking armory…`, session.id).run();
-
     const armoryResult = await syncChainArmory(env, session, factionId, {
-      force: true, maxPages: ARMORY_BACKFILL_LOOKBACK_PAGES,
+      force: true, maxPages: ARMORY_BACKFILL_CHUNK_PAGES, resumeFromTs: session.backfill_oldest_ts || null,
     });
-    const armoryNote = armoryResult.reachedStart
-      ? `${armoryResult.newUsage ?? 0} armory action(s)`
-      : `${armoryResult.newUsage ?? 0} armory action(s) (didn't reach chain start — run Backfill again)`;
-
-    await env.DB.prepare(
-      `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_note = ? WHERE id = ?`
-    ).bind(`Done — ${attacksTotal} attacks, ${armoryNote} scanned from chain start.`, session.id).run();
+    if (armoryResult.reachedStart || armoryResult.error) {
+      await env.DB.prepare(
+        `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_phase = NULL, backfill_oldest_ts = NULL, backfill_note = 'Done — backfilled from chain start.' WHERE id = ?`
+      ).bind(session.id).run();
+    } else {
+      await env.DB.prepare(
+        `UPDATE chain_watch_sessions SET backfill_oldest_ts = ?, backfill_note = 'Scanning armory logs…' WHERE id = ?`
+      ).bind(armoryResult.oldestTsSeen || null, session.id).run();
+    }
   } catch (err) {
-    console.error('runChainEconomicsBackfill error:', err);
+    console.error('processOneBackfillChunk error:', err);
     await env.DB.prepare(
       `UPDATE chain_watch_sessions SET backfill_status = 'error', backfill_note = ? WHERE id = ?`
     ).bind(`Failed: ${err.message}`, session.id).run();
   }
+}
+
+// Cron-driven continuation — called from the existing */10 * * * * trigger
+// (see index.js), runs one chunk for every session still mid-backfill.
+export async function continueChainEconomicsBackfills(env) {
+  const { results: sessions } = await env.DB.prepare(
+    `SELECT * FROM chain_watch_sessions WHERE backfill_status = 'running'`
+  ).all();
+  for (const session of (sessions || [])) {
+    await processOneBackfillChunk(env, session, session.faction_id).catch((e) => {
+      console.error(`continueChainEconomicsBackfills: session ${session.id} failed:`, e);
+    });
+  }
+  return { processed: (sessions || []).length };
 }
 
 // POST /api/chain-watcher/economics/backfill  { faction_id } — leadership-only
@@ -834,10 +880,12 @@ export async function backfillChainEconomics(request, env, user, ctx) {
     if (session.backfill_status === 'running') return errorResponse('A backfill is already running for this chain', 409);
 
     await env.DB.prepare(
-      `UPDATE chain_watch_sessions SET backfill_status = 'running', backfill_note = 'Starting…' WHERE id = ?`
+      `UPDATE chain_watch_sessions SET backfill_status = 'running', backfill_phase = 'attacks', backfill_oldest_ts = NULL, backfill_note = 'Starting…' WHERE id = ?`
     ).bind(session.id).run();
 
-    ctx.waitUntil(runChainEconomicsBackfill(env, session, factionId));
+    // One chunk right away so the UI shows real progress immediately,
+    // instead of waiting for the next cron tick (up to 10 minutes away).
+    ctx.waitUntil(processOneBackfillChunk(env, { ...session, backfill_phase: 'attacks', backfill_oldest_ts: null }, factionId));
 
     return jsonResponse({ success: true });
   } catch (err) {
