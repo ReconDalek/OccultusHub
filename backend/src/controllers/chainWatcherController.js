@@ -501,7 +501,7 @@ async function syncChainArmory(env, session, factionId, { force = false, maxPage
 
     let pageDup = 0;
     for (const item of items) {
-      const parsed = parseArmoryEntry(item.text);
+      const parsed = parseArmoryEntry(item.text) || parseRefillEntry(item.text);
       if (!parsed) continue;
       const { meta } = await env.DB.prepare(
         `INSERT OR IGNORE INTO chain_watch_armory_usage (session_id, torn_news_id, torn_user_id, username, item_name, used_at)
@@ -532,14 +532,38 @@ async function syncChainArmory(env, session, factionId, { force = false, maxPage
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ENERGY_PER_XANAX = 250;
-const ENERGY_PER_CAN = 150; // every "Can of ___" flavour refills the same 150 energy in Torn
 const ENERGY_PER_REFILL = 100;
 const ENERGY_PER_REFILL_DONATOR = 150;
 
-function energyArmoryKind(itemName) {
-  if (itemName === 'Xanax') return 'xanax';
-  if (/^Can of /i.test(itemName)) return 'can';
-  return null; // not an energy item (e.g. Cannabis, First Aid Kit) — ignored for this tracker
+// Each "Can of ___" flavour gives a different base amount (confirmed against
+// the Torn wiki, 2026-10-27) — a flat 150 for all of them was wrong.
+const CAN_ENERGY = {
+  'Can of Goose Juice': 5,
+  'Can of Damp Valley': 10,
+  'Can of Crocozade': 15,
+  'Can of Munster': 20,
+  'Can of Santa Shooters': 20,
+  'Can of Red Cow': 25,
+  'Can of Rockstar Rudolph': 25,
+  'Can of Taurine Elite': 30,
+  'Can of X-MASS': 30,
+};
+// Personal (non-armory) can usage only gives a flavour-blind total count
+// (items.used.energy) — there's no way to know which can was drunk, so a
+// personal can is valued at the average of the known flavours (20).
+const AVERAGE_CAN_ENERGY = Math.round(
+  Object.values(CAN_ENERGY).reduce((a, b) => a + b, 0) / Object.keys(CAN_ENERGY).length
+);
+
+// Faction news uses "faction's X items" for item withdrawals (parseArmoryEntry,
+// in warController.js) — an energy refill isn't an item, so it needs its own
+// pattern. Exact wording unconfirmed (no sample seen yet); matches any
+// armoryAction entry mentioning both "refill" and "energy".
+function parseRefillEntry(text) {
+  if (!/refill/i.test(text) || !/energy/i.test(text)) return null;
+  const userM = text.match(/XID=(\d+)[^>]*>([^<]+)<\/a>/);
+  if (!userM) return null;
+  return { torn_user_id: parseInt(userM[1], 10), username: userM[2].trim(), item_name: 'Energy Refill' };
 }
 
 // Delta of personal (self-reported, not armory-attributed) xanax/energy-
@@ -619,7 +643,7 @@ async function computeChainEconomics(env, session) {
       memberMap.set(id, {
         torn_user_id: id, username: name || `#${id}`,
         attacks: 0, respect: 0, energy_out: 0,
-        faction_xanax: 0, faction_cans: 0, faction_energy_in: 0,
+        faction_xanax: 0, faction_can_count: 0, faction_can_energy: 0, faction_refills: 0, faction_energy_in: 0,
         personal_energy_in: 0, combined_energy_in: 0, overdoses: 0,
       });
     } else if (name) {
@@ -636,24 +660,26 @@ async function computeChainEconomics(env, session) {
   }
 
   for (const r of armoryRows || []) {
-    const kind = energyArmoryKind(r.item_name);
-    if (!kind) continue;
     const row = getRow(r.torn_user_id, r.username);
-    if (kind === 'xanax') row.faction_xanax += r.used_qty;
-    else row.faction_cans += r.used_qty;
-  }
-  for (const row of memberMap.values()) {
-    row.faction_energy_in = row.faction_xanax * ENERGY_PER_XANAX + row.faction_cans * ENERGY_PER_CAN;
+    if (r.item_name === 'Xanax') {
+      row.faction_xanax += r.used_qty;
+    } else if (r.item_name === 'Energy Refill') {
+      row.faction_refills += r.used_qty;
+    } else if (CAN_ENERGY[r.item_name] != null) {
+      row.faction_can_count += r.used_qty;
+      row.faction_can_energy += r.used_qty * CAN_ENERGY[r.item_name];
+    }
   }
 
   const memberIds = [...memberMap.keys()];
   const personalDeltas = await fetchPersonalStatDeltas(env, memberIds, session.started_at, toTs);
 
-  // Energy refills are a paid, non-armory action — entirely personal, no
-  // faction-usage portion to subtract. Donator refills for 150, everyone
-  // else 100; status is fetched live (best-effort) only for members who
-  // actually refilled, not the whole roster.
-  const refillUsers = [...memberMap.keys()].filter(id => (personalDeltas[id]?.energy_refills || 0) > 0);
+  // Donator status affects the value of an energy refill (100 vs 150) from
+  // either source — fetched live, best-effort, only for members who show
+  // any refill activity at all (faction or personal), not the whole roster.
+  const refillUsers = [...memberMap.keys()].filter(
+    id => (personalDeltas[id]?.energy_refills || 0) > 0 || memberMap.get(id).faction_refills > 0
+  );
   const donatorStatus = {};
   for (const id of refillUsers) {
     const profile = await fetchTornUserProfile(env, id).catch(() => null);
@@ -662,13 +688,16 @@ async function computeChainEconomics(env, session) {
 
   for (const [id, row] of memberMap) {
     const d = personalDeltas[id] || { xanax: 0, energy_drinks: 0, energy_refills: 0, overdoses: 0 };
+    const refillValue = donatorStatus[id] ? ENERGY_PER_REFILL_DONATOR : ENERGY_PER_REFILL;
+    row.faction_energy_in = row.faction_xanax * ENERGY_PER_XANAX + row.faction_can_energy + row.faction_refills * refillValue;
+
     // Only the portion NOT already counted as faction-armory usage counts as
-    // "personal" — otherwise an armory-sourced Xanax would be counted twice
-    // once the two numbers are added into the combined total.
+    // "personal" — otherwise a faction-sourced Xanax/can/refill would be
+    // counted twice once the two numbers are added into the combined total.
     const personalXanax = Math.max(0, d.xanax - row.faction_xanax);
-    const personalCans = Math.max(0, d.energy_drinks - row.faction_cans);
-    const refillEnergy = (d.energy_refills || 0) * (donatorStatus[id] ? ENERGY_PER_REFILL_DONATOR : ENERGY_PER_REFILL);
-    row.personal_energy_in = personalXanax * ENERGY_PER_XANAX + personalCans * ENERGY_PER_CAN + refillEnergy;
+    const personalCanCount = Math.max(0, d.energy_drinks - row.faction_can_count);
+    const personalRefills = Math.max(0, (d.energy_refills || 0) - row.faction_refills);
+    row.personal_energy_in = personalXanax * ENERGY_PER_XANAX + personalCanCount * AVERAGE_CAN_ENERGY + personalRefills * refillValue;
     row.combined_energy_in = row.faction_energy_in + row.personal_energy_in;
     row.overdoses = d.overdoses;
   }
