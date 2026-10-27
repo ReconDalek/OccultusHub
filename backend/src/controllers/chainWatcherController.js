@@ -815,11 +815,17 @@ async function processOneBackfillChunk(env, session, factionId) {
           `UPDATE chain_watch_sessions SET backfill_phase = 'armory', backfill_oldest_ts = NULL, backfill_note = 'Attacks done — checking armory…' WHERE id = ?`
         ).bind(session.id).run();
       } else if (result.oldestTsSeen) {
+        // Explicit about direction (working backward from now) and the
+        // target (the chain's actual start) — this only ever runs ONE
+        // chunk closer to the start each cron tick (~every 10 min), never
+        // forward past it or past "now".
+        const reachedStr = new Date(result.oldestTsSeen * 1000).toISOString().slice(0, 16).replace('T', ' ');
+        const startStr = new Date(session.started_at * 1000).toISOString().slice(0, 16).replace('T', ' ');
         await env.DB.prepare(
           `UPDATE chain_watch_sessions SET backfill_oldest_ts = ?, backfill_note = ? WHERE id = ?`
         ).bind(
           result.oldestTsSeen,
-          `Scanning attacks… reached ${new Date(result.oldestTsSeen * 1000).toISOString().slice(0, 16).replace('T', ' ')} TCT so far`,
+          `Scanning backward from now — reached ${reachedStr} TCT, heading to chain start (${startStr} TCT)`,
           session.id
         ).run();
       } else {

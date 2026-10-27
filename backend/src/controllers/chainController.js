@@ -69,6 +69,27 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
   const errors     = [];
 
   for (const factionId of FACTION_IDS) {
+    // Torn's /chains history list includes the CURRENTLY ongoing chain too,
+    // with a provisional `end` — confirmed live 2026-10-27: two factions'
+    // most-recent chain both got `end` stamped at the exact moment a
+    // previous Tuesday cron ran, not a real chain end. One was still
+    // genuinely active a day later; the other had since actually finished
+    // at a much higher length, but stayed stuck on the wrong, premature
+    // snapshot forever because of the old INSERT OR IGNORE below. Cross-
+    // checking the faction's live chain status first and skipping whichever
+    // entry matches its start keeps an in-progress chain from ever being
+    // written as if it were final.
+    let liveActiveStart = null;
+    try {
+      const liveData = await fetchWithRetry(
+        `${TORN_API_BASE}/faction/${factionId}/chain?comment=OccHub`,
+        () => getRandomUserApiKey(env), env
+      );
+      if (liveData.chain?.current > 0) liveActiveStart = liveData.chain.start;
+    } catch (e) {
+      console.error(`fetchAndCacheChains: faction ${factionId} live chain check failed:`, e.message);
+    }
+
     const url = `${TORN_API_BASE}/faction/${factionId}/chains?limit=100&sort=DESC&comment=OccHub`;
     try {
       const data = await fetchWithRetry(url, () => getRandomUserApiKey(env), env);
@@ -82,11 +103,25 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
           skipped++;
           continue;
         }
+        // Still in progress — not a finished chain yet, don't cache it as one
+        if (liveActiveStart != null && chain.start === liveActiveStart) {
+          skipped++;
+          continue;
+        }
 
+        // Upsert, not insert-or-ignore: a chain already cached (even
+        // correctly) gets its stats refreshed every run — the only way a
+        // previously-wrong premature snapshot (from before this fix, or
+        // from a future edge case) ever self-corrects once Torn reports it
+        // as genuinely finished.
         const result = await env.DB.prepare(
-          `INSERT OR IGNORE INTO chain_cache
+          `INSERT INTO chain_cache
              (torn_chain_id, faction_id, chain_length, respect, start_at, end_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(torn_chain_id) DO UPDATE SET
+             chain_length = excluded.chain_length,
+             respect      = excluded.respect,
+             end_at       = excluded.end_at`
         )
           .bind(chain.id, factionId, chain.chain, chain.respect, chain.start, chain.end)
           .run();
