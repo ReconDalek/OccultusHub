@@ -532,6 +532,8 @@ async function syncChainArmory(env, session, factionId, { force = false, maxPage
 
 const ENERGY_PER_XANAX = 250;
 const ENERGY_PER_CAN = 150; // every "Can of ___" flavour refills the same 150 energy in Torn
+const ENERGY_PER_REFILL = 100;
+const ENERGY_PER_REFILL_DONATOR = 150;
 
 function energyArmoryKind(itemName) {
   if (itemName === 'Xanax') return 'xanax';
@@ -540,7 +542,7 @@ function energyArmoryKind(itemName) {
 }
 
 // Delta of personal (self-reported, not armory-attributed) xanax/energy-
-// drink/overdose counts over the chain's window, from personal_stats_snapshots
+// drink/energy-refill/overdose counts over the chain's window, from personal_stats_snapshots
 // — the only source available for a member's OWN usage, since we can't poll
 // everyone's individual attack/item logs. Snapshots are once-daily, so a
 // chain that starts and ends the same calendar day will show 0 here (same
@@ -554,6 +556,7 @@ async function fetchPersonalStatDeltas(env, tornUserIds, fromTs, toTs) {
   const cols = `p.torn_user_id,
     CAST(json_extract(p.stats, '$.drugs.xanax') AS INTEGER) AS xanax,
     CAST(json_extract(p.stats, '$.items.used.energy') AS INTEGER) AS energy_drinks,
+    CAST(json_extract(p.stats, '$.other.refills.energy') AS INTEGER) AS energy_refills,
     CAST(json_extract(p.stats, '$.drugs.overdoses') AS INTEGER) AS overdoses`;
 
   const [startRows, endRows] = await Promise.all([
@@ -583,6 +586,7 @@ async function fetchPersonalStatDeltas(env, tornUserIds, fromTs, toTs) {
     deltas[r.torn_user_id] = {
       xanax: Math.max(0, (r.xanax ?? 0) - (s.xanax ?? 0)),
       energy_drinks: Math.max(0, (r.energy_drinks ?? 0) - (s.energy_drinks ?? 0)),
+      energy_refills: Math.max(0, (r.energy_refills ?? 0) - (s.energy_refills ?? 0)),
       overdoses: Math.max(0, (r.overdoses ?? 0) - (s.overdoses ?? 0)),
     };
   }
@@ -643,14 +647,27 @@ async function computeChainEconomics(env, session) {
 
   const memberIds = [...memberMap.keys()];
   const personalDeltas = await fetchPersonalStatDeltas(env, memberIds, session.started_at, toTs);
+
+  // Energy refills are a paid, non-armory action — entirely personal, no
+  // faction-usage portion to subtract. Donator refills for 150, everyone
+  // else 100; status is fetched live (best-effort) only for members who
+  // actually refilled, not the whole roster.
+  const refillUsers = [...memberMap.keys()].filter(id => (personalDeltas[id]?.energy_refills || 0) > 0);
+  const donatorStatus = {};
+  for (const id of refillUsers) {
+    const profile = await fetchTornUserProfile(env, id).catch(() => null);
+    donatorStatus[id] = !!profile?.donator;
+  }
+
   for (const [id, row] of memberMap) {
-    const d = personalDeltas[id] || { xanax: 0, energy_drinks: 0, overdoses: 0 };
+    const d = personalDeltas[id] || { xanax: 0, energy_drinks: 0, energy_refills: 0, overdoses: 0 };
     // Only the portion NOT already counted as faction-armory usage counts as
     // "personal" — otherwise an armory-sourced Xanax would be counted twice
     // once the two numbers are added into the combined total.
     const personalXanax = Math.max(0, d.xanax - row.faction_xanax);
     const personalCans = Math.max(0, d.energy_drinks - row.faction_cans);
-    row.personal_energy_in = personalXanax * ENERGY_PER_XANAX + personalCans * ENERGY_PER_CAN;
+    const refillEnergy = (d.energy_refills || 0) * (donatorStatus[id] ? ENERGY_PER_REFILL_DONATOR : ENERGY_PER_REFILL);
+    row.personal_energy_in = personalXanax * ENERGY_PER_XANAX + personalCans * ENERGY_PER_CAN + refillEnergy;
     row.combined_energy_in = row.faction_energy_in + row.personal_energy_in;
     row.overdoses = d.overdoses;
   }
