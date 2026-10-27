@@ -245,7 +245,7 @@ export async function endSession(request, env, user) {
 // Only actually calls Torn while a session is active; otherwise this is a
 // cheap no-op so a stray/old client polling this can't burn API quota.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function getLiveStatus(request, env, user) {
+export async function getLiveStatus(request, env, user, ctx) {
   const url = new URL(request.url);
   const factionId = validFactionId(url.searchParams.get('faction_id'));
   if (!factionId) return errorResponse('Invalid or missing faction_id', 400);
@@ -268,19 +268,29 @@ export async function getLiveStatus(request, env, user) {
 
     const liveData = await fetchLiveChainFromTorn(env, factionId);
 
-    if (liveData.current > 0) {
-      const syncResult = await syncChainAttacks(env, session, factionId, liveData.current).catch((e) => {
-        console.error('syncChainAttacks error:', e);
-        return { skipped: true };
-      });
-      // Armory sync piggybacks on the same throttle claim as the attack
-      // sync (whichever poll wins that tick does both) rather than its own
-      // separate claim — no reason to double the Torn API traffic per tick.
-      if (!syncResult.skipped) {
-        await syncChainArmory(env, session, factionId).catch((e) => {
-          console.error('syncChainArmory error:', e);
-        });
-      }
+    // Fire-and-forget — the attack/armory sync pages through Torn's API
+    // sequentially (can take several seconds), so it must NOT block this
+    // response. Broke live polling in production the first time this was
+    // written as a synchronous `await` here (2026-10-27): every ~8s the one
+    // viewer whose poll won the throttle claim could take many extra
+    // seconds, well past what the frontend's poll loop expects, reading as
+    // "endlessly loading". ctx.waitUntil lets the response return with the
+    // chain's actual timer data immediately regardless of how long the
+    // background sync takes; its results just show up on a later poll.
+    if (liveData.current > 0 && ctx) {
+      ctx.waitUntil((async () => {
+        try {
+          const syncResult = await syncChainAttacks(env, session, factionId, liveData.current);
+          // Armory sync piggybacks on the same throttle claim as the attack
+          // sync (whichever poll wins that tick does both) rather than its
+          // own separate claim — no reason to double the Torn API traffic.
+          if (!syncResult.skipped) {
+            await syncChainArmory(env, session, factionId);
+          }
+        } catch (e) {
+          console.error('live chain sync error:', e);
+        }
+      })());
     }
     const bonusAwards = await fetchRecentBonusAwards(env, session.id).catch(() => []);
 

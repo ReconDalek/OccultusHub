@@ -463,7 +463,7 @@ export async function handleRequest(request, env, ctx) {
   }
   if (pathname === '/api/chain-watcher/live' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
-    return chainWatcherController.getLiveStatus(request, env, user);
+    return chainWatcherController.getLiveStatus(request, env, user, ctx);
   }
   if (pathname === '/api/chain-watcher/shifts' && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
