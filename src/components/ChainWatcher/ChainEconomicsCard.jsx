@@ -39,9 +39,18 @@ const COLUMNS = [
   { key: 'overdoses',            label: 'OD' },
 ]
 
+// Same method War Tracking uses for its Energy Net column (energy_in minus
+// energy_used minus energy_repaid): 500+ positive is a clear "received more
+// energy than they spent attacking" flag (red), 250-499 is worth a glance
+// (orange), everything else is plain muted text — not green/red by sign,
+// just flagging an outlier on the high side.
 function netColor(n) {
-  if (!n) return 'var(--text-muted)'
-  return n >= 0 ? '#4ade80' : '#f87171'
+  if (n >= 500) return '#ef4444'
+  if (n >= 250) return '#f59e0b'
+  return 'var(--text-muted)'
+}
+function fmtNet(n) {
+  return (n > 0 ? '+' : '') + fmt(n)
 }
 
 function MemberTable({ members }) {
@@ -105,8 +114,10 @@ function MemberTable({ members }) {
             <span style={{ color: m.faction_energy_in > 0 ? '#38bdf8' : 'var(--text-muted)', fontSize: 12.5, textAlign: 'right' }}>{fmt(m.faction_energy_in)}</span>
             <span style={{ color: m.personal_energy_in > 0 ? '#a78bfa' : 'var(--text-muted)', fontSize: 12.5, textAlign: 'right' }}>{fmt(m.personal_energy_in)}</span>
             <span style={{ color: m.combined_energy_in > 0 ? '#4ade80' : 'var(--text-muted)', fontSize: 12.5, fontWeight: 600, textAlign: 'right' }}>{fmt(m.combined_energy_in)}</span>
-            <span style={{ color: netColor(m.net_faction), fontSize: 12.5, textAlign: 'right' }}>{fmt(m.net_faction)}</span>
-            <span style={{ color: netColor(m.net_combined), fontSize: 12.5, fontWeight: 600, textAlign: 'right' }}>{fmt(m.net_combined)}</span>
+            <span title="Faction In minus Energy Out — a large positive value means faction-supplied energy was consumed without attacking"
+              style={{ color: netColor(m.net_faction), fontSize: 12.5, fontWeight: m.net_faction >= 250 ? 600 : 400, textAlign: 'right' }}>{fmtNet(m.net_faction)}</span>
+            <span title="Combined In minus Energy Out — a large positive value means energy (faction or personal) was consumed without attacking"
+              style={{ color: netColor(m.net_combined), fontSize: 12.5, fontWeight: m.net_combined >= 250 ? 600 : 400, textAlign: 'right' }}>{fmtNet(m.net_combined)}</span>
             <span style={{ color: m.overdoses > 0 ? '#ef4444' : 'var(--text-muted)', fontSize: 12.5, textAlign: 'right' }}>{fmt(m.overdoses)}</span>
           </div>
         ))}
@@ -187,8 +198,8 @@ function ChainEconomicsBody({ factionId, isLeader }) {
         <Stat label="Faction In" value={fmt(t.faction_energy_in)} accent />
         <Stat label="Personal In (est)" value={fmt(t.personal_energy_in)} />
         <Stat label="Combined In" value={fmt(t.combined_energy_in)} />
-        <Stat label="Faction Net" value={fmt((t.faction_energy_in || 0) - (t.energy_out || 0))} />
-        <Stat label="Combined Net" value={fmt((t.combined_energy_in || 0) - (t.energy_out || 0))} />
+        <Stat label="Faction Net" value={fmtNet((t.faction_energy_in || 0) - (t.energy_out || 0))} />
+        <Stat label="Combined Net" value={fmtNet((t.combined_energy_in || 0) - (t.energy_out || 0))} />
         <Stat label="ODs" value={fmt(t.overdoses)} />
       </div>
 
