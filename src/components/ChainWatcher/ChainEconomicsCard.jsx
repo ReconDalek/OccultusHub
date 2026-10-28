@@ -198,8 +198,6 @@ function ChainEconomicsBody({ factionId, isLeader }) {
         <Stat label="Faction In" value={fmt(t.faction_energy_in)} accent />
         <Stat label="Personal In (est)" value={fmt(t.personal_energy_in)} />
         <Stat label="Combined In" value={fmt(t.combined_energy_in)} />
-        <Stat label="Faction Net" value={fmtNet((t.faction_energy_in || 0) - (t.energy_out || 0))} />
-        <Stat label="Combined Net" value={fmtNet((t.combined_energy_in || 0) - (t.energy_out || 0))} />
         <Stat label="ODs" value={fmt(t.overdoses)} />
       </div>
 

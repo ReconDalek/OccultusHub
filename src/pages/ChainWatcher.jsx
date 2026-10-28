@@ -82,7 +82,7 @@ export default function ChainWatcher() {
   const tabs = useMemo(() => OCC_FACTIONS, [])
 
   return (
-    <div style={{ color: '#f4f4f5', padding: '20px clamp(12px, 4vw, 20px)', maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ color: '#f4f4f5', padding: '20px clamp(12px, 4vw, 20px)', maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
         <h1 className="font-cinzel" style={{ margin: 0, fontSize: 'clamp(20px, 5vw, 24px)', fontWeight: 700, letterSpacing: '1px' }}>
           Chain Watch
