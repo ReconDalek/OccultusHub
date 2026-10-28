@@ -904,19 +904,36 @@ export async function backfillChainEconomics(request, env, user, ctx) {
     if (!session) return errorResponse('No chain watch session found for this faction', 404);
     if (session.backfill_status === 'running') return errorResponse('A backfill is already running for this chain', 409);
 
-    // Resume from the oldest attack we already have for this session rather
-    // than always re-walking from "now" — re-triggering used to restart the
-    // whole backward scan from scratch every time, which for a long chain
-    // could mean re-paging through everything already covered just to reach
-    // the same gap again. Starting from the earliest point already captured
-    // skips straight past the part that's already in, landing right back at
-    // wherever coverage currently stops (a real gap, or session start).
-    const earliestRow = await env.DB.prepare(
-      `SELECT MIN(started_at) AS earliest FROM chain_watch_attacks WHERE session_id = ?`
+    // Resume from wherever coverage actually needs it rather than always
+    // re-walking from "now" — re-triggering used to restart the whole
+    // backward scan from scratch every time. The old stall bug (fixed above)
+    // could leave a hole in the MIDDLE of an otherwise-complete chain (the
+    // start and the most recent end both covered, a gap somewhere between —
+    // confirmed 2026-10-29, chain 33097), so the earliest captured attack
+    // alone isn't enough to find it: resume from the most recent (highest
+    // chain_position) gap in coverage, if any — re-walking backward from
+    // there naturally passes through every earlier gap too on the way down
+    // to session start. Only when there's no gap at all does it fall back to
+    // the earliest attack already captured.
+    const gapRow = await env.DB.prepare(
+      `WITH ordered AS (
+         SELECT chain_position, started_at,
+                LAG(chain_position) OVER (ORDER BY chain_position) AS prev_pos
+         FROM chain_watch_attacks WHERE session_id = ?
+       )
+       SELECT started_at FROM ordered WHERE prev_pos IS NOT NULL AND (chain_position - prev_pos) > 1
+       ORDER BY chain_position DESC LIMIT 1`
     ).bind(session.id).first();
-    const resumeFrom = earliestRow?.earliest && earliestRow.earliest > session.started_at
-      ? earliestRow.earliest
-      : null;
+
+    let resumeFrom = gapRow?.started_at || null;
+    if (!resumeFrom) {
+      const earliestRow = await env.DB.prepare(
+        `SELECT MIN(started_at) AS earliest FROM chain_watch_attacks WHERE session_id = ?`
+      ).bind(session.id).first();
+      resumeFrom = earliestRow?.earliest && earliestRow.earliest > session.started_at
+        ? earliestRow.earliest
+        : null;
+    }
 
     await env.DB.prepare(
       `UPDATE chain_watch_sessions SET backfill_status = 'running', backfill_phase = 'attacks', backfill_oldest_ts = ?, backfill_note = 'Starting…' WHERE id = ?`
