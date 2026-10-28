@@ -32,10 +32,17 @@ const COLUMNS = [
   { key: 'attacks',              label: 'Attacks' },
   { key: 'energy_out',           label: 'Energy Out' },
   { key: 'faction_energy_in',    label: 'Faction In' },
-  { key: 'personal_energy_in',   label: 'Personal In' },
+  { key: 'personal_energy_in',   label: 'Personal In (est)' },
   { key: 'combined_energy_in',   label: 'Combined In' },
+  { key: 'net_faction',          label: 'Faction Net' },
+  { key: 'net_combined',         label: 'Combined Net' },
   { key: 'overdoses',            label: 'OD' },
 ]
+
+function netColor(n) {
+  if (!n) return 'var(--text-muted)'
+  return n >= 0 ? '#4ade80' : '#f87171'
+}
 
 function MemberTable({ members }) {
   const [sortKey, setSortKey] = useState('attacks')
@@ -45,7 +52,11 @@ function MemberTable({ members }) {
     return <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No tracked activity yet.</p>
   }
 
-  const rows = [...members]
+  const rows = members.map(m => ({
+    ...m,
+    net_faction: m.faction_energy_in - m.energy_out,
+    net_combined: m.combined_energy_in - m.energy_out,
+  }))
   const mul = sortDir === 'asc' ? 1 : -1
   rows.sort((a, b) => {
     const av = a[sortKey], bv = b[sortKey]
@@ -58,11 +69,11 @@ function MemberTable({ members }) {
     setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
   }
 
-  const cols = '1fr 70px 90px 90px 90px 100px 50px'
+  const cols = '1fr 70px 90px 90px 110px 100px 90px 100px 50px'
 
   return (
     <div className="table-scroll">
-      <div style={{ minWidth: 640, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ minWidth: 820, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '4px 10px', gap: 8 }}>
           {COLUMNS.map(col => (
             <span
@@ -94,6 +105,8 @@ function MemberTable({ members }) {
             <span style={{ color: m.faction_energy_in > 0 ? '#38bdf8' : 'var(--text-muted)', fontSize: 12.5, textAlign: 'right' }}>{fmt(m.faction_energy_in)}</span>
             <span style={{ color: m.personal_energy_in > 0 ? '#a78bfa' : 'var(--text-muted)', fontSize: 12.5, textAlign: 'right' }}>{fmt(m.personal_energy_in)}</span>
             <span style={{ color: m.combined_energy_in > 0 ? '#4ade80' : 'var(--text-muted)', fontSize: 12.5, fontWeight: 600, textAlign: 'right' }}>{fmt(m.combined_energy_in)}</span>
+            <span style={{ color: netColor(m.net_faction), fontSize: 12.5, textAlign: 'right' }}>{fmt(m.net_faction)}</span>
+            <span style={{ color: netColor(m.net_combined), fontSize: 12.5, fontWeight: 600, textAlign: 'right' }}>{fmt(m.net_combined)}</span>
             <span style={{ color: m.overdoses > 0 ? '#ef4444' : 'var(--text-muted)', fontSize: 12.5, textAlign: 'right' }}>{fmt(m.overdoses)}</span>
           </div>
         ))}
@@ -172,8 +185,10 @@ function ChainEconomicsBody({ factionId, isLeader }) {
         <Stat label="Attacks" value={fmt(t.attacks)} />
         <Stat label="Energy Out" value={fmt(t.energy_out)} />
         <Stat label="Faction In" value={fmt(t.faction_energy_in)} accent />
-        <Stat label="Personal In" value={fmt(t.personal_energy_in)} />
+        <Stat label="Personal In (est)" value={fmt(t.personal_energy_in)} />
         <Stat label="Combined In" value={fmt(t.combined_energy_in)} />
+        <Stat label="Faction Net" value={fmt((t.faction_energy_in || 0) - (t.energy_out || 0))} />
+        <Stat label="Combined Net" value={fmt((t.combined_energy_in || 0) - (t.energy_out || 0))} />
         <Stat label="ODs" value={fmt(t.overdoses)} />
       </div>
 

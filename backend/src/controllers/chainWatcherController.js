@@ -829,10 +829,17 @@ async function processOneBackfillChunk(env, session, factionId) {
           session.id
         ).run();
       } else {
-        // No progress at all this chunk (e.g. no staff key available) —
-        // move on rather than retrying the same stuck chunk forever.
+        // No progress at all this chunk (no staff key available right now,
+        // or every attempt failed) — used to jump straight to the armory
+        // phase and wipe the cursor here, which silently abandoned whatever
+        // of the chain was still unscanned and could never be recovered
+        // (confirmed 2026-10-28: this is how a real gap of attacks goes
+        // missing from Chain Economics with no error ever surfaced). Just
+        // leave the cursor where it is and let the next cron tick retry the
+        // same chunk instead — a stall is near-always transient (key
+        // rotation, a rate limit), so it clears itself within a tick or two.
         await env.DB.prepare(
-          `UPDATE chain_watch_sessions SET backfill_phase = 'armory', backfill_oldest_ts = NULL, backfill_note = 'Attacks stalled (no staff key available?) — checking armory…' WHERE id = ?`
+          `UPDATE chain_watch_sessions SET backfill_note = 'Attacks stalled (no staff key available?) — will retry' WHERE id = ?`
         ).bind(session.id).run();
       }
       return;
@@ -841,9 +848,15 @@ async function processOneBackfillChunk(env, session, factionId) {
     const armoryResult = await syncChainArmory(env, session, factionId, {
       force: true, maxPages: ARMORY_BACKFILL_CHUNK_PAGES, resumeFromTs: session.backfill_oldest_ts || null,
     });
-    if (armoryResult.reachedStart || armoryResult.error) {
+    if (armoryResult.reachedStart) {
       await env.DB.prepare(
         `UPDATE chain_watch_sessions SET backfill_status = 'done', backfill_phase = NULL, backfill_oldest_ts = NULL, backfill_note = 'Done — backfilled from chain start.' WHERE id = ?`
+      ).bind(session.id).run();
+    } else if (armoryResult.error) {
+      // Same stall as the attacks phase (no staff key right now) — keep the
+      // cursor where it is and retry next tick instead of marking this done.
+      await env.DB.prepare(
+        `UPDATE chain_watch_sessions SET backfill_note = 'Armory stalled (no staff key available?) — will retry' WHERE id = ?`
       ).bind(session.id).run();
     } else {
       await env.DB.prepare(
@@ -891,13 +904,27 @@ export async function backfillChainEconomics(request, env, user, ctx) {
     if (!session) return errorResponse('No chain watch session found for this faction', 404);
     if (session.backfill_status === 'running') return errorResponse('A backfill is already running for this chain', 409);
 
+    // Resume from the oldest attack we already have for this session rather
+    // than always re-walking from "now" — re-triggering used to restart the
+    // whole backward scan from scratch every time, which for a long chain
+    // could mean re-paging through everything already covered just to reach
+    // the same gap again. Starting from the earliest point already captured
+    // skips straight past the part that's already in, landing right back at
+    // wherever coverage currently stops (a real gap, or session start).
+    const earliestRow = await env.DB.prepare(
+      `SELECT MIN(started_at) AS earliest FROM chain_watch_attacks WHERE session_id = ?`
+    ).bind(session.id).first();
+    const resumeFrom = earliestRow?.earliest && earliestRow.earliest > session.started_at
+      ? earliestRow.earliest
+      : null;
+
     await env.DB.prepare(
-      `UPDATE chain_watch_sessions SET backfill_status = 'running', backfill_phase = 'attacks', backfill_oldest_ts = NULL, backfill_note = 'Starting…' WHERE id = ?`
-    ).bind(session.id).run();
+      `UPDATE chain_watch_sessions SET backfill_status = 'running', backfill_phase = 'attacks', backfill_oldest_ts = ?, backfill_note = 'Starting…' WHERE id = ?`
+    ).bind(resumeFrom, session.id).run();
 
     // One chunk right away so the UI shows real progress immediately,
     // instead of waiting for the next cron tick (up to 10 minutes away).
-    ctx.waitUntil(processOneBackfillChunk(env, { ...session, backfill_phase: 'attacks', backfill_oldest_ts: null }, factionId));
+    ctx.waitUntil(processOneBackfillChunk(env, { ...session, backfill_phase: 'attacks', backfill_oldest_ts: resumeFrom }, factionId));
 
     return jsonResponse({ success: true });
   } catch (err) {
@@ -1377,6 +1404,46 @@ export async function getWatchTotals(request, env) {
   } catch (err) {
     console.error('getWatchTotals error:', err);
     return errorResponse('Failed to compute watch totals', 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sign-up message — the "what watching involves" text shown in the sign-up
+// confirmation modal. Stored in system_settings (shared key/value store) so
+// leadership can edit it in place instead of it being hardcoded in the
+// frontend.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SIGNUP_MESSAGE_KEY = 'chain_watch_signup_message';
+const DEFAULT_SIGNUP_MESSAGE =
+  'Be in Torn with enough energy to save the chain.\n' +
+  'Attack when the timer drops below 2 minutes.\n' +
+  'Near a bonus? Flag it to a leader.';
+
+// GET /api/chain-watcher/signup-message — any member
+export async function getSignupMessage(request, env) {
+  try {
+    const row = await env.DB.prepare(`SELECT value FROM system_settings WHERE key = ?`).bind(SIGNUP_MESSAGE_KEY).first();
+    return jsonResponse({ message: row?.value ?? DEFAULT_SIGNUP_MESSAGE });
+  } catch (err) {
+    console.error('getSignupMessage error:', err);
+    return errorResponse('Failed to fetch sign-up message', 500);
+  }
+}
+
+// PUT /api/chain-watcher/signup-message { message } — leadership-only
+export async function updateSignupMessage(request, env, user) {
+  try {
+    const { message } = await request.json();
+    if (typeof message !== 'string' || !message.trim()) return errorResponse('Message is required', 400);
+    await env.DB.prepare(
+      `INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+    ).bind(SIGNUP_MESSAGE_KEY, message).run();
+    return jsonResponse({ success: true, message });
+  } catch (err) {
+    console.error('updateSignupMessage error:', err);
+    return errorResponse('Failed to update sign-up message', 500);
   }
 }
 

@@ -9,6 +9,7 @@ import {
 import SignUpConfirmModal from './SignUpConfirmModal'
 import NoteModal from './NoteModal'
 import ReassignShiftModal from './ReassignShiftModal'
+import EditSignupMessageModal from './EditSignupMessageModal'
 import CollapsibleCard from './CollapsibleCard'
 
 const DAYS_AHEAD = 7
@@ -68,6 +69,31 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session, s
       .catch(() => {})
     return () => { cancelled = true }
   }, [factionId, isLeader])
+
+  // "What watching involves" text shown in the sign-up confirmation modal —
+  // leadership-editable, see EditSignupMessageModal below.
+  const [signupMessage, setSignupMessage] = useState('')
+  const [editingMessage, setEditingMessage] = useState(false)
+  const [messageBusy, setMessageBusy] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    apiGet('/api/chain-watcher/signup-message')
+      .then((json) => { if (!cancelled) setSignupMessage(json.message || '') })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  const saveSignupMessage = useCallback(async (text) => {
+    setMessageBusy(true)
+    try {
+      await apiSend('/api/chain-watcher/signup-message', 'PUT', { message: text })
+      setSignupMessage(text)
+      setEditingMessage(false)
+    } catch {
+      // modal stays open with their edits so nothing's lost
+    } finally {
+      setMessageBusy(false)
+    }
+  }, [])
 
   // Session comes from the page (shared with ChainSessionCard) so scheduling
   // or cancelling there shows up here immediately instead of waiting on a
@@ -182,7 +208,21 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session, s
   const curHour = currentHourStart()
 
   return (
-    <CollapsibleCard title="Shift Sign-Ups">
+    <CollapsibleCard
+      title="Shift Sign-Ups"
+      headerExtra={isLeader && (
+        <button
+          onClick={() => setEditingMessage(true)}
+          title="Edit the message shown when a member signs up"
+          style={{
+            fontSize: 10.5, padding: '2px 8px', borderRadius: 10, cursor: 'pointer',
+            background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)',
+          }}
+        >
+          Edit sign-up message
+        </button>
+      )}
+    >
       <p style={sectionSub}>Times in TCT, with your local time underneath.</p>
 
       {myShifts.length > 0 && (
@@ -431,6 +471,16 @@ export default function ShiftSchedule({ factionId, shifts, onChanged, session, s
           members={members}
           currentUserId={user?.tornUserId}
           use12h={use12h}
+          message={signupMessage}
+        />
+      )}
+
+      {editingMessage && (
+        <EditSignupMessageModal
+          message={signupMessage}
+          busy={messageBusy}
+          onSave={saveSignupMessage}
+          onClose={() => setEditingMessage(false)}
         />
       )}
 

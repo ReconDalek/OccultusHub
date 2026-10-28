@@ -2,7 +2,13 @@ import { useState } from 'react'
 import Modal from './Modal'
 import { fmtSlotDay, fmtClockTime, localDayDiffers, fmtSlotDayLocal } from './chainWatcherUtils'
 
-export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId, use12h = false }) {
+const DEFAULT_MESSAGE =
+  'Be in Torn with enough energy to save the chain.\n' +
+  'Attack when the timer drops below 2 minutes.\n' +
+  'Near a bonus? Flag it to a leader.'
+
+export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId, use12h = false, message }) {
+  const lines = (message || DEFAULT_MESSAGE).split('\n').map((l) => l.trim()).filter(Boolean)
   const dayShift = localDayDiffers(slotStart)
   const [assigneeId, setAssigneeId] = useState(currentUserId ?? null)
   const assigningOther = assigneeId != null && assigneeId !== currentUserId
@@ -43,9 +49,7 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
       }}>
         <p style={{ color: '#f4f4f5', fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>What watching involves:</p>
         <ul style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-          <li>Be in Torn with enough energy to save the chain.</li>
-          <li>Attack when the timer drops below 2 minutes.</li>
-          <li>Near a bonus? Flag it to a leader.</li>
+          {lines.map((line, i) => <li key={i}>{line}</li>)}
         </ul>
         <p style={{ color: '#f87171', fontSize: 12.5, margin: '10px 0 0', fontWeight: 600 }}>
           Once confirmed, only a leader can remove this shift.

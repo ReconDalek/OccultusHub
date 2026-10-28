@@ -526,6 +526,15 @@ export async function handleRequest(request, env, ctx) {
     if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
     return chainWatcherController.backfillChainEconomics(request, env, user, ctx);
   }
+  if (pathname === '/api/chain-watcher/signup-message' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    return chainWatcherController.getSignupMessage(request, env);
+  }
+  if (pathname === '/api/chain-watcher/signup-message' && method === 'PUT') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!(await requireLeadership(user, env))) return errorResponse('Leadership access required', 403);
+    return chainWatcherController.updateSignupMessage(request, env, user);
+  }
 
   // Chain watcher — merit tracking (member auth required to view; leadership to revoke)
   // Merits are now tracked automatically from chain bonus hits (see
