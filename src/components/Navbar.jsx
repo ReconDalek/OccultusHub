@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSession } from '../hooks/useSession'
 import { useMentorStatus } from '../hooks/useMentorStatus'
@@ -60,6 +60,11 @@ export default function Navbar() {
   const [discordBusy, setDiscordBusy]     = useState(false)
   const dropdownRef  = useRef(null)
   const logoClickRef = useRef({ count: 0, timer: null })
+  const row1Ref      = useRef(null)
+  const logoWrapRef  = useRef(null)
+  const authWrapRef  = useRef(null)
+  const measureRef   = useRef(null)
+  const [navFits, setNavFits] = useState(false)
 
   useEffect(() => {
     if (!dropdownOpen || !user?.tornUserId) return
@@ -149,6 +154,28 @@ export default function Navbar() {
 
   const factionLabel = OCCULTUS_CONFIG.factionNames[Number(user?.factionId)] || 'Visitor'
   const navLinks = buildNavLinks(user, pages)
+  const navLinksKey = navLinks.map((l) => l.to).join(',')
+
+  // Whether the full link list actually fits in row 1 alongside the logo and
+  // auth controls. Driven by measuring a hidden clone against the real
+  // available space, not a fixed breakpoint — at a fixed breakpoint, members
+  // with more optional pages enabled (Factions/Companies/Activity) could
+  // still run out of room, and the old fallback was an invisible/inaccessible
+  // horizontal scroll inside row 1. Now it's binary: fits in row 1, or the
+  // full links move to the scrollable row below — never a half-cut-off row 1.
+  useLayoutEffect(() => {
+    function recalc() {
+      const row = row1Ref.current, logo = logoWrapRef.current, auth = authWrapRef.current, measure = measureRef.current
+      if (!row || !logo || !auth || !measure) return
+      const available = row.clientWidth - logo.offsetWidth - auth.offsetWidth - 40
+      setNavFits(measure.scrollWidth <= available)
+    }
+    recalc()
+    window.addEventListener('resize', recalc)
+    const ro = new ResizeObserver(recalc)
+    if (row1Ref.current) ro.observe(row1Ref.current)
+    return () => { window.removeEventListener('resize', recalc); ro.disconnect() }
+  }, [navLinksKey])
 
   const GAME_PATHS = ['/games', '/rite', '/cards', '/sanctum']
   const linkStyle = (to) => {
@@ -184,11 +211,12 @@ export default function Navbar() {
       >
         {/* ── Row 1: Logo (left) · Desktop nav links (center) · Auth (right) ── */}
         <div
+          ref={row1Ref}
           className="relative flex items-center justify-between"
           style={{ padding: '16px clamp(16px, 4vw, 48px)' }}
         >
           {/* LEFT – Logo */}
-          <div className="flex items-center z-20 shrink-0">
+          <div ref={logoWrapRef} className="flex items-center z-20 shrink-0">
             <Link to="/" style={{ textDecoration: 'none' }} onClick={handleLogoClick}>
               <h1
                 className="font-cinzel text-white"
@@ -205,22 +233,32 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* CENTER – Nav links, desktop only. Flex-1 + min-w-0 + its own
-              horizontal scroll keeps this from ever overlapping the logo or
-              the auth controls when there isn't room for every link at the
-              current gap — it just shrinks/scrolls instead. */}
+          {/* CENTER – Nav links, only shown in row 1 once we've measured that
+              the full list actually fits; otherwise they move to row 2. */}
+          {navFits && (
+            <div className="flex flex-1 min-w-0 items-center justify-center gap-6 z-10">
+              {navLinks.map((link) => (
+                <NavLink key={link.to} to={link.to} label={link.label} />
+              ))}
+            </div>
+          )}
+
+          {/* Hidden clone of the row-1 links, used only to measure their true
+              unwrapped width so we can recover back to row 1 once there's
+              room again — kept rendered even when row 1's own nav is hidden. */}
           <div
-            className="hidden md:flex flex-1 min-w-0 items-center justify-center gap-4 lg:gap-8 z-10 nav-center-scroll"
-            style={{ overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            ref={measureRef}
+            aria-hidden="true"
+            className="flex items-center gap-6"
+            style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', left: -99999, top: 0 }}
           >
-            <style>{`.nav-center-scroll::-webkit-scrollbar { display: none; }`}</style>
             {navLinks.map((link) => (
               <NavLink key={link.to} to={link.to} label={link.label} />
             ))}
           </div>
 
           {/* RIGHT – Auth */}
-          <div className="flex items-center gap-3 z-20 shrink-0">
+          <div ref={authWrapRef} className="flex items-center gap-3 z-20 shrink-0">
             {user ? (
               <div className="relative" ref={dropdownRef}>
                 <button
@@ -382,10 +420,10 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* ── Row 2: Mobile nav links only (hidden on md+) — horizontally scrollable ── */}
-        {navLinks.length > 0 && (
+        {/* ── Row 2: full link list, horizontally scrollable — shown whenever
+              row 1 doesn't have room for them, on any screen size ── */}
+        {navLinks.length > 0 && !navFits && (
           <div
-            className="md:hidden"
             style={{
               borderTop: '1px solid rgba(255,255,255,0.05)',
               overflowX: 'auto',
