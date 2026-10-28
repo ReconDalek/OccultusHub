@@ -205,17 +205,22 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* CENTER – Nav links, desktop only (absolutely centred in row 1) */}
+          {/* CENTER – Nav links, desktop only. Flex-1 + min-w-0 + its own
+              horizontal scroll keeps this from ever overlapping the logo or
+              the auth controls when there isn't room for every link at the
+              current gap — it just shrinks/scrolls instead. */}
           <div
-            className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-8 z-10"
+            className="hidden md:flex flex-1 min-w-0 items-center justify-center gap-4 lg:gap-8 z-10 nav-center-scroll"
+            style={{ overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
+            <style>{`.nav-center-scroll::-webkit-scrollbar { display: none; }`}</style>
             {navLinks.map((link) => (
               <NavLink key={link.to} to={link.to} label={link.label} />
             ))}
           </div>
 
           {/* RIGHT – Auth */}
-          <div className="flex items-center gap-3 ml-auto z-20 shrink-0">
+          <div className="flex items-center gap-3 z-20 shrink-0">
             {user ? (
               <div className="relative" ref={dropdownRef}>
                 <button
