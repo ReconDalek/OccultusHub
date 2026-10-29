@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
 import { fetchWithRetry } from '../services/tornApiService.js';
+import { checkBotSecret } from './ocInactivityController.js';
 
 const PRINCIPAL_PER_COMPANY = 4_000_000_000;
 const FACTION_CUT_PCT = 0.30;
@@ -246,6 +247,27 @@ export async function addCompany(request, env, user, ctx) {
     return jsonResponse({ success: true, company_id: id });
   } catch (e) {
     return errorResponse('Failed to add company: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/discord/companies — bot-facing, shared-secret auth ───────────
+// The weekly company rating check used to keep its own hardcoded company ID
+// list; this reads the same canonical list (company_config) that drives the
+// accounting cron, so adding a company on the website is enough to pick it
+// up in the Discord rating posts too.
+export async function getCompaniesForBot(request, env) {
+  if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT cc.company_id, cache.name
+       FROM company_config cc
+       LEFT JOIN company_profit_cache cache ON cache.company_id = cc.company_id`
+    ).all();
+    return jsonResponse({
+      companies: results.map(r => ({ company_id: r.company_id, name: r.name ?? null })),
+    });
+  } catch (e) {
+    return errorResponse('Failed to fetch companies: ' + e.message, 500);
   }
 }
 

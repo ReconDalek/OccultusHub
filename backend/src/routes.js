@@ -1191,6 +1191,12 @@ export async function handleRequest(request, env, ctx) {
     return armoryController.searchItemPricesForBot(request, env);
   }
 
+  // Canonical invested-company list — backs the weekly company rating check,
+  // same company_config table the accounting cron reads.
+  if (pathname === '/api/discord/companies' && method === 'GET') {
+    return companyProfitController.getCompaniesForBot(request, env);
+  }
+
   if (pathname.startsWith('/api/discord/')) {
     if (!user) return errorResponse('Authentication required', 401);
 
