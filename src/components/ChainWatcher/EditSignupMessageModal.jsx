@@ -11,8 +11,7 @@ export default function EditSignupMessageModal({ message, busy, onSave, onClose 
       </h3>
       <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 14px' }}>
         Shown to members when they confirm a watch shift. Start a line with "-" for a
-        bullet point. Leave a blank line between a group of bullets and a separate note
-        to put a gap between them.
+        bullet point. A blank line between lines leaves a gap there.
       </p>
 
       <textarea

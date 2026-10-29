@@ -7,21 +7,16 @@ const DEFAULT_MESSAGE =
   '- Attack when the timer drops below 2 minutes.\n' +
   '- Near a bonus? Flag it to a leader.'
 
-// A blank line starts a new block. A block renders as a bullet list when
-// every one of its lines starts with "-"/"•" (stripped before display);
-// otherwise each line in it renders as its own paragraph. Lets the sign-up
-// message mix a bulleted list with a free-standing line (or several) instead
-// of forcing everything into one flat list with no visual break between them.
-function parseMessageBlocks(message) {
-  return message
-    .split(/\n\s*\n/)
-    .map((block) => block.split('\n').map((l) => l.trim()).filter(Boolean))
-    .filter((block) => block.length > 0)
-}
+// Every line keeps the same tight spacing (bulleted or not) rather than
+// bullets being one rhythm and plain lines another — a blank line in the
+// source is the only thing that opens up a gap, rendered as its own empty
+// line so it actually reads as a skipped line. A manual "•" (not a real
+// <ul>/<li>) because the site's base CSS strips default list markers, which
+// left "-" lines indented but bulletless.
 const BULLET_RE = /^[-•]\s*/
 
 export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId, use12h = false, message }) {
-  const blocks = parseMessageBlocks(message || DEFAULT_MESSAGE)
+  const rawLines = (message || DEFAULT_MESSAGE).split('\n')
   const dayShift = localDayDiffers(slotStart)
   const [assigneeId, setAssigneeId] = useState(currentUserId ?? null)
   const assigningOther = assigneeId != null && assigneeId !== currentUserId
@@ -61,24 +56,18 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
         borderRadius: 10, padding: '12px 14px', marginBottom: 18,
       }}>
         <p style={{ color: '#f4f4f5', fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>What watching involves:</p>
-        {blocks.map((block, bi) => {
-          const isBulletBlock = block.every((l) => BULLET_RE.test(l))
-          const blockStyle = { color: 'var(--text-secondary)', fontSize: 13, margin: bi === 0 ? 0 : '8px 0 0', lineHeight: 1.6 }
-          if (isBulletBlock) {
+        <div style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>
+          {rawLines.map((raw, i) => {
+            const trimmed = raw.trim()
+            if (!trimmed) return <div key={i}>&nbsp;</div>
+            const isBullet = BULLET_RE.test(trimmed)
             return (
-              <ul key={bi} style={{ ...blockStyle, paddingLeft: 18 }}>
-                {block.map((line, li) => <li key={li}>{line.replace(BULLET_RE, '')}</li>)}
-              </ul>
+              <div key={i} style={{ paddingLeft: isBullet ? 14 : 0 }}>
+                {isBullet ? `• ${trimmed.replace(BULLET_RE, '')}` : trimmed}
+              </div>
             )
-          }
-          return (
-            <div key={bi} style={blockStyle}>
-              {block.map((line, li) => (
-                <p key={li} style={{ margin: li === 0 ? 0 : '4px 0 0' }}>{line.replace(BULLET_RE, '')}</p>
-              ))}
-            </div>
-          )
-        })}
+          })}
+        </div>
         <p style={{ color: '#f87171', fontSize: 12.5, margin: '10px 0 0', fontWeight: 600 }}>
           Once confirmed, only a leader can remove this shift.
         </p>
