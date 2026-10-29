@@ -98,7 +98,12 @@ function isRetryable(error, canSwapKey) {
 //     transient failure also gets a new key (not just a wait), and a
 //     bad/dead key gets swapped out instead of failing outright. Capture
 //     the returned object in a closure variable if the caller needs to know
-//     afterward which key actually succeeded (for logging).
+//     afterward which key actually succeeded (for logging). Called with the
+//     tornUserIds already tried this call (oldest first) — a getter backed
+//     by a small random pool (getRandomUserApiKey) uses this to exclude
+//     them, so a retry can't land back on the same dead key by chance;
+//     getters that ignore the argument (a fixed staff key, etc.) are
+//     unaffected.
 //
 // `env` is only needed alongside a getFreshKey function — when a key error
 // turns out to be a PERSISTENT one (not just "too many requests" or the
@@ -108,14 +113,16 @@ export async function fetchWithRetry(url, authOrGetKey = {}, env = null, maxRetr
   const getFreshKey = typeof authOrGetKey === 'function' ? authOrGetKey : null;
   let headers = getFreshKey ? null : authOrGetKey;
   let lastKeyObj = null;
+  const triedTornUserIds = [];
 
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (getFreshKey) {
-      const keyObj = await getFreshKey();
+      const keyObj = await getFreshKey(triedTornUserIds);
       if (!keyObj?.key) throw new Error('No API key available');
       headers = authHeader(keyObj.key);
       lastKeyObj = keyObj;
+      if (keyObj.tornUserId != null) triedTornUserIds.push(keyObj.tornUserId);
     }
     try {
       const response = await fetch(url, { headers });
@@ -222,14 +229,21 @@ export async function getStaffApiKeyForFaction(env, factionId) {
   }
 }
 
-// Returns { key, tornUserId, username } or null.
-export async function getRandomUserApiKey(env) {
+// Returns { key, tornUserId, username } or null. `excludeTornUserIds` skips
+// keys already tried earlier in the same call (see fetchWithRetry) so a
+// retry can't redraw the same dead key by chance out of a small pool.
+export async function getRandomUserApiKey(env, excludeTornUserIds = []) {
   try {
+    const excludeList = (excludeTornUserIds || []).filter(id => id != null);
+    const exclusionClause = excludeList.length
+      ? `AND torn_user_id NOT IN (${excludeList.map(() => '?').join(',')})`
+      : '';
     const result = await env.DB.prepare(
       `SELECT api_key, torn_user_id, username FROM users
        WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)
+       ${exclusionClause}
        ORDER BY RANDOM() LIMIT 1`
-    ).first();
+    ).bind(...excludeList).first();
     if (!result?.api_key) return null;
     try { return { key: atob(result.api_key), tornUserId: result.torn_user_id, username: result.username }; }
     catch { console.error('Failed to decrypt API key'); return null; }
@@ -247,7 +261,7 @@ export async function getRandomUserApiKey(env) {
 // "unknown, needs manual entry," not "age is zero."
 export async function fetchTornAccountAge(env, tornUserId) {
   let usedKeyObj = null;
-  const getFreshKey = async () => { usedKeyObj = await getRandomUserApiKey(env); return usedKeyObj; };
+  const getFreshKey = async (tried) => { usedKeyObj = await getRandomUserApiKey(env, tried); return usedKeyObj; };
 
   const probe = await getFreshKey();
   if (!probe?.key) {
@@ -352,9 +366,9 @@ export async function fetchAndCacheCompanies(env, companyIds, apiKeyObj, trigger
     // one from the general pool, swapping out a bad/dead key automatically.
     let usedKeyObj = apiKeyObj;
     let firstAttempt = true;
-    const getFreshKey = async () => {
+    const getFreshKey = async (tried) => {
       if (firstAttempt) { firstAttempt = false; return usedKeyObj; }
-      usedKeyObj = await getRandomUserApiKey(env);
+      usedKeyObj = await getRandomUserApiKey(env, tried);
       return usedKeyObj;
     };
 

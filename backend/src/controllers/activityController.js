@@ -1780,7 +1780,7 @@ export async function backfillPersonalStats(request, env, user) {
 
     for (let i = 0; i < allUrls.length; i++) {
       try {
-        const data = await fetchWithRetry(allUrls[i], () => getRandomUserApiKey(env), env);
+        const data = await fetchWithRetry(allUrls[i], (tried) => getRandomUserApiKey(env, tried), env);
         if (Array.isArray(data?.personalstats)) {
           for (const entry of data.personalstats) {
             if (entry?.name) flatByStatName[entry.name] = entry.value ?? 0;
