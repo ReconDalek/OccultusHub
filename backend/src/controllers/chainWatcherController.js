@@ -1433,9 +1433,9 @@ export async function getWatchTotals(request, env) {
 
 const SIGNUP_MESSAGE_KEY = 'chain_watch_signup_message';
 const DEFAULT_SIGNUP_MESSAGE =
-  'Be in Torn with enough energy to save the chain.\n' +
-  'Attack when the timer drops below 2 minutes.\n' +
-  'Near a bonus? Flag it to a leader.';
+  '- Be in Torn with enough energy to save the chain.\n' +
+  '- Attack when the timer drops below 2 minutes.\n' +
+  '- Near a bonus? Flag it to a leader.';
 
 // GET /api/chain-watcher/signup-message — any member
 export async function getSignupMessage(request, env) {

@@ -3,12 +3,25 @@ import Modal from './Modal'
 import { fmtSlotDay, fmtClockTime, localDayDiffers, fmtSlotDayLocal } from './chainWatcherUtils'
 
 const DEFAULT_MESSAGE =
-  'Be in Torn with enough energy to save the chain.\n' +
-  'Attack when the timer drops below 2 minutes.\n' +
-  'Near a bonus? Flag it to a leader.'
+  '- Be in Torn with enough energy to save the chain.\n' +
+  '- Attack when the timer drops below 2 minutes.\n' +
+  '- Near a bonus? Flag it to a leader.'
+
+// A blank line starts a new block. A block renders as a bullet list when
+// every one of its lines starts with "-"/"•" (stripped before display);
+// otherwise each line in it renders as its own paragraph. Lets the sign-up
+// message mix a bulleted list with a free-standing line (or several) instead
+// of forcing everything into one flat list with no visual break between them.
+function parseMessageBlocks(message) {
+  return message
+    .split(/\n\s*\n/)
+    .map((block) => block.split('\n').map((l) => l.trim()).filter(Boolean))
+    .filter((block) => block.length > 0)
+}
+const BULLET_RE = /^[-•]\s*/
 
 export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose, isLeader, members = [], currentUserId, use12h = false, message }) {
-  const lines = (message || DEFAULT_MESSAGE).split('\n').map((l) => l.trim()).filter(Boolean)
+  const blocks = parseMessageBlocks(message || DEFAULT_MESSAGE)
   const dayShift = localDayDiffers(slotStart)
   const [assigneeId, setAssigneeId] = useState(currentUserId ?? null)
   const assigningOther = assigneeId != null && assigneeId !== currentUserId
@@ -48,9 +61,24 @@ export default function SignUpConfirmModal({ slotStart, busy, onConfirm, onClose
         borderRadius: 10, padding: '12px 14px', marginBottom: 18,
       }}>
         <p style={{ color: '#f4f4f5', fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>What watching involves:</p>
-        <ul style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-          {lines.map((line, i) => <li key={i}>{line}</li>)}
-        </ul>
+        {blocks.map((block, bi) => {
+          const isBulletBlock = block.every((l) => BULLET_RE.test(l))
+          const blockStyle = { color: 'var(--text-secondary)', fontSize: 13, margin: bi === 0 ? 0 : '8px 0 0', lineHeight: 1.6 }
+          if (isBulletBlock) {
+            return (
+              <ul key={bi} style={{ ...blockStyle, paddingLeft: 18 }}>
+                {block.map((line, li) => <li key={li}>{line.replace(BULLET_RE, '')}</li>)}
+              </ul>
+            )
+          }
+          return (
+            <div key={bi} style={blockStyle}>
+              {block.map((line, li) => (
+                <p key={li} style={{ margin: li === 0 ? 0 : '4px 0 0' }}>{line.replace(BULLET_RE, '')}</p>
+              ))}
+            </div>
+          )
+        })}
         <p style={{ color: '#f87171', fontSize: 12.5, margin: '10px 0 0', fontWeight: 600 }}>
           Once confirmed, only a leader can remove this shift.
         </p>
