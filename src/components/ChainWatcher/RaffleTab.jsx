@@ -297,6 +297,7 @@ function RoundDetail({ roundId, onBack }) {
 
   const { round, entries, overview, winners } = data
   const pending = entries.filter(e => e.review_status === 'pending')
+  const roundCompleted = round.status === 'completed'
   const drawsExhausted = winners.length >= round.draw_count
   // Same set-based removal logic the backend draw query uses — a winner's
   // user id drops the whole pool only once no matter how many winner rows
@@ -437,7 +438,11 @@ function RoundDetail({ roundId, onBack }) {
               <input type="checkbox" checked={testMode} onChange={e => setTestMode(e.target.checked)} />
               Test mode &mdash; spin repeatedly to preview the animation, nothing is recorded
             </label>
-            {drawsExhausted && !testMode && (
+            {roundCompleted ? (
+              <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>
+                This round is marked complete &mdash; no more draws can be run against it.
+              </p>
+            ) : drawsExhausted && !testMode && (
               <p style={{ color: '#4ade80', fontSize: 13 }}>
                 All {round.draw_count} draw{round.draw_count === 1 ? '' : 's'} for this round have been run.
               </p>
@@ -448,12 +453,12 @@ function RoundDetail({ roundId, onBack }) {
                 <button onClick={runTestDraw} disabled={liveTicketCount <= 0} style={{ ...ghostBtn, border: '1px dashed #fbbf24', color: '#fbbf24', opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
                   Test Spin
                 </button>
-              ) : !drawsExhausted ? (
+              ) : !drawsExhausted && !roundCompleted ? (
                 <button onClick={runDraw} disabled={liveTicketCount <= 0} style={{ ...primaryBtn, opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
                   Draw Winner {winners.length > 0 ? `(#${winners.length + 1})` : ''}
                 </button>
               ) : null}
-              {round.status !== 'completed' && winners.length > 0 && (
+              {!roundCompleted && winners.length > 0 && (
                 <button onClick={completeRound} style={ghostBtn}>Mark Round Complete</button>
               )}
             </div>

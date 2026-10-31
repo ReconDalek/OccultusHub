@@ -189,6 +189,7 @@ export async function drawWinner(request, env, user) {
 
     const round = await env.DB.prepare(`SELECT * FROM chain_raffle_rounds WHERE id = ?`).bind(id).first();
     if (!round) return errorResponse('Round not found', 404);
+    if (round.status === 'completed') return errorResponse('This round has been marked complete — no more draws can be run against it', 400);
 
     const { count: winnerCount } = await env.DB.prepare(
       `SELECT COUNT(*) AS count FROM chain_raffle_winners WHERE round_id = ?`
