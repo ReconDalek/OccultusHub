@@ -200,6 +200,18 @@ function RoundDetail({ roundId, onBack }) {
 
   useEffect(() => { load() }, [roundId])
 
+  // "Remove all tickets" guarantees every winner is a unique person, so it
+  // can never produce more winners than there are unique watchers. If the
+  // round is asking for more draws than that, force the mode that can
+  // actually complete the round instead of letting a draw silently fail
+  // partway through once the pool of distinct people runs out.
+  useEffect(() => {
+    if (!data) return
+    if (data.overview.length < data.round.draw_count && removalMode === 'all_tickets') {
+      setRemovalMode('single_ticket')
+    }
+  }, [data, removalMode])
+
   const review = async (entryId, decision) => {
     try {
       await apiSend(`/api/chain-watcher/raffle/entries/${entryId}/review`, 'POST', { decision })
@@ -286,10 +298,15 @@ function RoundDetail({ roundId, onBack }) {
   const { round, entries, overview, winners } = data
   const pending = entries.filter(e => e.review_status === 'pending')
   const drawsExhausted = winners.length >= round.draw_count
-  const liveTicketCount = entries.filter(e => e.review_status === 'auto' || e.review_status === 'included').length
-    - winners.reduce((sum, w) => sum + (w.removal_mode === 'all_tickets'
-        ? entries.filter(e => e.torn_user_id === w.torn_user_id && (e.review_status === 'auto' || e.review_status === 'included')).length
-        : 1), 0)
+  // Same set-based removal logic the backend draw query uses — a winner's
+  // user id drops the whole pool only once no matter how many winner rows
+  // mention them, so this can't double-subtract the way a per-winner sum
+  // over "all of this user's tickets" would for a user who won more than
+  // once under mixed removal modes.
+  const liveTicketCount = computeLivePool().length
+  const uniqueWatcherCount = overview.length
+  const notEnoughForAllTickets = uniqueWatcherCount < round.draw_count
+  const closeToDrawLimit = !notEnoughForAllTickets && (uniqueWatcherCount - round.draw_count) <= 2
 
   return (
     <div>
@@ -387,12 +404,24 @@ function RoundDetail({ roundId, onBack }) {
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 14 }}>
               <div>
                 <label style={labelStyle}>If the winner is drawn again</label>
-                {REMOVAL_MODES.map(m => (
-                  <label key={m.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 6, cursor: 'pointer' }}>
-                    <input type="radio" name="removalMode" checked={removalMode === m.value} onChange={() => setRemovalMode(m.value)} style={{ marginTop: 3 }} />
-                    <span>{m.label}<br /><span style={{ color: 'var(--text-faint)', fontSize: 11 }}>{m.hint}</span></span>
-                  </label>
-                ))}
+                {REMOVAL_MODES.map(m => {
+                  const disabled = m.value === 'all_tickets' && notEnoughForAllTickets
+                  return (
+                    <label key={m.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: disabled ? 'var(--text-faint)' : 'var(--text-secondary)', marginBottom: 6, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+                      <input type="radio" name="removalMode" checked={removalMode === m.value} disabled={disabled} onChange={() => setRemovalMode(m.value)} style={{ marginTop: 3 }} />
+                      <span>{m.label}<br /><span style={{ color: disabled ? '#fbbf24' : 'var(--text-faint)', fontSize: 11 }}>
+                        {disabled
+                          ? `Disabled — only ${uniqueWatcherCount} unique watcher${uniqueWatcherCount === 1 ? '' : 's'} for ${round.draw_count} draws requested`
+                          : m.hint}
+                      </span></span>
+                    </label>
+                  )
+                })}
+                {closeToDrawLimit && (
+                  <p style={{ color: '#fbbf24', fontSize: 11, margin: '2px 0 0' }}>
+                    Only {uniqueWatcherCount} unique watcher{uniqueWatcherCount === 1 ? '' : 's'} for {round.draw_count} draw{round.draw_count === 1 ? '' : 's'} &mdash; cutting it close if someone is excluded later.
+                  </p>
+                )}
               </div>
               <div>
                 <label style={labelStyle}>Draw animation</label>
