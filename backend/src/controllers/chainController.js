@@ -83,7 +83,7 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
     try {
       const liveData = await fetchWithRetry(
         `${TORN_API_BASE}/faction/${factionId}/chain?comment=OccHub`,
-        () => getRandomUserApiKey(env), env
+        (tried) => getRandomUserApiKey(env, tried), env
       );
       if (liveData.chain?.current > 0) liveActiveStart = liveData.chain.start;
     } catch (e) {
@@ -92,7 +92,7 @@ export async function fetchAndCacheChains(env, trigger = 'cron') {
 
     const url = `${TORN_API_BASE}/faction/${factionId}/chains?limit=100&sort=DESC&comment=OccHub`;
     try {
-      const data = await fetchWithRetry(url, () => getRandomUserApiKey(env), env);
+      const data = await fetchWithRetry(url, (tried) => getRandomUserApiKey(env, tried), env);
       const chains = data.chains || [];
       let added   = 0;
       let skipped = 0;
