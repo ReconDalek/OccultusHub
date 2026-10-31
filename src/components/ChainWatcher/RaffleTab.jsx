@@ -285,6 +285,7 @@ function RoundDetail({ roundId, onBack }) {
 
   const { round, entries, overview, winners } = data
   const pending = entries.filter(e => e.review_status === 'pending')
+  const drawsExhausted = winners.length >= round.draw_count
   const liveTicketCount = entries.filter(e => e.review_status === 'auto' || e.review_status === 'included').length
     - winners.reduce((sum, w) => sum + (w.removal_mode === 'all_tickets'
         ? entries.filter(e => e.torn_user_id === w.torn_user_id && (e.review_status === 'auto' || e.review_status === 'included')).length
@@ -305,7 +306,7 @@ function RoundDetail({ roundId, onBack }) {
           {new Date(round.period_start * 1000).toLocaleString()} &ndash; {new Date(round.period_end * 1000).toLocaleString()}
         </p>
         <p style={{ color: 'var(--text-faint)', fontSize: 12, margin: '4px 0 0' }}>
-          {entries.length} ticket{entries.length === 1 ? '' : 's'} pulled &middot; {liveTicketCount} still in the pool &middot; aiming for {round.draw_count} winner{round.draw_count === 1 ? '' : 's'}
+          {entries.length} ticket{entries.length === 1 ? '' : 's'} pulled &middot; {liveTicketCount} still in the pool &middot; {winners.length} of {round.draw_count} winner{round.draw_count === 1 ? '' : 's'} drawn
         </p>
         {(
           <div style={{ marginTop: 10 }}>
@@ -407,17 +408,22 @@ function RoundDetail({ roundId, onBack }) {
               <input type="checkbox" checked={testMode} onChange={e => setTestMode(e.target.checked)} />
               Test mode &mdash; spin repeatedly to preview the animation, nothing is recorded
             </label>
+            {drawsExhausted && !testMode && (
+              <p style={{ color: '#4ade80', fontSize: 13 }}>
+                All {round.draw_count} draw{round.draw_count === 1 ? '' : 's'} for this round have been run.
+              </p>
+            )}
             {error && <p style={{ color: '#f87171', fontSize: 13 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
               {testMode ? (
                 <button onClick={runTestDraw} disabled={liveTicketCount <= 0} style={{ ...ghostBtn, border: '1px dashed #fbbf24', color: '#fbbf24', opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
                   Test Spin
                 </button>
-              ) : (
+              ) : !drawsExhausted ? (
                 <button onClick={runDraw} disabled={liveTicketCount <= 0} style={{ ...primaryBtn, opacity: liveTicketCount <= 0 ? 0.5 : 1 }}>
                   Draw Winner {winners.length > 0 ? `(#${winners.length + 1})` : ''}
                 </button>
-              )}
+              ) : null}
               {round.status !== 'completed' && winners.length > 0 && (
                 <button onClick={completeRound} style={ghostBtn}>Mark Round Complete</button>
               )}

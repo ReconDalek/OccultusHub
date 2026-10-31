@@ -29,6 +29,24 @@ export async function createRound(request, env, user) {
     }
     const drawCount = Math.max(1, parseInt(body.draw_count, 10) || 1);
 
+    // Block a second raffle over hours another round (any status — building,
+    // ready, or completed) already claimed for this faction — otherwise the
+    // same watched hour ends up pulled into two separate ticket pools.
+    // Standard interval-overlap check: the two ranges overlap unless one
+    // ends before the other starts.
+    const overlap = await env.DB.prepare(
+      `SELECT id, period_start, period_end FROM chain_raffle_rounds
+       WHERE faction_id = ? AND period_start < ? AND period_end > ?
+       LIMIT 1`
+    ).bind(factionId, periodEnd, periodStart).first();
+    if (overlap) {
+      return errorResponse(
+        `This period overlaps an existing raffle (round #${overlap.id}, ` +
+        `${new Date(overlap.period_start * 1000).toLocaleDateString()} – ${new Date(overlap.period_end * 1000).toLocaleDateString()})`,
+        409
+      );
+    }
+
     const round = await env.DB.prepare(
       `INSERT INTO chain_raffle_rounds (faction_id, period_start, period_end, draw_count, status, created_by)
        VALUES (?, ?, ?, ?, 'building', ?)
@@ -156,9 +174,9 @@ export async function reviewEntry(request, env, user) {
 // and all) — there is no second weighting pass, multiplier, or tie-break on
 // top of that; someone's only advantage is literally having more rows in
 // that list, i.e. having watched more hours. Frontend calls this once per
-// draw so each one gets its own animation beat; draw_count is just the
-// round's stated intent, not enforced here (a leader can stop early or run
-// extra draws if they want).
+// draw so each one gets its own animation beat; draw_count caps how many
+// winners a round can ever have — a leader can still stop early, but can't
+// run more draws than the round was set up for.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function drawWinner(request, env, user) {
   try {
@@ -171,6 +189,13 @@ export async function drawWinner(request, env, user) {
 
     const round = await env.DB.prepare(`SELECT * FROM chain_raffle_rounds WHERE id = ?`).bind(id).first();
     if (!round) return errorResponse('Round not found', 404);
+
+    const { count: winnerCount } = await env.DB.prepare(
+      `SELECT COUNT(*) AS count FROM chain_raffle_winners WHERE round_id = ?`
+    ).bind(id).first();
+    if ((winnerCount || 0) >= round.draw_count) {
+      return errorResponse(`All ${round.draw_count} draw${round.draw_count === 1 ? '' : 's'} for this round have already been run`, 400);
+    }
 
     // The live ticket pool: every non-excluded, non-pending entry minus
     // whatever earlier draws this round have already removed (tracked via
@@ -192,10 +217,7 @@ export async function drawWinner(request, env, user) {
 
     const winningEntry = pool[Math.floor(Math.random() * pool.length)];
 
-    const { count } = await env.DB.prepare(
-      `SELECT COUNT(*) AS count FROM chain_raffle_winners WHERE round_id = ?`
-    ).bind(id).first();
-    const drawNumber = (count || 0) + 1;
+    const drawNumber = (winnerCount || 0) + 1;
 
     const winner = await env.DB.prepare(
       `INSERT INTO chain_raffle_winners (round_id, draw_number, torn_user_id, username, winning_entry_id, removal_mode, animation_style, drawn_by)
