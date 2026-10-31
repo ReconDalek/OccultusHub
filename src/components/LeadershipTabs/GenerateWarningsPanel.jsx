@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { API_BASE_URL } from '../../config/api'
 
 const FACTION_LABEL = { 33097: 'Occ1', 9728: 'Occ2', 9171: 'Occ3' }
@@ -1008,20 +1008,191 @@ function fmtChainDate(epochSeconds) {
 // Shared between ChainCard's own render and ChainGenerator's Summary modal —
 // keeps "who's currently a warning candidate for this chain" defined in one
 // place instead of two copies drifting apart.
-function filterChainMembers(chain, targets) {
-  const target = targets[chain.faction_id]
+function partitionMembers(members, target) {
   const hasTarget = target !== '' && target != null && !Number.isNaN(Number(target))
   return {
     hasTarget,
     target,
-    visibleMembers:  chain.members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption)),
-    exemptedMembers: chain.members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption),
+    visibleMembers:  members.filter(m => !hasTarget || (m.total_attacks < Number(target) && !m.exemption)),
+    exemptedMembers: members.filter(m => hasTarget && m.total_attacks < Number(target) && m.exemption),
   }
+}
+
+function filterChainMembers(chain, targets) {
+  return partitionMembers(chain.members, targets[chain.faction_id])
+}
+
+// ─── Merge mode ─────────────────────────────────────────────────────────────
+// Instead of flagging a member separately on every chain they fall short of
+// the target in, merge mode tallies their hits across every saved chain
+// included in the report and compares that ONE total against the target —
+// so a member who's under target on each individual chain but over it once
+// those chains are added together doesn't get warned.
+function groupChainsByFaction(chains) {
+  const map = new Map()
+  for (const c of chains) {
+    if (!map.has(c.faction_id)) map.set(c.faction_id, [])
+    map.get(c.faction_id).push(c)
+  }
+  return map
+}
+
+function mergeChainMembers(chains) {
+  const byUser = new Map()
+  for (const chain of chains) {
+    const chainRef = { torn_chain_id: chain.torn_chain_id, start_at: chain.start_at, end_at: chain.end_at, chain_length: chain.chain_length }
+    for (const m of chain.members) {
+      const existing = byUser.get(m.torn_user_id)
+      if (existing) {
+        existing.total_attacks += m.total_attacks
+        existing.bonus_hits    += m.bonus_hits || 0
+        existing.overdoses     += m.overdoses || 0
+        existing.exemption      = existing.exemption || m.exemption
+        existing.just_joined    = existing.just_joined || m.just_joined
+        existing.chains.push({ ...chainRef, attacks: m.total_attacks })
+      } else {
+        byUser.set(m.torn_user_id, {
+          torn_user_id:      m.torn_user_id,
+          username:          m.username,
+          faction_id:        m.faction_id,
+          level:             m.level,
+          total_attacks:     m.total_attacks,
+          bonus_hits:        m.bonus_hits || 0,
+          overdoses:         m.overdoses || 0,
+          exemption:         m.exemption,
+          already_warned:    m.already_warned,
+          kick_count_6mo:    m.kick_count_6mo,
+          at_kick_threshold: m.at_kick_threshold,
+          just_joined:       m.just_joined,
+          chains: [{ ...chainRef, attacks: m.total_attacks }],
+        })
+      }
+    }
+  }
+  for (const m of byUser.values()) m.no_hits_recorded = m.total_attacks === 0
+  return [...byUser.values()].sort((a, b) => b.total_attacks - a.total_attacks)
+}
+
+// Shared member-rows table used by both the per-chain card (separate mode)
+// and the merged-across-chains card (merge mode). `emptyMessage` and
+// `extraTag(m)` (an optional small tag rendered next to a member's name,
+// e.g. which chains their total came from) are the only bits that differ
+// between the two callers.
+function ChainMembersTable({ visibleMembers, exemptedMembers, hasTarget, target, targets, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot, emptyMessage, extraTag }) {
+  const colTemplate = '30px 1fr 90px 70px 60px 100px 160px'
+
+  if (visibleMembers.length === 0 && exemptedMembers.length === 0) {
+    return <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '16px' }}>{emptyMessage}</p>
+  }
+  if (visibleMembers.length === 0) {
+    return (
+      <div style={{ padding: '10px 16px 16px' }}>
+        <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="table-scroll" style={{ padding: '10px' }}>
+      <div style={{ minWidth: '700px' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
+          zIndex: 5, background: '#141414',
+        }}>
+          {['#', 'Member', 'Attacks', 'Bonus', 'OD', 'vs Target', ''].map(h => (
+            <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+          ))}
+        </div>
+
+        {visibleMembers.map((m, i) => {
+          const delta = hasTarget ? m.total_attacks - Number(target) : null
+          // Reported/warned status is scoped to the MONTH, not this
+          // specific chain — matches already_warned's backend scoping
+          // and excludedMap's existing convention.
+          const reported = reportedIds.has(m.torn_user_id)
+          const excluded = excludedMap.has(m.torn_user_id)
+          const booted = bootedMap.has(m.torn_user_id)
+          const flagged = hasTarget && delta < 0 && !excluded
+
+          return (
+            <div key={m.torn_user_id} style={{
+              display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
+              gap: '8px', padding: '9px 12px', borderRadius: '8px',
+              background: booted ? 'rgba(168,85,247,0.12)' : flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+              border: booted ? '1px solid rgba(168,85,247,0.45)' : flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
+            }}>
+              <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
+              <div style={{ minWidth: 0 }}>
+                <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
+{booted && <BootedTag date={bootedMap.get(m.torn_user_id)} />}
+                {m.at_kick_threshold && (
+                  <span
+                    title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
+                    style={{
+                      marginLeft: '6px', color: '#f87171', fontSize: '10px', fontWeight: '700',
+                      padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
+                      background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)',
+                    }}
+                  >
+                    ⚠ KICK THRESHOLD ({m.kick_count_6mo}/3)
+                  </span>
+                )}
+                {m.no_hits_recorded && (
+                  <span title="No chain_hits record — confirmed in faction during this chain, but never attacked" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ no hits</span>
+                )}
+                {m.just_joined && (
+                  <span title="Estimated under 10 days in the faction at chain start — not excluded (recruits under 3 days already are), just worth knowing" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ just joined</span>
+                )}
+                <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
+                  {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
+                </span>
+                {extraTag?.(m)}
+              </div>
+              <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.total_attacks)}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{m.bonus_hits > 0 ? fmt(m.bonus_hits) : '—'}</span>
+              <span style={{ color: m.overdoses > 0 ? '#f87171' : 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.overdoses)}</span>
+              <span style={{ fontSize: '12px', color: !hasTarget ? 'var(--text-faint)' : (delta < 0 ? '#f87171' : '#4ade80') }}>
+                {!hasTarget ? '—' : `${delta >= 0 ? '+' : ''}${fmt(delta)}`}
+              </span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {reported ? (
+                  <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
+                ) : booted ? (
+<BootedButton onClick={() => onToggleBoot(m)} />
+) : excluded ? (
+                  <button onClick={() => onToggleExclude(m)}
+                    title="Excused for this month — click to undo"
+                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    ✓ Excused
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={() => onReport(m)}
+                      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      Warn
+                    </button>
+                    <button onClick={() => onToggleExclude(m)}
+                      title="Excuse this member for this month, without logging a formal exemption"
+                      style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                      Excuse
+                    </button>
+<BootButton onClick={() => onToggleBoot(m)} />
+                  </>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {exemptedMembers.length > 0 && (
+        <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
+      )}
+    </div>
+  )
 }
 
 function ChainCard({ chain, targets, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot }) {
   const { hasTarget, target, visibleMembers, exemptedMembers } = filterChainMembers(chain, targets)
-  const colTemplate = '30px 1fr 90px 70px 60px 100px 160px'
 
   return (
     <div style={{ marginBottom: '20px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', overflow: 'hidden' }}>
@@ -1038,108 +1209,61 @@ function ChainCard({ chain, targets, reportedIds, excludedMap, bootedMap, onRepo
         </div>
       )}
 
-      {visibleMembers.length === 0 && exemptedMembers.length === 0 ? (
-        <p style={{ color: 'var(--text-faint)', fontSize: '13px', padding: '16px' }}>Every member met the target for this chain.</p>
-      ) : visibleMembers.length === 0 ? (
-        <div style={{ padding: '10px 16px 16px' }}>
-          <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
-        </div>
-      ) : (
-        <div className="table-scroll" style={{ padding: '10px' }}>
-          <div style={{ minWidth: '700px' }}>
-            <div style={{
-              display: 'grid', gridTemplateColumns: colTemplate, gap: '8px', padding: '6px 12px', marginBottom: '4px',
-              zIndex: 5, background: '#141414',
-            }}>
-              {['#', 'Member', 'Attacks', 'Bonus', 'OD', 'vs Target', ''].map(h => (
-                <span key={h} style={{ color: 'var(--text-secondary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
-              ))}
-            </div>
+      <ChainMembersTable
+        visibleMembers={visibleMembers} exemptedMembers={exemptedMembers}
+        hasTarget={hasTarget} target={target} targets={targets}
+        reportedIds={reportedIds} excludedMap={excludedMap} bootedMap={bootedMap}
+        onReport={(m) => onReport({ member: m, chain })}
+        onToggleExclude={onToggleExclude} onToggleBoot={onToggleBoot}
+        emptyMessage="Every member met the target for this chain."
+      />
+    </div>
+  )
+}
 
-            {visibleMembers.map((m, i) => {
-              const delta = hasTarget ? m.total_attacks - Number(target) : null
-              // Reported/warned status is scoped to the MONTH, not this
-              // specific chain — matches already_warned's backend scoping
-              // and excludedMap's existing convention.
-              const reported = reportedIds.has(m.torn_user_id)
-              const excluded = excludedMap.has(m.torn_user_id)
-              const booted = bootedMap.has(m.torn_user_id)
-              const flagged = hasTarget && delta < 0 && !excluded
+// Merged across every saved chain in the selected month for this faction —
+// one total per member compared against the target once, instead of a
+// separate flag per chain. Lists which chains were tallied together.
+function MergedChainCard({ factionId, chains, targets, reportedIds, excludedMap, bootedMap, onReport, onToggleExclude, onToggleBoot }) {
+  const members = useMemo(() => mergeChainMembers(chains), [chains])
+  const { hasTarget, target, visibleMembers, exemptedMembers } = partitionMembers(members, targets[factionId])
+  const recruitsExcluded = [...new Set(chains.flatMap(c => c.recruits_excluded || []))]
+  const totalHits = chains.reduce((sum, c) => sum + c.chain_length, 0)
 
-              return (
-                <div key={m.torn_user_id} style={{
-                  display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
-                  gap: '8px', padding: '9px 12px', borderRadius: '8px',
-                  background: booted ? 'rgba(168,85,247,0.12)' : flagged ? 'rgba(248,113,113,0.05)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
-                  border: booted ? '1px solid rgba(168,85,247,0.45)' : flagged ? '1px solid rgba(248,113,113,0.15)' : '1px solid transparent',
-                }}>
-                  <span style={{ color: 'var(--text-faint)', fontSize: '12px', textAlign: 'right' }}>{i + 1}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '500' }}>{m.username}</span>
-{booted && <BootedTag date={bootedMap.get(m.torn_user_id)} />}
-                    {m.at_kick_threshold && (
-                      <span
-                        title={`${m.kick_count_6mo} warning${m.kick_count_6mo !== 1 ? 's' : ''} in the last 6 months already — at/over the 3-warning kick threshold BEFORE this one`}
-                        style={{
-                          marginLeft: '6px', color: '#f87171', fontSize: '10px', fontWeight: '700',
-                          padding: '1px 6px', borderRadius: '4px', verticalAlign: 'middle',
-                          background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)',
-                        }}
-                      >
-                        ⚠ KICK THRESHOLD ({m.kick_count_6mo}/3)
-                      </span>
-                    )}
-                    {m.no_hits_recorded && (
-                      <span title="No chain_hits record — confirmed in faction during this chain, but never attacked" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ no hits</span>
-                    )}
-                    {m.just_joined && (
-                      <span title="Estimated under 10 days in the faction at chain start — not excluded (recruits under 3 days already are), just worth knowing" style={{ color: '#f59e0b', marginLeft: '4px', fontSize: '11px' }}>⚠ just joined</span>
-                    )}
-                    <span style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}>
-                      {FACTION_LABEL[m.faction_id]}{m.level != null && ` · Lv ${m.level}`}
-                    </span>
-                  </div>
-                  <span style={{ color: '#a78bfa', fontSize: '13px', fontWeight: '700' }}>{fmt(m.total_attacks)}</span>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{m.bonus_hits > 0 ? fmt(m.bonus_hits) : '—'}</span>
-                  <span style={{ color: m.overdoses > 0 ? '#f87171' : 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.overdoses)}</span>
-                  <span style={{ fontSize: '12px', color: !hasTarget ? 'var(--text-faint)' : (delta < 0 ? '#f87171' : '#4ade80') }}>
-                    {!hasTarget ? '—' : `${delta >= 0 ? '+' : ''}${fmt(delta)}`}
-                  </span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    {reported ? (
-                      <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Warned</span>
-                    ) : booted ? (
-<BootedButton onClick={() => onToggleBoot(m)} />
-) : excluded ? (
-                      <button onClick={() => onToggleExclude(m)}
-                        title="Excused for this month — click to undo"
-                        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.12)', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                        ✓ Excused
-                      </button>
-                    ) : (
-                      <>
-                        <button onClick={() => onReport({ member: m, chain })}
-                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(179,18,63,0.4)', background: 'rgba(179,18,63,0.12)', color: '#ff2f6d', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                          Warn
-                        </button>
-                        <button onClick={() => onToggleExclude(m)}
-                          title="Excuse this member for this month, without logging a formal exemption"
-                          style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                          Excuse
-                        </button>
-<BootButton onClick={() => onToggleBoot(m)} />
-                      </>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {exemptedMembers.length > 0 && (
-            <ExemptionsNote members={exemptedMembers} targets={targets} valueKey="total_attacks" valueLabel="Attacks" />
-          )}
+  return (
+    <div style={{ marginBottom: '20px', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <span style={{ color: '#f4f4f5', fontSize: '13px', fontWeight: '600' }}>{FACTION_LABEL[factionId]}</span>
+        <span style={{ marginLeft: '8px', color: 'var(--text-faint)', fontSize: '12px' }}>
+          {chains.length} chain{chains.length !== 1 ? 's' : ''} merged · {fmt(totalHits)} combined hits
+        </span>
+      </div>
+      <div style={{ padding: '8px 16px', color: 'var(--text-faint)', fontSize: '11px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        Chains included: {chains.map(c => `#${c.torn_chain_id} (${fmtChainDate(c.start_at)}, ${fmt(c.chain_length)} hits)`).join(', ')}
+      </div>
+
+      {recruitsExcluded.length > 0 && (
+        <div style={{ padding: '6px 16px', color: 'var(--text-faint)', fontSize: '11px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          Recruits not counted (under 3 days in the faction at the relevant chain's start): {recruitsExcluded.join(', ')}
         </div>
       )}
+
+      <ChainMembersTable
+        visibleMembers={visibleMembers} exemptedMembers={exemptedMembers}
+        hasTarget={hasTarget} target={target} targets={targets}
+        reportedIds={reportedIds} excludedMap={excludedMap} bootedMap={bootedMap}
+        onReport={(m) => onReport({ member: m, chain: null })}
+        onToggleExclude={onToggleExclude} onToggleBoot={onToggleBoot}
+        emptyMessage="Every member met the target across these chains."
+        extraTag={(m) => m.chains.length > 1 && (
+          <span
+            title={m.chains.map(c => `#${c.torn_chain_id}: ${fmt(c.attacks)} hits`).join(', ')}
+            style={{ marginLeft: '6px', color: 'var(--text-faint)', fontSize: '11px' }}
+          >
+            (across {m.chains.length} chains)
+          </span>
+        )}
+      />
     </div>
   )
 }
@@ -1153,6 +1277,10 @@ function ChainGenerator({ onWarningSaved }) {
   const [selectedMonth, setSelectedMonth]       = useState(() => previousMonth(now))
   const [selectedFactions, setSelectedFactions] = useState(FACTION_IDS)
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
+  // Merge (default): tally a member's hits across every saved chain this
+  // month and compare the total against the target once. Separate: flag
+  // them on each individual chain they fall short on, the old behavior.
+  const [compareMode, setCompareMode] = useState('merge')
 
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1219,25 +1347,41 @@ function ChainGenerator({ onWarningSaved }) {
 
   const periodLabel = `${MONTHS_FULL[selectedMonth.month]} ${selectedMonth.year}`
 
-  // Simplified, shareable view flattened across every chain currently on
-  // screen — excused members dropped entirely (exempted ones are already
-  // out of each chain's own visibleMembers).
+  // Simplified, shareable view flattened across every chain (or merged
+  // total) currently on screen — excused members dropped entirely (exempted
+  // ones are already out of visibleMembers).
   const summaryRows = data
-    ? data.chains.flatMap(chain => {
-        const { hasTarget, target, visibleMembers } = filterChainMembers(chain, targets)
-        return visibleMembers
-          .filter(m => !excludedMap.has(m.torn_user_id))
-          .map(m => ({
-            id: `${chain.torn_chain_id}:${m.torn_user_id}`,
-            tornUserId: m.torn_user_id,
-            username: m.username,
-            target: hasTarget ? Number(target) : null,
-            achieved: m.total_attacks,
-            variance: hasTarget ? m.total_attacks - Number(target) : null,
-            atKickThreshold: m.at_kick_threshold,
-            kickCount: m.kick_count_6mo,
+    ? (compareMode === 'merge'
+        ? [...groupChainsByFaction(data.chains)].flatMap(([factionId, factionChains]) => {
+            const { hasTarget, target, visibleMembers } = partitionMembers(mergeChainMembers(factionChains), targets[factionId])
+            return visibleMembers
+              .filter(m => !excludedMap.has(m.torn_user_id))
+              .map(m => ({
+                id: `merged:${m.torn_user_id}`,
+                tornUserId: m.torn_user_id,
+                username: m.username,
+                target: hasTarget ? Number(target) : null,
+                achieved: m.total_attacks,
+                variance: hasTarget ? m.total_attacks - Number(target) : null,
+                atKickThreshold: m.at_kick_threshold,
+                kickCount: m.kick_count_6mo,
+              }))
+          })
+        : data.chains.flatMap(chain => {
+            const { hasTarget, target, visibleMembers } = filterChainMembers(chain, targets)
+            return visibleMembers
+              .filter(m => !excludedMap.has(m.torn_user_id))
+              .map(m => ({
+                id: `${chain.torn_chain_id}:${m.torn_user_id}`,
+                tornUserId: m.torn_user_id,
+                username: m.username,
+                target: hasTarget ? Number(target) : null,
+                achieved: m.total_attacks,
+                variance: hasTarget ? m.total_attacks - Number(target) : null,
+                atKickThreshold: m.at_kick_threshold,
+                kickCount: m.kick_count_6mo,
+              }))
           }))
-      })
     : []
   const summarySubtitle = selectedFactions.map(id => FACTION_LABEL[id]).join(', ')
 
@@ -1278,6 +1422,30 @@ function ChainGenerator({ onWarningSaved }) {
                   }}
                 >
                   {FACTION_LABEL[id]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Compare</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {[['merge', 'Merged'], ['separate', 'Separate']].map(([mode, label]) => {
+              const active = compareMode === mode
+              return (
+                <button key={mode} onClick={() => setCompareMode(mode)}
+                  title={mode === 'merge'
+                    ? "Tally a member's hits across every saved chain this month and compare the total against the target once"
+                    : 'Compare each chain against the target on its own'}
+                  style={{
+                    padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+                    border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                    background: active ? 'rgba(167,139,250,0.15)' : 'transparent',
+                    color: active ? '#f4f4f5' : 'var(--text-secondary)',
+                  }}
+                >
+                  {label}
                 </button>
               )
             })}
@@ -1343,19 +1511,34 @@ function ChainGenerator({ onWarningSaved }) {
             </div>
           ))}
 
-          {data.chains.map(chain => (
-            <ChainCard
-              key={chain.torn_chain_id}
-              chain={chain}
-              targets={targets}
-              reportedIds={reportedIds}
-              excludedMap={excludedMap}
-              bootedMap={bootedMap}
-              onReport={setReportingItem}
-              onToggleExclude={handleToggleExclude}
-              onToggleBoot={handleToggleBoot}
-            />
-          ))}
+          {compareMode === 'merge'
+            ? [...groupChainsByFaction(data.chains)].map(([factionId, factionChains]) => (
+                <MergedChainCard
+                  key={factionId}
+                  factionId={factionId}
+                  chains={factionChains}
+                  targets={targets}
+                  reportedIds={reportedIds}
+                  excludedMap={excludedMap}
+                  bootedMap={bootedMap}
+                  onReport={setReportingItem}
+                  onToggleExclude={handleToggleExclude}
+                  onToggleBoot={handleToggleBoot}
+                />
+              ))
+            : data.chains.map(chain => (
+                <ChainCard
+                  key={chain.torn_chain_id}
+                  chain={chain}
+                  targets={targets}
+                  reportedIds={reportedIds}
+                  excludedMap={excludedMap}
+                  bootedMap={bootedMap}
+                  onReport={setReportingItem}
+                  onToggleExclude={handleToggleExclude}
+                  onToggleBoot={handleToggleBoot}
+                />
+              ))}
         </>
       )}
 

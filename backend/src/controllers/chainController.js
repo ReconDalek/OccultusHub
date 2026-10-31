@@ -878,11 +878,16 @@ export async function generateChainWarningReport(request, env) {
     const monthStartTs = Math.floor(new Date(monthStart + 'T00:00:00Z').getTime() / 1000);
     const monthEndTs   = Math.floor(new Date(monthEnd   + 'T23:59:59Z').getTime() / 1000);
 
+    // Only chains a leader has actually reviewed and saved (chain_hits exists)
+    // are warning candidates — chain_cache also holds every chain the cron
+    // auto-caches regardless of review, and generating warnings off those
+    // would flag every active member as a false "no hits recorded".
     const ph = factions.map(() => '?').join(',');
     const chainRows = await env.DB.prepare(`
       SELECT torn_chain_id, faction_id, chain_length, respect, start_at, end_at
       FROM chain_cache
       WHERE faction_id IN (${ph}) AND start_at >= ? AND start_at <= ?
+        AND EXISTS(SELECT 1 FROM chain_hits ch WHERE ch.torn_chain_id = chain_cache.torn_chain_id)
       ORDER BY faction_id, start_at ASC
     `).bind(...factions, monthStartTs, monthEndTs).all();
 
