@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { API_BASE_URL } from '../../config/api'
 import WarTrackingTab from './WarTrackingTab'
 import BountiesTab from './BountiesTab'
+import ManualChainHitsTab from './ManualChainHitsTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1590,9 +1591,10 @@ export default function ChainTrackingTab() {
   const [factionId, setFactionId] = useState(33097)
 
   const topTabs     = [
-    { value: 'chains',   label: 'Chains' },
-    { value: 'wars',     label: 'Wars'  },
-    { value: 'bounties', label: 'Bounties' },
+    { value: 'chains',      label: 'Chains' },
+    { value: 'wars',        label: 'Wars'  },
+    { value: 'bounties',    label: 'Bounties' },
+    { value: 'manualHits',  label: 'Manual Hits' },
   ]
   const factionTabs = FACTIONS.map((f) => ({ value: f.id, label: f.name }))
 
@@ -1623,6 +1625,8 @@ export default function ChainTrackingTab() {
           display: 'flex',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           marginBottom: '24px',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {topTabs.map((tab) => (
@@ -1639,6 +1643,8 @@ export default function ChainTrackingTab() {
               fontSize: '14px',
               cursor: 'pointer',
               transition: 'color 0.15s',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
             onMouseEnter={(e) => { if (topTab !== tab.value) e.currentTarget.style.color = '#f4f4f5' }}
             onMouseLeave={(e) => { if (topTab !== tab.value) e.currentTarget.style.color = "var(--text-secondary)" }}
@@ -1651,6 +1657,8 @@ export default function ChainTrackingTab() {
       {topTab === 'wars' && <WarTrackingTab />}
 
       {topTab === 'bounties' && <BountiesTab />}
+
+      {topTab === 'manualHits' && <ManualChainHitsTab />}
 
       {topTab === 'chains' && (
         <div>
