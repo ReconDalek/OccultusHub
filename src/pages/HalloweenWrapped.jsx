@@ -119,7 +119,7 @@ function buildSlides(data) {
           { icon: '📦', label: 'Armory Deposits', value: fmt(me.armory.deposits) },
           { icon: '🎯', label: 'Bounties Placed', value: fmt(me.bountiesPlaced) },
           { icon: '💰', label: 'Money Mugged', value: fmtMoney(me.personal.money_mugged) },
-          { icon: '🪙', label: 'Bounty Money Earned', value: fmtMoney(me.personal.bounty_val_coll) },
+          { icon: '💵', label: 'Bounty Money Earned', value: fmtMoney(me.personal.bounty_val_coll) },
         ]} />
       ) : <EmptyNote>No organized crime, armory, or bounty activity this week.</EmptyNote>}
     </Slide>
