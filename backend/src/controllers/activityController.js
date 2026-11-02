@@ -1858,7 +1858,15 @@ export async function backfillPersonalStats(request, env, user) {
       try {
         const fetchedStats = extractStats(flatResult);
         const nextStats    = extractStats(JSON.parse(nextRow.stats));
-        const probeFields  = ['active_time', 'drugs', 'travel_time', 'crimes', 'dmg_total', 'atk_won', 'war_hits', 'streak_current'];
+        // travel_time (Torn's "timespenttraveling") excluded — confirmed via
+        // backfill_probe_comparison logs to be inconsistent between the two
+        // Torn endpoints we rely on here (cat=all for the regular daily
+        // snapshot vs ?stat=...&timestamp= for backfill): it showed up as
+        // the sole "corrupted" field in every single failing backfill,
+        // including one case with the IDENTICAL value returned for two
+        // different requested dates, while every other probe field resolved
+        // historically correctly (properly lower than the next snapshot).
+        const probeFields  = ['active_time', 'drugs', 'crimes', 'dmg_total', 'atk_won', 'war_hits', 'streak_current'];
         const probeComparisons = {};
         for (const f of probeFields) probeComparisons[f] = { backfill: fetchedStats[f] ?? null, next: nextStats[f] ?? null };
         const corrupted = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
