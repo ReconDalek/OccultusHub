@@ -674,6 +674,36 @@ function SnapshotGapsPanel() {
     }
   }
 
+  const [bulkRunning, setBulkRunning] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 })
+
+  // Walks every date group in order, oldest state included — reads `gaps`
+  // fresh each iteration (via a ref-like callback) rather than the closed-
+  // over snapshot, since backfill() mutates it as entries succeed.
+  async function backfillAllGaps() {
+    setBulkRunning(true)
+    const totalAtStart = gaps?.total ?? 0
+    setBulkProgress({ done: 0, total: totalAtStart })
+    let completed = 0
+    try {
+      // Snapshot the group list up front — new gaps discovered mid-run
+      // (there shouldn't be any from this action itself) aren't chased.
+      const groupsToRun = gaps?.gaps ?? []
+      for (const group of groupsToRun) {
+        for (const m of group.missing) {
+          const key = `${m.torn_user_id}:${group.date}`
+          if (states[key] === 'done' || states[key] === 'loading') continue
+          await backfill(m.torn_user_id, group.date)
+          completed++
+          setBulkProgress({ done: completed, total: totalAtStart })
+          await new Promise(r => setTimeout(r, 300))
+        }
+      }
+    } finally {
+      setBulkRunning(false)
+    }
+  }
+
   const totalGaps = gaps?.total ?? 0
   const btnLabel  = open
     ? '▲ Hide Gaps'
@@ -705,17 +735,33 @@ function SnapshotGapsPanel() {
             <h3 style={{ fontFamily: 'Cinzel, serif', color: '#fbbf24', fontSize: '15px', letterSpacing: '0.5px', margin: 0 }}>
               Snapshot Gaps
             </h3>
-            <button
-              onClick={loadGaps}
-              disabled={loading}
-              style={{
-                padding: '5px 14px', borderRadius: '8px', cursor: loading ? 'default' : 'pointer',
-                border: '1px solid rgba(255,255,255,0.1)', background: 'transparent',
-                color: "var(--text-secondary)", fontSize: '12px',
-              }}
-            >
-              {loading ? 'Loading…' : '↻ Refresh'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {gaps && gaps.total > 0 && (
+                <button
+                  onClick={backfillAllGaps}
+                  disabled={bulkRunning || loading}
+                  style={{
+                    padding: '5px 14px', borderRadius: '8px', fontSize: '12px',
+                    cursor: (bulkRunning || loading) ? 'default' : 'pointer',
+                    border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)',
+                    color: '#fbbf24', opacity: (bulkRunning || loading) ? 0.6 : 1,
+                  }}
+                >
+                  {bulkRunning ? `Backfilling… ${bulkProgress.done}/${bulkProgress.total}` : `Backfill All Gaps (${gaps.total})`}
+                </button>
+              )}
+              <button
+                onClick={loadGaps}
+                disabled={loading || bulkRunning}
+                style={{
+                  padding: '5px 14px', borderRadius: '8px', cursor: (loading || bulkRunning) ? 'default' : 'pointer',
+                  border: '1px solid rgba(255,255,255,0.1)', background: 'transparent',
+                  color: "var(--text-secondary)", fontSize: '12px',
+                }}
+              >
+                {loading ? 'Loading…' : '↻ Refresh'}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -766,11 +812,11 @@ function SnapshotGapsPanel() {
                       {!allDone && (
                         <button
                           onClick={() => backfillGroup(group)}
-                          disabled={anyLoading}
+                          disabled={anyLoading || bulkRunning}
                           style={{
-                            padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: anyLoading ? 'default' : 'pointer',
+                            padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: (anyLoading || bulkRunning) ? 'default' : 'pointer',
                             border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)',
-                            color: '#fbbf24',
+                            color: '#fbbf24', opacity: bulkRunning ? 0.6 : 1,
                           }}
                         >
                           {anyLoading ? 'Backfilling…' : `Backfill All (${group.missing.length - doneCount})`}
@@ -812,23 +858,26 @@ function SnapshotGapsPanel() {
                             </div>
                             <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
                               {st === 'idle' && (
-                                <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
-                                  padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                <button onClick={() => backfill(m.torn_user_id, group.date)} disabled={bulkRunning} style={{
+                                  padding: '4px 12px', borderRadius: '6px', fontSize: '11px', cursor: bulkRunning ? 'default' : 'pointer',
                                   border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.08)', color: '#c4b5fd',
+                                  opacity: bulkRunning ? 0.6 : 1,
                                 }}>Backfill</button>
                               )}
                               {st === 'loading'  && <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>fetching…</span>}
                               {st === 'deleting' && <span style={{ color: "var(--text-secondary)", fontSize: '11px' }}>deleting…</span>}
                               {st === 'inflation' && (
-                                <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
-                                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                <button onClick={() => backfill(m.torn_user_id, group.date)} disabled={bulkRunning} style={{
+                                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: bulkRunning ? 'default' : 'pointer',
                                   border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24',
+                                  opacity: bulkRunning ? 0.6 : 1,
                                 }}>Retry</button>
                               )}
                               {st === 'error' && (
-                                <button onClick={() => backfill(m.torn_user_id, group.date)} style={{
-                                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',
+                                <button onClick={() => backfill(m.torn_user_id, group.date)} disabled={bulkRunning} style={{
+                                  padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: bulkRunning ? 'default' : 'pointer',
                                   border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171',
+                                  opacity: bulkRunning ? 0.6 : 1,
                                 }}>Retry</button>
                               )}
                               {st === 'done' && (
