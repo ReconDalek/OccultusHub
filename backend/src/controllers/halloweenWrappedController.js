@@ -23,6 +23,19 @@ const CURATED_PERSONAL_FIELDS = [
   'networth', 'bounties_coll', 'bounty_val_coll', 'money_mugged', 'mails_total', 'travel', 'active_time',
 ];
 
+// A snapshot labelled YYYY-MM-DD is taken ~01:00 UTC the NEXT day and holds
+// cumulative totals as of that moment — i.e. it represents "end of" that
+// date, not the start of it (takePersonalStatsSnapshot stores the live
+// fetch under `yesterday`'s date). So the correct lower bound for "all
+// activity from date D onward" is the snapshot labelled D-1 (end of D-1 =
+// start of D), not D itself — using D as the floor would silently exclude
+// everything that happened ON D.
+function dayBefore(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function bump(map, tornId, patch) {
   if (!tornId) return;
   const row = map.get(tornId);
@@ -202,8 +215,8 @@ export async function getHalloweenWrapped(request, env, user) {
          WHERE joined_at >= ? AND joined_at <= ? AND faction_id IN (${FACTION_IDS.map(() => '?').join(',')})
          GROUP BY faction_id`
       ).bind(WINDOW_START_DT, WINDOW_END_DT, ...FACTION_IDS).all(),
-      personalStatsDelta(env, WINDOW_START_DATE, WINDOW_END_DATE),
-      myEffectiveStart !== WINDOW_START_DATE ? personalStatsDelta(env, myEffectiveStart, WINDOW_END_DATE) : null,
+      personalStatsDelta(env, dayBefore(WINDOW_START_DATE), WINDOW_END_DATE),
+      myEffectiveStart !== WINDOW_START_DATE ? personalStatsDelta(env, dayBefore(myEffectiveStart), WINDOW_END_DATE) : null,
     ]);
 
     for (const r of (chainRows.results || [])) bump(stats, r.torn_user_id, { chainHits: r.hits, chainRespect: r.respect, chainsPlayed: r.chains });
