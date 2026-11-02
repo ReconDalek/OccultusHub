@@ -94,17 +94,17 @@ function buildSlides(data) {
     </Slide>
   )
 
-  const hasChainWar = me.chain.hits > 0 || me.war.hits > 0
+  const hasChain = me.chain.hits > 0
   slides.push(
-    <Slide key="chainwar" icon="🔗" title="Chains & Wars">
-      {hasChainWar ? (
+    <Slide key="chainwar" icon="🔗" title="Chain Season">
+      {hasChain ? (
         <StatGrid stats={[
           { icon: '🔗', label: 'Chain Hits', value: fmt(me.chain.hits) },
           { icon: '✨', label: 'Chain Respect', value: fmt(me.chain.respect) },
-          { icon: '🗡️', label: 'War Hits', value: fmt(me.war.hits) },
-          { icon: '🏆', label: 'War Respect', value: fmt(me.war.respect) },
+          { icon: '⛓️', label: 'Chains Joined', value: fmt(me.chain.chains) },
+          { icon: '⏱️', label: 'Active Time', value: fmtHours(me.personal.active_time) },
         ]} />
-      ) : <EmptyNote>A quiet week on the battlefield — no chain or war hits recorded.</EmptyNote>}
+      ) : <EmptyNote>A quiet week — no chain hits recorded.</EmptyNote>}
     </Slide>
   )
 
@@ -142,7 +142,7 @@ function buildSlides(data) {
     <Slide key="social" icon="🕯️" title="Spirit & Community">
       <StatGrid stats={[
         { icon: '✉️', label: 'Mails Sent', value: fmt(me.personal.mails_total) },
-        { icon: '🧭', label: 'Trips Taken', value: fmt(me.personal.travel) },
+        { icon: '✈️', label: 'Trips Taken', value: fmt(me.personal.travel) },
         { icon: '💊', label: 'Xanax Taken', value: fmt(me.personal.drug_xanax) },
         { icon: '🧪', label: 'Items Used', value: fmt(me.personal.items_used) },
       ]} />
@@ -177,7 +177,7 @@ function buildSlides(data) {
       <Slide key="faction" icon="🩸" title={`${myFaction.label} Spotlight`} subtitle={`${myFaction.newMembers} new member${myFaction.newMembers === 1 ? '' : 's'} joined this week.`}>
         <StatGrid stats={[
           { icon: '🔗', label: 'Chain Hits', value: fmt(myFaction.totals.chainHits) },
-          { icon: '🗡️', label: 'War Hits', value: fmt(myFaction.totals.warHits) },
+          { icon: '👁️', label: 'Hours on Watch', value: fmt(myFaction.totals.watchHours) },
           { icon: '🔮', label: 'OCs Won', value: fmt(myFaction.totals.ocSuccess) },
           { icon: '💊', label: 'Xanax Taken', value: fmt(myFaction.totals.xanaxTaken) },
         ]} />
@@ -192,15 +192,15 @@ function buildSlides(data) {
     <Slide key="global" icon="🌑" title="Across the Occultus Family" subtitle="Every faction, combined.">
       <StatGrid stats={[
         { icon: '🔗', label: 'Chain Hits', value: fmt(global.totals.chainHits) },
-        { icon: '🗡️', label: 'War Hits', value: fmt(global.totals.warHits) },
+        { icon: '👁️', label: 'Hours Watched', value: fmt(global.totals.watchHours) },
         { icon: '🔮', label: 'OCs Won', value: fmt(global.totals.ocSuccess) },
-        { icon: '📜', label: 'Forum Posts', value: fmt(global.totals.forumPosts) },
+        { icon: '📦', label: 'Armory Deposits', value: fmt(global.totals.armoryDeposits) },
       ]} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 420, margin: '16px auto 0' }}>
-        {[...factions].sort((a, b) => (b.totals.chainHits + b.totals.warHits) - (a.totals.chainHits + a.totals.warHits)).map(f => (
+        {[...factions].sort((a, b) => b.totals.chainHits - a.totals.chainHits).map(f => (
           <div key={f.factionId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 2px' }}>
             <span style={{ color: '#f4f4f5' }}>{f.label}</span>
-            <span style={{ color: 'var(--text-faint)' }}>{fmt(f.totals.chainHits + f.totals.warHits)} combined hits</span>
+            <span style={{ color: 'var(--text-faint)' }}>{fmt(f.totals.chainHits)} chain hits</span>
           </div>
         ))}
       </div>
