@@ -17,6 +17,7 @@ import RuneEasterEgg    from './components/RuneEasterEgg'
 import WatchingEye      from './components/WatchingEye'
 import SeasonalEvents  from './components/SeasonalEvents'
 import SpotifyPlayer   from './components/SpotifyPlayer/SpotifyPlayer'
+import HalloweenWrappedPopup from './components/HalloweenWrappedPopup'
 
 import Home       from './pages/Home'
 import About      from './pages/About'
@@ -38,6 +39,7 @@ import Stocks         from './pages/Stocks'
 import Stats          from './pages/Stats'
 import Activity       from './pages/Activity'
 import ChainWatcher   from './pages/ChainWatcher'
+import HalloweenWrapped from './pages/HalloweenWrapped'
 import NotFound       from './pages/NotFound'
 
 const GAME_ROUTES = ['/rite', '/cards', '/sanctum', '/binding', '/pact'] // active gameplay routes — suppress easter egg overlays
@@ -70,6 +72,10 @@ const PAGE_META = {
   '/chain': {
     title: 'Chain Watch — Occultus Hub',
     description: 'Live chain tracking and watch shift sign-ups for the Occultus faction family.',
+  },
+  '/halloween-wrapped': {
+    title: 'Halloween Wrapped — Occultus Hub',
+    description: 'Your Halloween trick-or-treat recap across the Occultus faction family.',
   },
   '/tos': {
     title: 'Terms of Service — Occultus Hub',
@@ -135,6 +141,7 @@ function Layout({ children }) {
       {!isGameRoute && <WatchingEye />}
       {!isGameRoute && <SpotifyPlayer />}
       {!suppressSeasonal && <SeasonalEvents />}
+      <HalloweenWrappedPopup />
     </>
   )
 }
@@ -316,6 +323,17 @@ function AppRoutes() {
       <Route path="/sanctum" element={<Layout><Sanctum /></Layout>} />
       <Route path="/binding" element={<Layout><Binding /></Layout>} />
       <Route path="/pact" element={<Layout><Pact /></Layout>} />
+
+      <Route
+        path="/halloween-wrapped"
+        element={
+          <Layout>
+            <ProtectedRoute requiredLevel="member">
+              <HalloweenWrapped />
+            </ProtectedRoute>
+          </Layout>
+        }
+      />
 
       <Route path="/tos"     element={<Layout><TermsOfService /></Layout>} />
       <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />

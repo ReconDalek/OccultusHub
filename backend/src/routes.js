@@ -1,4 +1,4 @@
-import { verifyToken, requireAdmin, requireLeadership, getMentoringAccess } from './middleware/auth.js';
+import { verifyToken, requireAdmin, requireLeadership, getMentoringAccess, computeEffectiveAccess } from './middleware/auth.js';
 import { errorResponse, jsonResponse } from './middleware/errorHandler.js';
 import * as authController from './controllers/authController.js';
 import * as adminController from './controllers/adminController.js';
@@ -47,6 +47,7 @@ import * as rankRewardsController from './controllers/rankRewardsController.js';
 import * as chainWatcherController from './controllers/chainWatcherController.js';
 import * as meritController from './controllers/meritController.js';
 import * as chainRaffleController from './controllers/chainRaffleController.js';
+import * as halloweenWrappedController from './controllers/halloweenWrappedController.js';
 import * as watcherXanaxController from './controllers/watcherXanaxController.js';
 
 export async function handleRequest(request, env, ctx) {
@@ -670,6 +671,20 @@ export async function handleRequest(request, env, ctx) {
     return pathname.endsWith('/data')
       ? factionActivityController.getActivityData(request, env)
       : factionActivityController.listActivityFactions(request, env);
+  }
+
+  // Halloween Wrapped — open to all faction members. isFactionMember isn't
+  // part of the JWT (only computed fresh at login), so re-derive it here
+  // from a live `users` row rather than trusting a stale/absent token claim.
+  if (pathname === '/api/halloween-wrapped' && method === 'GET') {
+    if (!user) return errorResponse('Authentication required', 401);
+    if (!user.isLeader && !user.isAdmin && !user.isOwner) {
+      const userRow = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(user.userId).first();
+      if (!userRow || !computeEffectiveAccess(userRow).isFactionMember) {
+        return errorResponse('Faction member access required', 403);
+      }
+    }
+    return halloweenWrappedController.getHalloweenWrapped(request, env, user);
   }
 
   // Leadership-gated endpoints
