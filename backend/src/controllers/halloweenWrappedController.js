@@ -18,6 +18,21 @@ const WINDOW_END_DT     = '2026-11-01 23:59:59';
 const WINDOW_START_TS   = Math.floor(Date.UTC(2026, 9, 25, 0, 0, 0) / 1000);
 const WINDOW_END_TS     = Math.floor(Date.UTC(2026, 10, 1, 23, 59, 59) / 1000);
 
+// Quirky flavour name for whichever tracked category a member's own best
+// family-wide showing falls into — see the title computation below.
+const TITLE_NAMES = {
+  chainHits: { name: 'The Chainbreaker', icon: '⛓️' },
+  ocSuccess: { name: 'The Criminal Mastermind', icon: '🔮' },
+  watchHours: { name: 'The Night Watch', icon: '👁️' },
+  gamesPlayed: { name: 'The Game Room Regular', icon: '🎲' },
+  attacksWon: { name: 'The Brawler', icon: '💥' },
+  xanaxTaken: { name: 'The Pill Popper', icon: '💊' },
+  moneyMugged: { name: 'The Midnight Mugger', icon: '💰' },
+  bountyMoney: { name: 'The Bounty Hunter', icon: '💵' },
+  crimes: { name: 'The Career Criminal', icon: '🔪' },
+  mailsSent: { name: 'The Town Crier', icon: '✉️' },
+};
+
 const CURATED_PERSONAL_FIELDS = [
   'atk_won', 'atk_lost', 'hosp', 'drug_xanax', 'drugs', 'crimes',
   'networth', 'bounties_coll', 'bounty_val_coll', 'money_mugged', 'mails_total', 'travel', 'active_time',
@@ -264,6 +279,57 @@ export async function getHalloweenWrapped(request, env, user) {
       }
     }
 
+    // Everyone's personal "title" is whichever tracked category they rank
+    // BEST in family-wide, among categories they actually have activity in
+    // — not necessarily #1 overall, just their own strongest showing
+    // relative to everyone else. "Best" is by PERCENTILE WITHIN THAT
+    // CATEGORY'S OWN PARTICIPANT POOL (rank ÷ participants), not raw rank
+    // number — a raw-rank comparison unfairly favours small pools (e.g.
+    // #5 of 43 chain-watch shifts beating #16 of 191 attackers on paper,
+    // despite the attacker having actually out-performed a much bigger
+    // field). War/forum categories are excluded outright — nobody has any
+    // activity there this period, so they'd never surface anyway, but
+    // skipping the sort avoids wasted work.
+    const TITLE_METRICS = METRICS
+      .filter(m => m.key !== 'warHits' && m.key !== 'forumPosts')
+      .concat([
+        { key: 'moneyMugged', label: 'Money Mugged', icon: '💰', get: r => r.personal?.money_mugged || 0 },
+        { key: 'bountyMoney', label: 'Bounty Money Earned', icon: '💵', get: r => r.personal?.bounty_val_coll || 0 },
+        { key: 'crimes', label: 'Crimes Committed', icon: '🔪', get: r => r.personal?.crimes || 0 },
+        { key: 'mailsSent', label: 'Mails Sent', icon: '✉️', get: r => r.personal?.mails_total || 0 },
+      ]);
+    const titlePools = new Map(TITLE_METRICS.map(m => {
+      const entries = rows.filter(([, r]) => m.get(r) > 0).sort((a, b) => m.get(b[1]) - m.get(a[1]));
+      return [m.key, { rankOf: new Map(entries.map(([tornId], i) => [tornId, i + 1])), poolSize: entries.length }];
+    }));
+    const titleCounts = new Map();
+    const bestKeyByUser = new Map();
+    for (const [tornId, row] of rows) {
+      let best = null;
+      for (const m of TITLE_METRICS) {
+        const pool = titlePools.get(m.key);
+        const rank = pool.rankOf.get(tornId);
+        if (!rank) continue;
+        const percentile = rank / pool.poolSize;
+        if (!best || percentile < best.percentile) best = { key: m.key, rank, poolSize: pool.poolSize, percentile, value: m.get(row) };
+      }
+      if (best) {
+        bestKeyByUser.set(tornId, best);
+        titleCounts.set(best.key, (titleCounts.get(best.key) || 0) + 1);
+      }
+    }
+    const myBest = bestKeyByUser.get(meTornId);
+    const myTitle = myBest ? {
+      key: myBest.key,
+      name: TITLE_NAMES[myBest.key]?.name || 'The Overachiever',
+      icon: TITLE_NAMES[myBest.key]?.icon || '🏆',
+      metricLabel: TITLE_METRICS.find(m => m.key === myBest.key)?.label,
+      value: myBest.value,
+      rank: myBest.rank,
+      total: myBest.poolSize,
+      othersWithTitle: Math.max(0, (titleCounts.get(myBest.key) || 1) - 1),
+    } : null;
+
     function sumFor(factionId) {
       const pool = factionId ? rows.filter(([, r]) => r.factionId === factionId) : rows;
       const totals = {
@@ -328,6 +394,7 @@ export async function getHalloweenWrapped(request, env, user) {
         armory: { deposits: myRow.armoryDeposits, quantity: myRow.armoryQty },
         bountiesPlaced: myRow.bountiesPlaced,
         ranks: myRanks,
+        title: myTitle,
       },
       myFaction: myFactionId ? factionTotals.find(f => f.factionId === myFactionId) : null,
       factions: factionTotals,

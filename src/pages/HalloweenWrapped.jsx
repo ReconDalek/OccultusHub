@@ -101,7 +101,6 @@ function buildSlides(data) {
         <StatGrid stats={[
           { icon: '🔗', label: 'Chain Hits', value: fmt(me.chain.hits) },
           { icon: '✨', label: 'Chain Respect', value: fmt(me.chain.respect) },
-          { icon: '⛓️', label: 'Chains Joined', value: fmt(me.chain.chains) },
           { icon: '⏱️', label: 'Active Time', value: fmtHours(me.personal.active_time) },
         ]} />
       ) : <EmptyNote>A quiet week — no chain hits recorded.</EmptyNote>}
@@ -207,6 +206,24 @@ function buildSlides(data) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 420, margin: '16px auto 0' }}>
         {Object.values(global.superlatives).filter(Boolean).map((s, i) => <Superlative key={i} {...s} />)}
       </div>
+    </Slide>
+  )
+
+  slides.push(
+    <Slide key="title" icon={me.title?.icon || '🎭'} title={me.title ? me.title.name : 'No Title Yet'}
+      subtitle={me.title ? `Your strongest showing this week: ${me.title.metricLabel}, family-wide.` : 'Not enough tracked activity this week to earn a title.'}>
+      {me.title && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+          <div className="font-cinzel" style={{ fontSize: 22, color: PURPLE, fontWeight: 700 }}>
+            #{me.title.rank} of {me.title.total}
+          </div>
+          <p style={{ color: 'var(--text-faint)', fontSize: 12.5, margin: 0 }}>
+            {me.title.othersWithTitle > 0
+              ? `${me.title.othersWithTitle} other member${me.title.othersWithTitle === 1 ? '' : 's'} also earned this title.`
+              : 'No one else earned this title this week.'}
+          </p>
+        </div>
+      )}
     </Slide>
   )
 
