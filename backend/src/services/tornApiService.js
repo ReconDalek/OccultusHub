@@ -21,14 +21,14 @@ const KEY_ERROR_PATTERNS = [
   'key is empty',                                  // code 2
   'incorrect key',                                  // code 3
   'key owner is in federal jail',                   // code 10
-  'key is temporarily disabled due to owner inactivity', // code 13
+  'key is temporary disabled due to owner inactivity', // code 13 — Torn's own wording is "temporary", not "temporarily"
   'daily read limit reached',                       // code 14 — per-key cap, another key isn't capped
   'access level of this key is not high enough',    // code 16
   'api key paused by owner',                        // code 18
   'too many requests',                              // per-key rate limit (200 response, not HTTP 429)
 ];
 
-function isKeyError(error) {
+export function isKeyError(error) {
   const msg = error.message.toLowerCase();
   return msg.startsWith('torn api error:') && KEY_ERROR_PATTERNS.some((p) => msg.includes(p));
 }
@@ -43,7 +43,7 @@ const PERSISTENT_KEY_ERROR_PATTERNS = [
   'key is empty',
   'incorrect key',
   'key owner is in federal jail',
-  'key is temporarily disabled due to owner inactivity',
+  'key is temporary disabled due to owner inactivity',
   'access level of this key is not high enough',
   'api key paused by owner',
 ];

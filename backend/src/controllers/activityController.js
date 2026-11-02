@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse } from '../middleware/errorHandler.js';
-import { getStaffApiKeyForFaction, getRandomUserApiKey, fetchWithRetry } from '../services/tornApiService.js';
+import { getStaffApiKeyForFaction, getRandomUserApiKey, fetchWithRetry, isKeyError } from '../services/tornApiService.js';
 import { logInfo, logWarn, logError } from '../services/logger.js';
 
 // ── Personal stats field definitions ─────────────────────────────────────────
@@ -196,31 +196,38 @@ export function extractStats(statsObj) {
   return out;
 }
 
-// Round-robin key pool with per-key 60s rate limiting (max 45 calls/key/min)
+// Round-robin key pool with per-key 60s rate limiting (max 45 calls/key/min).
+// getKey(excludeTornUserIds) respects fetchWithRetry's per-call tried-list —
+// without it, a retry after a bad-key error could round-robin straight back
+// onto the SAME key it just failed on.
 class KeyPool {
   constructor(keys) {
     this.keys = keys.map(k => ({ ...k, used: 0, windowStart: Date.now() }));
     this.idx = 0;
   }
-  async getKey() {
+  async getKey(excludeTornUserIds = []) {
+    if (!this.keys.length) return null;
     const now = Date.now();
     for (const k of this.keys) {
       if (now - k.windowStart >= 60000) { k.used = 0; k.windowStart = now; }
     }
-    for (let i = 0; i < this.keys.length; i++) {
-      const k = this.keys[(this.idx + i) % this.keys.length];
+    const exclude = new Set((excludeTornUserIds || []).filter(id => id != null));
+    let candidates = exclude.size ? this.keys.filter(k => !exclude.has(k.tornUserId)) : this.keys;
+    if (!candidates.length) candidates = this.keys; // exhausted exclusions — a repeat beats nothing
+    for (let i = 0; i < candidates.length; i++) {
+      const k = candidates[(this.idx + i) % candidates.length];
       if (k.used < 45) {
         k.used++;
-        this.idx = (this.idx + i + 1) % this.keys.length;
+        this.idx = (this.idx + i + 1) % candidates.length;
         return k;
       }
     }
     // All keys at limit — wait for earliest window to expire
-    const earliest = Math.min(...this.keys.map(k => k.windowStart));
+    const earliest = Math.min(...candidates.map(k => k.windowStart));
     const waitMs = 60000 - (Date.now() - earliest) + 500;
     console.log(`[personal stats] rate limit reached, waiting ${Math.round(waitMs / 1000)}s`);
     await new Promise(r => setTimeout(r, waitMs));
-    return this.getKey();
+    return this.getKey(excludeTornUserIds);
   }
 }
 
@@ -1338,7 +1345,7 @@ export async function generateEnergyWarningReport(request, env) {
 async function fetchAndStoreMemberStats(env, member, pool, date, now) {
   const data = await fetchWithRetry(
     `${TORN_API_BASE}/user/${member.torn_user_id}/personalstats?cat=all&comment=OccHub`,
-    () => pool.getKey(),
+    (tried) => pool.getKey(tried),
     env
   );
   await env.DB.prepare(`
@@ -1352,14 +1359,31 @@ async function fetchAndStoreMemberStats(env, member, pool, date, now) {
   return true;
 }
 
+// Fresh (not cached) list of every currently-usable stored key, re-queried
+// so it reflects anything disableApiKey has marked bad since the caller's
+// last read — used both at cron start and to rebuild the pool before pass 2.
+async function loadActiveApiKeys(env) {
+  const keyRows = await env.DB.prepare(
+    `SELECT api_key, torn_user_id, username FROM users WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)`
+  ).all();
+  return (keyRows.results || []).map(r => {
+    try { return { key: atob(r.api_key), tornUserId: r.torn_user_id, username: r.username }; }
+    catch { return null; }
+  }).filter(Boolean);
+}
+
 // ── Personal stats snapshot ───────────────────────────────────────────────────
 // Called by daily cron — snapshots personalstats for every active faction member.
 export async function takePersonalStatsSnapshot(env) {
   const today     = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  // What the PREVIOUS day's run should have already stamped — yesterday's
+  // own row is this run's own target and can't exist until the loop below
+  // writes it, so checking yesterday here would report a false "gap" every
+  // single day. Same reasoning takeEnergySnapshot's gap check already uses.
+  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
   const now       = Math.floor(Date.now() / 1000);
 
-  // Gap detection — warn if yesterday's snapshot has fewer members than today's active count
   const memberRows = await env.DB.prepare(
     `SELECT torn_user_id, username, faction_id FROM faction_members WHERE is_active = 1`
   ).all();
@@ -1370,56 +1394,50 @@ export async function takePersonalStatsSnapshot(env) {
     return;
   }
 
-  const { count: yesterdayCount } = await env.DB.prepare(
+  const { count: priorRunCount } = await env.DB.prepare(
     `SELECT COUNT(*) as count FROM personal_stats_snapshots WHERE snapshot_date = ?`
-  ).bind(yesterday).first();
-  if (yesterdayCount === 0) {
+  ).bind(twoDaysAgo).first();
+  if (priorRunCount === 0) {
     await logWarn(env, {
       category: 'cron', event: 'personal_stats_gap',
-      message: `Personal stats gap detected: no data for ${yesterday}. Trigger manual snapshot if needed.`,
-      meta: { missing_date: yesterday, active_members: members.length },
+      message: `Personal stats gap detected: no data for ${twoDaysAgo}. Yesterday's cron may have failed.`,
+      meta: { missing_date: twoDaysAgo, active_members: members.length },
     });
-  } else if (yesterdayCount < members.length * 0.8) {
+  } else if (priorRunCount < members.length * 0.8) {
     await logWarn(env, {
       category: 'cron', event: 'personal_stats_gap',
-      message: `Personal stats partial gap: only ${yesterdayCount}/${members.length} members captured for ${yesterday}.`,
-      meta: { missing_date: yesterday, captured: yesterdayCount, active_members: members.length },
+      message: `Personal stats partial gap: only ${priorRunCount}/${members.length} members captured for ${twoDaysAgo}.`,
+      meta: { missing_date: twoDaysAgo, captured: priorRunCount, active_members: members.length },
     });
   }
 
-  // Load all registered API keys
-  const keyRows = await env.DB.prepare(
-    `SELECT api_key, torn_user_id, username FROM users WHERE api_key IS NOT NULL AND (api_key_disabled IS NULL OR api_key_disabled = 0)`
-  ).all();
-  const keys = (keyRows.results || []).map(r => {
-    try { return { key: atob(r.api_key), tornUserId: r.torn_user_id, username: r.username }; }
-    catch { return null; }
-  }).filter(Boolean);
-
+  const keys = await loadActiveApiKeys(env);
   if (!keys.length) {
     await logError(env, { category: 'cron', event: 'personal_stats_no_keys', message: 'No valid API keys for personal stats snapshot' });
     return;
   }
 
-  const pool = new KeyPool(keys);
+  let pool = new KeyPool(keys);
 
   // ── Pass 1: main run ────────────────────────────────────────────────────────
   let success = 0;
-  const transientFailures = []; // members to retry in pass 2
-  const permanentErrors   = []; // Torn API errors / bad member IDs
+  const transientFailures = []; // members to retry in pass 2 — includes key
+                                 // errors that exhausted fetchWithRetry's own
+                                 // internal retries, since a rebuilt pool
+                                 // (fresh keys, any bad ones now excluded) and
+                                 // a cool-down pause give those a real second
+                                 // chance, unlike a genuinely bad request.
+  const permanentErrors   = []; // non-key Torn API application errors — no key or wait fixes these
 
   for (const member of members) {
     try {
       await fetchAndStoreMemberStats(env, member, pool, yesterday, now);
       success++;
     } catch (e) {
-      // fetchWithRetry already exhausted retries for transient errors.
-      // Classify: Torn API app errors are permanent; anything else may be transient.
-      const isAppError = e.message.startsWith('Torn API error:');
-      if (isAppError) {
-        permanentErrors.push({ id: member.torn_user_id, user: member.username, error: e.message });
-      } else {
+      if (isKeyError(e) || !e.message.startsWith('Torn API error:')) {
         transientFailures.push(member);
+      } else {
+        permanentErrors.push({ id: member.torn_user_id, user: member.username, error: e.message });
       }
     }
   }
@@ -1431,6 +1449,12 @@ export async function takePersonalStatsSnapshot(env) {
   if (transientFailures.length) {
     console.log(`[personal stats] pass 2: retrying ${transientFailures.length} transient failures after 15s`);
     await new Promise(r => setTimeout(r, 15000));
+
+    // Rebuild from a fresh DB read rather than reusing pass 1's pool — any
+    // key pass 1 found bad and disabled is excluded from the pool itself
+    // now, not just skipped per-call, so pass 2 can't keep re-drawing it.
+    const freshKeys = await loadActiveApiKeys(env);
+    if (freshKeys.length) pool = new KeyPool(freshKeys);
 
     for (const member of transientFailures) {
       try {
@@ -1695,13 +1719,15 @@ export async function getPersonalStatsGaps(request, env) {
         LIMIT 60
       ) dates
       WHERE fm.is_active = 1
+        -- A member's own tenure is the real lower bound — using "do they
+        -- have an earlier snapshot at all" instead would still flag dates
+        -- during a gap between leaving and rejoining as if they were
+        -- missing data we should have captured, and would never stop
+        -- flagging a brand-new member's entire pre-join history.
+        AND dates.snapshot_date >= date(fm.joined_at)
         AND NOT EXISTS (
           SELECT 1 FROM personal_stats_snapshots p
           WHERE p.torn_user_id = fm.torn_user_id AND p.snapshot_date = dates.snapshot_date
-        )
-        AND EXISTS (
-          SELECT 1 FROM personal_stats_snapshots p2
-          WHERE p2.torn_user_id = fm.torn_user_id AND p2.snapshot_date < dates.snapshot_date
         )
       ORDER BY dates.snapshot_date DESC, fm.username
     `).all();
@@ -1756,9 +1782,18 @@ export async function backfillPersonalStats(request, env, user) {
     }
 
     const member = await env.DB.prepare(
-      `SELECT torn_user_id, username, faction_id FROM faction_members WHERE torn_user_id = ?`
+      `SELECT torn_user_id, username, faction_id, joined_at FROM faction_members WHERE torn_user_id = ?`
     ).bind(torn_user_id).first();
     if (!member) return errorResponse(`Member ${torn_user_id} not found in faction_members`, 404);
+
+    // Backfilling a date before they joined isn't recoverable missing data —
+    // we were never tracking them yet, so there's no gap to fill, and a
+    // bulk "backfill every detected gap" sweep could otherwise keep
+    // re-attempting it indefinitely for every new recruit.
+    const joinedDate = member.joined_at?.slice(0, 10);
+    if (joinedDate && snapshot_date < joinedDate) {
+      return errorResponse(`${member.username} joined on ${joinedDate} — ${snapshot_date} is before their tenure, nothing to backfill`, 400);
+    }
 
     const keyProbe = await getRandomUserApiKey(env);
     if (!keyProbe?.key) return errorResponse('No API key available', 503);
