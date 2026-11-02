@@ -20,7 +20,7 @@ const WINDOW_END_TS     = Math.floor(Date.UTC(2026, 10, 1, 23, 59, 59) / 1000);
 
 const CURATED_PERSONAL_FIELDS = [
   'atk_won', 'atk_lost', 'hosp', 'drug_xanax', 'drugs', 'crimes',
-  'networth', 'bounties_coll', 'mails_total', 'travel', 'active_time',
+  'networth', 'bounties_coll', 'bounty_val_coll', 'money_mugged', 'mails_total', 'travel', 'active_time',
 ];
 
 function bump(map, tornId, patch) {

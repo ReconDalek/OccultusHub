@@ -17,6 +17,7 @@ function fmt(n) {
   return Math.round(n).toLocaleString()
 }
 const fmtHours = (seconds) => `${Math.round((seconds || 0) / 3600).toLocaleString()}h`
+const fmtMoney = (n) => `$${fmt(n)}`
 const fmtDate = (d) => d ? new Date(d + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
 
 function Stat({ icon, label, value }) {
@@ -108,6 +109,7 @@ function buildSlides(data) {
   )
 
   const hasEconomy = me.oc.joined > 0 || me.armory.deposits > 0 || me.bountiesPlaced > 0
+    || me.personal.money_mugged > 0 || me.personal.bounty_val_coll > 0
   slides.push(
     <Slide key="economy" icon="🔮" title="The Occult Economy">
       {hasEconomy ? (
@@ -116,6 +118,8 @@ function buildSlides(data) {
           { icon: '✅', label: 'OCs Successful', value: fmt(me.oc.successful) },
           { icon: '📦', label: 'Armory Deposits', value: fmt(me.armory.deposits) },
           { icon: '🎯', label: 'Bounties Placed', value: fmt(me.bountiesPlaced) },
+          { icon: '💰', label: 'Money Mugged', value: fmtMoney(me.personal.money_mugged) },
+          { icon: '🪙', label: 'Bounty Money Earned', value: fmtMoney(me.personal.bounty_val_coll) },
         ]} />
       ) : <EmptyNote>No organized crime, armory, or bounty activity this week.</EmptyNote>}
     </Slide>
