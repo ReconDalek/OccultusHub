@@ -1811,6 +1811,7 @@ export async function backfillPersonalStats(request, env, user) {
     // Fetch all chunks sequentially with a brief pause to avoid rate limits.
     // stat= response: { personalstats: [{name, value, timestamp}] }
     const flatByStatName = {};
+    const rawTimestampsByStatName = {}; // Torn's own per-entry timestamp — lets us check it actually honoured the requested historical timestamp, not just infer it from value comparisons
     const chunkErrors = [];
 
     for (let i = 0; i < allUrls.length; i++) {
@@ -1818,7 +1819,10 @@ export async function backfillPersonalStats(request, env, user) {
         const data = await fetchWithRetry(allUrls[i], (tried) => getRandomUserApiKey(env, tried), env);
         if (Array.isArray(data?.personalstats)) {
           for (const entry of data.personalstats) {
-            if (entry?.name) flatByStatName[entry.name] = entry.value ?? 0;
+            if (entry?.name) {
+              flatByStatName[entry.name] = entry.value ?? 0;
+              rawTimestampsByStatName[entry.name] = entry.timestamp ?? null;
+            }
           }
         }
       } catch (err) {
@@ -1861,6 +1865,27 @@ export async function backfillPersonalStats(request, env, user) {
         const confirmed = probeFields.filter(f => (fetchedStats[f] ?? 0) < (nextStats[f] ?? 0));
 
         console.log('[backfill] probe comparison', JSON.stringify({ torn_user_id, snapshot_date, next_snapshot_date: nextRow.snapshot_date, comparisons: probeComparisons, corrupted_fields: corrupted, confirmed_fields: confirmed }));
+        // Persisted (not just console.log) so this is inspectable after the
+        // fact without a live `wrangler tail` session — diagnosing why
+        // validation is failing needs to see this after the request, not
+        // just while watching it happen.
+        await logInfo(env, {
+          category: 'backfill', event: 'backfill_probe_comparison',
+          message: `Backfill probe for ${member.username} on ${snapshot_date}`,
+          torn_user_id, username: member.username, meta: {
+            snapshot_date, requested_timestamp: timestamp, next_snapshot_date: nextRow.snapshot_date,
+            comparisons: probeComparisons, corrupted_fields: corrupted, confirmed_fields: confirmed,
+            raw_entries: Object.keys(flatByStatName).length,
+            // Torn's own echoed timestamp for each probe stat — if these
+            // come back as "now" instead of the requested historical
+            // timestamp, that's definitive proof the lookup isn't actually
+            // resolving historically.
+            probe_raw_timestamps: Object.fromEntries(
+              ['attackswon', 'drugsused', 'timespenttraveling', 'criminaloffenses', 'attackdamage', 'rankedwarhits', 'activestreak', 'timeplayed']
+                .map(stat => [stat, rawTimestampsByStatName[stat] ?? null])
+            ),
+          },
+        });
 
         if (corrupted.length > 0) {
           return new Response(JSON.stringify({
