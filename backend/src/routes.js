@@ -667,7 +667,12 @@ export async function handleRequest(request, env, ctx) {
   // tracked list and the Wars view stay leadership-only (below).
   if ((pathname === '/api/leadership/activity/factions' || pathname === '/api/leadership/activity/data') && method === 'GET') {
     if (!user) return errorResponse('Authentication required', 401);
-    if (!user.isFactionMember && !(await requireLeadership(user, env))) return errorResponse('Faction member access required', 403);
+    if (!user.isLeader && !user.isAdmin && !user.isOwner) {
+      const userRow = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(user.userId).first();
+      if (!userRow || !computeEffectiveAccess(userRow).isFactionMember) {
+        return errorResponse('Faction member access required', 403);
+      }
+    }
     return pathname.endsWith('/data')
       ? factionActivityController.getActivityData(request, env)
       : factionActivityController.listActivityFactions(request, env);
