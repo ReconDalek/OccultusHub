@@ -1866,7 +1866,13 @@ export async function backfillPersonalStats(request, env, user) {
         // including one case with the IDENTICAL value returned for two
         // different requested dates, while every other probe field resolved
         // historically correctly (properly lower than the next snapshot).
-        const probeFields  = ['active_time', 'drugs', 'crimes', 'dmg_total', 'atk_won', 'war_hits', 'streak_current'];
+        // streak_current excluded too — it's Torn's CURRENT activity streak,
+        // which resets to 0 whenever a player misses a day. It can legitimately
+        // be HIGHER on an earlier date than a later one, which looked
+        // identical to real corruption and false-rejected a genuine backfill
+        // (Rensp, 2026-10-29: backfill=127, next=0 — not corrupt, they just
+        // broke their streak the next day).
+        const probeFields  = ['active_time', 'drugs', 'crimes', 'dmg_total', 'atk_won', 'war_hits'];
         const probeComparisons = {};
         for (const f of probeFields) probeComparisons[f] = { backfill: fetchedStats[f] ?? null, next: nextStats[f] ?? null };
         const corrupted = probeFields.filter(f => (fetchedStats[f] ?? 0) > (nextStats[f] ?? 0));
@@ -1903,13 +1909,15 @@ export async function backfillPersonalStats(request, env, user) {
           }), { status: 422, headers: { 'Content-Type': 'application/json' } });
         }
 
-        if (confirmed.length < 2) {
-          return new Response(JSON.stringify({
-            error: `Cannot confirm backfill is historical for ${snapshot_date} — only ${confirmed.length} probe field(s) lower than ${nextRow.snapshot_date} snapshot (${confirmed.join(', ') || 'none'}).`,
-            inflation_detected: true, confirmed_fields: confirmed,
-            debug: { timestamp, snapshot_date, urls: allUrls, comparisons: probeComparisons, next_snapshot_date: nextRow.snapshot_date },
-          }), { status: 422, headers: { 'Content-Type': 'application/json' } });
-        }
+        // Requiring 2+ fields to show measurable growth sounds like a
+        // reasonable extra safety margin, but it false-rejects a perfectly
+        // valid backfill whenever the member was simply quiet that specific
+        // day (or the gap is a single day right before the next real
+        // snapshot) — plenty of these probe fields legitimately show zero
+        // growth over a short, low-activity window. The corruption check
+        // above (fetched > next) is the actual signal that catches Torn
+        // returning current-not-historical data; this isn't needed on top
+        // of it.
       } catch (validationErr) {
         console.error('[backfill] validation error', validationErr?.message);
       }
