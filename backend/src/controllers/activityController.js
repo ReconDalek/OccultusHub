@@ -1976,7 +1976,7 @@ export async function getPersonalStatsSnapshotStatus(request, env) {
     // Snapshots are stamped with the date their data represents (yesterday,
     // relative to when the cron actually ran) — "today" can never have a row.
     const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const [overall, todayRow] = await Promise.all([
+    const [overall, todayRow, activeRow] = await Promise.all([
       env.DB.prepare(
         `SELECT COUNT(DISTINCT torn_user_id) AS members, COUNT(DISTINCT snapshot_date) AS days,
                 MIN(snapshot_date) AS earliest, MAX(snapshot_date) AS latest
@@ -1985,9 +1985,16 @@ export async function getPersonalStatsSnapshotStatus(request, env) {
       env.DB.prepare(
         `SELECT COUNT(*) AS count FROM personal_stats_snapshots WHERE snapshot_date = ?`
       ).bind(today).first(),
+      // "members" above is every distinct torn_user_id with ANY snapshot in
+      // the 6-month retention window — includes people who've since left
+      // the faction. That's the wrong denominator for "how far through
+      // today's run are we": a run only ever targets CURRENTLY active
+      // members, so a progress display needs this count instead.
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM faction_members WHERE is_active = 1`).first(),
     ]);
     return jsonResponse({
       ...(overall || { members: 0, days: 0, earliest: null, latest: null }),
+      active_members: activeRow?.count ?? 0,
       today: todayRow?.count ?? 0,
       today_date: today,
     });

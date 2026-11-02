@@ -700,7 +700,8 @@ export default function CacheTab() {
         <h3 style={{ color: '#f4f4f5', marginBottom: '16px' }}>Personal Stats Snapshots</h3>
         <div className="grid gap-4 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           {[
-            { label: 'Members Tracked', value: personalStatsStatus?.members ?? '—', color: '#f4f4f5' },
+            { label: 'Active Members', value: personalStatsStatus?.active_members ?? '—', color: '#4ade80' },
+            { label: 'Members Tracked (All-Time)', value: personalStatsStatus?.members ?? '—', color: '#f4f4f5' },
             { label: 'Days of History',  value: personalStatsStatus?.days    ?? '—', color: '#22d3ee' },
           ].map(({ label, value, color }) => (
             <div key={label} className="p-4 rounded-lg"
@@ -727,14 +728,14 @@ export default function CacheTab() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
               <span style={{ color: '#22d3ee', fontSize: '13px', fontWeight: 600 }}>Snapshot in progress…</span>
               <span style={{ color: '#22d3ee', fontSize: '13px' }}>
-                {personalStatsStatus.today} / {personalStatsStatus.members || '?'} members
+                {personalStatsStatus.today} / {personalStatsStatus.active_members || '?'} members
               </span>
             </div>
             <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
               <div style={{
                 height: '100%',
-                width: personalStatsStatus.members
-                  ? `${Math.min(100, Math.round((personalStatsStatus.today / personalStatsStatus.members) * 100))}%`
+                width: personalStatsStatus.active_members
+                  ? `${Math.min(100, Math.round((personalStatsStatus.today / personalStatsStatus.active_members) * 100))}%`
                   : '0%',
                 background: 'linear-gradient(90deg, #22d3ee, #6d28d9)',
                 borderRadius: '2px',
