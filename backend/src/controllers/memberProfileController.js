@@ -67,6 +67,7 @@ export async function getMemberProfile(request, env, user) {
       warsFoughtRow,
       chainsFoughtRow,
       mentorRow,
+      halloweenTitle,
     ] = await Promise.all([
       env.DB.prepare(
         `SELECT torn_user_id, username, faction_id, faction_position, level, is_active, joined_at, days_in_faction
@@ -170,6 +171,13 @@ export async function getMemberProfile(request, env, user) {
       env.DB.prepare(`SELECT COUNT(DISTINCT ranked_war_id) AS count FROM war_hits WHERE torn_user_id=?`).bind(tornUserId).first(),
       env.DB.prepare(`SELECT COUNT(DISTINCT torn_chain_id) AS count FROM chain_hits WHERE torn_user_id=?`).bind(tornUserId).first(),
       env.DB.prepare(`SELECT 1 FROM mentors WHERE torn_user_id=? LIMIT 1`).bind(tornUserId).first(),
+
+      // Seasonal — cached by the Halloween Wrapped endpoint, not computed
+      // here. Table may not exist outside the Halloween window; swallow
+      // the error so a profile view never breaks over a seasonal extra.
+      env.DB.prepare(
+        `SELECT title_name, title_icon, metric_label, rank, pool_size, others_with_title FROM halloween_titles WHERE torn_user_id=?`
+      ).bind(tornUserId).first().catch(() => null),
     ]);
 
     // This-month delta, not lifetime cumulative — same MIN/MAX-date pattern
@@ -262,6 +270,14 @@ export async function getMemberProfile(request, env, user) {
 
     return jsonResponse({
       identity: { ...(identity ?? { torn_user_id: tornUserId }), image_url: accountRow?.image_url ?? null },
+      halloween_title: halloweenTitle ? {
+        name: halloweenTitle.title_name,
+        icon: halloweenTitle.title_icon,
+        metric_label: halloweenTitle.metric_label,
+        rank: halloweenTitle.rank,
+        pool_size: halloweenTitle.pool_size,
+        others_with_title: halloweenTitle.others_with_title,
+      } : null,
       combat: {
         chain_hits: chainRow,
         war_hits: warRow,

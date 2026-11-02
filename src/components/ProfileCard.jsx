@@ -111,6 +111,14 @@ export default function ProfileCard({ tornUserId, onClose }) {
               <div style={{ fontWeight: '700', fontSize: '16px', color: '#f4f4f5' }}>
                 {data?.identity?.username || `#${tornUserId}`}
               </div>
+              {data?.halloween_title && (
+                <div
+                  title={`#${data.halloween_title.rank} of ${data.halloween_title.pool_size} in ${data.halloween_title.metric_label}, family-wide`}
+                  style={{ fontSize: '12px', color: '#d8b4fe', fontWeight: '600', margin: '1px 0' }}
+                >
+                  {data.halloween_title.icon} {data.halloween_title.name}
+                </div>
+              )}
               <div style={{ fontSize: '12px', color: "var(--text-secondary)" }}>
                 {data?.identity?.faction_position || '—'} · {FACTION_NAME[data?.identity?.faction_id] ?? '—'}
                 {data?.identity?.level ? ` · Lv.${data.identity.level}` : ''}

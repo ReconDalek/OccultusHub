@@ -318,17 +318,65 @@ export async function getHalloweenWrapped(request, env, user) {
         titleCounts.set(best.key, (titleCounts.get(best.key) || 0) + 1);
       }
     }
-    const myBest = bestKeyByUser.get(meTornId);
-    const myTitle = myBest ? {
-      key: myBest.key,
-      name: TITLE_NAMES[myBest.key]?.name || 'The Overachiever',
-      icon: TITLE_NAMES[myBest.key]?.icon || '🏆',
-      metricLabel: TITLE_METRICS.find(m => m.key === myBest.key)?.label,
-      value: myBest.value,
-      rank: myBest.rank,
-      total: myBest.poolSize,
-      othersWithTitle: Math.max(0, (titleCounts.get(myBest.key) || 1) - 1),
-    } : null;
+
+    // Guarantee every category has at least one titled member. A small-pool
+    // category can come up with zero natural winners even after the
+    // percentile fix above — its own #1 participant might still have an
+    // even better personal percentile somewhere else. That person DOES
+    // still hold the literal #1 spot in the empty category though, so hand
+    // them that title instead of their own best, rather than leaving the
+    // category with no one. Smallest pools first, since those are the ones
+    // most likely to come up empty; only a single pass — reassigning
+    // someone away from a healthy multi-winner category is very unlikely
+    // to empty it out in turn.
+    const metricsByKey = new Map(TITLE_METRICS.map(m => [m.key, m]));
+    for (const [key, pool] of [...titlePools.entries()].sort((a, b) => a[1].poolSize - b[1].poolSize)) {
+      if (pool.poolSize === 0 || titleCounts.get(key)) continue;
+      const championId = [...pool.rankOf.entries()].find(([, rank]) => rank === 1)?.[0];
+      if (!championId) continue;
+      const prev = bestKeyByUser.get(championId);
+      if (prev) titleCounts.set(prev.key, Math.max(0, (titleCounts.get(prev.key) || 1) - 1));
+      const value = metricsByKey.get(key).get(stats.get(championId));
+      bestKeyByUser.set(championId, { key, rank: 1, poolSize: pool.poolSize, percentile: 1 / pool.poolSize, value });
+      titleCounts.set(key, 1);
+    }
+
+    function buildTitle(best) {
+      if (!best) return null;
+      return {
+        key: best.key,
+        name: TITLE_NAMES[best.key]?.name || 'The Overachiever',
+        icon: TITLE_NAMES[best.key]?.icon || '🏆',
+        metricLabel: metricsByKey.get(best.key)?.label,
+        value: best.value,
+        rank: best.rank,
+        total: best.poolSize,
+        othersWithTitle: Math.max(0, (titleCounts.get(best.key) || 1) - 1),
+      };
+    }
+    const myTitle = buildTitle(bestKeyByUser.get(meTornId));
+
+    // Cache every member's title (not just the requesting one) so a
+    // profile card can show it with a cheap single-row lookup instead of
+    // recomputing the whole family's stats on every view. Side effect of
+    // whoever happens to load this page — no dedicated cron for a one-off
+    // seasonal feature.
+    if (bestKeyByUser.size) {
+      const upsertStmt = env.DB.prepare(`
+        INSERT INTO halloween_titles (torn_user_id, title_key, title_name, title_icon, metric_label, value, rank, pool_size, others_with_title, computed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(torn_user_id) DO UPDATE SET
+          title_key = excluded.title_key, title_name = excluded.title_name, title_icon = excluded.title_icon,
+          metric_label = excluded.metric_label, value = excluded.value, rank = excluded.rank,
+          pool_size = excluded.pool_size, others_with_title = excluded.others_with_title, computed_at = excluded.computed_at
+      `);
+      const batch = [];
+      for (const [tornId, best] of bestKeyByUser) {
+        const t = buildTitle(best);
+        batch.push(upsertStmt.bind(tornId, t.key, t.name, t.icon, t.metricLabel, t.value, t.rank, t.total, t.othersWithTitle));
+      }
+      try { await env.DB.batch(batch); } catch (err) { console.error('halloween_titles upsert failed:', err); }
+    }
 
     function sumFor(factionId) {
       const pool = factionId ? rows.filter(([, r]) => r.factionId === factionId) : rows;
