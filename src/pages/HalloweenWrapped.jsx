@@ -135,12 +135,12 @@ function buildSlides(data) {
   )
 
   slides.push(
-    <Slide key="social" icon="📜" title="Spirit & Community">
+    <Slide key="social" icon="🕯️" title="Spirit & Community">
       <StatGrid stats={[
-        { icon: '📜', label: 'Forum Posts', value: fmt(me.forumPosts) },
-        { icon: '🎲', label: 'Games Played', value: fmt(me.gamesPlayed) },
+        { icon: '✉️', label: 'Mails Sent', value: fmt(me.personal.mails_total) },
+        { icon: '🧭', label: 'Trips Taken', value: fmt(me.personal.travel) },
         { icon: '💊', label: 'Xanax Taken', value: fmt(me.personal.drug_xanax) },
-        { icon: '🍬', label: 'Items Used', value: fmt(me.personal.items_used) },
+        { icon: '🧪', label: 'Items Used', value: fmt(me.personal.items_used) },
       ]} />
     </Slide>
   )
