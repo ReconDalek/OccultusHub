@@ -184,6 +184,15 @@ function getPath(obj, pathArr) {
   return pathArr.reduce((curr, key) => curr?.[key], obj) ?? 0;
 }
 
+function setPath(obj, pathArr, value) {
+  let cur = obj;
+  for (let i = 0; i < pathArr.length - 1; i++) {
+    cur[pathArr[i]] = cur[pathArr[i]] ?? {};
+    cur = cur[pathArr[i]];
+  }
+  cur[pathArr[pathArr.length - 1]] = value;
+}
+
 export function extractStats(statsObj) {
   const out = {};
   // Flat backfill format: keys are our internal field keys directly
@@ -1838,10 +1847,22 @@ export async function backfillPersonalStats(request, env, user) {
       );
     }
 
-    // Map stat names back to our internal field keys.
-    const flatResult = { __backfill: true };
+    // Build the SAME nested shape a normal cat=all daily snapshot produces
+    // (via each field's own `path`), not a flat {key: value} bag — every
+    // other feature that reads personal_stats_snapshots.stats (chain/war OD
+    // and energy deltas, Chain Watch, etc.) does so with raw SQL
+    // json_extract(stats, '$.nested.path') against that shape, bypassing
+    // extractStats()'s format-aware handling entirely. A flat row (the old
+    // `__backfill: true` marker format) makes every one of those nested
+    // lookups silently resolve to NULL, which a delta calc then treats as a
+    // baseline of 0 — turning a member's full lifetime stat value into a
+    // phantom "gain" for whatever window happens to start on that date. Also
+    // fixed the specific collision this caused: the flat key for "Total Drugs
+    // Taken" is literally `drugs`, landing on the exact path where the nested
+    // `drugs` OBJECT (drugs.overdoses, drugs.xanax, ...) normally lives.
+    const nestedResult = {};
     for (const f of PERSONAL_STAT_FIELDS) {
-      flatResult[f.key] = flatByStatName[f.stat] ?? 0;
+      setPath(nestedResult, f.path, flatByStatName[f.stat] ?? 0);
     }
 
     // Validate against the NEXT snapshot after the backfill date.
@@ -1856,7 +1877,7 @@ export async function backfillPersonalStats(request, env, user) {
 
     if (nextRow) {
       try {
-        const fetchedStats = extractStats(flatResult);
+        const fetchedStats = extractStats(nestedResult);
         const nextStats    = extractStats(JSON.parse(nextRow.stats));
         // travel_time (Torn's "timespenttraveling") excluded — confirmed via
         // backfill_probe_comparison logs to be inconsistent between the two
@@ -1931,7 +1952,7 @@ export async function backfillPersonalStats(request, env, user) {
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(torn_user_id, snapshot_date) DO UPDATE SET
         stats = excluded.stats, username = excluded.username, faction_id = excluded.faction_id
-    `).bind(torn_user_id, member.username, member.faction_id, snapshot_date, JSON.stringify(flatResult), now).run();
+    `).bind(torn_user_id, member.username, member.faction_id, snapshot_date, JSON.stringify(nestedResult), now).run();
 
     await logInfo(env, {
       category: 'admin', event: 'personal_stats_backfill',
