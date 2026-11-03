@@ -254,7 +254,6 @@ function makeWildFamiliar(level) {
 // ── Happiness decay ───────────────────────────────────────────────────────────
 
 const HAPPINESS_DECAY_PER_DAY = 5;
-const REVIVAL_COST = 500;
 
 async function applyHappinessDecay(db, familiar) {
   const now  = Date.now();
@@ -264,20 +263,15 @@ async function applyHappinessDecay(db, familiar) {
 
   const decay        = daysPassed * HAPPINESS_DECAY_PER_DAY;
   const newHappiness = Math.max(0, familiar.happiness - decay);
-  const goingDormant = newHappiness === 0 && !familiar.dormant;
 
   await db.prepare(`
     UPDATE familiars
     SET happiness = ?,
-        last_happiness_decay_at = CURRENT_TIMESTAMP,
-        dormant = CASE WHEN ? THEN 1 ELSE dormant END,
-        dormant_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE dormant_at END
+        last_happiness_decay_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).bind(newHappiness, goingDormant ? 1 : 0, goingDormant ? 1 : 0, familiar.id).run();
+  `).bind(newHappiness, familiar.id).run();
 
-  return { ...familiar, happiness: newHappiness,
-    dormant: goingDormant ? 1 : familiar.dormant,
-    dormant_at: goingDormant ? new Date().toISOString() : familiar.dormant_at };
+  return { ...familiar, happiness: newHappiness };
 }
 
 // ── Login event rolling ──────────────────────────────────────────────────────
@@ -403,10 +397,7 @@ export async function getFamiliar(request, env, user) {
   // Reload after potential decay mutation
   familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
 
-  // Roll login event — skip if dormant
-  if (!familiar.dormant) {
-    await rollLoginEvent(env.DB, familiar);
-  }
+  await rollLoginEvent(env.DB, familiar);
 
   // Reload familiar after potential mutations
   familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
@@ -462,7 +453,6 @@ export async function trainFamiliar(request, env, user) {
   const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
   if (!familiar) return errorResponse('No familiar bound', 404);
 
-  if (familiar.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
   const last = parseTS(familiar.last_trained_at);
   if (last && Date.now() - last < COOLDOWNS.train) {
@@ -509,7 +499,6 @@ export async function huntFamiliar(request, env, user) {
   const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
   if (!familiar) return errorResponse('No familiar bound', 404);
 
-  if (familiar.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
   const cd = familiar.omen_active ? COOLDOWNS.hunt / 2 : COOLDOWNS.hunt;
   const last = parseTS(familiar.last_hunted_at);
@@ -577,7 +566,6 @@ export async function restFamiliar(request, env, user) {
   const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
   if (!familiar) return errorResponse('No familiar bound', 404);
 
-  if (familiar.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
   const last = parseTS(familiar.last_rested_at);
   if (last && Date.now() - last < COOLDOWNS.rest) {
@@ -620,7 +608,6 @@ export async function duelFamiliar(request, env, user) {
 
   mine.username   = mineUser?.username ?? '';
   theirs.username = theirUser?.username ?? '';
-  if (mine.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
 
   const lastBattle = await env.DB.prepare(
     `SELECT battled_at FROM familiar_battles WHERE challenger_id = ? ORDER BY battled_at DESC LIMIT 1`
@@ -698,7 +685,6 @@ export async function allocateStat(request, env, user) {
 
   const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
   if (!familiar) return errorResponse('No familiar bound', 404);
-  if (familiar.dormant) return errorResponse('Your familiar is dormant — perform the revival rite first', 403);
   if (familiar.stat_points < 1) return errorResponse('No stat points available', 400);
 
   const col = `stat_${stat}`;
@@ -711,28 +697,6 @@ export async function allocateStat(request, env, user) {
 
   const updated = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
   return jsonResponse({ familiar: updated });
-}
-
-export async function reviveFamiliar(request, env, user) {
-  if (!user) return errorResponse('Unauthorised', 401);
-
-  const familiar = await env.DB.prepare(`SELECT * FROM familiars WHERE user_id = ?`).bind(user.userId).first();
-  if (!familiar)         return errorResponse('No familiar bound', 404);
-  if (!familiar.dormant) return errorResponse('Your familiar is not dormant', 400);
-  if (familiar.shards < REVIVAL_COST)
-    return errorResponse(`Insufficient shards — the revival rite requires ${REVIVAL_COST} shards`, 400);
-
-  const newHp = Math.ceil(familiar.max_hp * 0.5);
-
-  await env.DB.prepare(`
-    UPDATE familiars
-    SET dormant = 0, dormant_at = NULL, happiness = 40, hp = ?,
-        shards = shards - ?, last_happiness_decay_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).bind(newHp, REVIVAL_COST, familiar.id).run();
-
-  const updated = await env.DB.prepare(`SELECT * FROM familiars WHERE id = ?`).bind(familiar.id).first();
-  return jsonResponse({ familiar: updated, revived: true });
 }
 
 export async function renameFamiliar(request, env, user) {

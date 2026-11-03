@@ -1406,10 +1406,6 @@ export async function handleRequest(request, env, ctx) {
     if (!user) return errorResponse('Authentication required', 401);
     return bindingController.getRecentBattles(request, env, user);
   }
-  if (pathname === '/api/binding/revive' && method === 'POST') {
-    if (!user) return errorResponse('Authentication required', 401);
-    return bindingController.reviveFamiliar(request, env, user);
-  }
   if (pathname === '/api/binding/rename' && method === 'POST') {
     if (!user) return errorResponse('Authentication required', 401);
     return bindingController.renameFamiliar(request, env, user);
