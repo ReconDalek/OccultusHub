@@ -575,6 +575,14 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                     )}
                   </div>
                 )}
+                {m.global_exclusion && (
+                  <div style={{
+                    color: '#38bdf8', fontSize: '11px', width: 'max-content', marginTop: '3px',
+                    padding: '1px 8px', borderRadius: '5px', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)',
+                  }}>
+                    📅 Excluded {fmtShortDate(m.global_exclusion.from)}{m.global_exclusion.to !== m.global_exclusion.from ? `–${fmtShortDate(m.global_exclusion.to)}` : ''} ({m.global_exclusion.excluded_days}d) from this report
+                  </div>
+                )}
               </div>
               {showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               {showAttacks && <span style={{ color: '#f87171', fontSize: '12px' }}>{m.attack_hits > 0 ? `+${fmt(m.attack_energy)}` : '—'}</span>}
@@ -649,6 +657,8 @@ function EnergyGenerator({ onWarningSaved }) {
   const [onlyNewMembers, setOnlyNewMembers]   = useState(false)
   const [excludeLowLevel, setExcludeLowLevel] = useState(true)
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
+  const [excludeFrom, setExcludeFrom] = useState('')
+  const [excludeTo, setExcludeTo]     = useState('')
 
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(false)
@@ -684,6 +694,12 @@ function EnergyGenerator({ onWarningSaved }) {
       // side below, so the fetch itself always has to include them.
       includeNewMembers: (includeNewMembers || onlyNewMembers) ? '1' : '0',
     })
+    // Optional date(s) to exclude from every member's total/day count this
+    // run — both ends inclusive, so a single day is excludeFrom === excludeTo.
+    if (excludeFrom && excludeTo) {
+      params.set('excludeFrom', excludeFrom)
+      params.set('excludeTo', excludeTo)
+    }
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/warnings/generate/energy?${params}`, { headers: { Authorization: token() } })
         .then(res => res.json().then(json => ({ res, json }))),
@@ -701,7 +717,7 @@ function EnergyGenerator({ onWarningSaved }) {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers])
+  }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers, excludeFrom, excludeTo])
 
   function handleToggleBoot(m) {
     const year  = selectedMonth.year
@@ -906,7 +922,7 @@ function EnergyGenerator({ onWarningSaved }) {
       </div>
 
       {/* Per-faction targets */}
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
         {selectedFactions.map(id => (
           <div key={id}>
             <label style={labelStyle}>{FACTION_LABEL[id]} Target Avg/Day</label>
@@ -919,6 +935,31 @@ function EnergyGenerator({ onWarningSaved }) {
             />
           </div>
         ))}
+      </div>
+
+      {/* Exclude dates — removed from every member's total/day count before
+          the average is computed, for this report run only (not stored). */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={labelStyle}>Exclude Dates (optional)</label>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <input type="date" value={excludeFrom} min={`${selectedMonth.year}-${String(selectedMonth.month + 1).padStart(2, '0')}-01`}
+            max={`${selectedMonth.year}-${String(selectedMonth.month + 1).padStart(2, '0')}-31`}
+            onChange={e => setExcludeFrom(e.target.value)} style={{ ...inputStyle, width: '150px' }} />
+          <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>to</span>
+          <input type="date" value={excludeTo} min={excludeFrom || undefined}
+            max={`${selectedMonth.year}-${String(selectedMonth.month + 1).padStart(2, '0')}-31`}
+            onChange={e => setExcludeTo(e.target.value)} style={{ ...inputStyle, width: '150px' }} />
+          {(excludeFrom || excludeTo) && (
+            <button onClick={() => { setExcludeFrom(''); setExcludeTo('') }}
+              title="Clear"
+              style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '12px' }}>
+              ✕
+            </button>
+          )}
+        </div>
+        <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '4px 0 0', maxWidth: '520px' }}>
+          Removed from every member's energy/attacks and day count before averaging — e.g. a day Torn's tracking had a known gap. A single day: set both to the same date.
+        </p>
       </div>
 
       {error && (
@@ -948,6 +989,9 @@ function EnergyGenerator({ onWarningSaved }) {
               <>
                 <p style={{ color: 'var(--text-faint)', fontSize: '12px', marginBottom: '10px' }}>
                   {periodLabel} · {visibleMembers.length} member{visibleMembers.length !== 1 ? 's' : ''} · {data.days_in_month} days in month
+                  {data.exclude_from && (
+                    <span style={{ color: '#38bdf8' }}> · excluding {fmtShortDate(data.exclude_from)}{data.exclude_to !== data.exclude_from ? `–${fmtShortDate(data.exclude_to)}` : ''}</span>
+                  )}
                 </p>
                 <EnergyReportTable
                   data={{ ...data, members: visibleMembers }}
@@ -2031,6 +2075,8 @@ function OCGenerator({ onWarningSaved }) {
   const [graceDays, setGraceDays]               = useState(2)
   const [minDays, setMinDays]                   = useState('')
   const [minInstances, setMinInstances]         = useState('')
+  const [excludeFrom, setExcludeFrom] = useState('')
+  const [excludeTo, setExcludeTo]     = useState('')
 
   const [rows, setRows]       = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2063,6 +2109,12 @@ function OCGenerator({ onWarningSaved }) {
     Promise.all([
       Promise.all(selectedFactions.map(fid => {
         const params = new URLSearchParams({ faction_id: String(fid), month: monthParam, grace_days: String(graceDays) })
+        // Optional date(s) to exclude from every member's instance/day tally
+        // this run — both ends inclusive, so a single day is excludeFrom === excludeTo.
+        if (excludeFrom && excludeTo) {
+          params.set('exclude_from', excludeFrom)
+          params.set('exclude_to', excludeTo)
+        }
         return fetch(`${API_BASE_URL}/api/leadership/oc/inactivity?${params}`, { headers: { Authorization: token() } })
           .then(res => res.json().then(json => {
             if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
@@ -2082,7 +2134,7 @@ function OCGenerator({ onWarningSaved }) {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [year, month, selectedFactions, graceDays])
+  }, [year, month, selectedFactions, graceDays, excludeFrom, excludeTo])
 
   function handleToggleExclude(m) {
     const existingId = excludedMap.get(m.torn_user_id)
@@ -2173,6 +2225,20 @@ function OCGenerator({ onWarningSaved }) {
           <input type="number" min="1" placeholder="Any" value={minInstances} onChange={e => setMinInstances(e.target.value)}
             style={{ ...inputStyle, maxWidth: '110px' }} />
         </div>
+        <div>
+          <label style={labelStyle}>Exclude Dates (optional)</label>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="date" value={excludeFrom} onChange={e => setExcludeFrom(e.target.value)} style={{ ...inputStyle, width: '150px' }} />
+            <span style={{ color: 'var(--text-faint)', fontSize: '12px' }}>to</span>
+            <input type="date" value={excludeTo} min={excludeFrom || undefined} onChange={e => setExcludeTo(e.target.value)} style={{ ...inputStyle, width: '150px' }} />
+            {(excludeFrom || excludeTo) && (
+              <button onClick={() => { setExcludeFrom(''); setExcludeTo('') }} title="Clear"
+                style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', background: 'transparent', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '12px' }}>
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
         <button
           onClick={generate}
           disabled={loading || selectedFactions.length === 0}
@@ -2202,6 +2268,11 @@ function OCGenerator({ onWarningSaved }) {
       )}
       {rows && rows.length > 0 && visibleRows.length === 0 && (
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No one meets the filter.</p>
+      )}
+      {visibleRows && visibleRows.length > 0 && excludeFrom && excludeTo && (
+        <p style={{ color: '#38bdf8', fontSize: '12px', marginBottom: '10px' }}>
+          📅 Excluding {fmtOcDay(excludeFrom)}{excludeTo !== excludeFrom ? `–${fmtOcDay(excludeTo)}` : ''} from every member's tally
+        </p>
       )}
 
       {visibleRows && visibleRows.map(m => {

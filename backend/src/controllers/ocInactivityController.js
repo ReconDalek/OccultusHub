@@ -175,8 +175,16 @@ async function computeInstances(env, graceDays, nowMs) {
 }
 
 // An instance's days and dates inside [fromMs, endExclMs), or null if none.
-function clipInstance(inst, fromMs, endExclMs) {
-  const days = inst.detections.filter(t => t >= fromMs && t < endExclMs).length;
+// excludeFromMs/excludeToExclMs (both optional, together) drop any detection
+// that also falls inside that range — a leader-entered date/range removed
+// from every member's instance+day tally for this report, e.g. a day our OC
+// tracking had a known gap.
+function clipInstance(inst, fromMs, endExclMs, excludeFromMs, excludeToExclMs) {
+  const days = inst.detections.filter(t => {
+    if (t < fromMs || t >= endExclMs) return false;
+    if (excludeFromMs != null && t >= excludeFromMs && t < excludeToExclMs) return false;
+    return true;
+  }).length;
   if (!days) return null;
   return {
     faction_id: inst.faction_id,
@@ -243,6 +251,21 @@ export async function getInactivity(request, env, user) {
     const graceDays = parseGraceDays(url);
     if (graceDays === null) return errorResponse('grace_days must be 0–3', 400);
 
+    // Optional leader-entered date range, excluded from EVERY member's
+    // instance+day tally for this report — e.g. a day our OC tracking had a
+    // known gap, so nobody is penalized for it. Both ends inclusive.
+    const excludeFromRaw = url.searchParams.get('exclude_from');
+    const excludeToRaw   = url.searchParams.get('exclude_to');
+    let excludeFromMs = null, excludeToExclMs = null, excludeRange = null;
+    if (excludeFromRaw || excludeToRaw) {
+      if (!excludeFromRaw || !excludeToRaw) return errorResponse('exclude_from and exclude_to must be provided together', 400);
+      if (!isDate(excludeFromRaw) || !isDate(excludeToRaw)) return errorResponse('exclude_from/exclude_to must be YYYY-MM-DD', 400);
+      if (excludeFromRaw > excludeToRaw) return errorResponse('exclude_from must be on or before exclude_to', 400);
+      excludeFromMs = utcDayMs(excludeFromRaw);
+      excludeToExclMs = utcDayMs(excludeToRaw) + DAY_MS;
+      excludeRange = { from: excludeFromRaw, to: excludeToRaw };
+    }
+
     const nowMs = Date.now();
     const { instances, membershipStart } = await computeInstances(env, graceDays, nowMs);
     const period = resolvePeriod(url, nowMs, membershipStart);
@@ -257,7 +280,7 @@ export async function getInactivity(request, env, user) {
     if (!outsideTracking) {
       for (const inst of instances) {
         if (inst.faction_id !== factionId) continue;
-        const clipped = clipInstance(inst, fromMs, endExclMs);
+        const clipped = clipInstance(inst, fromMs, endExclMs, excludeFromMs, excludeToExclMs);
         if (!clipped) continue;
         let entry = memberMap.get(inst.torn_user_id);
         if (!entry) {
@@ -307,6 +330,8 @@ export async function getInactivity(request, env, user) {
       requested_to: period.requested.to,
       month: period.wholeMonth,
       grace_days: graceDays,
+      exclude_from: excludeRange?.from ?? null,
+      exclude_to: excludeRange?.to ?? null,
       membership_start: membershipStart,
       months,
       totals,

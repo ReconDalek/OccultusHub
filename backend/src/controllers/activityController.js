@@ -795,6 +795,25 @@ export async function generateEnergyWarningReport(request, env) {
     const includeAttacks    = url.searchParams.get('includeAttacks') !== '0';
     const includeNewMembers = url.searchParams.get('includeNewMembers') === '1';
 
+    // Optional leader-entered date range, excluded from EVERY member's total
+    // and day count for this report run — e.g. a day Torn's tracking had a
+    // known gap, so nobody is penalized for it. Both ends inclusive (from
+    // start of `excludeFrom` through end of `excludeTo`), same date-range
+    // convention as member_exemptions. Distinct from a per-member Exemption:
+    // this applies to the whole report, not one member.
+    const excludeFromRaw = url.searchParams.get('excludeFrom');
+    const excludeToRaw   = url.searchParams.get('excludeTo');
+    let excludeFrom = null, excludeTo = null;
+    if (excludeFromRaw || excludeToRaw) {
+      if (!excludeFromRaw || !excludeToRaw) return errorResponse('excludeFrom and excludeTo must be provided together', 400);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(excludeFromRaw) || !/^\d{4}-\d{2}-\d{2}$/.test(excludeToRaw)) {
+        return errorResponse('excludeFrom/excludeTo must be YYYY-MM-DD', 400);
+      }
+      if (excludeFromRaw > excludeToRaw) return errorResponse('excludeFrom must be on or before excludeTo', 400);
+      excludeFrom = excludeFromRaw;
+      excludeTo   = excludeToRaw;
+    }
+
     const monthStart  = `${year}-${String(month).padStart(2, '0')}-01`;
     const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const nowDate = new Date();
@@ -1172,8 +1191,8 @@ export async function generateEnergyWarningReport(request, env) {
       const isBrandNewMember = startedMidMonth && !hasPriorHistory.has(r.torn_user_id);
       if (isBrandNewMember && !includeNewMembers) continue;
 
-      const gymEnergy    = r.gym_energy || 0;
-      const attackHits   = attacks[r.torn_user_id] || 0;
+      let gymEnergy    = r.gym_energy || 0;
+      let attackHits   = attacks[r.torn_user_id] || 0;
 
       // Tracked-days uses startedMidMonth (not isBrandNewMember) — a
       // transfer's average should still be scoped to their actual days in
@@ -1208,6 +1227,45 @@ export async function generateEnergyWarningReport(request, env) {
         ? (registryByUser[r.torn_user_id] || []).filter(e => e.date >= monthStart && e.date <= monthEnd && !covered.has(e.date)).length
         : 0;
 
+      // Clip any date-range removal to this member's own tracked window
+      // before computing the overlap — a mid-month joiner's range from
+      // earlier in the month (before they even joined) has no days to
+      // actually remove. Shared by the global exclude-dates filter below and
+      // the per-member Exemption further down.
+      const trackedStart = (!covered && startedMidMonth && r.start_date) ? r.start_date : monthStart;
+
+      // Global exclude-dates filter: a leader-entered range (same filter bar
+      // as the per-faction Target inputs) removed from EVERY member's total
+      // and day count for this report run — e.g. a day Torn's tracking had a
+      // known gap, so nobody is penalized for it. Applied before the
+      // per-member Exemption below, so that exemption's own raw-vs-adjusted
+      // comparison is against this report's actual baseline, not the
+      // unadjusted whole month.
+      let globalExclusion = null;
+      if (excludeFrom && excludeTo) {
+        const gOverlapStart = excludeFrom > trackedStart ? excludeFrom : trackedStart;
+        const gOverlapEnd   = excludeTo < monthEnd ? excludeTo : monthEnd;
+        if (gOverlapStart <= gOverlapEnd) {
+          let gExcludedDays = 0;
+          if (covered) {
+            for (const d of covered) if (d >= gOverlapStart && d <= gOverlapEnd) gExcludedDays++;
+          } else {
+            gExcludedDays = daysBetweenInclusive(gOverlapStart, gOverlapEnd);
+          }
+          if (gExcludedDays > 0) {
+            const gEnergyRemoved = await energyGrowthInRange(env, r.torn_user_id, FACTION_IDS, gOverlapStart, gOverlapEnd);
+            const gHitsRemoved   = includeAttacks ? await attackHitsInRange(env, r.torn_user_id, FACTION_IDS, gOverlapStart, gOverlapEnd) : 0;
+            gymEnergy   = Math.max(0, gymEnergy - gEnergyRemoved);
+            attackHits  = Math.max(0, attackHits - gHitsRemoved);
+            trackedDays = Math.max(1, trackedDays - gExcludedDays);
+            globalExclusion = {
+              from: gOverlapStart, to: gOverlapEnd, excluded_days: gExcludedDays,
+              energy_removed: gEnergyRemoved, attack_hits_removed: gHitsRemoved,
+            };
+          }
+        }
+      }
+
       // Exemptions: an "entire month" exemption (Exemptions tab's Entire
       // Month mode sets date_start/date_end to exactly the calendar month's
       // bounds — a Date Range exemption spanning the whole month qualifies
@@ -1224,11 +1282,6 @@ export async function generateEnergyWarningReport(request, env) {
       if (exemption) {
         const isFullMonth = exemption.date_start <= monthStart && exemption.date_end >= monthEnd;
         if (!isFullMonth) {
-          // Clip the exemption to this member's own tracked window before
-          // computing the overlap — a mid-month joiner's exemption from
-          // earlier in the month (before they even joined) has no days to
-          // actually remove.
-          const trackedStart = (!covered && startedMidMonth && r.start_date) ? r.start_date : monthStart;
           const overlapStart = exemption.date_start > trackedStart ? exemption.date_start : trackedStart;
           const overlapEnd   = exemption.date_end < monthEnd ? exemption.date_end : monthEnd;
 
@@ -1324,6 +1377,7 @@ export async function generateEnergyWarningReport(request, env) {
         overdoses:        overdoses[r.torn_user_id] ?? 0,
         movements:        buildMovements(r.torn_user_id, r.current_faction_id),
         exemption:        exemptionForMember,
+        global_exclusion: globalExclusion,
         already_warned:   warnedSet.has(r.torn_user_id),
         // Already at/over the 3-in-6-months kick threshold from PRIOR
         // warnings alone — before whatever this report is about to add.
@@ -1341,6 +1395,8 @@ export async function generateEnergyWarningReport(request, env) {
       factions,
       include_attacks: includeAttacks,
       include_new_members: includeNewMembers,
+      exclude_from: excludeFrom,
+      exclude_to: excludeTo,
       members,
     });
   } catch (err) {
