@@ -562,7 +562,7 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                   <div
                     title={m.exemption.reason}
                     style={{
-                      color: m.exemption.raw_avg_higher ? '#60a5fa' : '#f59e0b', fontSize: '11px', width: 'max-content', maxWidth: `calc(100% + ${showAttacks ? 500 : 420}px)`, position: 'relative', marginTop: '3px',
+                      color: m.exemption.raw_avg_higher ? '#60a5fa' : '#f59e0b', fontSize: '11px', marginTop: '4px',
                       padding: '1px 8px', borderRadius: '5px',
                       background: m.exemption.raw_avg_higher ? 'rgba(96,165,250,0.08)' : 'transparent',
                       border: m.exemption.raw_avg_higher ? '1px solid rgba(96,165,250,0.25)' : 'none',
