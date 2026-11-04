@@ -575,14 +575,6 @@ function EnergyReportTable({ data, targets, reportedIds, excludedMap, bootedMap,
                     )}
                   </div>
                 )}
-                {m.global_exclusion && (
-                  <div style={{
-                    color: '#38bdf8', fontSize: '11px', width: 'max-content', marginTop: '3px',
-                    padding: '1px 8px', borderRadius: '5px', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)',
-                  }}>
-                    📅 Excluded {fmtShortDate(m.global_exclusion.from)}{m.global_exclusion.to !== m.global_exclusion.from ? `–${fmtShortDate(m.global_exclusion.to)}` : ''} ({m.global_exclusion.excluded_days}d) from this report
-                  </div>
-                )}
               </div>
               {showAttacks && <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{fmt(m.gym_energy)}</span>}
               {showAttacks && <span style={{ color: '#f87171', fontSize: '12px' }}>{m.attack_hits > 0 ? `+${fmt(m.attack_energy)}` : '—'}</span>}
@@ -957,9 +949,6 @@ function EnergyGenerator({ onWarningSaved }) {
             </button>
           )}
         </div>
-        <p style={{ color: 'var(--text-faint)', fontSize: '11px', margin: '4px 0 0', maxWidth: '520px' }}>
-          Removed from every member's energy/attacks and day count before averaging — e.g. a day Torn's tracking had a known gap. A single day: set both to the same date.
-        </p>
       </div>
 
       {error && (
