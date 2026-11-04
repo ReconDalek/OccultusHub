@@ -651,6 +651,7 @@ function EnergyGenerator({ onWarningSaved }) {
   const [targets, setTargets] = useState({ 33097: '', 9728: '', 9171: '' })
   const [excludeFrom, setExcludeFrom] = useState('')
   const [excludeTo, setExcludeTo]     = useState('')
+  const [excludeAttacksToo, setExcludeAttacksToo] = useState(false)
 
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(false)
@@ -691,6 +692,7 @@ function EnergyGenerator({ onWarningSaved }) {
     if (excludeFrom && excludeTo) {
       params.set('excludeFrom', excludeFrom)
       params.set('excludeTo', excludeTo)
+      if (excludeAttacksToo) params.set('excludeAttacksToo', '1')
     }
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/warnings/generate/energy?${params}`, { headers: { Authorization: token() } })
@@ -709,7 +711,7 @@ function EnergyGenerator({ onWarningSaved }) {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers, excludeFrom, excludeTo])
+  }, [selectedMonth, selectedFactions, includeAttacks, includeNewMembers, onlyNewMembers, excludeFrom, excludeTo, excludeAttacksToo])
 
   function handleToggleBoot(m) {
     const year  = selectedMonth.year
@@ -948,6 +950,17 @@ function EnergyGenerator({ onWarningSaved }) {
               ✕
             </button>
           )}
+          <button onClick={() => setExcludeAttacksToo(v => !v)}
+            title="When off, attacks landing in the excluded dates still count — only gym energy is removed for those days"
+            style={{
+              padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer',
+              border: `1px solid ${excludeAttacksToo ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.08)'}`,
+              background: excludeAttacksToo ? 'rgba(251,191,36,0.1)' : 'transparent',
+              color: excludeAttacksToo ? '#fbbf24' : 'var(--text-secondary)',
+            }}
+          >
+            Exclude Attacks Too
+          </button>
         </div>
       </div>
 

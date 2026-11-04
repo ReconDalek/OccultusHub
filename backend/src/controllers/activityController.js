@@ -813,6 +813,15 @@ export async function generateEnergyWarningReport(request, env) {
       excludeFrom = excludeFromRaw;
       excludeTo   = excludeToRaw;
     }
+    // Whether the excluded range above also strips attack hits, or only gym
+    // energy. Default is energy-only: an excluded range is typically a
+    // faction-wide attacking event that ran longer than a chain being judged
+    // (e.g. Halloween 2026 — a chain that ended partway through the event),
+    // so the days after the chain shouldn't count as "0 energy" against
+    // members who were busy attacking instead, but any real attacks landing
+    // inside the excluded range (including from a chain that overlaps it)
+    // must still be credited, not silently zeroed out alongside the energy.
+    const excludeAttacksToo = url.searchParams.get('excludeAttacksToo') === '1';
 
     const monthStart  = `${year}-${String(month).padStart(2, '0')}-01`;
     const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -1254,13 +1263,13 @@ export async function generateEnergyWarningReport(request, env) {
           }
           if (gExcludedDays > 0) {
             const gEnergyRemoved = await energyGrowthInRange(env, r.torn_user_id, FACTION_IDS, gOverlapStart, gOverlapEnd);
-            const gHitsRemoved   = includeAttacks ? await attackHitsInRange(env, r.torn_user_id, FACTION_IDS, gOverlapStart, gOverlapEnd) : 0;
+            const gHitsRemoved   = (includeAttacks && excludeAttacksToo) ? await attackHitsInRange(env, r.torn_user_id, FACTION_IDS, gOverlapStart, gOverlapEnd) : 0;
             gymEnergy   = Math.max(0, gymEnergy - gEnergyRemoved);
-            attackHits  = Math.max(0, attackHits - gHitsRemoved);
+            if (excludeAttacksToo) attackHits = Math.max(0, attackHits - gHitsRemoved);
             trackedDays = Math.max(1, trackedDays - gExcludedDays);
             globalExclusion = {
               from: gOverlapStart, to: gOverlapEnd, excluded_days: gExcludedDays,
-              energy_removed: gEnergyRemoved, attack_hits_removed: gHitsRemoved,
+              energy_removed: gEnergyRemoved, attack_hits_removed: gHitsRemoved, attacks_excluded: excludeAttacksToo,
             };
           }
         }
@@ -1397,6 +1406,7 @@ export async function generateEnergyWarningReport(request, env) {
       include_new_members: includeNewMembers,
       exclude_from: excludeFrom,
       exclude_to: excludeTo,
+      exclude_attacks_too: excludeAttacksToo,
       members,
     });
   } catch (err) {
