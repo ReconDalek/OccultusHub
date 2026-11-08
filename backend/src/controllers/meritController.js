@@ -89,12 +89,14 @@ const ENERGY_BONUS_WEIGHT = 1;
 const PRESENCE_WINDOW_DAYS = 30;
 const PRESENCE_BONUS_MAX = 0.2;
 // Negative modifiers, all-time but recency-weighted the same way hits are —
-// a years-old warning shouldn't carry the same bite as a recent one. Weight
-// and caps raised so standing can meaningfully move the score, not just
-// nudge it.
-const WARNING_PENALTY_PER = 0.08;
+// a years-old warning shouldn't carry the same bite as a recent one. Raising
+// the cap alone didn't help in practice: real cases sit nowhere near it (a
+// single warning or a few OC-inactive days), so the per-unit rate itself
+// needs to be big enough that one warning alone can flip a close ranking
+// against an activity/hits edge, not just the cap.
+const WARNING_PENALTY_PER = 0.15;
 const WARNING_PENALTY_CAP = 0.25;
-const OC_PENALTY_PER_DAY = 0.015;
+const OC_PENALTY_PER_DAY = 0.03;
 const OC_PENALTY_CAP = 0.25;
 const PENALTY_FLOOR = 0.5; // combined penalties never drop a score below 50% of unpenalized
 
