@@ -232,7 +232,7 @@ function RankedMeritList({ candidates, isLeader, markingId, onMark, showDetails 
                   {c.activity_factor.toFixed(2)}x activity
                 </span>
                 {c.penalty_multiplier < 1 && (
-                  <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) in the window`}>
+                  <span style={{ color: '#f87171' }} title={`${c.warning_count} warning(s), ${c.oc_inactive_days} OC-inactive day(s) (recency-weighted)`}>
                     {' '}· -{Math.round((1 - c.penalty_multiplier) * 100)}%
                   </span>
                 )}

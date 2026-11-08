@@ -65,29 +65,44 @@ function recencyWeight(monthsAgo) {
   for (const tier of RECENCY_TIERS) if (monthsAgo <= tier.withinMonths) return tier.weight;
   return RECENCY_TIERS[RECENCY_TIERS.length - 1].weight;
 }
+function currentYm() {
+  const now = new Date();
+  return now.getUTCFullYear() * 12 + now.getUTCMonth();
+}
+function monthsAgoFromYm(ym) {
+  const [y, mo] = ym.split('-').map(Number);
+  return currentYm() - (y * 12 + (mo - 1));
+}
+function monthsAgoFromDate(dateStr) {
+  return monthsAgoFromYm(dateStr.slice(0, 7));
+}
+
 // Small additive nudges from being generally active — energy reuses the same
-// bonus tiers Rank Rewards already exposes to leadership; presence is simple
-// % of sampled 30-min slots spent active over the trailing window.
+// bonus tiers Rank Rewards already exposes to leadership, weighted up a bit
+// since it's one of the few signals that isn't pure hit-volume; presence is
+// simple % of sampled 30-min slots spent active over the trailing window.
+const ENERGY_WINDOW_MONTHS = 3;
+const ENERGY_BONUS_WEIGHT = 1.5;
 const PRESENCE_WINDOW_DAYS = 30;
 const PRESENCE_BONUS_MAX = 0.2;
-// Slight, capped negative modifiers — never enough alone to tank someone out
-// of contention.
-const WARNINGS_WINDOW_MONTHS = 6;
-const WARNING_PENALTY_PER = 0.05;
-const WARNING_PENALTY_CAP = 0.15;
-const OC_INACTIVITY_WINDOW_DAYS = 90;
-const OC_PENALTY_PER_DAY = 0.01;
-const OC_PENALTY_CAP = 0.15;
-const PENALTY_FLOOR = 0.7; // combined penalties never drop a score below 70% of unpenalized
+// Negative modifiers, all-time but recency-weighted the same way hits are —
+// a years-old warning shouldn't carry the same bite as a recent one. Weight
+// and caps raised so standing can meaningfully move the score, not just
+// nudge it.
+const WARNING_PENALTY_PER = 0.08;
+const WARNING_PENALTY_CAP = 0.25;
+const OC_PENALTY_PER_DAY = 0.015;
+const OC_PENALTY_CAP = 0.25;
+const PENALTY_FLOOR = 0.5; // combined penalties never drop a score below 50% of unpenalized
 
 export const MERIT_FORMULA_NOTE =
   'Score = hits × activity × rank × standing\n\n' +
   'hits — all-time chain + war hits, weighted down for older months: full value in the last 12 months, ' +
   'half value 12–24 months ago, quarter value beyond that\n' +
   "activity — your monthly hits vs. the faction's average that month (one big month can't count for more than double), same recency weighting, " +
-  'plus small bonuses for average energy and time spent active online\n' +
+  'plus bonuses for average energy (last 3 months) and time spent active online\n' +
   'rank — small bump for earned rank: 1.00 up to 1.15 for leadership\n' +
-  'standing — reduced for recent warnings or OC inactivity, by at most 30% combined';
+  'standing — reduced for warnings or OC inactivity, by up to 50% combined; older ones count for less using the same recency weighting as hits';
 
 function validFactionId(raw) {
   const id = parseInt(raw, 10);
@@ -164,24 +179,32 @@ export async function recordChainBonusHits(env, tornChainId, factionId) {
   }
 }
 
-// Last completed calendar month's average daily energy per member — same
-// internal-call pattern and same report rankRewardsController's energy
-// bonus already relies on, so the numbers match what leadership sees there.
+// Average daily energy per member across the last 3 completed calendar
+// months (averaged across whichever of those months the member has data
+// for) — same internal-call pattern and same report rankRewardsController's
+// energy bonus already relies on, so the numbers match what leadership sees
+// there, just over a wider window.
 async function fetchEnergyAverages(env) {
   const now = new Date();
-  const { year, month } = prevMonth(now.getUTCFullYear(), now.getUTCMonth() + 1);
-  const url = `https://internal/api/leadership/warnings/generate/energy?year=${year}&month=${month}` +
-              `&factions=${FACTION_IDS.join(',')}&includeAttacks=1&includeNewMembers=1`;
-  try {
-    const res = await generateEnergyWarningReport(new Request(url), env);
-    if (!res.ok) return {};
-    const json = await res.json();
-    const map = {};
-    for (const m of (json.members || [])) map[m.torn_user_id] = m.avg_per_day ?? 0;
-    return map;
-  } catch {
-    return {};
+  let y = now.getUTCFullYear(), mo = now.getUTCMonth() + 1;
+  const sums = {}, counts = {};
+  for (let i = 0; i < ENERGY_WINDOW_MONTHS; i++) {
+    ({ year: y, month: mo } = prevMonth(y, mo));
+    const url = `https://internal/api/leadership/warnings/generate/energy?year=${y}&month=${mo}` +
+                `&factions=${FACTION_IDS.join(',')}&includeAttacks=1&includeNewMembers=1`;
+    try {
+      const res = await generateEnergyWarningReport(new Request(url), env);
+      if (!res.ok) continue;
+      const json = await res.json();
+      for (const m of (json.members || [])) {
+        sums[m.torn_user_id] = (sums[m.torn_user_id] || 0) + (m.avg_per_day ?? 0);
+        counts[m.torn_user_id] = (counts[m.torn_user_id] || 0) + 1;
+      }
+    } catch { /* skip this month */ }
   }
+  const map = {};
+  for (const id of Object.keys(sums)) map[id] = sums[id] / counts[id];
+  return map;
 }
 
 // % of sampled 30-min activity slots spent "active" (took an action, not
@@ -212,42 +235,45 @@ async function fetchPresenceRatios(env, factionId) {
   }
 }
 
-// Inactive days per member over the trailing window (24h+ out of any OC).
+// Inactive days per member (24h+ out of any OC), all-time but recency-
+// weighted the same way hits are — each instance's days are weighted by how
+// long ago that instance started.
 async function fetchOcInactiveDays(env, factionId) {
   const to = new Date();
-  const from = new Date(to.getTime() - OC_INACTIVITY_WINDOW_DAYS * 86400000);
-  const url = `https://internal/api/leadership/oc/inactivity?faction_id=${factionId}&from=${fmtDate(from)}&to=${fmtDate(to)}`;
+  const url = `https://internal/api/leadership/oc/inactivity?faction_id=${factionId}&from=2010-01-01&to=${fmtDate(to)}`;
   try {
     const res = await getInactivity(new Request(url), env, null);
     if (!res.ok) return {};
     const json = await res.json();
     const map = {};
-    for (const m of (json.members || [])) map[m.torn_user_id] = m.days || 0;
+    for (const m of (json.members || [])) {
+      let weighted = 0;
+      for (const inst of (m.instances || [])) weighted += inst.days * recencyWeight(monthsAgoFromDate(inst.from));
+      map[m.torn_user_id] = weighted;
+    }
     return map;
   } catch {
     return {};
   }
 }
 
-// Warning counts per member over the trailing window. Only rows with a
-// structured period_year/period_month can be placed in the window.
+// Warning counts per member, all-time but recency-weighted the same way
+// hits are. Only rows with a structured period_year/period_month can be
+// placed on the timeline.
 async function fetchWarningCounts(env, factionId) {
-  const now = new Date();
-  let y = now.getUTCFullYear(), mo = now.getUTCMonth() + 1;
-  for (let i = 0; i < WARNINGS_WINDOW_MONTHS; i++) ({ year: y, month: mo } = prevMonth(y, mo));
-  const cutoffYm = y * 100 + mo;
-
   try {
     const { results } = await env.DB.prepare(`
-      SELECT torn_user_id, COUNT(*) AS cnt
+      SELECT torn_user_id, period_year, period_month, COUNT(*) AS cnt
       FROM member_warnings
       WHERE torn_user_id IN (SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1)
         AND period_year IS NOT NULL AND period_month IS NOT NULL
-        AND (period_year * 100 + period_month) >= ?
-      GROUP BY torn_user_id
-    `).bind(factionId, cutoffYm).all();
+      GROUP BY torn_user_id, period_year, period_month
+    `).bind(factionId).all();
     const map = {};
-    for (const r of (results || [])) map[r.torn_user_id] = r.cnt;
+    for (const r of (results || [])) {
+      const ym = `${r.period_year}-${String(r.period_month).padStart(2, '0')}`;
+      map[r.torn_user_id] = (map[r.torn_user_id] || 0) + r.cnt * recencyWeight(monthsAgoFromYm(ym));
+    }
     return map;
   } catch {
     return {};
@@ -258,13 +284,6 @@ async function fetchWarningCounts(env, factionId) {
 // chain + war hits, recency-weighted by month; everything else is a small
 // nudge on top — see MERIT_FORMULA_NOTE for the exact shape.
 async function buildCandidatePool(env, factionId, energyBonusTiers) {
-  const now = new Date();
-  const currentYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
-  function monthsAgo(ym) {
-    const [y, mo] = ym.split('-').map(Number);
-    return currentYm - (y * 12 + (mo - 1));
-  }
-
   const [
     { results: members },
     { results: monthlyChain },
@@ -340,14 +359,14 @@ async function buildCandidatePool(env, factionId, energyBonusTiers) {
   const recentByUser = new Map();
   for (const [tornUserId, months] of monthsByUser) {
     let hits = 0;
-    for (const [ym, monthHits] of months) hits += monthHits * recencyWeight(monthsAgo(ym));
+    for (const [ym, monthHits] of months) hits += monthHits * recencyWeight(monthsAgoFromYm(ym));
 
     let ratioWeightSum = 0;
     let ratioTotal = 0;
     for (const [ym, facAvg] of facAvgByMonth) {
       if (facAvg <= 0) continue;
       const memberHits = months.get(ym) || 0;
-      const w = recencyWeight(monthsAgo(ym));
+      const w = recencyWeight(monthsAgoFromYm(ym));
       ratioTotal += Math.min(memberHits / facAvg, MONTH_RATIO_CAP) * w;
       ratioWeightSum += w;
     }
@@ -363,7 +382,7 @@ async function buildCandidatePool(env, factionId, energyBonusTiers) {
 
     const avgEnergy = energyByUser[m.torn_user_id];
     const energyBonus = avgEnergy != null
-      ? (bestBonus(energyBonusTiers, 'energy', avgEnergy)?.increment || 0)
+      ? (bestBonus(energyBonusTiers, 'energy', avgEnergy)?.increment || 0) * ENERGY_BONUS_WEIGHT
       : 0;
     const presenceRatio = presenceByUser[m.torn_user_id] || 0;
     const presenceBonus = presenceRatio * PRESENCE_BONUS_MAX;
@@ -383,8 +402,8 @@ async function buildCandidatePool(env, factionId, energyBonusTiers) {
       weighted_hits: Math.round(recent.hits * 10) / 10,
       activity_factor: activityFactor,
       rank_mod: rankMod,
-      warning_count: warningCount,
-      oc_inactive_days: ocInactiveDays,
+      warning_count: Math.round(warningCount * 10) / 10,
+      oc_inactive_days: Math.round(ocInactiveDays * 10) / 10,
       penalty_multiplier: penaltyMultiplier,
       score: recent.hits * activityFactor * rankMod * penaltyMultiplier,
     };
