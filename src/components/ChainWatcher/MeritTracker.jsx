@@ -227,7 +227,7 @@ function RankedMeritList({ candidates, isLeader, markingId, onMark, showDetails 
             </div>
             {showDetails && (
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {c.rank} · {c.recent_hits.toLocaleString()} hits (12mo) ·{' '}
+                {c.rank} · {c.weighted_hits.toLocaleString()} hits ·{' '}
                 <span title="Hits vs. faction average + energy/presence bonus">
                   {c.activity_factor.toFixed(2)}x activity
                 </span>
