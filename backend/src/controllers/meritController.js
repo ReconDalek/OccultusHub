@@ -78,11 +78,14 @@ function monthsAgoFromDate(dateStr) {
 }
 
 // Small additive nudges from being generally active — energy reuses the same
-// bonus tiers Rank Rewards already exposes to leadership, weighted up a bit
-// since it's one of the few signals that isn't pure hit-volume; presence is
-// simple % of sampled 30-min slots spent active over the trailing window.
+// bonus tiers Rank Rewards already exposes to leadership; presence is simple
+// % of sampled 30-min slots spent active over the trailing window. Energy is
+// averaged over 3 months instead of 1 to smooth out noise, but at 1x weight
+// — a 1.5x weight here let the energy tier alone outweigh a real hit
+// deficit and an active penalty for a member, which isn't what "a small
+// nudge on top" should mean.
 const ENERGY_WINDOW_MONTHS = 3;
-const ENERGY_BONUS_WEIGHT = 1.5;
+const ENERGY_BONUS_WEIGHT = 1;
 const PRESENCE_WINDOW_DAYS = 30;
 const PRESENCE_BONUS_MAX = 0.2;
 // Negative modifiers, all-time but recency-weighted the same way hits are —
