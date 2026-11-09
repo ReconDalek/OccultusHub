@@ -996,10 +996,10 @@ function AnniversaryOrb() {
         <circle cx="80" cy="80" r="78" fill="url(#annivGlow)"/>
         <circle cx="80" cy="80" r="52" fill="url(#annivCore)" opacity="0.9"/>
         <circle cx="80" cy="80" r="52" fill="none" stroke="rgba(255,160,160,0.2)" strokeWidth="1.5"/>
-        {/* Roman numeral IV for year 4 (founded 2021, 4th anniversary 2025) */}
+        {/* Roman numeral V for year 5 (founded 2021, 5th anniversary 2026) */}
         <text x="80" y="88" textAnchor="middle" fontFamily="Cinzel, serif" fontSize="30" fontWeight="bold"
           fill="#fff8f8" letterSpacing="4"
-          filter="url(#annivTextGlow)">IV</text>
+          filter="url(#annivTextGlow)">V</text>
       </svg>
     </div>
   )
