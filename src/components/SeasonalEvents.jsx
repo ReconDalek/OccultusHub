@@ -15,6 +15,24 @@ function inRange(m, s, e) {
   return mo === m && d >= s && d <= e
 }
 
+// ── Faction anniversary ──────────────────────────────────────────────────────
+const FOUNDING_YEAR = 2021
+
+const ROMAN_NUMERALS = [
+  [1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],
+  [50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I'],
+]
+function toRoman(n) {
+  let out = ''
+  for (const [v, sym] of ROMAN_NUMERALS) {
+    while (n >= v) { out += sym; n -= v }
+  }
+  return out
+}
+function foundingYears() {
+  return new Date().getFullYear() - FOUNDING_YEAR
+}
+
 // ── Event catalogue ──────────────────────────────────────────────────────────
 // bodyBg  → replaces the standard site gradient when the event is active
 // vignette → fixed overlay on top of the body (additive atmosphere)
@@ -169,8 +187,8 @@ export const EVENT_DEFS = [
              radial-gradient(circle at bottom left, rgba(60,0,100,0.3), transparent 45%), #050004`,
     vignette: 'radial-gradient(ellipse at 50% 50%, rgba(160,10,45,0.2) 0%, rgba(80,5,60,0.1) 65%, transparent 85%)',
     pulseAnim: 'evAnnivPulse 8s ease-in-out infinite',
-    banner: { text: 'ANOTHER YEAR IN THE SHADOWS', color: '#fca5a5', bg: 'rgba(50,3,15,0.78)', border: 'rgba(180,20,50,0.55)' },
-    particles: 'sparkles', extras: ['anniversary', 'candles', 'sigil', 'flicker'], textVars: TV.red,
+    banner: { text: `${toRoman(foundingYears())} YEARS IN THE SHADOWS`, color: '#fca5a5', bg: 'rgba(50,3,15,0.78)', border: 'rgba(180,20,50,0.55)' },
+    particles: 'confetti', extras: ['anniversary', 'candles', 'sigil', 'flicker', 'covenToast'], textVars: TV.red,
   },
   {
     id: 'winter_solstice',
@@ -264,6 +282,9 @@ const KEYFRAMES = `
   @keyframes evGarlandSway { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.04)} }
   @keyframes evSigilPulse  { 0%,100%{opacity:.18;filter:drop-shadow(0 0 6px rgba(200,30,60,0.4))} 50%{opacity:.32;filter:drop-shadow(0 0 14px rgba(220,40,70,0.7))} }
   @keyframes evFlicker     { 0%{opacity:1} 10%{opacity:0.12} 18%{opacity:0.9} 26%{opacity:0.08} 36%{opacity:0.85} 46%{opacity:0.1} 56%{opacity:0.88} 68%{opacity:0.07} 78%{opacity:0.92} 88%{opacity:0.1} 100%{opacity:1} }
+  @keyframes evConfettiFall{ 0%{transform:translateY(-20px) rotate(0deg);opacity:0} 8%{opacity:.9} 90%{opacity:.7} 100%{transform:translateY(105vh) rotate(var(--rot)) translateX(var(--lx));opacity:0} }
+  @keyframes evToastBurst  { 0%{transform:translate(0,0) scale(0.2);opacity:0} 25%{opacity:1} 100%{transform:translate(var(--tx),var(--ty)) scale(1);opacity:0} }
+  @keyframes evToastGlow   { 0%,100%{opacity:0} 40%{opacity:1} 60%{opacity:1} }
   @keyframes evBatFly  { 0%{transform:translate(0,0) scale(var(--bs));opacity:0} 8%{opacity:1} 82%{opacity:1} 100%{transform:translate(var(--bdx),var(--bdy)) scale(var(--bs));opacity:0} }
   @keyframes evBatFlap { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.4)} }
 `
@@ -373,6 +394,21 @@ function Particles({ type }) {
         background:`rgba(251,${180+Math.random()*75},${Math.random()*40},0.9)`,
         '--tx':`${tx}px`, '--ty':`${ty}px`,
         animation:`evSparkle ${dur*0.6}s ${delay*0.4}s ease-out infinite`,
+      }}/>
+    }
+    if (type === 'confetti') {
+      const lx    = (Math.random()-0.5)*90
+      const rot   = 180 + Math.random()*540
+      const hue   = Math.random()
+      const color = hue < 0.4 ? `rgba(${190+Math.random()*50},${15+Math.random()*30},${40+Math.random()*30},0.85)`   // crimson
+                  : hue < 0.7 ? `rgba(${210+Math.random()*35},${165+Math.random()*40},${20+Math.random()*25},0.85)`  // gold
+                  :             `rgba(${110+Math.random()*50},${20+Math.random()*30},${150+Math.random()*50},0.8)`   // violet
+      return <div key={i} style={{
+        position:'fixed', top:'var(--ev-header-h, 64px)', left:`${left}%`, zIndex:2, pointerEvents:'none',
+        width:size*0.55, height:size*1.9, borderRadius:'1px',
+        background: color,
+        '--lx':`${lx}px`, '--rot':`${rot}deg`,
+        animation:`evConfettiFall ${dur}s ${delay}s linear infinite`,
       }}/>
     }
     return null
@@ -974,6 +1010,7 @@ function Candles() {
 
 // ── Anniversary gold crown flourish ─────────────────────────────────────────
 function AnniversaryOrb() {
+  const numeral = toRoman(foundingYears())
   return (
     <div style={{ position:'fixed', top:'calc(var(--ev-header-h, 64px) + clamp(10px,2vh,24px))', right:'clamp(12px,3vw,40px)', zIndex:3, pointerEvents:'none' }}>
       <svg viewBox="0 0 160 160" style={{ width:'clamp(60px,8vw,110px)', height:'clamp(60px,8vw,110px)', display:'block' }}>
@@ -996,10 +1033,10 @@ function AnniversaryOrb() {
         <circle cx="80" cy="80" r="78" fill="url(#annivGlow)"/>
         <circle cx="80" cy="80" r="52" fill="url(#annivCore)" opacity="0.9"/>
         <circle cx="80" cy="80" r="52" fill="none" stroke="rgba(255,160,160,0.2)" strokeWidth="1.5"/>
-        {/* Roman numeral V for year 5 (founded 2021, 5th anniversary 2026) */}
-        <text x="80" y="88" textAnchor="middle" fontFamily="Cinzel, serif" fontSize="30" fontWeight="bold"
+        {/* Roman numeral, computed from FOUNDING_YEAR so it never goes stale */}
+        <text x="80" y="88" textAnchor="middle" fontFamily="Cinzel, serif" fontSize={numeral.length > 2 ? 22 : 30} fontWeight="bold"
           fill="#fff8f8" letterSpacing="4"
-          filter="url(#annivTextGlow)">V</text>
+          filter="url(#annivTextGlow)">{numeral}</text>
       </svg>
     </div>
   )
@@ -1128,6 +1165,7 @@ function Sigil() {
     return [90 + 70*Math.cos(a), 90 + 70*Math.sin(a)]
   })
   const star = `M${pts[0]} L${pts[2]} L${pts[4]} L${pts[1]} L${pts[3]} Z`
+  const numeral = toRoman(foundingYears())
   return (
     <div style={{ position:'fixed', bottom:'calc(var(--ev-footer-h, 58px) + clamp(20px,4vh,50px))', left:'50%', transform:'translateX(-50%)', zIndex:2, pointerEvents:'none' }}>
       <svg viewBox="0 0 180 180" style={{ width:'clamp(90px,12vw,150px)', height:'clamp(90px,12vw,150px)', display:'block', animation:'evSigilPulse 5s ease-in-out infinite' }}>
@@ -1152,8 +1190,11 @@ function Sigil() {
           const mx = (x1+x2)/2*0.36+90*0.64; const my = (y1+y2)/2*0.36+90*0.64
           return <circle key={i} cx={x1} cy={y1} r="2.5" fill="rgba(220,80,100,0.8)"/>
         })}
-        {/* Centre dot */}
-        <circle cx="90" cy="90" r="4" fill="rgba(220,60,90,0.85)"/>
+        {/* Centre — year count, computed from FOUNDING_YEAR */}
+        <circle cx="90" cy="90" r="13" fill="rgba(15,2,6,0.7)"/>
+        <text x="90" y="95" textAnchor="middle" fontFamily="Cinzel, serif"
+          fontSize={numeral.length > 2 ? 10 : 14} fontWeight="bold"
+          fill="rgba(240,180,190,0.9)" letterSpacing="1">{numeral}</text>
       </svg>
     </div>
   )
@@ -1274,6 +1315,64 @@ function BatScare() {
   )
 }
 
+// ── Coven toast (Anniversary) ────────────────────────────────────────────────
+// Fires every ~20–40s: the sigil's glow spikes and a small burst of
+// confetti-coloured sparks radiates from its center, like the coven raising
+// a glass. Same self-scheduling shape as BatScare above.
+function CovenToast() {
+  const [toasting, setToasting] = useState(false)
+  const [sparks, setSparks] = useState(null)
+
+  useEffect(() => {
+    let t
+    function schedule() {
+      t = setTimeout(() => {
+        setToasting(true)
+        setSparks(Array.from({ length: 10 + Math.floor(Math.random()*5) }, () => {
+          const angle = Math.random() * Math.PI * 2
+          const dist  = 60 + Math.random() * 90
+          const hue   = Math.random()
+          return {
+            tx:    `${Math.cos(angle)*dist}px`,
+            ty:    `${Math.sin(angle)*dist}px`,
+            size:  3 + Math.random()*4,
+            delay: Math.random()*0.3,
+            dur:   0.9 + Math.random()*0.5,
+            color: hue < 0.4 ? 'rgba(220,60,90,0.9)' : hue < 0.7 ? 'rgba(230,185,60,0.9)' : 'rgba(160,70,210,0.85)',
+          }
+        }))
+        setTimeout(() => { setToasting(false); setSparks(null); schedule() }, 1400)
+      }, 20000 + Math.random() * 20000)
+    }
+    schedule()
+    return () => clearTimeout(t)
+  }, [])
+
+  if (!toasting) return null
+  return (
+    <div style={{
+      position:'fixed', bottom:'calc(var(--ev-footer-h, 58px) + clamp(20px,4vh,50px) + clamp(45px,6vw,75px))',
+      left:'50%', transform:'translate(-50%, 0)', zIndex:5, pointerEvents:'none',
+      width:1, height:1,
+    }}>
+      <div style={{
+        position:'absolute', left:0, top:0, transform:'translate(-50%,-50%)',
+        width:'clamp(100px,14vw,170px)', height:'clamp(100px,14vw,170px)', borderRadius:'50%',
+        background:'radial-gradient(circle, rgba(220,60,90,0.5) 0%, transparent 70%)',
+        animation:'evToastGlow 1.4s ease-in-out forwards',
+      }}/>
+      {sparks && sparks.map((s, i) => (
+        <div key={i} style={{
+          position:'absolute', left:0, top:0, borderRadius:'50%',
+          width:s.size, height:s.size, background:s.color,
+          '--tx':s.tx, '--ty':s.ty,
+          animation:`evToastBurst ${s.dur}s ${s.delay}s ease-out forwards`,
+        }}/>
+      ))}
+    </div>
+  )
+}
+
 // ── Preview localStorage key ─────────────────────────────────────────────────
 export const PREVIEW_KEY = 'occultus_event_preview'
 
@@ -1389,6 +1488,7 @@ function EventLayer({ ev, bannerVisible, isPreview }) {
           {x === 'flicker'     && <Flicker/>}
           {x === 'batScare'    && <BatScare/>}
           {x === 'webDropSpider' && <WebDropSpiders/>}
+          {x === 'covenToast' && <CovenToast/>}
         </span>
       ))}
 
