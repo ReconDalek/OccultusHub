@@ -271,6 +271,37 @@ export async function getCompaniesForBot(request, env) {
   }
 }
 
+// ── GET /api/discord/company-directors — bot-facing, shared-secret auth ───
+// Backs an automatic Discord role sync for faction company directors — the
+// bot grants the configured role to whoever this resolves to, instead of
+// someone having to remember to add it by hand whenever a company or its
+// director changes. discord_id is null when the director hasn't linked
+// their Discord account on the website yet.
+export async function getCompanyDirectorsForBot(request, env) {
+  if (!checkBotSecret(request, env)) return errorResponse('Unauthorized', 401);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT cpc.company_id, cpc.name, cpc.director_id, cpc.director_name, dl.discord_id
+       FROM company_config cc
+       JOIN company_profit_cache cpc ON cpc.company_id = cc.company_id
+       LEFT JOIN users u ON u.torn_user_id = cpc.director_id
+       LEFT JOIN discord_links dl ON dl.user_id = u.id
+       WHERE cpc.director_id IS NOT NULL AND cpc.director_id != 0`
+    ).all();
+    return jsonResponse({
+      directors: results.map(r => ({
+        company_id: r.company_id,
+        company_name: r.name,
+        director_id: r.director_id,
+        director_name: r.director_name,
+        discord_id: r.discord_id ?? null,
+      })),
+    });
+  } catch (e) {
+    return errorResponse('Failed to fetch company directors: ' + e.message, 500);
+  }
+}
+
 export async function refreshCompanyProfitCache(request, env, user) {
   try {
     const result = await fetchAndCacheCompanyProfits(env);

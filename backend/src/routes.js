@@ -1217,6 +1217,13 @@ export async function handleRequest(request, env, ctx) {
     return companyProfitController.getCompaniesForBot(request, env);
   }
 
+  // Director Discord-role sync — resolves each tracked company's director
+  // to a Discord ID (where linked) so the bot can grant the director role
+  // automatically.
+  if (pathname === '/api/discord/company-directors' && method === 'GET') {
+    return companyProfitController.getCompanyDirectorsForBot(request, env);
+  }
+
   if (pathname.startsWith('/api/discord/')) {
     if (!user) return errorResponse('Authentication required', 401);
 
