@@ -1086,7 +1086,7 @@ function OCConfigTab() {
 
 function RotationConfigSection() {
   const [crimes, setCrimes] = useState([])
-  const [dirty, setDirty] = useState({}) // crime_name -> { enabled, min_pass_rate }
+  const [dirty, setDirty] = useState({}) // crime_name -> { enabled, min_pass_rate, promotion_pass_rate }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -1103,7 +1103,7 @@ function RotationConfigSection() {
 
   useEffect(() => { load() }, [])
 
-  const getRow = (c) => ({ enabled: c.enabled, min_pass_rate: c.min_pass_rate, ...dirty[c.crime_name] })
+  const getRow = (c) => ({ enabled: c.enabled, min_pass_rate: c.min_pass_rate, promotion_pass_rate: c.promotion_pass_rate, ...dirty[c.crime_name] })
   const setRow = (crimeName, patch) => setDirty(prev => ({ ...prev, [crimeName]: { ...prev[crimeName], ...patch } }))
 
   async function handleSave() {
@@ -1114,6 +1114,7 @@ function RotationConfigSection() {
         difficulty: base?.difficulty,
         enabled: patch.enabled ?? base?.enabled ?? false,
         min_pass_rate: patch.min_pass_rate ?? base?.min_pass_rate ?? 70,
+        promotion_pass_rate: patch.promotion_pass_rate ?? base?.promotion_pass_rate ?? 85,
       }
     })
     if (!updates.length) return
@@ -1147,10 +1148,13 @@ function RotationConfigSection() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '560px' }}>
-          Only enabled crimes are touched by the scheduler. Threshold is the minimum checkpoint pass rate a member
-          needs to be suggested for a slot in that crime — starts at the policy default (lvl1-6 70%, lvl7 65%,
-          Clinical Precision 60%, other lvl8 65%) until you override it.
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '620px' }}>
+          Only enabled crimes are touched by the scheduler. <strong style={{ color: '#d4d4d8' }}>Suggest at</strong> is the
+          minimum checkpoint pass rate a member needs to be suggested for a slot in that crime — starts at the
+          policy default (lvl1-6 70%, lvl7 65%, Clinical Precision 60%, other lvl8 65%) until you override it.{' '}
+          <strong style={{ color: '#d4d4d8' }}>Promote at</strong> is a separate bar on a member's <em>average</em> pass
+          rate across every crime/position they've run at the tier below — clearing it earns a one-off trial pick into
+          a below-average-weight slot of this crime, to start building real history there. Defaults to 85%.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('Error') ? '#f87171' : '#4ade80' }}>{saveMsg}</span>}
@@ -1171,6 +1175,14 @@ function RotationConfigSection() {
       </div>
 
       <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '28px 1fr 60px 90px 90px', gap: '8px', alignItems: 'center',
+          padding: '6px 12px', background: 'rgba(255,255,255,0.02)',
+        }}>
+          <span /><span /><span />
+          <span style={{ fontSize: '10px', color: "var(--text-faint)", textAlign: 'center', textTransform: 'uppercase' }}>Suggest at</span>
+          <span style={{ fontSize: '10px', color: "var(--text-faint)", textAlign: 'center', textTransform: 'uppercase' }}>Promote at</span>
+        </div>
         {crimes.map(c => {
           const row = getRow(c)
           const isDirty = !!dirty[c.crime_name]
@@ -1178,7 +1190,7 @@ function RotationConfigSection() {
             <div
               key={c.crime_name}
               style={{
-                display: 'grid', gridTemplateColumns: '28px 1fr 60px 90px', gap: '8px', alignItems: 'center',
+                display: 'grid', gridTemplateColumns: '28px 1fr 60px 90px 90px', gap: '8px', alignItems: 'center',
                 padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.04)',
                 background: isDirty ? 'rgba(179,18,63,0.04)' : 'transparent',
               }}
@@ -1196,6 +1208,19 @@ function RotationConfigSection() {
                   type="number" min="0" max="100" step="1"
                   value={row.min_pass_rate}
                   onChange={e => setRow(c.crime_name, { min_pass_rate: Number(e.target.value) })}
+                  style={{
+                    width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '4px', color: '#f4f4f5', fontSize: '13px', padding: '4px 6px',
+                    textAlign: 'center', outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+                <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>%</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="number" min="0" max="100" step="1"
+                  value={row.promotion_pass_rate}
+                  onChange={e => setRow(c.crime_name, { promotion_pass_rate: Number(e.target.value) })}
                   style={{
                     width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '4px', color: '#f4f4f5', fontSize: '13px', padding: '4px 6px',

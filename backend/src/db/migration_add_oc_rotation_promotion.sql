@@ -1,0 +1,11 @@
+-- Run: npx wrangler d1 execute occultusdb --env production --remote --file=src/db/migration_add_oc_rotation_promotion.sql
+--
+-- Splits the single oc_rotation_config threshold into two distinct,
+-- separately-editable numbers per crime:
+--   min_pass_rate       — the ordinary "good enough to suggest for a slot
+--                          in this crime" bar (unchanged, pre-existing).
+--   promotion_pass_rate — the bar on a member's AVERAGE pass rate across
+--                          every crime+position they have history for at
+--                          the tier below, to earn a one-off trial pick
+--                          into a below-average-weight slot of THIS crime.
+ALTER TABLE oc_rotation_config ADD COLUMN promotion_pass_rate INTEGER NOT NULL DEFAULT 85;

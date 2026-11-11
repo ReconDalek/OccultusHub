@@ -812,6 +812,7 @@ export async function refreshOcCrimes(request, env, user) {
 
 const OCC1_FACTION_ID = 33097; // "could be adapted for the other shells later" — scoped to OCC1 for the testing phase
 const ROTATION_POLL_INTERVAL_MIN = 45; // within the requested 30-60 min window
+const DEFAULT_PROMOTION_THRESHOLD = 85; // editable per-crime "promotion" bar, distinct from the ordinary suggestion threshold
 
 // Policy defaults from the user's stated thresholds — only used when a crime
 // has no row yet in oc_rotation_config (or no override set on its row).
@@ -850,8 +851,16 @@ export async function getRotationConfig(request, env, user) {
           crime_name,
           difficulty,
           enabled: !!cfg?.enabled,
+          // Suggestion threshold — the ordinary "good enough to be suggested
+          // for a slot in this crime" bar.
           min_pass_rate: cfg?.min_pass_rate ?? defaultThresholdForCrime(difficulty, crime_name),
           is_default: cfg?.min_pass_rate == null,
+          // Promotion threshold — the bar on a member's AVERAGE pass rate
+          // across all tier-(difficulty-1) crimes/positions they have history
+          // for, to earn a one-off trial pick into a below-average-weight
+          // slot of THIS crime (to gauge them, before any real data exists).
+          promotion_pass_rate: cfg?.promotion_pass_rate ?? DEFAULT_PROMOTION_THRESHOLD,
+          promotion_is_default: cfg?.promotion_pass_rate == null,
         };
       })
       .sort((a, b) => a.difficulty - b.difficulty || a.crime_name.localeCompare(b.crime_name));
@@ -864,7 +873,7 @@ export async function getRotationConfig(request, env, user) {
 }
 
 // ── POST /api/leadership/oc/rotation/config ───────────────────────────────────
-// Body: { updates: [{ crime_name, difficulty, enabled, min_pass_rate }, ...] }
+// Body: { updates: [{ crime_name, difficulty, enabled, min_pass_rate, promotion_pass_rate }, ...] }
 export async function updateRotationConfig(request, env, user) {
   try {
     const { updates } = await request.json();
@@ -872,15 +881,19 @@ export async function updateRotationConfig(request, env, user) {
     if (updates.length > 200) return errorResponse('Max 200 updates per request', 400);
 
     const stmts = updates.map(u => env.DB.prepare(
-      `INSERT INTO oc_rotation_config (crime_name, difficulty, enabled, min_pass_rate, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+      `INSERT INTO oc_rotation_config (crime_name, difficulty, enabled, min_pass_rate, promotion_pass_rate, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
        ON CONFLICT(crime_name) DO UPDATE SET
          difficulty = excluded.difficulty,
          enabled = excluded.enabled,
          min_pass_rate = excluded.min_pass_rate,
+         promotion_pass_rate = excluded.promotion_pass_rate,
          updated_at = CURRENT_TIMESTAMP,
          updated_by = excluded.updated_by`
-    ).bind(u.crime_name, Number(u.difficulty) || null, u.enabled ? 1 : 0, Number(u.min_pass_rate) || 70, user.userId));
+    ).bind(
+      u.crime_name, Number(u.difficulty) || null, u.enabled ? 1 : 0,
+      Number(u.min_pass_rate) || 70, Number(u.promotion_pass_rate) || DEFAULT_PROMOTION_THRESHOLD, user.userId
+    ));
 
     const CHUNK = 200;
     for (let i = 0; i < stmts.length; i += CHUNK) await env.DB.batch(stmts.slice(i, i + CHUNK));
@@ -892,43 +905,45 @@ export async function updateRotationConfig(request, env, user) {
   }
 }
 
-// Members eligible for a *trial* pick one tier above the highest tier they
-// have real CPR history for — per the agreed rule: if a member clears the
-// configured threshold on a majority of the crime+position combos they have
-// data for at tier D, they're allowed to be proposed (without a threshold
-// check, since there's no data yet) for tier D+1. This is the only way a
+// Members eligible for a *promotion trial* pick into a specific tier D+1
+// crime — per the agreed rule: average their best-known CPR across every
+// tier-D crime+position they have history for (ALL of our OC history, not
+// just whatever's currently rotation-enabled); if that average clears the
+// target crime's own promotion_pass_rate (default 85%, editable per crime —
+// distinct from min_pass_rate, which is the ordinary suggestion threshold),
+// they're eligible for a trial pick into THAT crime. This is the only way a
 // member's first real tier-D+1 CPR data point ever gets created.
-// Returns Map<torn_user_id, Map<targetDifficulty, avgScoreAtLowerTier>>.
-async function getTrialEligibility(env, configByName, nameToDifficulty) {
+// Returns Map<torn_user_id, Map<targetCrimeName, avgScoreAtSourceTier>>.
+async function getPromotionEligibility(env, configByName, nameToDifficulty) {
   const { results: cprRows } = await env.DB.prepare(
     `SELECT torn_user_id, crime_name, position, best_pass_rate FROM oc_member_cpr`
   ).all();
 
-  const byMember = new Map(); // torn_user_id -> difficulty -> { clear, total, sum }
+  const byMemberTier = new Map(); // torn_user_id -> difficulty -> { sum, count }
   for (const row of cprRows) {
     const difficulty = nameToDifficulty.get(row.crime_name);
     if (difficulty == null) continue;
-    const cfg = configByName.get(row.crime_name);
-    const threshold = cfg ? cfg.min_pass_rate : defaultThresholdForCrime(difficulty, row.crime_name);
-
-    const tiers = byMember.get(row.torn_user_id) ?? new Map();
-    const stat = tiers.get(difficulty) ?? { clear: 0, total: 0, sum: 0 };
-    stat.total++;
+    const tiers = byMemberTier.get(row.torn_user_id) ?? new Map();
+    const stat = tiers.get(difficulty) ?? { sum: 0, count: 0 };
     stat.sum += row.best_pass_rate;
-    if (row.best_pass_rate >= threshold) stat.clear++;
+    stat.count++;
     tiers.set(difficulty, stat);
-    byMember.set(row.torn_user_id, tiers);
+    byMemberTier.set(row.torn_user_id, tiers);
   }
 
   const eligible = new Map();
-  for (const [torn_user_id, tiers] of byMember) {
-    const targets = new Map();
-    for (const [difficulty, stat] of tiers) {
-      if (stat.total > 0 && stat.clear / stat.total > 0.5) {
-        targets.set(difficulty + 1, Math.round((stat.sum / stat.total) * 10) / 10);
-      }
+  for (const [crimeName, cfg] of configByName) {
+    const sourceDifficulty = (cfg.difficulty ?? 0) - 1;
+    const promotionThreshold = cfg.promotion_pass_rate ?? DEFAULT_PROMOTION_THRESHOLD;
+    for (const [torn_user_id, tiers] of byMemberTier) {
+      const stat = tiers.get(sourceDifficulty);
+      if (!stat || !stat.count) continue;
+      const avg = stat.sum / stat.count;
+      if (avg < promotionThreshold) continue;
+      const targets = eligible.get(torn_user_id) ?? new Map();
+      targets.set(crimeName, Math.round(avg * 10) / 10);
+      eligible.set(torn_user_id, targets);
     }
-    if (targets.size) eligible.set(torn_user_id, targets);
   }
   return eligible;
 }
@@ -1012,8 +1027,28 @@ async function computeRotationSuggestions(env) {
   ).bind(...enabledNames).all();
   const weightMap = new Map(weightRows.map(w => [`${w.crime_name}|${w.position}|${w.position_number}`, w.weight]));
 
+  // Average weight per crime (from the SAME per-slot weights leadership
+  // already tunes on the Config tab's weights editor) — a trial/promotion
+  // pick is only ever offered a below-average-weight slot, so an unproven
+  // member is never put straight into a make-or-break role to "gauge their
+  // success rate".
+  const weightSumByCrime = new Map(); // crime_name -> { sum, count }
+  for (const w of weightRows) {
+    const stat = weightSumByCrime.get(w.crime_name) ?? { sum: 0, count: 0 };
+    stat.sum += w.weight; stat.count++;
+    weightSumByCrime.set(w.crime_name, stat);
+  }
+  const avgWeightByCrime = new Map([...weightSumByCrime].map(([name, s]) => [name, s.sum / s.count]));
+
+  // A member who already has ANY CPR record for this exact crime+position —
+  // win or lose — is never a trial candidate for it again: trial picks only
+  // exist to create a FIRST data point. If that first result came in under
+  // the crime's own min_pass_rate, they simply fall out of the direct
+  // candidate pool (below) and are never re-offered that role.
+  const hasCprForSlot = new Set(cprRows.map(r => `${r.torn_user_id}|${r.crime_name}|${r.position}`));
+
   const nameToDifficulty = await getCrimeNameDifficultyMap(env);
-  const trialEligibility = await getTrialEligibility(env, configByName, nameToDifficulty);
+  const promotionEligibility = await getPromotionEligibility(env, configByName, nameToDifficulty);
 
   // Direct candidate pairs (member already has CPR for this exact crime+position).
   const pairs = [];
@@ -1043,16 +1078,24 @@ async function computeRotationSuggestions(env) {
     assignments.push(p);
   }
 
-  // Trial picks — only for slots that had zero direct candidates at all
-  // (never for a slot that just lost a contested draft to a better pick).
+  // Trial/promotion picks — only for slots that (a) had zero direct
+  // candidates at all (never for a slot that just lost a contested draft to
+  // a better pick) and (b) sit at or below this crime's average slot
+  // weight, so an unproven member is only ever risked on a low-impact role.
   const slotsWithAnyDirectCandidate = new Set(pairs.map(p => slotKeyOf(p.slot)));
   for (const slot of inScopeSlots) {
     const key = slotKeyOf(slot);
     if (usedSlotIds.has(key) || slotsWithAnyDirectCandidate.has(key)) continue;
 
-    const trialPool = [...trialEligibility.entries()]
-      .filter(([uid, targets]) => availableIds.has(uid) && !usedMembers.has(uid) && targets.has(slot.difficulty))
-      .map(([uid, targets]) => ({ torn_user_id: uid, score: targets.get(slot.difficulty) }))
+    const slotWeight = weightMap.get(`${slot.crime_name}|${slot.position}|${slot.position_number}`) ?? 100;
+    const avgWeight = avgWeightByCrime.get(slot.crime_name) ?? 100;
+    if (slotWeight > avgWeight) continue; // reserved for a proven direct candidate, not a trial pick
+
+    const trialPool = [...promotionEligibility.entries()]
+      .filter(([uid, targets]) =>
+        availableIds.has(uid) && !usedMembers.has(uid) &&
+        targets.has(slot.crime_name) && !hasCprForSlot.has(`${uid}|${slot.crime_name}|${slot.position}`))
+      .map(([uid, targets]) => ({ torn_user_id: uid, score: targets.get(slot.crime_name) }))
       .sort((a, b) => b.score - a.score);
 
     if (trialPool.length) {
