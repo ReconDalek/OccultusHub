@@ -203,6 +203,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/oc/refresh' && method === 'POST') {
       return ocController.refreshOcCrimes(request, env, user);
     }
+    if (pathname === '/api/admin/oc/rotation/poll' && method === 'POST') {
+      return ocController.triggerRotationPoll(request, env, user);
+    }
 
     // Webhook configs
     if (pathname === '/api/admin/webhooks' && method === 'GET') {
@@ -1124,6 +1127,18 @@ export async function handleRequest(request, env, ctx) {
     }
     if (pathname === '/api/leadership/oc/inactivity' && method === 'GET') {
       return ocInactivityController.getInactivity(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/rotation/config' && method === 'GET') {
+      return ocController.getRotationConfig(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/rotation/config' && method === 'POST') {
+      return ocController.updateRotationConfig(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/rotation/suggestions' && method === 'GET') {
+      return ocController.getRotationSuggestions(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/rotation/stats' && method === 'GET') {
+      return ocController.getRotationStats(request, env, user);
     }
     if (pathname === '/api/leadership/oc/inactivity/member' && method === 'GET') {
       return ocInactivityController.getMemberInactivity(request, env, user);

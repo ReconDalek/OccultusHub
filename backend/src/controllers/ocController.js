@@ -26,10 +26,14 @@ async function fetchInChunks(env, buildQuery, ids, chunkSize = 100) {
 }
 
 // ── Cron: fetch + cache all crimes for all 3 factions ────────────────────────
-export async function fetchAndCacheFactionCrimes(env) {
+// `factionIds`/`maxPages` let a caller scope this to a quick live-state poll
+// (e.g. the rotation scheduler only cares about OCC1's current Recruiting/
+// Planning crimes, which sort first — one page is enough) instead of the
+// full 500-crime daily history pull. Defaults preserve the original behavior.
+export async function fetchAndCacheFactionCrimes(env, { factionIds = FACTION_IDS, maxPages = MAX_PAGES } = {}) {
   const results = { fetched: 0, crimesUpserted: 0, errors: [] };
 
-  for (const factionId of FACTION_IDS) {
+  for (const factionId of factionIds) {
     try {
       const apiKeyObj = await getStaffApiKeyForFaction(env, factionId);
       if (!apiKeyObj?.key) {
@@ -41,7 +45,7 @@ export async function fetchAndCacheFactionCrimes(env) {
       let slotUpserts = [];
       let cprUpserts = new Map(); // key = `${torn_user_id}|${crime_name}|${position}` -> { rate, seenAt } (keep max per run)
 
-      for (let page = 0; page < MAX_PAGES; page++) {
+      for (let page = 0; page < maxPages; page++) {
         const offset = page * 100;
         const data = await fetchWithRetry(
           `${TORN_API_BASE}/faction/crimes?cat=all&offset=${offset}&sort=DESC&comment=OccHub`,
@@ -782,5 +786,475 @@ export async function refreshOcCrimes(request, env, user) {
     });
   } catch (e) {
     return errorResponse('OC crimes refresh failed: ' + e.message, 500);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OC Rotation Scheduler (testing phase — OCC1 only, scoped to whichever
+// crimes leadership enables via the Rotation Config tab)
+//
+// The problem being solved: members sitting idle for days waiting their turn
+// in a half-filled crime wastes far more than it should — the goal is to
+// always have a best-available member lined up for the best-available vacant
+// slot, filling at most "ongoing + 1" crime instances per crime type at a
+// time so new slots don't open faster than the roster can finish them.
+//
+// This never writes to Torn — it only recommends (`oc_rotation_suggestions`)
+// and then, on the next poll, checks what actually happened to that slot.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const OCC1_FACTION_ID = 33097; // "could be adapted for the other shells later" — scoped to OCC1 for the testing phase
+const ROTATION_POLL_INTERVAL_MIN = 45; // within the requested 30-60 min window
+
+// Policy defaults from the user's stated thresholds — only used when a crime
+// has no row yet in oc_rotation_config (or no override set on its row).
+function defaultThresholdForCrime(difficulty, crimeName) {
+  if (difficulty == null) return 70;
+  if (difficulty <= 6) return 70;
+  if (difficulty === 7) return 65;
+  if (difficulty === 8) return crimeName === 'Clinical Precision' ? 60 : 65;
+  return 65; // 9+ wasn't given an explicit figure — defaults alongside lvl7/other-lvl8, editable per crime in Config
+}
+
+async function getCrimeNameDifficultyMap(env) {
+  const { results } = await env.DB.prepare(`SELECT DISTINCT name, difficulty FROM oc_crimes WHERE difficulty IS NOT NULL`).all();
+  const map = new Map();
+  for (const r of results) if (!map.has(r.name)) map.set(r.name, r.difficulty);
+  return map;
+}
+
+// ── GET /api/leadership/oc/rotation/config ────────────────────────────────────
+// Every crime Torn has shown us at difficulty 5-9, with its testing-phase
+// toggle + threshold (falling back to the policy default until leadership
+// sets one). New crime names appear automatically once the OC cron has seen
+// them — same "shows up with a sane default, edit if you want to override"
+// pattern as the weights Config tab.
+export async function getRotationConfig(request, env, user) {
+  try {
+    const nameToDifficulty = await getCrimeNameDifficultyMap(env);
+    const { results: configRows } = await env.DB.prepare(`SELECT * FROM oc_rotation_config`).all();
+    const configByName = new Map(configRows.map(r => [r.crime_name, r]));
+
+    const crimes = [...nameToDifficulty.entries()]
+      .filter(([, difficulty]) => difficulty >= 5 && difficulty <= 9)
+      .map(([crime_name, difficulty]) => {
+        const cfg = configByName.get(crime_name);
+        return {
+          crime_name,
+          difficulty,
+          enabled: !!cfg?.enabled,
+          min_pass_rate: cfg?.min_pass_rate ?? defaultThresholdForCrime(difficulty, crime_name),
+          is_default: cfg?.min_pass_rate == null,
+        };
+      })
+      .sort((a, b) => a.difficulty - b.difficulty || a.crime_name.localeCompare(b.crime_name));
+
+    return jsonResponse({ crimes });
+  } catch (e) {
+    console.error('getRotationConfig error:', e);
+    return errorResponse('Failed to fetch rotation config: ' + e.message, 500);
+  }
+}
+
+// ── POST /api/leadership/oc/rotation/config ───────────────────────────────────
+// Body: { updates: [{ crime_name, difficulty, enabled, min_pass_rate }, ...] }
+export async function updateRotationConfig(request, env, user) {
+  try {
+    const { updates } = await request.json();
+    if (!Array.isArray(updates) || !updates.length) return errorResponse('updates array is required', 400);
+    if (updates.length > 200) return errorResponse('Max 200 updates per request', 400);
+
+    const stmts = updates.map(u => env.DB.prepare(
+      `INSERT INTO oc_rotation_config (crime_name, difficulty, enabled, min_pass_rate, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+       ON CONFLICT(crime_name) DO UPDATE SET
+         difficulty = excluded.difficulty,
+         enabled = excluded.enabled,
+         min_pass_rate = excluded.min_pass_rate,
+         updated_at = CURRENT_TIMESTAMP,
+         updated_by = excluded.updated_by`
+    ).bind(u.crime_name, Number(u.difficulty) || null, u.enabled ? 1 : 0, Number(u.min_pass_rate) || 70, user.userId));
+
+    const CHUNK = 200;
+    for (let i = 0; i < stmts.length; i += CHUNK) await env.DB.batch(stmts.slice(i, i + CHUNK));
+
+    return jsonResponse({ updated: stmts.length });
+  } catch (e) {
+    console.error('updateRotationConfig error:', e);
+    return errorResponse('Failed to update rotation config: ' + e.message, 500);
+  }
+}
+
+// Members eligible for a *trial* pick one tier above the highest tier they
+// have real CPR history for — per the agreed rule: if a member clears the
+// configured threshold on a majority of the crime+position combos they have
+// data for at tier D, they're allowed to be proposed (without a threshold
+// check, since there's no data yet) for tier D+1. This is the only way a
+// member's first real tier-D+1 CPR data point ever gets created.
+// Returns Map<torn_user_id, Map<targetDifficulty, avgScoreAtLowerTier>>.
+async function getTrialEligibility(env, configByName, nameToDifficulty) {
+  const { results: cprRows } = await env.DB.prepare(
+    `SELECT torn_user_id, crime_name, position, best_pass_rate FROM oc_member_cpr`
+  ).all();
+
+  const byMember = new Map(); // torn_user_id -> difficulty -> { clear, total, sum }
+  for (const row of cprRows) {
+    const difficulty = nameToDifficulty.get(row.crime_name);
+    if (difficulty == null) continue;
+    const cfg = configByName.get(row.crime_name);
+    const threshold = cfg ? cfg.min_pass_rate : defaultThresholdForCrime(difficulty, row.crime_name);
+
+    const tiers = byMember.get(row.torn_user_id) ?? new Map();
+    const stat = tiers.get(difficulty) ?? { clear: 0, total: 0, sum: 0 };
+    stat.total++;
+    stat.sum += row.best_pass_rate;
+    if (row.best_pass_rate >= threshold) stat.clear++;
+    tiers.set(difficulty, stat);
+    byMember.set(row.torn_user_id, tiers);
+  }
+
+  const eligible = new Map();
+  for (const [torn_user_id, tiers] of byMember) {
+    const targets = new Map();
+    for (const [difficulty, stat] of tiers) {
+      if (stat.total > 0 && stat.clear / stat.total > 0.5) {
+        targets.set(difficulty + 1, Math.round((stat.sum / stat.total) * 10) / 10);
+      }
+    }
+    if (targets.size) eligible.set(torn_user_id, targets);
+  }
+  return eligible;
+}
+
+// The core matching pass: for every vacant slot in an enabled, in-scope
+// crime, find the best available member and write a suggestion. Runs as a
+// continuous "best member for best vacant slot" greedy assignment across ALL
+// open slots at once — there's deliberately no fixed per-slot fill order.
+async function computeRotationSuggestions(env) {
+  const { results: configRows } = await env.DB.prepare(`SELECT * FROM oc_rotation_config WHERE enabled = 1`).all();
+  if (!configRows.length) return { created: 0, note: 'no crimes enabled in rotation config' };
+
+  const configByName = new Map(configRows.map(r => [r.crime_name, r]));
+  const enabledNames = [...configByName.keys()];
+  const namePlaceholders = enabledNames.map(() => '?').join(',');
+
+  // Vacant slots across all enabled, currently-Recruiting crimes for OCC1.
+  const { results: vacantSlots } = await env.DB.prepare(`
+    SELECT s.crime_id, s.position, s.position_id, s.position_label, s.position_number,
+           c.name AS crime_name, c.difficulty
+    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND s.torn_user_id IS NULL
+      AND c.name IN (${namePlaceholders})
+  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
+  if (!vacantSlots.length) return { created: 0, note: 'no vacant slots in enabled crimes' };
+
+  // "Ongoing + 1" throughput cap: per crime_name, every instance with at
+  // least one filled slot counts as ongoing (always allowed, to keep it
+  // moving toward Planning); brand-new, fully-vacant instances are capped at
+  // one extra so new crimes don't all open for recruitment at once.
+  const { results: fillInfo } = await env.DB.prepare(`
+    SELECT c.id AS crime_id, c.name AS crime_name,
+           COUNT(*) AS total_slots,
+           SUM(CASE WHEN s.torn_user_id IS NOT NULL THEN 1 ELSE 0 END) AS filled_slots
+    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${namePlaceholders})
+    GROUP BY c.id
+  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
+
+  const allowedCrimeIds = new Set();
+  const byCrimeName = new Map();
+  for (const row of fillInfo) (byCrimeName.get(row.crime_name) ?? byCrimeName.set(row.crime_name, []).get(row.crime_name)).push(row);
+  for (const instances of byCrimeName.values()) {
+    const fresh = instances.filter(i => i.filled_slots === 0).sort((a, b) => a.crime_id - b.crime_id);
+    for (const i of instances) if (i.filled_slots > 0) allowedCrimeIds.add(i.crime_id);
+    if (fresh.length) allowedCrimeIds.add(fresh[0].crime_id);
+  }
+
+  const inScopeSlots = vacantSlots.filter(s => allowedCrimeIds.has(s.crime_id));
+  if (!inScopeSlots.length) return { created: 0, note: 'all vacant slots are beyond the ongoing+1 cap this pass' };
+
+  // Members currently mid-crime anywhere (Recruiting or Planning) can't be
+  // proposed for a second one.
+  const { results: busyRows } = await env.DB.prepare(
+    `SELECT DISTINCT s.torn_user_id FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL`
+  ).all();
+  const busyIds = new Set(busyRows.map(r => r.torn_user_id));
+
+  const { results: members } = await env.DB.prepare(
+    `SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1`
+  ).bind(OCC1_FACTION_ID).all();
+  const availableIds = new Set(members.map(m => m.torn_user_id).filter(id => !busyIds.has(id)));
+  if (!availableIds.size) return { created: 0, note: 'no available (non-busy, active) members' };
+
+  const positions = [...new Set(inScopeSlots.map(s => s.position))];
+  const posPlaceholders = positions.map(() => '?').join(',');
+  const { results: cprRows } = await env.DB.prepare(
+    `SELECT torn_user_id, crime_name, position, best_pass_rate FROM oc_member_cpr
+     WHERE crime_name IN (${namePlaceholders}) AND position IN (${posPlaceholders})`
+  ).bind(...enabledNames, ...positions).all();
+  const cprByCrimePosition = new Map(); // `${crime_name}|${position}` -> [{torn_user_id, best_pass_rate}]
+  for (const row of cprRows) {
+    const key = `${row.crime_name}|${row.position}`;
+    (cprByCrimePosition.get(key) ?? cprByCrimePosition.set(key, []).get(key))
+      .push({ torn_user_id: row.torn_user_id, best_pass_rate: row.best_pass_rate });
+  }
+
+  const { results: weightRows } = await env.DB.prepare(
+    `SELECT crime_name, position, position_number, weight FROM oc_position_weights WHERE crime_name IN (${namePlaceholders})`
+  ).bind(...enabledNames).all();
+  const weightMap = new Map(weightRows.map(w => [`${w.crime_name}|${w.position}|${w.position_number}`, w.weight]));
+
+  const nameToDifficulty = await getCrimeNameDifficultyMap(env);
+  const trialEligibility = await getTrialEligibility(env, configByName, nameToDifficulty);
+
+  // Direct candidate pairs (member already has CPR for this exact crime+position).
+  const pairs = [];
+  for (const slot of inScopeSlots) {
+    const cfg = configByName.get(slot.crime_name);
+    const threshold = cfg.min_pass_rate;
+    const weight = weightMap.get(`${slot.crime_name}|${slot.position}|${slot.position_number}`) ?? 100;
+    const candidates = cprByCrimePosition.get(`${slot.crime_name}|${slot.position}`) ?? [];
+    for (const c of candidates) {
+      if (!availableIds.has(c.torn_user_id)) continue;
+      if (c.best_pass_rate < threshold) continue;
+      pairs.push({ slot, torn_user_id: c.torn_user_id, score: c.best_pass_rate * (weight / 100), pass_rate_used: c.best_pass_rate, is_trial: false });
+    }
+  }
+  pairs.sort((a, b) => b.score - a.score);
+
+  const usedSlotIds = new Set();
+  const usedMembers = new Set();
+  const assignments = [];
+  const slotKeyOf = s => `${s.crime_id}|${s.position_id}`;
+
+  for (const p of pairs) {
+    const key = slotKeyOf(p.slot);
+    if (usedSlotIds.has(key) || usedMembers.has(p.torn_user_id)) continue;
+    usedSlotIds.add(key);
+    usedMembers.add(p.torn_user_id);
+    assignments.push(p);
+  }
+
+  // Trial picks — only for slots that had zero direct candidates at all
+  // (never for a slot that just lost a contested draft to a better pick).
+  const slotsWithAnyDirectCandidate = new Set(pairs.map(p => slotKeyOf(p.slot)));
+  for (const slot of inScopeSlots) {
+    const key = slotKeyOf(slot);
+    if (usedSlotIds.has(key) || slotsWithAnyDirectCandidate.has(key)) continue;
+
+    const trialPool = [...trialEligibility.entries()]
+      .filter(([uid, targets]) => availableIds.has(uid) && !usedMembers.has(uid) && targets.has(slot.difficulty))
+      .map(([uid, targets]) => ({ torn_user_id: uid, score: targets.get(slot.difficulty) }))
+      .sort((a, b) => b.score - a.score);
+
+    if (trialPool.length) {
+      const pick = trialPool[0];
+      usedSlotIds.add(key);
+      usedMembers.add(pick.torn_user_id);
+      assignments.push({ slot, torn_user_id: pick.torn_user_id, score: pick.score, pass_rate_used: null, is_trial: true });
+    }
+  }
+
+  let created = 0;
+  for (const a of assignments) {
+    const existing = await env.DB.prepare(
+      `SELECT id, torn_user_id FROM oc_rotation_suggestions WHERE crime_id = ? AND position_id = ? AND status = 'pending'`
+    ).bind(a.slot.crime_id, a.slot.position_id).first();
+
+    if (existing?.torn_user_id === a.torn_user_id) continue; // already suggested, unchanged
+
+    if (existing) {
+      await env.DB.prepare(
+        `UPDATE oc_rotation_suggestions SET status = 'superseded', resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(existing.id).run();
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO oc_rotation_suggestions
+         (faction_id, crime_id, crime_name, position, position_id, position_label, torn_user_id, pass_rate_used, threshold_used, is_trial_pick)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      OCC1_FACTION_ID, a.slot.crime_id, a.slot.crime_name, a.slot.position, a.slot.position_id, a.slot.position_label,
+      a.torn_user_id, a.pass_rate_used, configByName.get(a.slot.crime_name).min_pass_rate, a.is_trial ? 1 : 0
+    ).run();
+    created++;
+  }
+
+  return { created, vacant_in_scope: inScopeSlots.length, assigned: assignments.length };
+}
+
+// Checks every still-pending suggestion against the freshest crime/slot data
+// and resolves it: did the suggested member join (right slot / a different
+// slot in the same crime / not at all), did someone else fill it first, or
+// did the crime move past Recruiting with the slot still empty.
+async function resolveRotationSuggestions(env) {
+  const { results: pending } = await env.DB.prepare(
+    `SELECT * FROM oc_rotation_suggestions WHERE status = 'pending'`
+  ).all();
+  if (!pending.length) return { resolved: 0 };
+
+  let resolved = 0;
+  for (const sug of pending) {
+    const crime = await env.DB.prepare(`SELECT status FROM oc_crimes WHERE id = ?`).bind(sug.crime_id).first();
+    if (!crime) continue;
+
+    const slot = await env.DB.prepare(
+      `SELECT torn_user_id FROM oc_crime_slots WHERE crime_id = ? AND position_id = ?`
+    ).bind(sug.crime_id, sug.position_id).first();
+
+    let status = null;
+    let actualId = null;
+
+    if (slot?.torn_user_id) {
+      if (slot.torn_user_id === sug.torn_user_id) {
+        status = 'joined_match';
+        actualId = slot.torn_user_id;
+      } else {
+        const elsewhere = await env.DB.prepare(
+          `SELECT 1 FROM oc_crime_slots WHERE crime_id = ? AND torn_user_id = ?`
+        ).bind(sug.crime_id, sug.torn_user_id).first();
+        status = elsewhere ? 'joined_wrong_position' : 'joined_wrong_member';
+        actualId = elsewhere ? sug.torn_user_id : slot.torn_user_id;
+      }
+    } else if (crime.status !== 'Recruiting') {
+      status = 'expired_unfilled';
+    }
+
+    if (status) {
+      await env.DB.prepare(
+        `UPDATE oc_rotation_suggestions SET status = ?, actual_torn_user_id = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(status, actualId, sug.id).run();
+      resolved++;
+    }
+  }
+
+  return { resolved };
+}
+
+// ── Cron entry point — throttles itself to ROTATION_POLL_INTERVAL_MIN using
+// a small meta row, so it can safely be called from a more frequent cron
+// (e.g. the existing */10 trigger) without a dedicated schedule entry. ──────
+export async function runRotationPollIfDue(env) {
+  const row = await env.DB.prepare(`SELECT value FROM oc_rotation_meta WHERE key = 'last_poll_at'`).first();
+  const lastRun = row ? new Date(row.value).getTime() : 0;
+  if (Date.now() - lastRun < ROTATION_POLL_INTERVAL_MIN * 60 * 1000) {
+    return { skipped: true };
+  }
+  await env.DB.prepare(
+    `INSERT INTO oc_rotation_meta (key, value) VALUES ('last_poll_at', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).bind(new Date().toISOString()).run();
+
+  // Only OCC1's live Recruiting/Planning crimes matter here, and those sort
+  // first — one page is enough, far cheaper than the full daily 500-crime pull.
+  await fetchAndCacheFactionCrimes(env, { factionIds: [OCC1_FACTION_ID], maxPages: 1 });
+  const resolution = await resolveRotationSuggestions(env);
+  const suggestion = await computeRotationSuggestions(env);
+
+  return { skipped: false, resolution, suggestion };
+}
+
+// ── POST /api/admin/oc/rotation/poll ──────────────────────────────────────────
+// Manual trigger for testing — runs the poll immediately, ignoring the
+// throttle (does NOT touch oc_rotation_meta, so the next scheduled cron tick
+// still runs on its normal cadence).
+export async function triggerRotationPoll(request, env, user) {
+  try {
+    await fetchAndCacheFactionCrimes(env, { factionIds: [OCC1_FACTION_ID], maxPages: 1 });
+    const resolution = await resolveRotationSuggestions(env);
+    const suggestion = await computeRotationSuggestions(env);
+    return jsonResponse({ resolution, suggestion, triggeredAt: new Date().toISOString() });
+  } catch (e) {
+    console.error('triggerRotationPoll error:', e);
+    return errorResponse('Rotation poll failed: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/leadership/oc/rotation/suggestions?faction_id= ──────────────────
+// Pending (actionable now) + most recent 50 resolved, with usernames resolved
+// for display.
+export async function getRotationSuggestions(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10) || OCC1_FACTION_ID;
+
+    const { results: pending } = await env.DB.prepare(
+      `SELECT * FROM oc_rotation_suggestions WHERE faction_id = ? AND status = 'pending' ORDER BY suggested_at DESC`
+    ).bind(factionId).all();
+    const { results: recent } = await env.DB.prepare(
+      `SELECT * FROM oc_rotation_suggestions WHERE faction_id = ? AND status != 'pending'
+       ORDER BY resolved_at DESC LIMIT 50`
+    ).bind(factionId).all();
+
+    const ids = [...new Set([...pending, ...recent].flatMap(r => [r.torn_user_id, r.actual_torn_user_id].filter(Boolean)))];
+    const usernames = {};
+    if (ids.length) {
+      const rows = await fetchInChunks(env, ph =>
+        `SELECT torn_user_id, username FROM faction_members WHERE torn_user_id IN (${ph})`, ids
+      );
+      for (const row of rows) usernames[row.torn_user_id] = row.username;
+    }
+
+    return jsonResponse({ pending, recent, usernames });
+  } catch (e) {
+    console.error('getRotationSuggestions error:', e);
+    return errorResponse('Failed to fetch rotation suggestions: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/leadership/oc/rotation/stats?faction_id=&days= ──────────────────
+// Headline accuracy/turnover metrics: suggestion outcome breakdown, plus the
+// two SLA counts the user cares about most — members currently idle 24h+ and
+// vacant slots stalled 24h+ in an enabled, in-scope Recruiting crime.
+export async function getRotationStats(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10) || OCC1_FACTION_ID;
+    const days = Math.min(parseInt(url.searchParams.get('days'), 10) || 30, 180);
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const { results: outcomeRows } = await env.DB.prepare(
+      `SELECT status, COUNT(*) AS count FROM oc_rotation_suggestions
+       WHERE faction_id = ? AND suggested_at >= ? AND status != 'pending'
+       GROUP BY status`
+    ).bind(factionId, sinceIso).all();
+    const outcomes = {};
+    let totalResolved = 0;
+    for (const row of outcomeRows) { outcomes[row.status] = row.count; totalResolved += row.count; }
+    const matched = outcomes.joined_match || 0;
+    const successRate = totalResolved ? Math.round((matched / totalResolved) * 1000) / 10 : null;
+
+    const distinctMembers = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT torn_user_id) AS n FROM oc_rotation_suggestions WHERE faction_id = ? AND suggested_at >= ?`
+    ).bind(factionId, sinceIso).first();
+
+    // Stalled slots: a vacant slot in an enabled crime, open for 24h+ (crime
+    // created_at is the closest proxy we have to "slot became available").
+    const dayAgo = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+    const { results: configRows } = await env.DB.prepare(`SELECT crime_name FROM oc_rotation_config WHERE enabled = 1`).all();
+    let stalledSlots = 0;
+    if (configRows.length) {
+      const names = configRows.map(r => r.crime_name);
+      const ph = names.map(() => '?').join(',');
+      const row = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+         WHERE c.faction_id = ? AND c.status = 'Recruiting' AND s.torn_user_id IS NULL
+           AND c.name IN (${ph}) AND c.created_at <= ?`
+      ).bind(factionId, ...names, dayAgo).first();
+      stalledSlots = row?.n || 0;
+    }
+
+    return jsonResponse({
+      since: sinceIso,
+      total_resolved: totalResolved,
+      outcomes,
+      success_rate: successRate,
+      distinct_members_placed: distinctMembers?.n || 0,
+      stalled_slots_24h: stalledSlots,
+    });
+  } catch (e) {
+    console.error('getRotationStats error:', e);
+    return errorResponse('Failed to fetch rotation stats: ' + e.message, 500);
   }
 }
