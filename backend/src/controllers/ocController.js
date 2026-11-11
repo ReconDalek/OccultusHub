@@ -562,6 +562,143 @@ export async function getCrimeRoster(request, env, user) {
   }
 }
 
+// ── GET /api/leadership/oc/members?faction_id= ────────────────────────────────
+// Bare active-member list (id + username) for the Member Lookup tab's picker.
+export async function getFactionMemberList(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+    if (!factionId || !FACTION_IDS.includes(factionId)) return errorResponse('Invalid or missing faction_id', 400);
+
+    const { results: members } = await env.DB.prepare(
+      `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1 ORDER BY username ASC`
+    ).bind(factionId).all();
+    return jsonResponse({ members });
+  } catch (e) {
+    console.error('getFactionMemberList error:', e);
+    return errorResponse('Failed to fetch members: ' + e.message, 500);
+  }
+}
+
+// Every (crime_name, difficulty, position) combo we've ever seen, across all
+// history — the fixed "grid" the Member/Faction Lookup tables are built on,
+// so a crime or role nobody's tried yet still shows up as an empty cell
+// instead of disappearing.
+async function getAllCrimePositions(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT c.name AS crime_name, c.difficulty, s.position
+     FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+     WHERE c.difficulty IS NOT NULL
+     ORDER BY c.difficulty ASC, c.name ASC, s.position ASC`
+  ).all();
+  return results;
+}
+
+function buildCprGrid(allPositions, ratesByKey) {
+  const byCrime = new Map();
+  for (const row of allPositions) {
+    const entry = byCrime.get(row.crime_name) ?? { crime_name: row.crime_name, difficulty: row.difficulty, positions: [] };
+    const rate = ratesByKey.get(`${row.crime_name}|${row.position}`);
+    entry.positions.push({ position: row.position, rate: rate?.rate ?? null, n: rate?.n ?? 0 });
+    byCrime.set(row.crime_name, entry);
+  }
+  return [...byCrime.values()];
+}
+
+// ── GET /api/leadership/oc/member-lookup?torn_user_id= ────────────────────────
+// One member's best-known CPR for EVERY crime+position we've ever tracked —
+// untried combos still appear, just empty — so leadership can see a full
+// career snapshot, trends across tiers included, not just enabled crimes.
+export async function getMemberCprLookup(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const tornUserId = parseInt(url.searchParams.get('torn_user_id'), 10);
+    if (!tornUserId) return errorResponse('torn_user_id is required', 400);
+
+    const allPositions = await getAllCrimePositions(env);
+    const { results: cprRows } = await env.DB.prepare(
+      `SELECT crime_name, position, best_pass_rate FROM oc_member_cpr WHERE torn_user_id = ?`
+    ).bind(tornUserId).all();
+    const ratesByKey = new Map(cprRows.map(r => [`${r.crime_name}|${r.position}`, { rate: r.best_pass_rate }]));
+
+    return jsonResponse({ crimes: buildCprGrid(allPositions, ratesByKey) });
+  } catch (e) {
+    console.error('getMemberCprLookup error:', e);
+    return errorResponse('Failed to fetch member CPR lookup: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/leadership/oc/faction-lookup?faction_id= ─────────────────────────
+// Same grid, averaged across that faction's currently active roster — a
+// broad "how capable is our roster, by crime and position" view.
+export async function getFactionCprLookup(request, env, user) {
+  try {
+    const url = new URL(request.url);
+    const factionId = parseInt(url.searchParams.get('faction_id'), 10);
+    if (!factionId || !FACTION_IDS.includes(factionId)) return errorResponse('Invalid or missing faction_id', 400);
+
+    const allPositions = await getAllCrimePositions(env);
+    const { results: avgRows } = await env.DB.prepare(
+      `SELECT cpr.crime_name, cpr.position, AVG(cpr.best_pass_rate) AS avg_rate, COUNT(*) AS n
+       FROM oc_member_cpr cpr
+       JOIN faction_members fm ON fm.torn_user_id = cpr.torn_user_id AND fm.faction_id = ? AND fm.is_active = 1
+       GROUP BY cpr.crime_name, cpr.position`
+    ).bind(factionId).all();
+    const ratesByKey = new Map(avgRows.map(r => [`${r.crime_name}|${r.position}`, { rate: Math.round(r.avg_rate * 10) / 10, n: r.n }]));
+
+    return jsonResponse({ crimes: buildCprGrid(allPositions, ratesByKey) });
+  } catch (e) {
+    console.error('getFactionCprLookup error:', e);
+    return errorResponse('Failed to fetch faction CPR lookup: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/leadership/oc/tier-trends ────────────────────────────────────────
+// Cross-tier trend data: overall avg CPR per difficulty, avg per (position,
+// difficulty), and the average change in a member's own avg when moving up
+// one tier (e.g. "typically drops ~7 points going from lvl6 to lvl7").
+export async function getTierTrends(request, env, user) {
+  try {
+    const { results: overallByTier } = await env.DB.prepare(
+      `SELECT nd.difficulty, AVG(cpr.best_pass_rate) AS avg_rate, COUNT(*) AS n
+       FROM oc_member_cpr cpr JOIN (SELECT DISTINCT name, difficulty FROM oc_crimes) nd ON nd.name = cpr.crime_name
+       WHERE nd.difficulty IS NOT NULL
+       GROUP BY nd.difficulty ORDER BY nd.difficulty ASC`
+    ).all();
+
+    const { results: byPositionTier } = await env.DB.prepare(
+      `SELECT cpr.position, nd.difficulty, AVG(cpr.best_pass_rate) AS avg_rate, COUNT(*) AS n
+       FROM oc_member_cpr cpr JOIN (SELECT DISTINCT name, difficulty FROM oc_crimes) nd ON nd.name = cpr.crime_name
+       WHERE nd.difficulty IS NOT NULL
+       GROUP BY cpr.position, nd.difficulty
+       HAVING n >= 5
+       ORDER BY cpr.position ASC, nd.difficulty ASC`
+    ).all();
+
+    const { results: stepChange } = await env.DB.prepare(
+      `WITH member_tier AS (
+         SELECT cpr.torn_user_id, nd.difficulty, AVG(cpr.best_pass_rate) AS avg_rate
+         FROM oc_member_cpr cpr JOIN (SELECT DISTINCT name, difficulty FROM oc_crimes) nd ON nd.name = cpr.crime_name
+         WHERE nd.difficulty IS NOT NULL
+         GROUP BY cpr.torn_user_id, nd.difficulty
+       )
+       SELECT a.difficulty AS from_tier, b.difficulty AS to_tier,
+              AVG(b.avg_rate - a.avg_rate) AS avg_change, COUNT(*) AS n
+       FROM member_tier a JOIN member_tier b ON b.torn_user_id = a.torn_user_id AND b.difficulty = a.difficulty + 1
+       GROUP BY a.difficulty, b.difficulty ORDER BY a.difficulty ASC`
+    ).all();
+
+    return jsonResponse({
+      overall_by_tier: overallByTier.map(r => ({ difficulty: r.difficulty, avg_rate: Math.round(r.avg_rate * 10) / 10, n: r.n })),
+      by_position_tier: byPositionTier.map(r => ({ position: r.position, difficulty: r.difficulty, avg_rate: Math.round(r.avg_rate * 10) / 10, n: r.n })),
+      step_change: stepChange.map(r => ({ from_tier: r.from_tier, to_tier: r.to_tier, avg_change: Math.round(r.avg_change * 10) / 10, n: r.n })),
+    });
+  } catch (e) {
+    console.error('getTierTrends error:', e);
+    return errorResponse('Failed to fetch tier trends: ' + e.message, 500);
+  }
+}
+
 // ── GET /api/leadership/oc/cpr-curves ─────────────────────────────────────────
 // Empirical "does this CPR actually tend to succeed?" curve per crime name +
 // position, bucketed in 10-point CPR bands, computed from every completed
@@ -819,6 +956,7 @@ const FORWARD_BOOK_REMAINING_HOURS = 24; // a busy member can still be suggested
 const SOON_FREE_HANDICAP = 0.8; // busy-but-soon-free candidates only win a slot over a free candidate if they're this much better (not just equal)
 const VIABILITY_COVERAGE_THRESHOLD = 0.5; // min fraction of a new crime's total position weight we need a plausible candidate for before starting it
 const OVERQUALIFIED_HANDICAP = 0.5; // a member already eligible for a HIGHER tier is only used on a lower-tier slot if nobody else is available for it
+const MAX_TIER_PUSH_DOWN = 1; // hard cap — never propose a member for a slot more than this many tiers below their proven max
 
 // Shared "who's free, who's soon-free, who's excluded" — used by both the
 // matching engine and the roster outlook, so the two always agree.
@@ -1164,7 +1302,9 @@ async function computeRotationSuggestions(env) {
     for (const c of candidates) {
       if (!availableIds.has(c.torn_user_id)) continue;
       if (c.best_pass_rate < threshold) continue;
-      const isOverqualified = (maxDirectTierByMember.get(c.torn_user_id) ?? 0) > slot.difficulty;
+      const maxTier = maxDirectTierByMember.get(c.torn_user_id) ?? 0;
+      if (maxTier - slot.difficulty > MAX_TIER_PUSH_DOWN) continue; // never more than 1 tier below what they're proven at
+      const isOverqualified = maxTier > slot.difficulty;
       const score = c.best_pass_rate * (weight / 100) * scoreMultiplier(c.torn_user_id) * (isOverqualified ? OVERQUALIFIED_HANDICAP : 1);
       pairs.push({ slot, torn_user_id: c.torn_user_id, score, pass_rate_used: c.best_pass_rate, is_trial: false });
     }

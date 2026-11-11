@@ -1116,6 +1116,18 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/oc/roster' && method === 'GET') {
       return ocController.getCrimeRoster(request, env, user);
     }
+    if (pathname === '/api/leadership/oc/members' && method === 'GET') {
+      return ocController.getFactionMemberList(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/member-lookup' && method === 'GET') {
+      return ocController.getMemberCprLookup(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/faction-lookup' && method === 'GET') {
+      return ocController.getFactionCprLookup(request, env, user);
+    }
+    if (pathname === '/api/leadership/oc/tier-trends' && method === 'GET') {
+      return ocController.getTierTrends(request, env, user);
+    }
     if (pathname === '/api/leadership/oc/cpr-curves' && method === 'GET') {
       return ocController.getCprCurves(request, env, user);
     }

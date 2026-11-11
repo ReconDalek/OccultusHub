@@ -1501,6 +1501,138 @@ function RotationTab() {
   )
 }
 
+// ─── Member / Faction CPR Lookup ──────────────────────────────────────────────
+// Full career snapshot of best-known CPR per crime+position — untried
+// combos still show (empty), so this is a complete grid, not just what the
+// rotation scheduler currently touches. "Faction average" mode shows the
+// same grid averaged across that faction's active roster.
+
+function LookupModeButton({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: active ? '600' : '400', cursor: 'pointer',
+      border: active ? '1px solid rgba(179,18,63,0.6)' : '1px solid rgba(255,255,255,0.12)',
+      background: active ? 'rgba(179,18,63,0.18)' : 'rgba(255,255,255,0.04)',
+      color: active ? '#f4f4f5' : "var(--text-secondary)",
+    }}>{children}</button>
+  )
+}
+
+function OCLookupTab({ factionId }) {
+  const [mode, setMode] = useState('member') // 'member' | 'faction'
+  const [members, setMembers] = useState([])
+  const [selectedMember, setSelectedMember] = useState('')
+  const [grid, setGrid] = useState(null)
+  const [trends, setTrends] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [collapsed, setCollapsed] = useState({})
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/leadership/oc/members?faction_id=${factionId}`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => {
+        const list = d.members || []
+        setMembers(list)
+        setSelectedMember(prev => list.some(m => String(m.torn_user_id) === String(prev)) ? prev : (list[0]?.torn_user_id ?? ''))
+      })
+      .catch(() => {})
+  }, [factionId])
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/leadership/oc/tier-trends`, { headers: authHeaders() })
+      .then(r => r.json()).then(d => { if (!d.error) setTrends(d) }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (mode === 'member' && !selectedMember) { setGrid(null); return }
+    setLoading(true)
+    setError(null)
+    const url = mode === 'member'
+      ? `${API_BASE_URL}/api/leadership/oc/member-lookup?torn_user_id=${selectedMember}`
+      : `${API_BASE_URL}/api/leadership/oc/faction-lookup?faction_id=${factionId}`
+    fetch(url, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setGrid(d.crimes || []) })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [mode, selectedMember, factionId])
+
+  const toggleCollapse = name => setCollapsed(prev => ({ ...prev, [name]: !prev[name] }))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <LookupModeButton active={mode === 'member'} onClick={() => setMode('member')}>Member</LookupModeButton>
+        <LookupModeButton active={mode === 'faction'} onClick={() => setMode('faction')}>Faction average</LookupModeButton>
+        {mode === 'member' && (
+          <select
+            value={selectedMember}
+            onChange={e => setSelectedMember(e.target.value)}
+            style={{
+              padding: '6px 10px', borderRadius: '6px', fontSize: '12px', border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)', color: '#f4f4f5',
+            }}
+          >
+            {members.map(m => <option key={m.torn_user_id} value={m.torn_user_id}>{m.username}</option>)}
+          </select>
+        )}
+      </div>
+
+      {trends && trends.overall_by_tier?.length > 0 && (
+        <div style={{
+          marginBottom: '16px', padding: '10px 14px', borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)',
+        }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#d4d4d8', marginBottom: '6px' }}>Tier trend (all members)</div>
+          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: "var(--text-secondary)" }}>
+            {trends.overall_by_tier.map(t => <span key={t.difficulty}>Lvl {t.difficulty}: {t.avg_rate}%</span>)}
+          </div>
+          {trends.step_change?.length > 0 && (
+            <div style={{ fontSize: '11px', color: "var(--text-faint)", marginTop: '6px' }}>
+              {trends.step_change.map(s => `Lvl ${s.from_tier}→${s.to_tier}: ${s.avg_change > 0 ? '+' : ''}${s.avg_change}%`).join('   ·   ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {loading && <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>Loading…</p>}
+      {error && <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>}
+
+      {grid && grid.map(c => {
+        const isOpen = !collapsed[c.crime_name]
+        return (
+          <div key={c.crime_name} style={{ marginBottom: '8px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
+            <button
+              onClick={() => toggleCollapse(c.crime_name)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <span style={{ fontSize: '13px', fontWeight: '600', color: isOpen ? '#f4f4f5' : "var(--text-secondary)" }}>{c.crime_name}</span>
+              <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>Lvl {c.difficulty}</span>
+              <span style={{ marginLeft: 'auto', color: "var(--text-faint)", fontSize: '11px' }}>{isOpen ? '▲' : '▼'}</span>
+            </button>
+            {isOpen && c.positions.map(p => (
+              <div key={p.position} style={{
+                display: 'grid', gridTemplateColumns: '1fr 100px', gap: '8px', alignItems: 'center',
+                padding: '6px 12px', borderTop: '1px solid rgba(255,255,255,0.04)', fontSize: '13px',
+              }}>
+                <span style={{ color: '#d4d4d8' }}>{p.position}</span>
+                <span style={{ color: p.rate != null ? "var(--text-secondary)" : "var(--text-faint)", textAlign: 'right' }}>
+                  {p.rate != null ? `${p.rate}%${p.n > 1 ? ` (n=${p.n})` : ''}` : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      })}
+
+      {grid && !grid.length && !loading && (
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>No crime data yet.</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
 export default function OCTab() {
@@ -1546,6 +1678,7 @@ export default function OCTab() {
         <button onClick={() => setView('crimes')} style={subTabStyle('crimes')}>Crimes</button>
         <button onClick={() => setView('builder')} style={subTabStyle('builder')}>Team Builder</button>
         <button onClick={() => setView('inactivity')} style={subTabStyle('inactivity')}>Inactivity</button>
+        <button onClick={() => setView('lookup')} style={subTabStyle('lookup')}>Lookup</button>
         <button onClick={() => setView('rotation')} style={subTabStyle('rotation')}>Test</button>
         <button onClick={() => setView('config')} style={subTabStyle('config')}>Config</button>
       </div>
@@ -1553,6 +1686,7 @@ export default function OCTab() {
       {view === 'crimes'  && <CrimesListView factionId={factionId} />}
       {view === 'builder' && <TeamBuilder factionId={factionId} />}
       {view === 'inactivity' && <OCInactivityView factionId={factionId} />}
+      {view === 'lookup' && <OCLookupTab factionId={factionId} />}
       {view === 'rotation' && <RotationTab />}
       {view === 'config'  && <OCConfigTab />}
     </div>
