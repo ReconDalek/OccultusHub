@@ -140,6 +140,15 @@ export default {
             .catch(e => console.error('[cron] chain economics backfill failed:', e))
         );
 
+        // OC rotation scheduler — self-throttles to ~45 min internally, so
+        // riding the 10-min trigger here needs no dedicated cron entry.
+        const { runRotationPollIfDue } = await import('./controllers/ocController.js');
+        ctx.waitUntil(
+          runRotationPollIfDue(env)
+            .then(r => { if (!r.skipped) console.log('[cron] OC rotation poll:', JSON.stringify(r)); })
+            .catch(e => console.error('[cron] OC rotation poll failed:', e))
+        );
+
         const { checkWarMatches, trackActiveWars } = await import('./controllers/warController.js');
         ctx.waitUntil((async () => {
           // Always run checkWarMatches — it discovers new matches and must not be gated

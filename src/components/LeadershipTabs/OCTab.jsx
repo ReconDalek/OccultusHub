@@ -1079,6 +1079,350 @@ function OCConfigTab() {
   )
 }
 
+// ─── Rotation scheduler (testing phase — OCC1 only) ───────────────────────────
+// Live "join this next" recommendations + the config that scopes which
+// crimes the scheduler is allowed to touch. Backend is hardcoded to OCC1
+// (33097) for the testing phase, so this view ignores the faction pills.
+
+function RotationConfigSection() {
+  const [crimes, setCrimes] = useState([])
+  const [dirty, setDirty] = useState({}) // crime_name -> { enabled, min_pass_rate }
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [saveMsg, setSaveMsg] = useState(null)
+
+  const load = () => {
+    setLoading(true)
+    fetch(`${API_BASE_URL}/api/leadership/oc/rotation/config`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setCrimes(d.crimes || []) })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const getRow = (c) => ({ enabled: c.enabled, min_pass_rate: c.min_pass_rate, ...dirty[c.crime_name] })
+  const setRow = (crimeName, patch) => setDirty(prev => ({ ...prev, [crimeName]: { ...prev[crimeName], ...patch } }))
+
+  async function handleSave() {
+    const updates = Object.entries(dirty).map(([crime_name, patch]) => {
+      const base = crimes.find(c => c.crime_name === crime_name)
+      return {
+        crime_name,
+        difficulty: base?.difficulty,
+        enabled: patch.enabled ?? base?.enabled ?? false,
+        min_pass_rate: patch.min_pass_rate ?? base?.min_pass_rate ?? 70,
+      }
+    })
+    if (!updates.length) return
+
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/leadership/oc/rotation/config`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Save failed')
+      setDirty({})
+      setSaveMsg(`Saved — ${data.updated} crime${data.updated !== 1 ? 's' : ''} updated`)
+      setTimeout(() => setSaveMsg(null), 4000)
+      load()
+    } catch (e) {
+      setSaveMsg(`Error: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasDirty = Object.keys(dirty).length > 0
+
+  if (loading) return <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>Loading…</p>
+  if (error) return <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '560px' }}>
+          Only enabled crimes are touched by the scheduler. Threshold is the minimum checkpoint pass rate a member
+          needs to be suggested for a slot in that crime — starts at the policy default (lvl1-6 70%, lvl7 65%,
+          Clinical Precision 60%, other lvl8 65%) until you override it.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('Error') ? '#f87171' : '#4ade80' }}>{saveMsg}</span>}
+          <button
+            onClick={handleSave}
+            disabled={saving || !hasDirty}
+            style={{
+              padding: '7px 18px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', border: 'none',
+              cursor: saving || !hasDirty ? 'default' : 'pointer',
+              background: saving || !hasDirty ? 'rgba(255,255,255,0.06)' : '#b3123f',
+              color: saving || !hasDirty ? "var(--text-faint)" : '#f4f4f5',
+              transition: 'all 0.15s',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
+        {crimes.map(c => {
+          const row = getRow(c)
+          const isDirty = !!dirty[c.crime_name]
+          return (
+            <div
+              key={c.crime_name}
+              style={{
+                display: 'grid', gridTemplateColumns: '28px 1fr 60px 90px', gap: '8px', alignItems: 'center',
+                padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.04)',
+                background: isDirty ? 'rgba(179,18,63,0.04)' : 'transparent',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!row.enabled}
+                onChange={e => setRow(c.crime_name, { enabled: e.target.checked })}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '13px', color: '#d4d4d8' }}>{c.crime_name}</span>
+              <span style={{ fontSize: '11px', color: "var(--text-faint)" }}>Lvl {c.difficulty}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="number" min="0" max="100" step="1"
+                  value={row.min_pass_rate}
+                  onChange={e => setRow(c.crime_name, { min_pass_rate: Number(e.target.value) })}
+                  style={{
+                    width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '4px', color: '#f4f4f5', fontSize: '13px', padding: '4px 6px',
+                    textAlign: 'center', outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+                <span style={{ color: "var(--text-faint)", fontSize: '12px' }}>%</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {crimes.length === 0 && (
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>
+          No lvl5-9 crime data yet — this populates once the OC cron has cached at least one.
+        </p>
+      )}
+    </div>
+  )
+}
+
+const SUGGESTION_STATUS_STYLE = {
+  pending:               { label: 'Pending',           color: '#fbbf24' },
+  joined_match:          { label: 'Joined as suggested', color: '#4ade80' },
+  joined_wrong_member:   { label: 'Wrong member joined', color: '#f87171' },
+  joined_wrong_position: { label: 'Joined different slot', color: '#fb923c' },
+  slot_filled_elsewhere: { label: 'Filled elsewhere',   color: '#fb923c' },
+  expired_unfilled:      { label: 'Expired unfilled',   color: '#f87171' },
+  superseded:            { label: 'Superseded',         color: "var(--text-faint)" },
+}
+
+function RotationSuggestionsSection() {
+  const [data, setData] = useState(null)
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [triggering, setTriggering] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetScope, setResetScope] = useState('pending')
+
+  const load = () => {
+    setLoading(true)
+    Promise.all([
+      fetch(`${API_BASE_URL}/api/leadership/oc/rotation/suggestions`, { headers: authHeaders() }).then(r => r.json()),
+      fetch(`${API_BASE_URL}/api/leadership/oc/rotation/stats`, { headers: authHeaders() }).then(r => r.json()),
+    ])
+      .then(([sugg, st]) => {
+        if (sugg.error) throw new Error(sugg.error)
+        if (st.error) throw new Error(st.error)
+        setData(sugg)
+        setStats(st)
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleTrigger() {
+    setTriggering(true)
+    try {
+      await fetch(`${API_BASE_URL}/api/admin/oc/rotation/poll`, { method: 'POST', headers: authHeaders() })
+      load()
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const RESET_SCOPE_LABEL = {
+    pending: 'pending suggestions', resolved: 'resolved/history suggestions', all: 'ALL suggestions',
+  }
+
+  async function handleReset() {
+    const label = RESET_SCOPE_LABEL[resetScope] || resetScope
+    if (!window.confirm(`Wipe ${label}? This only deletes our tracked suggestion/outcome log — it never touches Torn's own crime data or CPR history. Cannot be undone.`)) return
+    setResetting(true)
+    try {
+      await fetch(`${API_BASE_URL}/api/admin/oc/rotation/reset`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: resetScope }),
+      })
+      load()
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  if (loading) return <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>Loading…</p>
+  if (error) return <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>
+
+  const usernames = data?.usernames || {}
+  const rows = [...(data?.pending || []), ...(data?.recent || [])]
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '560px' }}>
+          Live "who should join next" recommendations for enabled crimes, re-checked every ~45 minutes against what
+          actually happened. Nothing here auto-joins anything — this is for leaders to action in-game.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleTrigger}
+            disabled={triggering}
+            style={{
+              padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', border: '1px solid rgba(255,255,255,0.12)',
+              cursor: triggering ? 'default' : 'pointer', background: 'rgba(255,255,255,0.05)', color: '#f4f4f5',
+            }}
+          >
+            {triggering ? 'Running…' : 'Run poll now'}
+          </button>
+          <select
+            value={resetScope}
+            onChange={e => setResetScope(e.target.value)}
+            style={{
+              padding: '6px 8px', borderRadius: '6px', fontSize: '12px', border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)', color: '#f4f4f5',
+            }}
+          >
+            <option value="pending">Pending only</option>
+            <option value="resolved">Resolved/history only</option>
+            <option value="all">All test data</option>
+          </select>
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            style={{
+              padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', border: '1px solid rgba(248,113,113,0.3)',
+              cursor: resetting ? 'default' : 'pointer', background: 'rgba(248,113,113,0.08)', color: '#f87171',
+            }}
+          >
+            {resetting ? 'Wiping…' : 'Wipe test data'}
+          </button>
+        </div>
+      </div>
+
+      {stats && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {[
+            { label: 'Suggestion success rate', value: stats.success_rate != null ? `${stats.success_rate}%` : '—' },
+            { label: 'Members placed (30d)', value: stats.distinct_members_placed },
+            { label: 'Roster turnover', value: stats.turnover_rate != null ? `${stats.turnover_rate}%` : '—' },
+            { label: 'Slots stalled 24h+', value: stats.stalled_slots_24h, warn: stats.stalled_slots_24h > 0 },
+          ].map(t => (
+            <div key={t.label} style={{
+              flex: '1 1 160px', minWidth: '140px', padding: '12px 14px', borderRadius: '8px',
+              border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)',
+            }}>
+              <div style={{ fontSize: '11px', color: "var(--text-faint)", marginBottom: '4px' }}>{t.label}</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: t.warn ? '#f87171' : '#f4f4f5' }}>{t.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {stats?.fund_tracking && (
+        <div style={{
+          display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'baseline', marginBottom: '20px',
+          padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)',
+        }}>
+          <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Enabled crimes, this window
+          </span>
+          <span style={{ fontSize: '13px', color: "var(--text-secondary)" }}>
+            {stats.fund_tracking.paid_crimes} paid · ${stats.fund_tracking.gross_income.toLocaleString()} gross
+            {stats.fund_tracking.item_expense > 0 ? ` − $${stats.fund_tracking.item_expense.toLocaleString()} items` : ''}
+            {' = '}
+            <strong style={{ color: '#f4f4f5' }}>${stats.fund_tracking.net_income.toLocaleString()} net</strong>
+          </span>
+        </div>
+      )}
+
+      <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
+        {rows.map(r => {
+          const style = SUGGESTION_STATUS_STYLE[r.status] || { label: r.status, color: "var(--text-faint)" }
+          return (
+            <div key={r.id} style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr 110px 140px', gap: '8px', alignItems: 'center',
+              padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.04)', fontSize: '13px',
+            }}>
+              <span style={{ color: '#d4d4d8' }}>{r.crime_name} — {r.position_label || r.position}</span>
+              <span style={{ color: "var(--text-secondary)" }}>
+                {usernames[r.torn_user_id] || r.torn_user_id}
+                {r.is_trial_pick ? <span style={{ color: '#fbbf24', fontSize: '11px' }}> (trial)</span> : null}
+                {r.pass_rate_used != null ? <span style={{ color: "var(--text-faint)", fontSize: '11px' }}> · {r.pass_rate_used}%</span> : null}
+              </span>
+              <span style={{ color: style.color, fontSize: '12px', fontWeight: '600' }}>{style.label}</span>
+              <span style={{ color: "var(--text-faint)", fontSize: '11px' }}>
+                {r.actual_torn_user_id && r.actual_torn_user_id !== r.torn_user_id
+                  ? `actually: ${usernames[r.actual_torn_user_id] || r.actual_torn_user_id}`
+                  : ''}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      {rows.length === 0 && (
+        <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>
+          No suggestions yet — enable at least one crime in the Config sub-tab and run the poll.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function RotationTab() {
+  const [sub, setSub] = useState('suggestions')
+  const subStyle = (id) => ({
+    padding: '6px 14px', fontWeight: '500', border: 'none', cursor: 'pointer',
+    background: sub === id ? 'rgba(179,18,63,0.18)' : 'transparent', color: sub === id ? '#f4f4f5' : "var(--text-secondary)",
+    borderRadius: '20px', fontSize: '12px',
+  })
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+        <button onClick={() => setSub('suggestions')} style={subStyle('suggestions')}>Suggestions</button>
+        <button onClick={() => setSub('rconfig')} style={subStyle('rconfig')}>Config</button>
+      </div>
+      {sub === 'suggestions' && <RotationSuggestionsSection />}
+      {sub === 'rconfig' && <RotationConfigSection />}
+    </div>
+  )
+}
+
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
 export default function OCTab() {
@@ -1124,12 +1468,14 @@ export default function OCTab() {
         <button onClick={() => setView('crimes')} style={subTabStyle('crimes')}>Crimes</button>
         <button onClick={() => setView('builder')} style={subTabStyle('builder')}>Team Builder</button>
         <button onClick={() => setView('inactivity')} style={subTabStyle('inactivity')}>Inactivity</button>
+        <button onClick={() => setView('rotation')} style={subTabStyle('rotation')}>Rotation</button>
         <button onClick={() => setView('config')} style={subTabStyle('config')}>Config</button>
       </div>
 
       {view === 'crimes'  && <CrimesListView factionId={factionId} />}
       {view === 'builder' && <TeamBuilder factionId={factionId} />}
       {view === 'inactivity' && <OCInactivityView factionId={factionId} />}
+      {view === 'rotation' && <RotationTab />}
       {view === 'config'  && <OCConfigTab />}
     </div>
     </CprCurvesContext.Provider>
