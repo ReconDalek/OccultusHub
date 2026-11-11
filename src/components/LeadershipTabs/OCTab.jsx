@@ -1252,6 +1252,7 @@ const SUGGESTION_STATUS_STYLE = {
 function RotationSuggestionsSection() {
   const [data, setData] = useState(null)
   const [stats, setStats] = useState(null)
+  const [outlook, setOutlook] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [triggering, setTriggering] = useState(false)
@@ -1263,12 +1264,15 @@ function RotationSuggestionsSection() {
     Promise.all([
       fetch(`${API_BASE_URL}/api/leadership/oc/rotation/suggestions`, { headers: authHeaders() }).then(r => r.json()),
       fetch(`${API_BASE_URL}/api/leadership/oc/rotation/stats`, { headers: authHeaders() }).then(r => r.json()),
+      fetch(`${API_BASE_URL}/api/leadership/oc/rotation/outlook`, { headers: authHeaders() }).then(r => r.json()),
     ])
-      .then(([sugg, st]) => {
+      .then(([sugg, st, outl]) => {
         if (sugg.error) throw new Error(sugg.error)
         if (st.error) throw new Error(st.error)
+        if (outl.error) throw new Error(outl.error)
         setData(sugg)
         setStats(st)
+        setOutlook(outl)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -1354,13 +1358,55 @@ function RotationSuggestionsSection() {
         </div>
       </div>
 
+      {outlook && (outlook.free_members.length > 0 || outlook.soon_free_members.length > 0 || outlook.tier_recommendations.length > 0) && (
+        <div style={{
+          marginBottom: '20px', padding: '12px 14px', borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)',
+        }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#d4d4d8', marginBottom: '8px' }}>Roster outlook</div>
+
+          {outlook.tier_recommendations.some(t => t.recommend_spawn) && (
+            <div style={{ marginBottom: '10px' }}>
+              {outlook.tier_recommendations.filter(t => t.recommend_spawn).map(t => (
+                <div key={t.difficulty} style={{ fontSize: '12px', color: '#fbbf24', marginBottom: '2px' }}>
+                  Consider starting more lvl {t.difficulty} crimes — {t.reason}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '12px' }}>
+            <div style={{ flex: '1 1 220px' }}>
+              <div style={{ color: "var(--text-faint)", marginBottom: '4px' }}>Not in an OC ({outlook.free_members.length})</div>
+              {outlook.free_members.map(m => (
+                <div key={m.torn_user_id} style={{ color: "var(--text-secondary)" }}>
+                  {m.username} — lvl {m.eligible_tier ?? '—'}{m.promotable_to ? ` (promotable to ${m.promotable_to})` : ''}
+                </div>
+              ))}
+              {!outlook.free_members.length && <div style={{ color: "var(--text-faint)" }}>None eligible right now</div>}
+            </div>
+            <div style={{ flex: '1 1 220px' }}>
+              <div style={{ color: "var(--text-faint)", marginBottom: '4px' }}>Free within 24h ({outlook.soon_free_members.length})</div>
+              {outlook.soon_free_members.map(m => (
+                <div key={m.torn_user_id} style={{ color: "var(--text-secondary)" }}>
+                  {m.username} — lvl {m.eligible_tier ?? '—'}{m.promotable_to ? ` (promotable to ${m.promotable_to})` : ''}
+                  <span style={{ color: "var(--text-faint)" }}> · {m.hours_remaining}h</span>
+                </div>
+              ))}
+              {!outlook.soon_free_members.length && <div style={{ color: "var(--text-faint)" }}>None eligible</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {stats && (
         <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
           {[
             { label: 'Suggestion success rate', value: stats.success_rate != null ? `${stats.success_rate}%` : '—' },
             { label: 'Members placed (30d)', value: stats.distinct_members_placed },
             { label: 'Roster turnover', value: stats.turnover_rate != null ? `${stats.turnover_rate}%` : '—' },
-            { label: 'OCs stalled 24h+', value: stats.stalled_slots_24h, warn: stats.stalled_slots_24h > 0 },
+            { label: 'OCs stalled', value: stats.stalled_slots_24h, warn: stats.stalled_slots_24h > 0 },
+            { label: 'Stuck suggestions 12h+', value: stats.stale_pending_12h, warn: stats.stale_pending_12h > 0 },
           ].map(t => (
             <div key={t.label} style={{
               flex: '1 1 160px', minWidth: '140px', padding: '12px 14px', borderRadius: '8px',

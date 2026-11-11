@@ -818,6 +818,46 @@ const STAGGER_REMAINING_HOURS = 12; // don't open a crime's next slot until its 
 const FORWARD_BOOK_REMAINING_HOURS = 24; // a busy member can still be suggested elsewhere if their current slot finishes within this window
 const SOON_FREE_HANDICAP = 0.8; // busy-but-soon-free candidates only win a slot over a free candidate if they're this much better (not just equal)
 const VIABILITY_COVERAGE_THRESHOLD = 0.5; // min fraction of a new crime's total position weight we need a plausible candidate for before starting it
+const OVERQUALIFIED_HANDICAP = 0.5; // a member already eligible for a HIGHER tier is only used on a lower-tier slot if nobody else is available for it
+
+// Shared "who's free, who's soon-free, who's excluded" — used by both the
+// matching engine and the roster outlook, so the two always agree.
+async function getMemberAvailability(env) {
+  const { results: busyRows } = await env.DB.prepare(
+    `SELECT s.torn_user_id, MIN(s.progress) AS progress FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL
+     GROUP BY s.torn_user_id`
+  ).all();
+  const remainingByMember = new Map(busyRows.map(r => [r.torn_user_id, remainingHoursForProgress(r.progress)]));
+  const excludedBusyIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) > FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
+  const soonFreeIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) <= FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
+
+  const { results: members } = await env.DB.prepare(
+    `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1`
+  ).bind(OCC1_FACTION_ID).all();
+  const freeNowIds = new Set(members.map(m => m.torn_user_id).filter(id => !excludedBusyIds.has(id) && !soonFreeIds.has(id)));
+  const availableIds = new Set(members.map(m => m.torn_user_id).filter(id => !excludedBusyIds.has(id))); // free + soon-free
+
+  return { members, freeNowIds, soonFreeIds, excludedBusyIds, availableIds, remainingByMember };
+}
+
+// The highest ENABLED-crime tier each member directly clears (best_pass_rate
+// >= that crime's own threshold for at least one position) — used to avoid
+// using a tier-8-proven member on a tier-7 slot unless nobody else is around.
+async function getMemberMaxDirectTier(env, configByName, nameToDifficulty) {
+  const { results: cprRows } = await env.DB.prepare(
+    `SELECT torn_user_id, crime_name, best_pass_rate FROM oc_member_cpr`
+  ).all();
+  const maxTier = new Map();
+  for (const row of cprRows) {
+    const cfg = configByName.get(row.crime_name);
+    if (!cfg || row.best_pass_rate < cfg.min_pass_rate) continue;
+    const difficulty = nameToDifficulty.get(row.crime_name);
+    if (difficulty == null) continue;
+    if (difficulty > (maxTier.get(row.torn_user_id) ?? 0)) maxTier.set(row.torn_user_id, difficulty);
+  }
+  return maxTier;
+}
 
 // Torn's slot `progress` is 0-100 over ROLE_PROGRESS_DURATION_HOURS since joining.
 function remainingHoursForProgress(progress) {
@@ -984,23 +1024,8 @@ async function computeRotationSuggestions(env) {
   // Member availability, CPR, weights and promotion eligibility — gathered
   // up front so the "should we even start a new crime" viability check below
   // can use the exact same candidate pools as the matching pass further down.
-
-  // Members currently mid-crime anywhere (Recruiting or Planning): fully
-  // excluded if there's more than FORWARD_BOOK_REMAINING_HOURS left on their
-  // current slot, otherwise kept as a lower-priority ("soon free") candidate
-  // so they can be lined up for their next crime in advance.
-  const { results: busyRows } = await env.DB.prepare(
-    `SELECT s.torn_user_id, MIN(s.progress) AS progress FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
-     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL
-     GROUP BY s.torn_user_id`
-  ).all();
-  const excludedBusyIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) > FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
-  const soonFreeIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) <= FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
-
-  const { results: members } = await env.DB.prepare(
-    `SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1`
-  ).bind(OCC1_FACTION_ID).all();
-  const availableIds = new Set(members.map(m => m.torn_user_id).filter(id => !excludedBusyIds.has(id)));
+  const availability = await getMemberAvailability(env);
+  const { availableIds, soonFreeIds } = availability;
   if (!availableIds.size) return { created: 0, note: 'no available (non-busy, active) members' };
   const scoreMultiplier = uid => soonFreeIds.has(uid) ? SOON_FREE_HANDICAP : 1;
 
@@ -1041,6 +1066,7 @@ async function computeRotationSuggestions(env) {
 
   const nameToDifficulty = await getCrimeNameDifficultyMap(env);
   const promotionEligibility = await getPromotionEligibility(env, configByName, nameToDifficulty);
+  const maxDirectTierByMember = await getMemberMaxDirectTier(env, configByName, nameToDifficulty);
 
   // Weight-coverage viability check for STARTING a brand-new (fully vacant)
   // crime instance: what fraction of the crime's total position weight do we
@@ -1138,7 +1164,8 @@ async function computeRotationSuggestions(env) {
     for (const c of candidates) {
       if (!availableIds.has(c.torn_user_id)) continue;
       if (c.best_pass_rate < threshold) continue;
-      const score = c.best_pass_rate * (weight / 100) * scoreMultiplier(c.torn_user_id);
+      const isOverqualified = (maxDirectTierByMember.get(c.torn_user_id) ?? 0) > slot.difficulty;
+      const score = c.best_pass_rate * (weight / 100) * scoreMultiplier(c.torn_user_id) * (isOverqualified ? OVERQUALIFIED_HANDICAP : 1);
       pairs.push({ slot, torn_user_id: c.torn_user_id, score, pass_rate_used: c.best_pass_rate, is_trial: false });
     }
   }
@@ -1434,11 +1461,12 @@ export async function getRotationStats(request, env, user) {
     // Stalled OCs: counts CRIMES, not slots. A crime is stalled when it still
     // has a vacant slot but nobody is actively progressing any filled slot
     // (every filled slot is either done at 100%, or there are none filled at
-    // all) — real activity has stopped and it's just sitting there waiting
-    // for the next member. A crime already holding a pending suggestion
-    // doesn't count — we're already on it.
+    // all) — real activity has stopped. This reflects actual game state only;
+    // it does NOT get cleared just because we've proposed a suggestion for it
+    // — the OC is still sitting there until someone actually joins.
     const { results: configRows } = await env.DB.prepare(`SELECT crime_name FROM oc_rotation_config WHERE enabled = 1`).all();
     let stalledSlots = 0;
+    let stalePending12h = 0;
     let fundTracking = null;
     if (configRows.length) {
       const names = configRows.map(r => r.crime_name);
@@ -1447,10 +1475,19 @@ export async function getRotationStats(request, env, user) {
         `SELECT COUNT(DISTINCT c.id) AS n FROM oc_crimes c
          WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${ph})
            AND EXISTS (SELECT 1 FROM oc_crime_slots s WHERE s.crime_id = c.id AND s.torn_user_id IS NULL)
-           AND NOT EXISTS (SELECT 1 FROM oc_crime_slots s WHERE s.crime_id = c.id AND s.torn_user_id IS NOT NULL AND s.progress < 100)
-           AND c.id NOT IN (SELECT crime_id FROM oc_rotation_suggestions WHERE status = 'pending')`
+           AND NOT EXISTS (SELECT 1 FROM oc_crime_slots s WHERE s.crime_id = c.id AND s.torn_user_id IS NOT NULL AND s.progress < 100)`
       ).bind(factionId, ...names).first();
       stalledSlots = row?.n || 0;
+
+      // Separate signal: a suggestion that's been sitting unresolved 12h+ —
+      // "no member waiting to join a viable position for over 12h" — so
+      // leadership knows a specific suggestion needs a nudge or a re-pick.
+      const twelveHoursAgoIso = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      const staleRow = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM oc_rotation_suggestions
+         WHERE faction_id = ? AND status = 'pending' AND suggested_at <= ?`
+      ).bind(factionId, twelveHoursAgoIso).first();
+      stalePending12h = staleRow?.n || 0;
 
       // Fund tracking: what just the crimes the scheduler is allowed to touch
       // have actually earned/cost over this same window — separate from the
@@ -1475,10 +1512,114 @@ export async function getRotationStats(request, env, user) {
       active_roster_size: rosterSize,
       turnover_rate: turnoverRate,
       stalled_slots_24h: stalledSlots,
+      stale_pending_12h: stalePending12h,
       fund_tracking: fundTracking,
     });
   } catch (e) {
     console.error('getRotationStats error:', e);
     return errorResponse('Failed to fetch rotation stats: ' + e.message, 500);
+  }
+}
+
+// ── GET /api/leadership/oc/rotation/outlook ───────────────────────────────────
+// Free/soon-free members with their tested-tier eligibility, plus a per-tier
+// "idle labor vs open seats" comparison — purely advisory, since we can't
+// spawn OC crimes ourselves; starting a new one in Torn's OC2 is a manual
+// leadership action. The point is to flag "you have 15 eligible members
+// free soon and 0 open tier-8 seats — consider starting more", without ever
+// claiming we did it.
+export async function getRotationOutlook(request, env, user) {
+  try {
+    const { results: configRows } = await env.DB.prepare(`SELECT * FROM oc_rotation_config WHERE enabled = 1`).all();
+    if (!configRows.length) return jsonResponse({ free_members: [], soon_free_members: [], tier_recommendations: [] });
+
+    const configByName = new Map(configRows.map(r => [r.crime_name, r]));
+    const enabledNames = [...configByName.keys()];
+    const namePlaceholders = enabledNames.map(() => '?').join(',');
+
+    const availability = await getMemberAvailability(env);
+    const usernameByMember = new Map(availability.members.map(m => [m.torn_user_id, m.username]));
+
+    const nameToDifficulty = await getCrimeNameDifficultyMap(env);
+    const maxDirectTierByMember = await getMemberMaxDirectTier(env, configByName, nameToDifficulty);
+    const promotionEligibility = await getPromotionEligibility(env, configByName, nameToDifficulty);
+
+    const describeMember = (uid, extra) => {
+      const eligibleTier = maxDirectTierByMember.get(uid) ?? null;
+      const promoTargets = promotionEligibility.get(uid);
+      const promotableTo = promoTargets
+        ? Math.max(...[...promoTargets.keys()].map(name => nameToDifficulty.get(name) ?? 0))
+        : null;
+      return {
+        torn_user_id: uid,
+        username: usernameByMember.get(uid) ?? String(uid),
+        eligible_tier: eligibleTier,
+        promotable_to: promotableTo && (!eligibleTier || promotableTo > eligibleTier) ? promotableTo : null,
+        ...extra,
+      };
+    };
+
+    const freeMembers = [...availability.freeNowIds]
+      .map(uid => describeMember(uid))
+      .filter(m => m.eligible_tier != null || m.promotable_to != null)
+      .sort((a, b) => (b.eligible_tier ?? b.promotable_to ?? 0) - (a.eligible_tier ?? a.promotable_to ?? 0));
+
+    const soonFreeMembers = [...availability.soonFreeIds]
+      .map(uid => describeMember(uid, { hours_remaining: Math.round((availability.remainingByMember.get(uid) ?? 0) * 10) / 10 }))
+      .filter(m => m.eligible_tier != null || m.promotable_to != null)
+      .sort((a, b) => (b.eligible_tier ?? b.promotable_to ?? 0) - (a.eligible_tier ?? a.promotable_to ?? 0));
+
+    // Current active instances + their open seats, per tier.
+    const { results: instanceRows } = await env.DB.prepare(`
+      SELECT c.id AS crime_id, c.difficulty,
+             SUM(CASE WHEN s.torn_user_id IS NULL THEN 1 ELSE 0 END) AS vacant_slots
+      FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+      WHERE c.faction_id = ? AND c.status IN ('Recruiting','Planning') AND c.name IN (${namePlaceholders})
+      GROUP BY c.id
+    `).bind(OCC1_FACTION_ID, ...enabledNames).all();
+
+    const byTier = new Map(); // difficulty -> { activeInstances, openCapacity }
+    for (const row of instanceRows) {
+      const stat = byTier.get(row.difficulty) ?? { activeInstances: 0, openCapacity: 0 };
+      stat.activeInstances++;
+      stat.openCapacity += row.vacant_slots;
+      byTier.set(row.difficulty, stat);
+    }
+
+    const eligibleFreeByTier = new Map();
+    const eligibleSoonByTier = new Map();
+    for (const m of freeMembers) {
+      const tier = m.eligible_tier ?? m.promotable_to;
+      eligibleFreeByTier.set(tier, (eligibleFreeByTier.get(tier) ?? 0) + 1);
+    }
+    for (const m of soonFreeMembers) {
+      const tier = m.eligible_tier ?? m.promotable_to;
+      eligibleSoonByTier.set(tier, (eligibleSoonByTier.get(tier) ?? 0) + 1);
+    }
+
+    const allTiers = new Set([...byTier.keys(), ...eligibleFreeByTier.keys(), ...eligibleSoonByTier.keys()]);
+    const tierRecommendations = [...allTiers].sort((a, b) => a - b).map(difficulty => {
+      const stat = byTier.get(difficulty) ?? { activeInstances: 0, openCapacity: 0 };
+      const eligibleFree = eligibleFreeByTier.get(difficulty) ?? 0;
+      const eligibleSoon = eligibleSoonByTier.get(difficulty) ?? 0;
+      const idleLabor = eligibleFree + eligibleSoon;
+      const recommendSpawn = idleLabor > stat.openCapacity;
+      return {
+        difficulty,
+        active_instances: stat.activeInstances,
+        open_capacity: stat.openCapacity,
+        eligible_free: eligibleFree,
+        eligible_soon_free: eligibleSoon,
+        recommend_spawn: recommendSpawn,
+        reason: recommendSpawn
+          ? `${idleLabor} eligible free/soon-free vs ${stat.openCapacity} open seat${stat.openCapacity !== 1 ? 's' : ''}`
+          : null,
+      };
+    });
+
+    return jsonResponse({ free_members: freeMembers, soon_free_members: soonFreeMembers, tier_recommendations: tierRecommendations });
+  } catch (e) {
+    console.error('getRotationOutlook error:', e);
+    return errorResponse('Failed to fetch rotation outlook: ' + e.message, 500);
   }
 }

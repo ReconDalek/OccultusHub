@@ -1143,6 +1143,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/leadership/oc/rotation/stats' && method === 'GET') {
       return ocController.getRotationStats(request, env, user);
     }
+    if (pathname === '/api/leadership/oc/rotation/outlook' && method === 'GET') {
+      return ocController.getRotationOutlook(request, env, user);
+    }
     if (pathname === '/api/leadership/oc/inactivity/member' && method === 'GET') {
       return ocInactivityController.getMemberInactivity(request, env, user);
     }
