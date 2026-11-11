@@ -1431,12 +1431,12 @@ export async function getRotationStats(request, env, user) {
     const rosterSize = activeRoster?.n || 0;
     const turnoverRate = rosterSize ? Math.round(((distinctMembers?.n || 0) / rosterSize) * 1000) / 10 : null;
 
-    // Stalled OCs: counts CRIMES, not slots — a crime with 6 vacant slots we
-    // haven't even started on yet is one stalled OC, not six. A crime that
-    // already has a pending suggestion is being worked and doesn't count,
-    // even if it's old (crime created_at is the closest proxy we have for
-    // "its first slot became available").
-    const dayAgo = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+    // Stalled OCs: counts CRIMES, not slots. A crime is stalled when it still
+    // has a vacant slot but nobody is actively progressing any filled slot
+    // (every filled slot is either done at 100%, or there are none filled at
+    // all) — real activity has stopped and it's just sitting there waiting
+    // for the next member. A crime already holding a pending suggestion
+    // doesn't count — we're already on it.
     const { results: configRows } = await env.DB.prepare(`SELECT crime_name FROM oc_rotation_config WHERE enabled = 1`).all();
     let stalledSlots = 0;
     let fundTracking = null;
@@ -1444,11 +1444,12 @@ export async function getRotationStats(request, env, user) {
       const names = configRows.map(r => r.crime_name);
       const ph = names.map(() => '?').join(',');
       const row = await env.DB.prepare(
-        `SELECT COUNT(DISTINCT c.id) AS n FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
-         WHERE c.faction_id = ? AND c.status = 'Recruiting' AND s.torn_user_id IS NULL
-           AND c.name IN (${ph}) AND c.created_at <= ?
+        `SELECT COUNT(DISTINCT c.id) AS n FROM oc_crimes c
+         WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${ph})
+           AND EXISTS (SELECT 1 FROM oc_crime_slots s WHERE s.crime_id = c.id AND s.torn_user_id IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM oc_crime_slots s WHERE s.crime_id = c.id AND s.torn_user_id IS NOT NULL AND s.progress < 100)
            AND c.id NOT IN (SELECT crime_id FROM oc_rotation_suggestions WHERE status = 'pending')`
-      ).bind(factionId, ...names, dayAgo).first();
+      ).bind(factionId, ...names).first();
       stalledSlots = row?.n || 0;
 
       // Fund tracking: what just the crimes the scheduler is allowed to touch
