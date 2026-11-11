@@ -1360,7 +1360,7 @@ function RotationSuggestionsSection() {
             { label: 'Suggestion success rate', value: stats.success_rate != null ? `${stats.success_rate}%` : '—' },
             { label: 'Members placed (30d)', value: stats.distinct_members_placed },
             { label: 'Roster turnover', value: stats.turnover_rate != null ? `${stats.turnover_rate}%` : '—' },
-            { label: 'Slots stalled 24h+', value: stats.stalled_slots_24h, warn: stats.stalled_slots_24h > 0 },
+            { label: 'OCs stalled 24h+', value: stats.stalled_slots_24h, warn: stats.stalled_slots_24h > 0 },
           ].map(t => (
             <div key={t.label} style={{
               flex: '1 1 160px', minWidth: '140px', padding: '12px 14px', borderRadius: '8px',
@@ -1393,12 +1393,24 @@ function RotationSuggestionsSection() {
       <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', overflow: 'hidden' }}>
         {rows.map(r => {
           const style = SUGGESTION_STATUS_STYLE[r.status] || { label: r.status, color: "var(--text-faint)" }
+          const progress = data?.progress?.[r.crime_id]
           return (
             <div key={r.id} style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr 110px 140px', gap: '8px', alignItems: 'center',
               padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.04)', fontSize: '13px',
             }}>
-              <span style={{ color: '#d4d4d8' }}>{r.crime_name} — {r.position_label || r.position}</span>
+              <span style={{ color: '#d4d4d8' }}>
+                {r.crime_name} — {r.position_label || r.position}
+                <br />
+                <a
+                  href={`https://www.torn.com/factions.php?step=your#/tab=crimes&crimeId=${r.crime_id}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ color: "var(--text-faint)", fontSize: '11px', textDecoration: 'none' }}
+                >
+                  #{r.crime_id}
+                </a>
+                {progress ? <span style={{ color: "var(--text-faint)", fontSize: '11px' }}> · {progress.done}/{progress.total}</span> : null}
+              </span>
               <span style={{ color: "var(--text-secondary)" }}>
                 {usernames[r.torn_user_id] || r.torn_user_id}
                 {r.is_trial_pick ? <span style={{ color: '#fbbf24', fontSize: '11px' }}> (trial)</span> : null}

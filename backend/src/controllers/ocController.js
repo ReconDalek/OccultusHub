@@ -813,6 +813,16 @@ export async function refreshOcCrimes(request, env, user) {
 const OCC1_FACTION_ID = 33097; // "could be adapted for the other shells later" — scoped to OCC1 for the testing phase
 const ROTATION_POLL_INTERVAL_MIN = 45; // within the requested 30-60 min window
 const DEFAULT_PROMOTION_THRESHOLD = 85; // editable per-crime "promotion" bar, distinct from the ordinary suggestion threshold
+const ROLE_PROGRESS_DURATION_HOURS = 24; // confirmed duration for the lvl7/lvl8 crimes currently in scope — revisit if a tested crime's roles run a different length
+const STAGGER_REMAINING_HOURS = 12; // don't open a crime's next slot until its current slot(s) are within this many hours of finishing
+const FORWARD_BOOK_REMAINING_HOURS = 24; // a busy member can still be suggested elsewhere if their current slot finishes within this window
+const SOON_FREE_HANDICAP = 0.8; // busy-but-soon-free candidates only win a slot over a free candidate if they're this much better (not just equal)
+
+// Torn's slot `progress` is 0-100 over ROLE_PROGRESS_DURATION_HOURS since joining.
+function remainingHoursForProgress(progress) {
+  const pct = typeof progress === 'number' ? progress : 0;
+  return Math.max(0, ROLE_PROGRESS_DURATION_HOURS * (1 - pct / 100));
+}
 
 // Policy defaults from the user's stated thresholds — only used when a crime
 // has no row yet in oc_rotation_config (or no override set on its row).
@@ -992,22 +1002,49 @@ async function computeRotationSuggestions(env) {
     if (fresh.length) allowedCrimeIds.add(fresh[0].crime_id);
   }
 
-  const inScopeSlots = vacantSlots.filter(s => allowedCrimeIds.has(s.crime_id));
-  if (!inScopeSlots.length) return { created: 0, note: 'all vacant slots are beyond the ongoing+1 cap this pass' };
-
-  // Members currently mid-crime anywhere (Recruiting or Planning) can't be
-  // proposed for a second one.
-  const { results: busyRows } = await env.DB.prepare(
-    `SELECT DISTINCT s.torn_user_id FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
-     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL`
+  // Only one outstanding suggestion per crime at a time — a crime that
+  // already has a pending suggestion isn't offered a second one until that
+  // one resolves (joined, superseded, etc).
+  const { results: pendingCrimes } = await env.DB.prepare(
+    `SELECT DISTINCT crime_id FROM oc_rotation_suggestions WHERE status = 'pending'`
   ).all();
-  const busyIds = new Set(busyRows.map(r => r.torn_user_id));
+  const crimesWithPendingSuggestion = new Set(pendingCrimes.map(r => r.crime_id));
+  for (const id of crimesWithPendingSuggestion) allowedCrimeIds.delete(id);
+
+  // Stagger gate: don't open a crime's NEXT slot until every slot it already
+  // has filled is within STAGGER_REMAINING_HOURS of finishing — keeps at most
+  // one slot "fresh" at a time per crime instead of flooding it with joins.
+  const { results: filledSlotProgress } = await env.DB.prepare(`
+    SELECT s.crime_id, s.progress
+    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${namePlaceholders}) AND s.torn_user_id IS NOT NULL
+  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
+  const notReadyCrimeIds = new Set(
+    filledSlotProgress.filter(s => remainingHoursForProgress(s.progress) > STAGGER_REMAINING_HOURS).map(s => s.crime_id)
+  );
+  for (const id of notReadyCrimeIds) allowedCrimeIds.delete(id);
+
+  const inScopeSlots = vacantSlots.filter(s => allowedCrimeIds.has(s.crime_id));
+  if (!inScopeSlots.length) return { created: 0, note: 'no crime is currently due its next slot (cap, pending suggestion, or stagger gate)' };
+
+  // Members currently mid-crime anywhere (Recruiting or Planning): fully
+  // excluded if there's more than FORWARD_BOOK_REMAINING_HOURS left on their
+  // current slot, otherwise kept as a lower-priority ("soon free") candidate
+  // so they can be lined up for their next crime in advance.
+  const { results: busyRows } = await env.DB.prepare(
+    `SELECT s.torn_user_id, MIN(s.progress) AS progress FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL
+     GROUP BY s.torn_user_id`
+  ).all();
+  const excludedBusyIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) > FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
+  const soonFreeIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) <= FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
 
   const { results: members } = await env.DB.prepare(
     `SELECT torn_user_id FROM faction_members WHERE faction_id = ? AND is_active = 1`
   ).bind(OCC1_FACTION_ID).all();
-  const availableIds = new Set(members.map(m => m.torn_user_id).filter(id => !busyIds.has(id)));
+  const availableIds = new Set(members.map(m => m.torn_user_id).filter(id => !excludedBusyIds.has(id)));
   if (!availableIds.size) return { created: 0, note: 'no available (non-busy, active) members' };
+  const scoreMultiplier = uid => soonFreeIds.has(uid) ? SOON_FREE_HANDICAP : 1;
 
   const positions = [...new Set(inScopeSlots.map(s => s.position))];
   const posPlaceholders = positions.map(() => '?').join(',');
@@ -1060,21 +1097,24 @@ async function computeRotationSuggestions(env) {
     for (const c of candidates) {
       if (!availableIds.has(c.torn_user_id)) continue;
       if (c.best_pass_rate < threshold) continue;
-      pairs.push({ slot, torn_user_id: c.torn_user_id, score: c.best_pass_rate * (weight / 100), pass_rate_used: c.best_pass_rate, is_trial: false });
+      const score = c.best_pass_rate * (weight / 100) * scoreMultiplier(c.torn_user_id);
+      pairs.push({ slot, torn_user_id: c.torn_user_id, score, pass_rate_used: c.best_pass_rate, is_trial: false });
     }
   }
   pairs.sort((a, b) => b.score - a.score);
 
   const usedSlotIds = new Set();
   const usedMembers = new Set();
+  const usedCrimeIds = new Set(); // only one suggestion per crime per pass
   const assignments = [];
   const slotKeyOf = s => `${s.crime_id}|${s.position_id}`;
 
   for (const p of pairs) {
     const key = slotKeyOf(p.slot);
-    if (usedSlotIds.has(key) || usedMembers.has(p.torn_user_id)) continue;
+    if (usedSlotIds.has(key) || usedMembers.has(p.torn_user_id) || usedCrimeIds.has(p.slot.crime_id)) continue;
     usedSlotIds.add(key);
     usedMembers.add(p.torn_user_id);
+    usedCrimeIds.add(p.slot.crime_id);
     assignments.push(p);
   }
 
@@ -1085,7 +1125,7 @@ async function computeRotationSuggestions(env) {
   const slotsWithAnyDirectCandidate = new Set(pairs.map(p => slotKeyOf(p.slot)));
   for (const slot of inScopeSlots) {
     const key = slotKeyOf(slot);
-    if (usedSlotIds.has(key) || slotsWithAnyDirectCandidate.has(key)) continue;
+    if (usedSlotIds.has(key) || usedCrimeIds.has(slot.crime_id) || slotsWithAnyDirectCandidate.has(key)) continue;
 
     const slotWeight = weightMap.get(`${slot.crime_name}|${slot.position}|${slot.position_number}`) ?? 100;
     const avgWeight = avgWeightByCrime.get(slot.crime_name) ?? 100;
@@ -1095,13 +1135,14 @@ async function computeRotationSuggestions(env) {
       .filter(([uid, targets]) =>
         availableIds.has(uid) && !usedMembers.has(uid) &&
         targets.has(slot.crime_name) && !hasCprForSlot.has(`${uid}|${slot.crime_name}|${slot.position}`))
-      .map(([uid, targets]) => ({ torn_user_id: uid, score: targets.get(slot.crime_name) }))
+      .map(([uid, targets]) => ({ torn_user_id: uid, score: targets.get(slot.crime_name) * scoreMultiplier(uid) }))
       .sort((a, b) => b.score - a.score);
 
     if (trialPool.length) {
       const pick = trialPool[0];
       usedSlotIds.add(key);
       usedMembers.add(pick.torn_user_id);
+      usedCrimeIds.add(slot.crime_id);
       assignments.push({ slot, torn_user_id: pick.torn_user_id, score: pick.score, pass_rate_used: null, is_trial: true });
     }
   }
@@ -1286,7 +1327,28 @@ export async function getRotationSuggestions(request, env, user) {
       for (const row of rows) usernames[row.torn_user_id] = row.username;
     }
 
-    return jsonResponse({ pending, recent, usernames });
+    // Per-crime "N/total" progress badge — a slot counts as done once it's
+    // actually complete, OR (same logic as the stagger gate) it's filled and
+    // within STAGGER_REMAINING_HOURS of finishing, since that's the point at
+    // which we'd already be suggesting the next slot.
+    const crimeIds = [...new Set([...pending, ...recent].map(r => r.crime_id))];
+    const progressByCrime = {};
+    if (crimeIds.length) {
+      const slotRows = await fetchInChunks(env, ph =>
+        `SELECT crime_id, torn_user_id, progress FROM oc_crime_slots WHERE crime_id IN (${ph})`, crimeIds
+      );
+      const byCrime = new Map();
+      for (const row of slotRows) (byCrime.get(row.crime_id) ?? byCrime.set(row.crime_id, []).get(row.crime_id)).push(row);
+      for (const [crimeId, slots] of byCrime) {
+        const total = slots.length;
+        const done = slots.filter(s =>
+          s.torn_user_id != null && (s.progress >= 100 || remainingHoursForProgress(s.progress) <= STAGGER_REMAINING_HOURS)
+        ).length;
+        progressByCrime[crimeId] = { done, total };
+      }
+    }
+
+    return jsonResponse({ pending, recent, usernames, progress: progressByCrime });
   } catch (e) {
     console.error('getRotationSuggestions error:', e);
     return errorResponse('Failed to fetch rotation suggestions: ' + e.message, 500);
@@ -1328,8 +1390,11 @@ export async function getRotationStats(request, env, user) {
     const rosterSize = activeRoster?.n || 0;
     const turnoverRate = rosterSize ? Math.round(((distinctMembers?.n || 0) / rosterSize) * 1000) / 10 : null;
 
-    // Stalled slots: a vacant slot in an enabled crime, open for 24h+ (crime
-    // created_at is the closest proxy we have to "slot became available").
+    // Stalled OCs: counts CRIMES, not slots — a crime with 6 vacant slots we
+    // haven't even started on yet is one stalled OC, not six. A crime that
+    // already has a pending suggestion is being worked and doesn't count,
+    // even if it's old (crime created_at is the closest proxy we have for
+    // "its first slot became available").
     const dayAgo = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
     const { results: configRows } = await env.DB.prepare(`SELECT crime_name FROM oc_rotation_config WHERE enabled = 1`).all();
     let stalledSlots = 0;
@@ -1338,9 +1403,10 @@ export async function getRotationStats(request, env, user) {
       const names = configRows.map(r => r.crime_name);
       const ph = names.map(() => '?').join(',');
       const row = await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+        `SELECT COUNT(DISTINCT c.id) AS n FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
          WHERE c.faction_id = ? AND c.status = 'Recruiting' AND s.torn_user_id IS NULL
-           AND c.name IN (${ph}) AND c.created_at <= ?`
+           AND c.name IN (${ph}) AND c.created_at <= ?
+           AND c.id NOT IN (SELECT crime_id FROM oc_rotation_suggestions WHERE status = 'pending')`
       ).bind(factionId, ...names, dayAgo).first();
       stalledSlots = row?.n || 0;
 
