@@ -1148,13 +1148,9 @@ function RotationConfigSection() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '620px' }}>
-          Only enabled crimes are touched by the scheduler. <strong style={{ color: '#d4d4d8' }}>Suggest at</strong> is the
-          minimum checkpoint pass rate a member needs to be suggested for a slot in that crime — starts at the
-          policy default (lvl1-6 70%, lvl7 65%, Clinical Precision 60%, other lvl8 65%) until you override it.{' '}
-          <strong style={{ color: '#d4d4d8' }}>Promote at</strong> is a separate bar on a member's <em>average</em> pass
-          rate across every crime/position they've run at the tier below — clearing it earns a one-off trial pick into
-          a below-average-weight slot of this crime, to start building real history there. Defaults to 85%.
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '500px' }}>
+          Only enabled crimes are used. Suggest at: min pass rate to suggest someone. Promote at: tier-below average
+          needed to try a slot here.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {saveMsg && <span style={{ fontSize: '12px', color: saveMsg.startsWith('Error') ? '#f87171' : '#4ade80' }}>{saveMsg}</span>}
@@ -1319,9 +1315,8 @@ function RotationSuggestionsSection() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '560px' }}>
-          Live "who should join next" recommendations for enabled crimes, re-checked every ~45 minutes against what
-          actually happened. Nothing here auto-joins anything — this is for leaders to action in-game.
+        <p style={{ color: "var(--text-secondary)", fontSize: '13px', margin: 0, maxWidth: '500px' }}>
+          Who to join next. Rechecked every ~45 min. Doesn't join anyone for you.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button
