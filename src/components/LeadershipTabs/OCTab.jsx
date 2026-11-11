@@ -1289,10 +1289,11 @@ function RotationSuggestionsSection() {
       </div>
 
       {stats && (
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
           {[
             { label: 'Suggestion success rate', value: stats.success_rate != null ? `${stats.success_rate}%` : '—' },
             { label: 'Members placed (30d)', value: stats.distinct_members_placed },
+            { label: 'Roster turnover', value: stats.turnover_rate != null ? `${stats.turnover_rate}%` : '—' },
             { label: 'Slots stalled 24h+', value: stats.stalled_slots_24h, warn: stats.stalled_slots_24h > 0 },
           ].map(t => (
             <div key={t.label} style={{
@@ -1303,6 +1304,23 @@ function RotationSuggestionsSection() {
               <div style={{ fontSize: '20px', fontWeight: '700', color: t.warn ? '#f87171' : '#f4f4f5' }}>{t.value}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {stats?.fund_tracking && (
+        <div style={{
+          display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'baseline', marginBottom: '20px',
+          padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)',
+        }}>
+          <span style={{ fontSize: '11px', color: "var(--text-faint)", textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Enabled crimes, this window
+          </span>
+          <span style={{ fontSize: '13px', color: "var(--text-secondary)" }}>
+            {stats.fund_tracking.paid_crimes} paid · ${stats.fund_tracking.gross_income.toLocaleString()} gross
+            {stats.fund_tracking.item_expense > 0 ? ` − $${stats.fund_tracking.item_expense.toLocaleString()} items` : ''}
+            {' = '}
+            <strong style={{ color: '#f4f4f5' }}>${stats.fund_tracking.net_income.toLocaleString()} net</strong>
+          </span>
         </div>
       )}
 

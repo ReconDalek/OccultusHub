@@ -702,14 +702,21 @@ export async function predictSuccess(request, env, user) {
 // `monthStartTs`/`monthEndTs` (unix seconds) let accountingController ask
 // about a past month instead of always the live current one — both default
 // to the current calendar month when omitted, preserving prior behavior.
-export async function getFactionOCProfit(env, factionId, monthStartTs, monthEndTs) {
+// `crimeNames` (optional) scopes both income and item expense to a subset of
+// crime names — used by the rotation scheduler's fund-tracking stats to see
+// what just the crimes it's allowed to touch are earning/costing, separate
+// from the faction's whole OC income line.
+export async function getFactionOCProfit(env, factionId, monthStartTs, monthEndTs, crimeNames) {
   const now = new Date();
   const start = monthStartTs ?? Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
   const end   = monthEndTs   ?? Math.floor(now.getTime() / 1000);
+  const nameFilter = Array.isArray(crimeNames) && crimeNames.length
+    ? { sql: ` AND name IN (${crimeNames.map(() => '?').join(',')})`, params: crimeNames }
+    : { sql: '', params: [] };
 
   const { results: successfulCrimes } = await env.DB.prepare(
-    `SELECT id, rewards_json FROM oc_crimes WHERE faction_id = ? AND status = 'Successful' AND rewards_json IS NOT NULL`
-  ).bind(factionId).all();
+    `SELECT id, rewards_json FROM oc_crimes WHERE faction_id = ? AND status = 'Successful' AND rewards_json IS NOT NULL${nameFilter.sql}`
+  ).bind(factionId, ...nameFilter.params).all();
 
   let paidCrimes = 0;
   let grossIncome = 0;
@@ -731,8 +738,8 @@ export async function getFactionOCProfit(env, factionId, monthStartTs, monthEndT
   // item expense is real regardless of whether the crime itself succeeded.
   const { results: completedCrimes } = await env.DB.prepare(
     `SELECT id FROM oc_crimes
-     WHERE faction_id = ? AND status IN ('Successful','Failure') AND executed_at >= ? AND executed_at <= ?`
-  ).bind(factionId, start, end).all();
+     WHERE faction_id = ? AND status IN ('Successful','Failure') AND executed_at >= ? AND executed_at <= ?${nameFilter.sql}`
+  ).bind(factionId, start, end, ...nameFilter.params).all();
   const completedIds = completedCrimes.map(c => c.id);
 
   // Non-reusable, faction-owned items actually consumed (used or lost) on
@@ -1229,11 +1236,21 @@ export async function getRotationStats(request, env, user) {
       `SELECT COUNT(DISTINCT torn_user_id) AS n FROM oc_rotation_suggestions WHERE faction_id = ? AND suggested_at >= ?`
     ).bind(factionId, sinceIso).first();
 
+    // Turnover: how much of the active roster cycled through a rotation-
+    // suggested slot in the window — a stalled program looks like a small
+    // number of repeat members, a healthy one spreads across the roster.
+    const activeRoster = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM faction_members WHERE faction_id = ? AND is_active = 1`
+    ).bind(factionId).first();
+    const rosterSize = activeRoster?.n || 0;
+    const turnoverRate = rosterSize ? Math.round(((distinctMembers?.n || 0) / rosterSize) * 1000) / 10 : null;
+
     // Stalled slots: a vacant slot in an enabled crime, open for 24h+ (crime
     // created_at is the closest proxy we have to "slot became available").
     const dayAgo = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
     const { results: configRows } = await env.DB.prepare(`SELECT crime_name FROM oc_rotation_config WHERE enabled = 1`).all();
     let stalledSlots = 0;
+    let fundTracking = null;
     if (configRows.length) {
       const names = configRows.map(r => r.crime_name);
       const ph = names.map(() => '?').join(',');
@@ -1243,6 +1260,19 @@ export async function getRotationStats(request, env, user) {
            AND c.name IN (${ph}) AND c.created_at <= ?`
       ).bind(factionId, ...names, dayAgo).first();
       stalledSlots = row?.n || 0;
+
+      // Fund tracking: what just the crimes the scheduler is allowed to touch
+      // have actually earned/cost over this same window — separate from the
+      // faction's whole OC income line (which also includes non-enabled crimes).
+      const sinceTs = Math.floor(Date.now() / 1000) - days * 24 * 60 * 60;
+      const nowTs = Math.floor(Date.now() / 1000);
+      const profit = await getFactionOCProfit(env, factionId, sinceTs, nowTs, names);
+      fundTracking = {
+        paid_crimes: profit.paid_crimes,
+        gross_income: profit.gross_income,
+        item_expense: profit.item_expense,
+        net_income: profit.monthly_income,
+      };
     }
 
     return jsonResponse({
@@ -1251,7 +1281,10 @@ export async function getRotationStats(request, env, user) {
       outcomes,
       success_rate: successRate,
       distinct_members_placed: distinctMembers?.n || 0,
+      active_roster_size: rosterSize,
+      turnover_rate: turnoverRate,
       stalled_slots_24h: stalledSlots,
+      fund_tracking: fundTracking,
     });
   } catch (e) {
     console.error('getRotationStats error:', e);
