@@ -961,14 +961,38 @@ const MAX_TIER_PUSH_DOWN = 1; // hard cap — never propose a member for a slot 
 // Shared "who's free, who's soon-free, who's excluded" — used by both the
 // matching engine and the roster outlook, so the two always agree.
 async function getMemberAvailability(env) {
+  // `progress` only means anything during Recruiting — it's each member's
+  // own 0-100% checkpoint-build timer since they joined. The MOMENT a crime
+  // flips to Planning, that field goes stale/meaningless (confirmed on
+  // production data: Planning slots sit at progress=0 or 100 with nothing
+  // in between, regardless of how close the crime actually is to finishing)
+  // — Planning has its own entirely different clock, `ready_at` on the
+  // crime itself. Using progress for Planning slots was wildly overcounting
+  // "soon free" members (every stale progress=0 Planning slot looked like
+  // "just started, free in 24h" when the real remaining time could be days).
   const { results: busyRows } = await env.DB.prepare(
-    `SELECT s.torn_user_id, MIN(s.progress) AS progress FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
-     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL
-     GROUP BY s.torn_user_id`
+    `SELECT s.torn_user_id, c.status, s.progress, c.ready_at
+     FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+     WHERE c.status IN ('Recruiting','Planning') AND s.torn_user_id IS NOT NULL`
   ).all();
-  const remainingByMember = new Map(busyRows.map(r => [r.torn_user_id, remainingHoursForProgress(r.progress)]));
-  const excludedBusyIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) > FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
-  const soonFreeIds = new Set(busyRows.filter(r => remainingHoursForProgress(r.progress) <= FORWARD_BOOK_REMAINING_HOURS).map(r => r.torn_user_id));
+
+  const nowTs = Math.floor(Date.now() / 1000);
+  function remainingHoursForBusyRow(row) {
+    if (row.status === 'Planning') {
+      if (!row.ready_at) return Infinity; // unknown — never assume "about to free"
+      return Math.max(0, (row.ready_at - nowTs) / 3600);
+    }
+    return remainingHoursForProgress(row.progress);
+  }
+
+  const remainingByMember = new Map();
+  for (const row of busyRows) {
+    const hours = remainingHoursForBusyRow(row);
+    const existing = remainingByMember.get(row.torn_user_id);
+    if (existing === undefined || hours < existing) remainingByMember.set(row.torn_user_id, hours);
+  }
+  const excludedBusyIds = new Set([...remainingByMember].filter(([, h]) => h > FORWARD_BOOK_REMAINING_HOURS).map(([uid]) => uid));
+  const soonFreeIds = new Set([...remainingByMember].filter(([, h]) => h <= FORWARD_BOOK_REMAINING_HOURS).map(([uid]) => uid));
 
   const { results: members } = await env.DB.prepare(
     `SELECT torn_user_id, username FROM faction_members WHERE faction_id = ? AND is_active = 1`
