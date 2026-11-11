@@ -1178,6 +1178,46 @@ export async function triggerRotationPoll(request, env, user) {
   }
 }
 
+// ── POST /api/admin/oc/rotation/reset ─────────────────────────────────────────
+// Wipes rotation *test data* only — never touches oc_crimes/oc_crime_slots/
+// oc_member_cpr (those are Torn's own history, not ours to delete). Lets
+// leadership clear out a noisy testing pass without losing the underlying
+// crime/CPR data it was computed from.
+// Body: { scope: 'all' | 'pending' | 'resolved' | 'crime', crime_name?,
+//         reset_throttle? (default true) }
+export async function resetRotationData(request, env, user) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const scope = body.scope || 'all';
+    const resetThrottle = body.reset_throttle !== false;
+
+    let where = '';
+    const params = [];
+    if (scope === 'pending') {
+      where = `WHERE status = 'pending'`;
+    } else if (scope === 'resolved') {
+      where = `WHERE status != 'pending'`;
+    } else if (scope === 'crime') {
+      if (!body.crime_name) return errorResponse('crime_name is required for scope=crime', 400);
+      where = `WHERE crime_name = ?`;
+      params.push(body.crime_name);
+    } else if (scope !== 'all') {
+      return errorResponse('scope must be one of: all, pending, resolved, crime', 400);
+    }
+
+    const { meta } = await env.DB.prepare(`DELETE FROM oc_rotation_suggestions ${where}`).bind(...params).run();
+
+    if (resetThrottle) {
+      await env.DB.prepare(`DELETE FROM oc_rotation_meta WHERE key = 'last_poll_at'`).run();
+    }
+
+    return jsonResponse({ deleted: meta?.changes ?? 0, scope, throttle_reset: resetThrottle });
+  } catch (e) {
+    console.error('resetRotationData error:', e);
+    return errorResponse('Failed to reset rotation data: ' + e.message, 500);
+  }
+}
+
 // ── GET /api/leadership/oc/rotation/suggestions?faction_id= ──────────────────
 // Pending (actionable now) + most recent 50 resolved, with usernames resolved
 // for display.

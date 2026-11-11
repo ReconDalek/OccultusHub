@@ -206,6 +206,9 @@ export async function handleRequest(request, env, ctx) {
     if (pathname === '/api/admin/oc/rotation/poll' && method === 'POST') {
       return ocController.triggerRotationPoll(request, env, user);
     }
+    if (pathname === '/api/admin/oc/rotation/reset' && method === 'POST') {
+      return ocController.resetRotationData(request, env, user);
+    }
 
     // Webhook configs
     if (pathname === '/api/admin/webhooks' && method === 'GET') {

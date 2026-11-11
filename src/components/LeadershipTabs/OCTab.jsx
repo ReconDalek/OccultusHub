@@ -1234,6 +1234,8 @@ function RotationSuggestionsSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [triggering, setTriggering] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetScope, setResetScope] = useState('pending')
 
   const load = () => {
     setLoading(true)
@@ -1263,6 +1265,26 @@ function RotationSuggestionsSection() {
     }
   }
 
+  const RESET_SCOPE_LABEL = {
+    pending: 'pending suggestions', resolved: 'resolved/history suggestions', all: 'ALL suggestions',
+  }
+
+  async function handleReset() {
+    const label = RESET_SCOPE_LABEL[resetScope] || resetScope
+    if (!window.confirm(`Wipe ${label}? This only deletes our tracked suggestion/outcome log — it never touches Torn's own crime data or CPR history. Cannot be undone.`)) return
+    setResetting(true)
+    try {
+      await fetch(`${API_BASE_URL}/api/admin/oc/rotation/reset`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: resetScope }),
+      })
+      load()
+    } finally {
+      setResetting(false)
+    }
+  }
+
   if (loading) return <p style={{ color: "var(--text-faint)", fontSize: '13px', padding: '16px 0' }}>Loading…</p>
   if (error) return <p style={{ color: '#f87171', fontSize: '13px' }}>Error: {error}</p>
 
@@ -1276,16 +1298,40 @@ function RotationSuggestionsSection() {
           Live "who should join next" recommendations for enabled crimes, re-checked every ~45 minutes against what
           actually happened. Nothing here auto-joins anything — this is for leaders to action in-game.
         </p>
-        <button
-          onClick={handleTrigger}
-          disabled={triggering}
-          style={{
-            padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', border: '1px solid rgba(255,255,255,0.12)',
-            cursor: triggering ? 'default' : 'pointer', background: 'rgba(255,255,255,0.05)', color: '#f4f4f5',
-          }}
-        >
-          {triggering ? 'Running…' : 'Run poll now'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleTrigger}
+            disabled={triggering}
+            style={{
+              padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', border: '1px solid rgba(255,255,255,0.12)',
+              cursor: triggering ? 'default' : 'pointer', background: 'rgba(255,255,255,0.05)', color: '#f4f4f5',
+            }}
+          >
+            {triggering ? 'Running…' : 'Run poll now'}
+          </button>
+          <select
+            value={resetScope}
+            onChange={e => setResetScope(e.target.value)}
+            style={{
+              padding: '6px 8px', borderRadius: '6px', fontSize: '12px', border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)', color: '#f4f4f5',
+            }}
+          >
+            <option value="pending">Pending only</option>
+            <option value="resolved">Resolved/history only</option>
+            <option value="all">All test data</option>
+          </select>
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            style={{
+              padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', border: '1px solid rgba(248,113,113,0.3)',
+              cursor: resetting ? 'default' : 'pointer', background: 'rgba(248,113,113,0.08)', color: '#f87171',
+            }}
+          >
+            {resetting ? 'Wiping…' : 'Wipe test data'}
+          </button>
+        </div>
       </div>
 
       {stats && (
