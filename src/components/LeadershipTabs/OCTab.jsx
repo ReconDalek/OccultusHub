@@ -1468,7 +1468,7 @@ export default function OCTab() {
         <button onClick={() => setView('crimes')} style={subTabStyle('crimes')}>Crimes</button>
         <button onClick={() => setView('builder')} style={subTabStyle('builder')}>Team Builder</button>
         <button onClick={() => setView('inactivity')} style={subTabStyle('inactivity')}>Inactivity</button>
-        <button onClick={() => setView('rotation')} style={subTabStyle('rotation')}>Rotation</button>
+        <button onClick={() => setView('rotation')} style={subTabStyle('rotation')}>Test</button>
         <button onClick={() => setView('config')} style={subTabStyle('config')}>Config</button>
       </div>
 
