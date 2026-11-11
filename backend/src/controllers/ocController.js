@@ -817,6 +817,7 @@ const ROLE_PROGRESS_DURATION_HOURS = 24; // confirmed duration for the lvl7/lvl8
 const STAGGER_REMAINING_HOURS = 12; // don't open a crime's next slot until its current slot(s) are within this many hours of finishing
 const FORWARD_BOOK_REMAINING_HOURS = 24; // a busy member can still be suggested elsewhere if their current slot finishes within this window
 const SOON_FREE_HANDICAP = 0.8; // busy-but-soon-free candidates only win a slot over a free candidate if they're this much better (not just equal)
+const VIABILITY_COVERAGE_THRESHOLD = 0.5; // min fraction of a new crime's total position weight we need a plausible candidate for before starting it
 
 // Torn's slot `progress` is 0-100 over ROLE_PROGRESS_DURATION_HOURS since joining.
 function remainingHoursForProgress(progress) {
@@ -980,52 +981,9 @@ async function computeRotationSuggestions(env) {
   `).bind(OCC1_FACTION_ID, ...enabledNames).all();
   if (!vacantSlots.length) return { created: 0, note: 'no vacant slots in enabled crimes' };
 
-  // "Ongoing + 1" throughput cap: per crime_name, every instance with at
-  // least one filled slot counts as ongoing (always allowed, to keep it
-  // moving toward Planning); brand-new, fully-vacant instances are capped at
-  // one extra so new crimes don't all open for recruitment at once.
-  const { results: fillInfo } = await env.DB.prepare(`
-    SELECT c.id AS crime_id, c.name AS crime_name,
-           COUNT(*) AS total_slots,
-           SUM(CASE WHEN s.torn_user_id IS NOT NULL THEN 1 ELSE 0 END) AS filled_slots
-    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
-    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${namePlaceholders})
-    GROUP BY c.id
-  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
-
-  const allowedCrimeIds = new Set();
-  const byCrimeName = new Map();
-  for (const row of fillInfo) (byCrimeName.get(row.crime_name) ?? byCrimeName.set(row.crime_name, []).get(row.crime_name)).push(row);
-  for (const instances of byCrimeName.values()) {
-    const fresh = instances.filter(i => i.filled_slots === 0).sort((a, b) => a.crime_id - b.crime_id);
-    for (const i of instances) if (i.filled_slots > 0) allowedCrimeIds.add(i.crime_id);
-    if (fresh.length) allowedCrimeIds.add(fresh[0].crime_id);
-  }
-
-  // Only one outstanding suggestion per crime at a time — a crime that
-  // already has a pending suggestion isn't offered a second one until that
-  // one resolves (joined, superseded, etc).
-  const { results: pendingCrimes } = await env.DB.prepare(
-    `SELECT DISTINCT crime_id FROM oc_rotation_suggestions WHERE status = 'pending'`
-  ).all();
-  const crimesWithPendingSuggestion = new Set(pendingCrimes.map(r => r.crime_id));
-  for (const id of crimesWithPendingSuggestion) allowedCrimeIds.delete(id);
-
-  // Stagger gate: don't open a crime's NEXT slot until every slot it already
-  // has filled is within STAGGER_REMAINING_HOURS of finishing — keeps at most
-  // one slot "fresh" at a time per crime instead of flooding it with joins.
-  const { results: filledSlotProgress } = await env.DB.prepare(`
-    SELECT s.crime_id, s.progress
-    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
-    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${namePlaceholders}) AND s.torn_user_id IS NOT NULL
-  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
-  const notReadyCrimeIds = new Set(
-    filledSlotProgress.filter(s => remainingHoursForProgress(s.progress) > STAGGER_REMAINING_HOURS).map(s => s.crime_id)
-  );
-  for (const id of notReadyCrimeIds) allowedCrimeIds.delete(id);
-
-  const inScopeSlots = vacantSlots.filter(s => allowedCrimeIds.has(s.crime_id));
-  if (!inScopeSlots.length) return { created: 0, note: 'no crime is currently due its next slot (cap, pending suggestion, or stagger gate)' };
+  // Member availability, CPR, weights and promotion eligibility — gathered
+  // up front so the "should we even start a new crime" viability check below
+  // can use the exact same candidate pools as the matching pass further down.
 
   // Members currently mid-crime anywhere (Recruiting or Planning): fully
   // excluded if there's more than FORWARD_BOOK_REMAINING_HOURS left on their
@@ -1046,12 +1004,9 @@ async function computeRotationSuggestions(env) {
   if (!availableIds.size) return { created: 0, note: 'no available (non-busy, active) members' };
   const scoreMultiplier = uid => soonFreeIds.has(uid) ? SOON_FREE_HANDICAP : 1;
 
-  const positions = [...new Set(inScopeSlots.map(s => s.position))];
-  const posPlaceholders = positions.map(() => '?').join(',');
   const { results: cprRows } = await env.DB.prepare(
-    `SELECT torn_user_id, crime_name, position, best_pass_rate FROM oc_member_cpr
-     WHERE crime_name IN (${namePlaceholders}) AND position IN (${posPlaceholders})`
-  ).bind(...enabledNames, ...positions).all();
+    `SELECT torn_user_id, crime_name, position, best_pass_rate FROM oc_member_cpr WHERE crime_name IN (${namePlaceholders})`
+  ).bind(...enabledNames).all();
   const cprByCrimePosition = new Map(); // `${crime_name}|${position}` -> [{torn_user_id, best_pass_rate}]
   for (const row of cprRows) {
     const key = `${row.crime_name}|${row.position}`;
@@ -1086,6 +1041,92 @@ async function computeRotationSuggestions(env) {
 
   const nameToDifficulty = await getCrimeNameDifficultyMap(env);
   const promotionEligibility = await getPromotionEligibility(env, configByName, nameToDifficulty);
+
+  // Weight-coverage viability check for STARTING a brand-new (fully vacant)
+  // crime instance: what fraction of the crime's total position weight do we
+  // currently have a plausible candidate for (free/soon-free member clearing
+  // the threshold directly, or promotion-eligible for a position they
+  // haven't tried)? Below VIABILITY_COVERAGE_THRESHOLD, don't open a new one
+  // this pass — better to wait than sink a slot into a crime we can't
+  // realistically staff. Already-ongoing instances are never re-evaluated by
+  // this — once started, they're carried through regardless.
+  const maxWeightByCrimePosition = new Map(); // `${crime_name}|${position}` -> maxWeight across its numbered slots
+  for (const w of weightRows) {
+    const key = `${w.crime_name}|${w.position}`;
+    maxWeightByCrimePosition.set(key, Math.max(maxWeightByCrimePosition.get(key) ?? 0, w.weight));
+  }
+  const positionsByCrime = new Map(); // crime_name -> Set<position>
+  for (const w of weightRows) (positionsByCrime.get(w.crime_name) ?? positionsByCrime.set(w.crime_name, new Set()).get(w.crime_name)).add(w.position);
+
+  function hasPlausibleCandidate(crimeName, position, threshold) {
+    const direct = (cprByCrimePosition.get(`${crimeName}|${position}`) ?? [])
+      .some(c => availableIds.has(c.torn_user_id) && c.best_pass_rate >= threshold);
+    if (direct) return true;
+    for (const [uid, targets] of promotionEligibility) {
+      if (availableIds.has(uid) && targets.has(crimeName) && !hasCprForSlot.has(`${uid}|${crimeName}|${position}`)) return true;
+    }
+    return false;
+  }
+
+  function isViableNewCrime(crimeName) {
+    const positions = positionsByCrime.get(crimeName);
+    if (!positions || !positions.size) return true; // no weight data synced yet — don't block on missing data
+    const threshold = configByName.get(crimeName).min_pass_rate;
+    let totalWeight = 0, coveredWeight = 0;
+    for (const position of positions) {
+      const weight = maxWeightByCrimePosition.get(`${crimeName}|${position}`) ?? 100;
+      totalWeight += weight;
+      if (hasPlausibleCandidate(crimeName, position, threshold)) coveredWeight += weight;
+    }
+    return totalWeight > 0 ? (coveredWeight / totalWeight) >= VIABILITY_COVERAGE_THRESHOLD : true;
+  }
+
+  // "Ongoing + 1" throughput cap: per crime_name, every instance with at
+  // least one filled slot counts as ongoing (always allowed, to keep it
+  // moving toward Planning); a brand-new, fully-vacant instance is only
+  // added as the "+1" if it clears the viability check above.
+  const { results: fillInfo } = await env.DB.prepare(`
+    SELECT c.id AS crime_id, c.name AS crime_name,
+           COUNT(*) AS total_slots,
+           SUM(CASE WHEN s.torn_user_id IS NOT NULL THEN 1 ELSE 0 END) AS filled_slots
+    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${namePlaceholders})
+    GROUP BY c.id
+  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
+
+  const allowedCrimeIds = new Set();
+  const byCrimeName = new Map();
+  for (const row of fillInfo) (byCrimeName.get(row.crime_name) ?? byCrimeName.set(row.crime_name, []).get(row.crime_name)).push(row);
+  for (const instances of byCrimeName.values()) {
+    const fresh = instances.filter(i => i.filled_slots === 0).sort((a, b) => a.crime_id - b.crime_id);
+    for (const i of instances) if (i.filled_slots > 0) allowedCrimeIds.add(i.crime_id);
+    if (fresh.length && isViableNewCrime(fresh[0].crime_name)) allowedCrimeIds.add(fresh[0].crime_id);
+  }
+
+  // Only one outstanding suggestion per crime at a time — a crime that
+  // already has a pending suggestion isn't offered a second one until that
+  // one resolves (joined, superseded, etc).
+  const { results: pendingCrimes } = await env.DB.prepare(
+    `SELECT DISTINCT crime_id FROM oc_rotation_suggestions WHERE status = 'pending'`
+  ).all();
+  const crimesWithPendingSuggestion = new Set(pendingCrimes.map(r => r.crime_id));
+  for (const id of crimesWithPendingSuggestion) allowedCrimeIds.delete(id);
+
+  // Stagger gate: don't open a crime's NEXT slot until every slot it already
+  // has filled is within STAGGER_REMAINING_HOURS of finishing — keeps at most
+  // one slot "fresh" at a time per crime instead of flooding it with joins.
+  const { results: filledSlotProgress } = await env.DB.prepare(`
+    SELECT s.crime_id, s.progress
+    FROM oc_crime_slots s JOIN oc_crimes c ON c.id = s.crime_id
+    WHERE c.faction_id = ? AND c.status = 'Recruiting' AND c.name IN (${namePlaceholders}) AND s.torn_user_id IS NOT NULL
+  `).bind(OCC1_FACTION_ID, ...enabledNames).all();
+  const notReadyCrimeIds = new Set(
+    filledSlotProgress.filter(s => remainingHoursForProgress(s.progress) > STAGGER_REMAINING_HOURS).map(s => s.crime_id)
+  );
+  for (const id of notReadyCrimeIds) allowedCrimeIds.delete(id);
+
+  const inScopeSlots = vacantSlots.filter(s => allowedCrimeIds.has(s.crime_id));
+  if (!inScopeSlots.length) return { created: 0, note: 'no crime is currently due its next slot (cap, pending suggestion, stagger, or viability gate)' };
 
   // Direct candidate pairs (member already has CPR for this exact crime+position).
   const pairs = [];
